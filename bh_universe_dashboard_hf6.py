@@ -45,13 +45,29 @@ def _capability_text(items):
     )
 
 
-def _page(*, offset=0, limit=10):
+def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settlement="", state=""):
     offset=max(0,int(offset))
     limit=max(1,min(10,int(limit)))
     truth = bg.truth_projection()
     coverage = truth.get("readiness", {}).get("families", [])
+    filters={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    clauses=[]
+    catalog_params=[]
+    if str(q or "").strip():
+        needle="%"+str(q).strip().upper()+"%"
+        clauses.append("(upper(c.ticker) LIKE ? OR upper(c.instrument_type) LIKE ? OR upper(c.market) LIKE ? OR upper(c.currency) LIKE ? OR upper(c.settlement) LIKE ?)")
+        catalog_params.extend([needle]*5)
+    for column,value in (("c.instrument_type",family),("c.market",market),("c.currency",currency),("c.settlement",settlement)):
+        if str(value or "").strip():
+            clauses.append(f"upper({column})=upper(?)")
+            catalog_params.append(str(value).strip())
+    if str(state or "").strip().upper()=="RUNTIME_READY":
+        clauses.append("r.can_simulate=1 AND upper(r.status)='AVAILABLE'")
+    elif str(state or "").strip().upper()=="PAUSED_EXPLICIT":
+        clauses.append("NOT (r.can_simulate=1 AND upper(r.status)='AVAILABLE')")
+    catalog_filter_sql=(" AND "+" AND ".join(clauses)) if clauses else ""
 
-    catalog = bg._rows("""
+    catalog = bg._rows(f"""
         SELECT
             c.ticker,
             c.instrument_type,
@@ -71,14 +87,15 @@ def _page(*, offset=0, limit=10):
          AND r.market=c.market
          AND r.currency=c.currency
          AND r.settlement=c.settlement
-        WHERE c.status='AVAILABLE'
+        WHERE c.status='AVAILABLE' {catalog_filter_sql}
         ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
-    """) if bg._table("financial_instrument_catalog") and bg._table("candidate_identity_v2") else bg._rows("""
+    """, tuple(catalog_params)) if bg._table("financial_instrument_catalog") and bg._table("candidate_identity_v2") else bg._rows(f"""
         SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,
                0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of
-        FROM financial_instrument_catalog WHERE status='AVAILABLE'
-        ORDER BY instrument_type,ticker,market,currency,settlement
-    """) if bg._table("financial_instrument_catalog") else []
+        FROM financial_instrument_catalog c WHERE c.status='AVAILABLE'
+        {(" AND "+" AND ".join(x for x in clauses if not x.startswith("r." ) and "r." not in x)) if clauses else ""}
+        ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
+    """, tuple(catalog_params[:len(catalog_params)])) if bg._table("financial_instrument_catalog") else []
 
     market = bg._rows("""
         SELECT
@@ -641,16 +658,17 @@ def _page(*, offset=0, limit=10):
 
     catalog_start=0 if catalog_total==0 else offset+1
     catalog_end=min(catalog_total,offset+len(catalog_page))
+    query_base={k:v for k,v in filters.items() if str(v or "").strip()}
     catalog_controls=[
         f"<span class='paper-muted'>Mostrando {catalog_start}-{catalog_end} de {bg._locale_number(catalog_total,0)}</span>"
     ]
     if offset>0:
         catalog_controls.append(
-            f"<a class='paper-action' href='/universo-operativo?offset={max(0,offset-limit)}#catalog-matrix'>Anterior</a>"
+            f"<a class='paper-action' href='/universo-operativo?{bg._e(bg.urlencode({**query_base,'offset':max(0,offset-limit)}))}#catalog-matrix'>Anterior</a>"
         )
     if catalog_end<catalog_total:
         catalog_controls.append(
-            f"<a class='paper-action' href='/universo-operativo?offset={offset+limit}#catalog-matrix' "
+            f"<a class='paper-action' href='/universo-operativo?{bg._e(bg.urlencode({**query_base,'offset':offset+limit}))}#catalog-matrix' "
             "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
         )
     catalog_pager="<nav class='compact-pager' aria-label='Paginación del universo'>"+"".join(catalog_controls)+"</nav>"
@@ -694,10 +712,11 @@ def _page(*, offset=0, limit=10):
         "<h2>Todos los instrumentos del catálogo actual</h2>"
         "<p class='paper-muted'>"
         "Una fila por identidad instrumento/mercado/moneda/plazo. "
-        "La columna Estado explica por qué puede o no llegar "
-        "a una operación PAPER."
+        "La columna Estado explica por qué puede o no llegar a una operación PAPER. "
+        "Use los filtros para ubicar un instrumento sin recorrer todas las páginas."
         "</p>"
-        "<table class='paper-table'>"
+        + bg._instrument_filter_form("/universo-operativo", **filters)
+        + "<table class='paper-table'>"
         "<tr>"
         "<th>Ticker</th>"
         "<th>Familia</th>"
@@ -717,9 +736,10 @@ def _page(*, offset=0, limit=10):
         "<div class='paper-card'>"
         "<h2>Observaciones recientes fuera del catálogo actual (no READY)</h2>"
         "<p class='paper-muted'>"
-        "Sirve para detectar legado, catálogo stale o diferencias "
-        "entre descubrimiento y observación. "
-        "No se interpreta automáticamente como error."
+        "Sólo se muestran como recientes observaciones dentro de las últimas cinco ruedas hábiles; "
+        f"cutoff operativo: {bg._e(cutoff.isoformat())}. Evidencia anterior queda archivada debajo. "
+        "Sirve para detectar legado, catálogo stale o diferencias entre descubrimiento y observación; "
+        "no se interpreta automáticamente como error."
         "</p>"
         "<table class='paper-table'>"
         "<tr>"
@@ -841,6 +861,12 @@ def install(app, check_auth):
     def universo_operativo(
         request: Request,
         offset: int = Query(default=0, ge=0, le=50000),
+        q: str = Query(default="", max_length=80),
+        family: str = Query(default="", max_length=40),
+        market: str = Query(default="", max_length=40),
+        currency: str = Query(default="", max_length=40),
+        settlement: str = Query(default="", max_length=40),
+        state: str = Query(default="", max_length=40),
         token: str = Query(default=""),
         authorization: str | None = Header(default=None),
     ):
@@ -852,5 +878,6 @@ def install(app, check_auth):
         )
 
         return HTMLResponse(
-            _page(offset=offset, limit=10)
+            _page(offset=offset, limit=10, q=q, family=family, market=market,
+                  currency=currency, settlement=settlement, state=state)
         )

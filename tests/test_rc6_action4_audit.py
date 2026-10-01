@@ -90,7 +90,7 @@ def test_build_includes_bounded_event_and_learning_lessons(tmp_path):
     assert any("Etiquetas de aprendizaje" in lesson for lesson in report["lessons"])
 
 
-def test_build_filters_positions_to_operational_families_when_schema_has_asset_class(tmp_path):
+def test_build_reports_all_paper_position_families_when_schema_has_asset_class(tmp_path):
     database = tmp_path / "scoped-paper.db"
     with sqlite3.connect(database) as connection:
         connection.execute("""
@@ -115,6 +115,10 @@ def test_build_filters_positions_to_operational_families_when_schema_has_asset_c
         now=datetime(2026, 9, 16, 13, 0, tzinfo=TZ),
     )
 
-    assert payload["separation"]["opened_simulated"] == 1
-    assert payload["separation"]["executed_closed"] == 0
-    assert payload["dashboard_daily_report"]["scope_evidence"]["positions"] == "FILTERED_ACCIONES_CEDEARS"
+    assert payload["separation"]["opened_simulated"] == 2
+    assert payload["separation"]["executed_closed"] == 1
+    report = payload["dashboard_daily_report"]
+    assert report["scope"] == "ALL_CONTRACT_FAMILIES_PAPER"
+    assert report["scope_evidence"]["positions"] == "ALL_PAPER_POSITION_FAMILIES"
+    assert report["scope_evidence"]["position_families"] == {"ACCIONES": 1, "BONOS": 1}
+    assert "no se atribuyen retroactivamente" in report["scope_evidence"]["interpretation"]

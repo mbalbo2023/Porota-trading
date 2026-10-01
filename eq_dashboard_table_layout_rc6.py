@@ -19,9 +19,12 @@ FORCE_COMPACT_CSS = r"""
 .paper-card,.tarjeta{max-width:100%;min-width:0;overflow:hidden!important;box-sizing:border-box}
 .paper-table thead,.classic-responsive-table thead{display:table-header-group!important}
 .paper-table thead th,.classic-responsive-table thead th{
-  position:sticky!important;top:50px!important;z-index:35!important;
-  background:#e7edf4!important;white-space:nowrap!important;
-  box-shadow:0 1px 0 #c9d4e3!important
+  position:static!important;top:auto!important;z-index:auto!important;
+  background:#e7edf4!important;white-space:normal!important;
+  box-shadow:0 1px 0 #c9d4e3!important;overflow-wrap:anywhere!important
+}
+.paper-table .paper-status,.classic-responsive-table .paper-status{
+  white-space:normal!important;max-width:100%!important;overflow-wrap:anywhere!important;word-break:break-word!important
 }
 table.paper-table[data-porota-force-compact='1']{
   display:table!important;width:100%!important;min-width:0!important;max-width:100%!important;
@@ -53,7 +56,7 @@ table.paper-table[data-porota-force-compact='1'] td[data-wrap='true']{
 }
 table.paper-table[data-porota-force-compact='1'] .porota-cell-label{display:none!important}
 @media(max-width:700px){
-  .paper-table thead th,.classic-responsive-table thead th{top:0!important}
+  .paper-table thead th,.classic-responsive-table thead th{position:static!important;top:auto!important}
   table.paper-table[data-porota-force-compact='1']{font-size:.78rem!important}
   table.paper-table[data-porota-force-compact='1'] td{padding:6px!important}
 }

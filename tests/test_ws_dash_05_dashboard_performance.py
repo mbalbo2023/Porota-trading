@@ -97,6 +97,32 @@ def test_runtime_surface_metrics_detect_legacy_pending_contract():
     assert metrics["legacy_text_hits"] == ["pending contrato"]
 
 
+def test_runtime_surface_metrics_ignore_marker_literal_inside_accessibility_script():
+    body = (
+        "<table><tr data-porota-server-page-record='1'><td>SERVER</td></tr></table>"
+        "<script>const legacy=\"data-porota-record='1'\";</script>"
+    ).encode()
+    metrics = runtime_audit._surface_metrics("/instrumentos", body)
+    assert metrics["server_page_records"] == 1
+    assert metrics["progressive_records"] == 0
+    runtime_audit._assert_surface_metrics({"/instrumentos": metrics})
+
+
+def test_runtime_surface_metrics_still_block_real_progressive_dom_rows():
+    body = (
+        "<table><tr data-porota-record='1'><td>LEGACY</td></tr></table>"
+        "<script>const harmless=\"data-porota-record='1'\";</script>"
+    ).encode()
+    metrics = runtime_audit._surface_metrics("/instrumentos", body)
+    assert metrics["progressive_records"] == 1
+    try:
+        runtime_audit._assert_surface_metrics({"/instrumentos": metrics})
+    except RuntimeError as exc:
+        assert "PROGRESSIVE_RECORDS=1>0" in str(exc)
+    else:
+        raise AssertionError("real progressive DOM row must remain fail-closed")
+
+
 def test_universe_catalog_is_server_paged_and_no_generic_pending_label():
     source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
     assert "catalog_page=catalog[offset:offset+limit]" in source
@@ -124,3 +150,21 @@ def test_runtime_budgets_cover_all_three_previous_full_dom_hotspots():
     assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/instrumentos"] == 0
     assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/universo-operativo"] == 0
     assert runtime_audit.MAX_PROGRESSIVE_RECORDS["/vivo"] == 0
+
+
+def test_runtime_surface_metrics_count_real_rows_and_pending_badges():
+    body = (
+        "<table><tr><th>Estado</th></tr>"
+        "<tr><td><span>PENDING</span></td></tr>"
+        "<tr><td>OK</td></tr></table>"
+        "<script>const fake='<tr><td>PENDIENTE</td></tr>';</script>"
+    ).encode()
+    metrics = runtime_audit._surface_metrics("/validacion", body)
+    assert metrics["table_rows"] == 3
+    assert metrics["literal_pending_badges"] == 1
+
+
+def test_analysis_truth_wrapper_targets_registered_annual_renderer():
+    source = __import__("pathlib").Path("zz_wave8_dashboard_live_rc6.py").read_text(encoding="utf-8")
+    assert "bg.analysis_page" not in source
+    assert "bg.annual_instrument_analysis.render_page=analysis_render_live" in source

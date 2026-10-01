@@ -46,21 +46,22 @@ def test_context_thresholds_do_not_equal_paper_readiness():
         payload, as_of=datetime(2026, 9, 2, 20, tzinfo=TZ)
     )
     assert result.context_state == "PREFERRED_CONTEXT"
-    # Legacy history remains auditable, but no longer enters a new refresh.
-    assert policy.history_collection_capability("BONOS", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
+    # Historical collection is allowed for current PAPER families but remains
+    # a data capability only; it never grants trading readiness.
+    assert policy.history_collection_capability("BONOS", status="AVAILABLE") == "READONLY_HISTORY_ALLOWED"
     assert "READY_PAPER" not in policy.history_collection_capability("BONOS", status="AVAILABLE")
 
 
-def test_non_operational_family_is_out_of_scope_before_new_history_collection():
-    assert policy.history_collection_capability("OPCIONES", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
-    assert policy.history_collection_capability("FUTUROS", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
-    assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=True) == "OUT_OF_SCOPE_READONLY_LEGACY"
+def test_current_paper_families_allow_readonly_history_with_complete_identity():
+    assert policy.history_collection_capability("OPCIONES", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
+    assert policy.history_collection_capability("FUTUROS", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
+    assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=True) == "READONLY_HISTORY_ALLOWED"
     assert policy.history_collection_capability("BONOS", status="AVAILABLE", identity_complete=False) == "HOLD_IDENTITY_INCOMPLETE"
 
 
-def test_specialized_legacy_families_are_out_of_scope_for_new_collection():
-    assert policy.history_collection_capability("CAUCIONES", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
-    assert policy.history_collection_capability("FCI", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
+def test_specialized_paper_families_are_allowed_but_retired_aliases_remain_legacy():
+    assert policy.history_collection_capability("CAUCIONES", status="AVAILABLE") == "READONLY_HISTORY_ALLOWED"
+    assert policy.history_collection_capability("FCI", status="AVAILABLE") == "READONLY_HISTORY_ALLOWED"
     assert policy.history_collection_capability("LICITACIONES", status="AVAILABLE") == "OUT_OF_SCOPE_READONLY_LEGACY"
 
 

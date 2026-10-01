@@ -1,0 +1,35 @@
+name: RC6 WS DASH 07 History Truth
+
+on:
+  push:
+    branches:
+      - work/ws-dash-07-history-truth-20261001
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  history-dashboard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER guard and compile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q bg_paper_dashboard.py tests/test_ws_dash_07_history_truth.py
+          git diff --check
+      - name: Install tests
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Focused regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_ws_dash_07_history_truth.py tests/test_dashboard_truth_layer_rc6.py tests/test_dashboard_table_layout_rc6.py
+          echo WS_DASH_07_HISTORY=GREEN

@@ -9,6 +9,8 @@ import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES
+
 
 def _dt(value):
     raw = str(value or "").replace("Z", "+00:00")
@@ -145,7 +147,11 @@ def _candle_features(store, q, at):
 def collect(store, q, at):
     """Collect point-in-time historical/candle features for SHADOW only."""
     asset_class = str(getattr(q, "asset_class", "") or "").upper()
-    if asset_class not in {"ACCIONES", "ACCION", "CEDEARS", "CEDEAR"}:
+    canonical = {
+        "ACCION": "ACCIONES", "CEDEAR": "CEDEARS", "ETF": "ETFS",
+        "ON": "OBLIGACIONES", "FCIS": "FCI",
+    }.get(asset_class, asset_class)
+    if canonical not in OPERATIONAL_HISTORY_FAMILIES:
         return {
             "mode": "SHADOW",
             "state": "OUT_OF_SCOPE",
@@ -153,8 +159,8 @@ def collect(store, q, at):
                          getattr(q, "market", None), getattr(q, "currency", None),
                          getattr(q, "settlement", None)],
             "decision_effect": "OBSERVE_ONLY",
-            "reason": "Sólo acciones y CEDEARs usan históricos/velas en RC6",
-            "feature_version": "rc6-historical-candle-shadow-v1",
+            "reason": f"{canonical or 'UNKNOWN'} no pertenece a OPERATIONAL_HISTORY_FAMILIES",
+            "feature_version": "rc6-historical-candle-shadow-v2",
         }
     if not isinstance(at, datetime):
         at = _dt(at)
@@ -177,5 +183,5 @@ def collect(store, q, at):
         "shadow_score_delta": str(shadow_delta),
         "decision_effect": "OBSERVE_ONLY",
         "lookahead_protection": "bar_end_and_known_at<=as_of",
-        "feature_version": "rc6-historical-candle-shadow-v1",
+        "feature_version": "rc6-historical-candle-shadow-v2",
     }

@@ -11,8 +11,9 @@ import sqlite3
 import statistics
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import Header, HTTPException, Query, Request
@@ -94,10 +95,11 @@ box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:hidden;min-width:0}.paper
 .paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
 .paper-muted{color:var(--muted);font-size:.86rem}.paper-action{display:inline-block;background:var(--blue);color:#fff!important;
 border:0;border-radius:8px;padding:9px 13px;text-decoration:none;font-weight:700;cursor:pointer;margin:2px}
-.paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:nowrap}
+.paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:normal;max-width:100%;line-height:1.15;text-align:center}
 .s-verde{background:var(--green)}.s-amarillo{background:var(--yellow)}.s-rojo{background:var(--red)}.s-gris{background:var(--gray)}
 .paper-notice{padding:11px 14px;border:1px solid #c9d4e3;background:#eef3f8;border-radius:9px;margin:10px 0}
 .paper-warning{padding:11px 14px;border:1px solid #e7c979;background:#fff7df;border-radius:9px;margin:10px 0}
+.table-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;align-items:end;margin:10px 0}.table-filter-grid label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;font-weight:700}.table-filter-grid input,.table-filter-grid select{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
 .subnav{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 16px}.subnav a{background:#fff;border:1px solid var(--line);
 padding:7px 10px;border-radius:8px;text-decoration:none;color:var(--blue);font-weight:700}
 .system-layout{display:grid;grid-template-columns:minmax(180px,230px) minmax(0,1fr);gap:14px;align-items:start}
@@ -886,10 +888,10 @@ def _daily_results_panel():
         uri="file:"+str(Path(DB_PATH).resolve())+"?mode=ro"
         with closing(sqlite3.connect(uri,uri=True,timeout=5)) as c:
             c.row_factory=sqlite3.Row
-            days=daily_operation_summaries(c,limit_days=5)
+            days=daily_operation_summaries(c,limit_days=8)
         return daily_results_html(days)
     except (sqlite3.Error,ValueError,TypeError,ArithmeticError):
-        return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
+        return ("<section class='paper-card'><h2>Resultado de las últimas ocho ruedas BYMA</h2>"
                 "<div class='paper-warning'>Resumen diario no conciliable; no se inventa un resultado.</div></section>")
 
 def home_page():
@@ -902,7 +904,13 @@ def home_page():
     health = _health_components()
     applicable = [item for item in health if item["applicable"]]
     red = sum(item["state"] == "ROJO" for item in applicable)
-    pending = sum(item["state"] in {"PENDIENTE", "AMARILLO"} for item in applicable)
+    pending_items = [item for item in applicable if item["state"] in {"PENDIENTE", "AMARILLO"}]
+    pending = len(pending_items)
+    pending_detail = "; ".join(
+        f"{item.get('name')}: {item.get('state')}" for item in pending_items[:4]
+    )
+    if len(pending_items) > 4:
+        pending_detail += f"; +{len(pending_items)-4} más"
     overall = heartbeat_ok and db_ok and financial_ready and red == 0 and pending == 0
     overall_label = ("TODO OPERATIVO" if overall else "REVISAR" if red or not heartbeat_ok or not db_ok
                      or not financial_ready else "VERIFICACIONES PENDIENTES")
@@ -922,7 +930,8 @@ def home_page():
     real_orders = int(state.get("real_orders_sent") or 0)
     cards = "".join((
         _card("Estado general", overall_label,
-              f"{red} fuentes en rojo; {pending} pendientes/degradadas; NO APLICA no cuenta como falla",
+              ((f"{red} fuentes en rojo; {pending} pendientes/degradadas. " + pending_detail)
+               if pending_detail else f"{red} fuentes en rojo; {pending} pendientes/degradadas; NO APLICA no cuenta como falla"),
               overall_color),
         _card("Dashboard 24x7", "ACTIVO", "Esta página responde aunque la rueda esté cerrada", "green"),
         _card("Observador / simulador", "ACTIVO" if heartbeat_ok else "SIN LATIDO",
@@ -1442,6 +1451,29 @@ def history_page():
     last_attempt=max((str(r.get("last_attempt_at") or "") for r in sync),default="") or None
     last_success=max((str(r.get("last_success_at") or "") for r in sync),default="") or None
     cycles=_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 30") if _table("universe_cycle_metrics") else []
+    latest_cycle=cycles[0] if cycles else {}
+    rotation={}
+    try:
+        detail=str(latest_cycle.get("detail") or "")
+        marker="factibilidad="
+        rotation=json.loads(detail.split(marker,1)[1]) if marker in detail else {}
+    except (ValueError,TypeError,json.JSONDecodeError,IndexError):
+        rotation={}
+    candle_summary=(_rows("""SELECT COUNT(*) versions,MAX(bar_end) last_bar,MAX(known_at) last_known
+      FROM candle_versions""") or [{}])[0] if _table("candle_versions") else {}
+    candle_samples=(_rows("""SELECT COUNT(*) samples,MAX(event_at) last_event,MAX(received_at) last_received
+      FROM candle_samples""") or [{}])[0] if _table("candle_samples") else {}
+    candle_worker=(_rows("SELECT * FROM candle_worker_state WHERE id=1") or [{}])[0] if _table("candle_worker_state") else {}
+    candle_state=str(candle_worker.get("state") or "NOT_STARTED").upper()
+    try:
+        heartbeat=datetime.fromisoformat(str(candle_worker.get("heartbeat_at") or ""))
+        if heartbeat.tzinfo is None:
+            heartbeat=heartbeat.replace(tzinfo=timezone.utc)
+        if not 0 <= (datetime.now(timezone.utc)-heartbeat.astimezone(timezone.utc)).total_seconds() <= 30:
+            candle_state="STALE"
+    except (TypeError,ValueError):
+        if candle_worker:
+            candle_state="UNKNOWN"
     cycle_rows="".join(f"<tr><td>{_local_time(r['started_at'])}</td><td>{r['selected_count']}/{r['eligible_total']}</td><td>{r['successful_count']}</td><td>{r['failed_count']}</td><td>{_locale_number(r['duration_seconds'],2)}s</td><td>{r['recommended_limit']}</td></tr>" for r in cycles) or "<tr><td colspan='6'>Esperando métricas.</td></tr>"
     try:
         with closing(_conn()) as c:
@@ -1493,7 +1525,26 @@ def history_page():
         _card("Historia efectiva",f"{store_v2.get('canonical_rows',0)} filas",
             f"capa {store_v2.get('layer','V2')} · cobertura histórica por capacidad · coverage no equivale a fresh",
               "green" if store_v2.get('available') else "yellow"),
-        _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,"Ventana rotativa del motor; no limita la cola histórica","green"),
+        _card("Última barra intradiaria",_local_time(candle_summary.get('last_bar')),
+              f"{_locale_number(candle_summary.get('versions') or 0,0)} versiones · conocida {_local_time(candle_summary.get('last_known'))}",
+              "green" if candle_summary.get('last_bar') else "yellow"),
+        _card("Última muestra de mercado",_local_time(candle_samples.get('last_event')),
+              f"{_locale_number(candle_samples.get('samples') or 0,0)} muestras · recibida {_local_time(candle_samples.get('last_received'))}",
+              "green" if candle_samples.get('last_event') else "yellow"),
+        _card("Worker de velas",candle_state,
+              f"heartbeat {_local_time(candle_worker.get('heartbeat_at'))} · {_e(candle_worker.get('detail'))}",
+              "green" if candle_state=="RUNNING" else "yellow"),
+        _card("Foco intradiario",
+              "FACTIBLE" if rotation.get('focus_feasible') else "NO_VERIFICADO",
+              f"{rotation.get('focus_count','—')} instrumentos · ~{rotation.get('focus_estimated_samples_per_window','—')} muestras/ventana",
+              "green" if rotation.get('focus_feasible') else "yellow"),
+        _card("Rotación universo completo",
+              "NO FACTIBLE" if rotation and not rotation.get('rotation_feasible') else ("FACTIBLE" if rotation.get('rotation_feasible') else "NO_VERIFICADO"),
+              f"pool {rotation.get('rotation_pool','—')} · slots {rotation.get('rotation_slots','—')} · vueltas {rotation.get('rotation_turns','—')}; no aumentar el lote a ciegas",
+              "yellow" if rotation and not rotation.get('rotation_feasible') else "green" if rotation.get('rotation_feasible') else "gray"),
+        _card("Escaneo por ciclo",PAPER_ACTIVE_SYMBOL_LIMIT,
+              f"configurado; último recomendado {latest_cycle.get('recommended_limit','—')} según duración real del ciclo",
+              "green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
         _card("Última corrida PPI",_local_time(last_attempt),"La cadencia real es por fuente; ver Sistema → Scheduler","gray"),
         _card("Última ingesta PPI exitosa",_local_time(last_success),"Una fuente puede quedar parcial sin bloquear otras fuentes/familias","green" if last_success else "yellow")))
@@ -1530,7 +1581,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Ingesta full histórica PPI: cerrada y en cuarentena.</b> Esta pantalla no la ejecuta. El estado del archivo incremental de velas corresponde a otro proceso y no significa que la ingesta full esté corriendo.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Histórico diario y velas intradiarias son capas distintas.</b> La fecha del History Store describe cobertura diaria; la tarjeta «Última barra intradiaria» lee candle_versions directamente y el heartbeat del worker se muestra por separado. Un histórico diario atrasado no significa que las velas estén detenidas.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -2274,7 +2325,8 @@ def _family_ux_table(families):
         detail=('RUNTIME_READY desde candidate_identity_v2' if item['ready'] else
                 'PAUSED_EXPLICIT según candidate_identity_v2; revisar detalle por instrumento')
         evidence_label=(f"{_locale_number(item['contract_identities'],0)} identidades · "
-                        f"{_locale_number(item['evidence_v2'],0)} filas · {_locale_number(item['contract_sources'],0)} fuentes")
+                        f"{_locale_number(item['evidence_v2'],0)} filas · {_locale_number(item['contract_sources'],0)} fuentes · "
+                        f"observada {_local_time(item.get('evidence_at'))}")
         rows.append(
             f"<tr><td><b>{_e(item['label'])}</b></td><td>{_status(item['state'])}</td>"
             f"<td>{_locale_number(item['catalog_available'],0)}/{_locale_number(item['observed'],0)}</td>"
@@ -2502,13 +2554,37 @@ def trading_page(section=''):
 
 
 
-def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
+def _instrument_filter_form(action, *, q="", family="", market="", currency="", settlement="", state=""):
+    values={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    state_key=str(state or "").upper()
+    return (
+        f"<form class='table-filter-grid' method='get' action='{_e(action)}' aria-label='Buscar y filtrar instrumentos'>"
+        f"<label>Instrumento / texto<input name='q' value='{_e(q)}' placeholder='Ticker, familia, mercado…'></label>"
+        f"<label>Familia<input name='family' value='{_e(family)}' placeholder='ACCIONES, BONOS…'></label>"
+        f"<label>Mercado<input name='market' value='{_e(market)}' placeholder='BYMA'></label>"
+        f"<label>Moneda<input name='currency' value='{_e(currency)}' placeholder='ARS, USD…'></label>"
+        f"<label>Plazo<input name='settlement' value='{_e(settlement)}' placeholder='A-24HS'></label>"
+        "<label>Readiness<select name='state'>"
+        f"<option value=''{' selected' if not state_key else ''}>Todos</option>"
+        f"<option value='RUNTIME_READY'{' selected' if state_key=='RUNTIME_READY' else ''}>RUNTIME_READY</option>"
+        f"<option value='PAUSED_EXPLICIT'{' selected' if state_key=='PAUSED_EXPLICIT' else ''}>No READY / pausado</option>"
+        "</select></label>"
+        "<div><button class='paper-action' type='submit'>Buscar</button>"
+        f"<a class='paper-action' href='{_e(action)}'>Limpiar</a></div></form>"
+    )
+
+
+def _instrument_readiness_matrix(*, offset=0, limit=10, total=0, q="", family="", market="", currency="", settlement="", state=""):
     """Render one bounded server-side page of the full-key instrument matrix."""
     offset=max(0,int(offset))
     limit=max(1,min(10,int(limit)))
+    filters={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    active_filters={k:v for k,v in filters.items() if str(v or "").strip()}
     items=dashboard_truth_projection.instrument_rows(
-        _rows,_table,limit=limit,offset=offset,
+        _rows,_table,limit=limit,offset=offset,**active_filters,
     )
+    if active_filters or int(total or 0) <= 0:
+        total=dashboard_truth_projection.instrument_count(_rows,_table,**active_filters)
     rows=[]
     for item in items:
         rows.append(
@@ -2524,26 +2600,28 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
     if not rows:
         return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
     total=max(int(total or 0),offset+len(items))
-    start=offset+1
+    query_base=active_filters
+    start=0 if total==0 else offset+1
     end=offset+len(items)
     controls=[
         f"<span class='paper-muted'>Mostrando {start}-{end} de {_locale_number(total,0)}</span>"
     ]
     if offset>0:
         controls.append(
-            f"<a class='paper-action' href='/instrumentos?offset={max(0,offset-limit)}#instrument-matrix'>Anterior</a>"
+            f"<a class='paper-action' href='/instrumentos?{_e(urlencode({**query_base,'offset':max(0,offset-limit)}))}#instrument-matrix'>Anterior</a>"
         )
     if end<total:
         controls.append(
-            f"<a class='paper-action' href='/instrumentos?offset={offset+limit}#instrument-matrix' "
+            f"<a class='paper-action' href='/instrumentos?{_e(urlencode({**query_base,'offset':offset+limit}))}#instrument-matrix' "
             "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
         )
     return (
         "<div class='paper-card' id='instrument-matrix'><h2>Matriz por instrumento</h2>"
         "<p class='paper-muted'>Catálogo = financial_instrument_catalog. Contrato = Evidence v2. "
         "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY. "
-        "La tabla consulta sólo diez instrumentos por request para no saturar el navegador.</p>"
-        "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
+        "La tabla consulta sólo diez instrumentos por request y permite buscar el instrumento sin recorrer página por página.</p>"
+        + _instrument_filter_form("/instrumentos", **filters)
+        + "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
         "<th>Familia</th><th>Mercado · plazo · moneda</th><th>Catálogo PPI</th>"
         "<th>Readiness runtime</th><th>Evidence v2</th><th>Detalle</th><th>Actualizado</th></tr>"
         + "".join(rows) + "</table>"
@@ -2552,12 +2630,12 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
     )
 
 
-def instruments_page(*, offset=0, limit=10):
+def instruments_page(*, offset=0, limit=10, q="", family="", market="", currency="", settlement="", state=""):
     canonical=truth_projection()
     families=tuple(item['family'] for item in canonical['readiness']['families'])
     table=_family_ux_table(families)
     matrix=_instrument_readiness_matrix(
-        offset=offset,limit=limit,total=canonical['catalog'].get('total',0),
+        offset=offset,limit=limit,q=q,family=family,market=market,currency=currency,settlement=settlement,state=state,
     )
     body=("<h1>Instrumentos y contratos</h1>"
           "<div class='paper-notice'><b>Lectura corregida: readiness contractual actual separada del historial PAPER.</b> "
@@ -3104,9 +3182,12 @@ def install(app,check_auth):
     def trading_section(section:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page(section))
     @app.get("/instrumentos",response_class=HTMLResponse)
     def instrumentos(request:Request,offset:int=Query(default=0,ge=0,le=50000),
+                     q:str=Query(default="",max_length=80),family:str=Query(default="",max_length=40),
+                     market:str=Query(default="",max_length=40),currency:str=Query(default="",max_length=40),
+                     settlement:str=Query(default="",max_length=40),state:str=Query(default="",max_length=40),
                      token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
-        return HTMLResponse(instruments_page(offset=offset,limit=10))
+        return HTMLResponse(instruments_page(offset=offset,limit=10,q=q,family=family,market=market,currency=currency,settlement=settlement,state=state))
     @app.get("/sistema",response_class=HTMLResponse)
     def sistema(request:Request,section:str=Query(default="introspeccion"),token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(system_page(section))
     @app.get("/scalping",response_class=HTMLResponse)

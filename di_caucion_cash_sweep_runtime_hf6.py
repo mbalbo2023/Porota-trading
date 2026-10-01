@@ -158,7 +158,11 @@ def run_paper_sweep(broker, offers, *, obligation_snapshot: ObligationSnapshot,
         result["code"]="SELECTED_OFFER_NOT_UNIQUE_OR_FEE_BUDGET_MISMATCH"
         return result
     policy = CaucionPolicy(
-        frozen_at=at.isoformat(), currency=ccy, reserve_cash=reserve,
+        # The session policy must be frozen no later than its own opening.
+        # Using the current in-window evaluation time here made every otherwise
+        # valid EOD PAPER candidate fail CaucionPolicy chronology validation.
+        frozen_at=aware_datetime(sweep_start_at).isoformat(),
+        currency=ccy, reserve_cash=reserve,
         maximum_cash_fraction=Decimal("1"), maximum_principal=plan.principal,
         liquidity_deadline=aware_datetime(liquidity_deadline).isoformat(),
         maximum_quote_age_seconds=decimal_value(max_quote_age_seconds,"antigüedad",nonnegative=True),

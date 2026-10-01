@@ -337,4 +337,5 @@ def test_panel_no_presenta_muestras_como_cobertura_validada(store,monkeypatch):
     page=dashboard.history_page()
     assert 'Archivo incremental de velas' in page and 'TRADE_SAMPLES' in page
     assert 'Históricos cubiertos' not in page and 'no equivale a series validadas' in page
-    assert 'Ingesta full histórica PPI: cerrada y en cuarentena' in page
+    assert 'Histórico diario y velas intradiarias son capas distintas.' in page
+    assert 'Estado de ingesta PPI histórica (auditoría)' in page

@@ -40,7 +40,12 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 PUBLIC_STRUCTURED_CAPTURE_SECONDS = max(900, int(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS", "900")))
-PUBLIC_CAPTURE_PATH = Path(os.getenv("POROTA_PUBLIC_SOURCE_CAPTURE_PATH", "/opt/porota-trading/data/market/rc6_public_sources_latest.json"))
+# Inside the immutable observer container, persistent market data is mounted
+# at /app/data. Host-side systemd pipelines keep their explicit /opt root.
+PUBLIC_CAPTURE_PATH = Path(os.getenv(
+    "POROTA_PUBLIC_SOURCE_CAPTURE_PATH",
+    "/app/data/market/rc6_public_sources_latest.json",
+))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
@@ -1262,6 +1267,18 @@ def _download_histories(reader, store):
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
+def _history_provider_instrument_type(metadata, canonical_family):
+    """Use PPI's literal provider family only for the read-only history request.
+
+    The canonical family remains authoritative inside Porota storage/readiness.
+    This prevents aliases such as OBLIGACIONES -> ON from being sent back to
+    PPI as if they were provider enum values.
+    """
+    raw = (metadata or {}).get("raw") if isinstance(metadata, dict) else {}
+    provider = str((raw or {}).get("_provider_instrument_type") or "").strip().upper()
+    return provider or str(canonical_family or "").strip().upper()
+
+
 def _download_histories_locked(reader, store, history_store):
     end = _history_end_date()
     if end is None:
@@ -1300,7 +1317,8 @@ def _download_histories_locked(reader, store, history_store):
     for symbol, instrument_type, settlement, market, start, metadata in symbols:
         attempted = now_iso()
         try:
-            payload = reader.history(symbol, instrument_type, settlement, start, end)
+            provider_type = _history_provider_instrument_type(metadata, instrument_type)
+            payload = reader.history(symbol, provider_type, settlement, start, end)
             attempted = now_iso()
             bounded_payload = [
                 row for row in payload
