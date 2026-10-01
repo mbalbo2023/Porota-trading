@@ -5,7 +5,7 @@
 - mode: WRITE_OWNER
 - branch: work/ws-caucion-11-reconciled-20261001
 - base_ref: ops/ws-ops-preopen-closure-20260930
-- base_sha: 220501ce3929897ed59264cd70c2ae216a98b450
+- base_sha: f8a1db5d3f008d2c5c619869704126edbd39a6a1
 - scope: caución PAPER cash-sweep only; regression/probe/checkpoint.
 - paths: di_caucion_cash_sweep_runtime_hf6.py, caución tests, dedicated workflow/checkpoints.
 - no deploy; no direct production write.
@@ -27,3 +27,8 @@
 - PR: #395 (DRAFT) -> ops/ws-ops-preopen-closure-20260930
 - Action trigger: this checkpoint update occurs after the dedicated workflow exists on the branch.
 - Status at publication: EN_GITHUB; CI/runtime evidence pending.
+
+## Reconciliation
+- Supersedes PR #395 for integration purposes.
+- Rebased by exact-file port onto integration merge SHA f8a1db5d3f008d2c5c619869704126edbd39a6a1 after #396 and #398.
+- Fresh CI on this reconciled head is required before merge.
