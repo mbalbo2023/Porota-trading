@@ -7,3 +7,19 @@
 - purpose: determine whether rc6_history_cutoff_repair_once.py is still active and measure DB progress before any retry.
 - no DB write, no Docker restart, no systemd change, no deploy, no cleanup.
 - PAPER/SHADOW ONLY; real_orders_sent=0; PPI Watch untouched.
+
+## Audit 1 — run 36805213510 — GREEN
+- repair process still active: PID 1861766 / rc6_history_cutoff_repair_once.py.
+- repair run row: state=RUNNING; targets=1,094; complete=899; failed=195; ppi_queries=726.
+- live state distribution at 02:18:40Z:
+  - ALREADY_COVERED 183
+  - ARCHIVE_PARTIAL_COVERAGE 495
+  - BLOCKED_NO_CANONICAL_BASELINE 130
+  - COMPLETE 237
+  - NO_NEW_VALID_ROWS 59
+  - PPI_QUERY_FAILED 1
+- history_canonical_v2 rows: 439,833; canonical_latest=2026-09-28.
+- observer: PRODUCTION_PAPER / WAITING_MARKET / MARKET_CLOSED / PPI auth OK.
+- real_orders_sent=0; real routes NOT_CALLED; PPI Watch untouched.
+
+Interpretation: the GitHub Action failed because SSH transport broke, but the remote repair itself continued. A second READ_ONLY audit is intentionally triggered by this checkpoint update; no retry/mutation is authorized.
