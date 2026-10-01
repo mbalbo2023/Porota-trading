@@ -21,6 +21,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: python -m pip install --disable-pip-version-check pytest
+      - run: python -m pip install --disable-pip-version-check -r requirements.txt
       - run: python -m py_compile cf_intraday_scalping.py
       - run: python -m pytest -q tests/test_scalping_intraday_unsupported_state.py tests/test_intraday_scalping_hf3.py tests/test_intraday_scalping_rc6_integration.py
