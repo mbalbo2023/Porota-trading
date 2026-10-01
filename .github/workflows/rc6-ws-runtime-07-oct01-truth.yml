@@ -88,6 +88,9 @@ jobs:
           echo "PPI_WATCH_UNTOUCHED=GREEN"
           echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
           REMOTE
+          echo "EVIDENCE_LOG_BEGIN"
+          cat evidence/runtime-truth.txt
+          echo "EVIDENCE_LOG_END"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
