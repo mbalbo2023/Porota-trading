@@ -1,0 +1,97 @@
+name: RC6 Dashboard Performance RCA Read-Only 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-dashboard-20261001
+    paths:
+      - '.github/workflows/rc6-dashboard-performance-rca-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Time dashboard source queries read-only
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 180s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, sqlite3, time
+          from pathlib import Path
+
+          def timed(db, name, sql, params=()):
+              c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=5)
+              c.execute('PRAGMA query_only=ON')
+              start=time.monotonic()
+              rows=c.execute(sql,params).fetchall()
+              elapsed=time.monotonic()-start
+              plan=c.execute('EXPLAIN QUERY PLAN '+sql,params).fetchall()
+              c.close()
+              print('QUERY='+json.dumps({'name':name,'seconds':round(elapsed,4),'rows':len(rows),'plan':[list(x) for x in plan]},sort_keys=True))
+
+          paper='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          hist='/opt/porota-trading/data/market_history.db'
+          print('DASH_PERF_RCA=START')
+          timed(hist,'analysis_catalog',"""SELECT DISTINCT UPPER(instrument_type) AS family, symbol, market, settlement
+            FROM history_canonical_v2
+            WHERE TRIM(COALESCE(instrument_type,''))<>'' AND TRIM(COALESCE(symbol,''))<>''
+            ORDER BY family, symbol, market, settlement""")
+          timed(paper,'universe_catalog',"""SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,c.status,c.capability,c.last_seen_at,
+            CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
+            COALESCE(r.status,'NO_CANDIDATE') readiness_status,r.checked_at readiness_as_of
+            FROM financial_instrument_catalog c
+            LEFT JOIN candidate_identity_v2 r
+              ON r.ticker=c.ticker AND r.instrument_type=c.instrument_type AND r.market=c.market
+             AND r.currency=c.currency AND r.settlement=c.settlement
+            WHERE c.status='AVAILABLE'
+            ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement""")
+          timed(paper,'universe_market_group',"""SELECT symbol,asset_class,market,currency,settlement,
+            COUNT(*) snapshots,MAX(observed_at) last_observed
+            FROM market_snapshots GROUP BY symbol,asset_class,market,currency,settlement""")
+          timed(paper,'universe_positions_group',"""SELECT symbol,asset_class,market,currency,settlement,
+            COUNT(*) positions,SUM(CASE WHEN status='OPEN' THEN 1 ELSE 0 END) opened,
+            SUM(CASE WHEN status='CLOSED' THEN 1 ELSE 0 END) closed,MAX(opened_at) last_opened
+            FROM paper_positions GROUP BY symbol,asset_class,market,currency,settlement""")
+          timed(paper,'universe_operations',"""SELECT paper_id,symbol,asset_class,market,currency,settlement,status,
+            quantity,entry_price,opened_at,closed_at,net_pnl,close_reason,strategy_version
+            FROM paper_positions ORDER BY julianday(opened_at) DESC,paper_id DESC""")
+          timed(paper,'universe_decisions',"""SELECT symbol,COUNT(*) decisions FROM paper_decisions
+            WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
+            GROUP BY symbol""")
+          timed(paper,'universe_gates',"""SELECT symbol,COUNT(*) evaluations,
+            SUM(CASE WHEN final_result='BLOCKED' THEN 1 ELSE 0 END) blocked,
+            SUM(CASE WHEN final_result='OPENED_SIMULATED' THEN 1 ELSE 0 END) opened
+            FROM trade_gate_evaluations
+            WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
+            GROUP BY symbol""")
+          c=sqlite3.connect(f'file:{paper}?mode=ro',uri=True,timeout=5)
+          c.execute('PRAGMA query_only=ON')
+          mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
+          c.close()
+          print(f'SAFETY={mode}|{int(orders or 0)}')
+          assert mode=='PRODUCTION_PAPER' and int(orders or 0)==0
+          print('DASH_PERF_RCA=GREEN_READONLY')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
