@@ -82,3 +82,14 @@ def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     assert "last-deploy-housekeeping.json" in tail
     assert "docker image prune -f" in tail
     assert "FINAL_INODE_FREE_PERCENT" in tail
+
+
+def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> None:
+    text = CANONICAL.read_text(encoding="utf-8")
+    promote = text.index("- name: Promote exact frozen candidate and verify")
+    install = text.index('tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"', promote)
+    preinstall = text[promote:install]
+    assert "RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE'" in preinstall
+    assert "REQUIRED_LOAD_FREE=$((RC6_DISK_REQUIRED_PRETRANSFER_FREE - IMAGE_TAR_BYTES - BUNDLE_BYTES))" in preinstall
+    assert "post_cleanup_min_free_bytes" not in preinstall
+    assert "REQUIRED_LOAD_FREE" in preinstall
