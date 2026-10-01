@@ -373,6 +373,14 @@ jobs:
           # DEPLOYED_VALIDATION_PENDING instead of silently describing the
           # previous image.
           sudo -n mkdir -p "$REPO/data/deploy"
+          # The promoted runtime already proves the exact frozen artifact
+          # identity. Persist that provenance before any long validation so a
+          # later fail-closed audit cannot leave the previous candidate on disk.
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          echo "RC6_FROZEN_PROVENANCE_PROVISIONAL=GREEN|candidate=$CANDIDATE_SHA"
           sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
           import json,os,sys,tempfile
           from datetime import datetime,timezone
