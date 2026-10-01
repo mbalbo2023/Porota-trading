@@ -342,6 +342,22 @@
       "remove_on_deploy": false,
       "reason": "Current read-only BYMA authority watch at 08:30 ART"
     },
+    "systemd/porota-gdelt-event-risk-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "Structured GDELT event-risk SHADOW collector only; migrates the dedicated local schema before bounded GET-only collection and has no trading authority"
+    },
+    "systemd/porota-gdelt-event-risk-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Hourly bounded structured event-risk refresh with randomized delay, no persistent catch-up and no generic news feed"
+    },
     "systemd/porota-iol-oauth-health-rc6.service": {
       "role": "ACTIVE_SERVICE",
       "install": true,
