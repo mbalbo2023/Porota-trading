@@ -2193,13 +2193,16 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
     # Fail-closed también en presentación: sólo identidades RUNTIME_READY.
     if _table('paper_decisions') and _table('candidate_identity_v2'):
         live_day="date(datetime(d.decided_at,'-3 hours'))=date(datetime('now','-3 hours'))"
-        decision_total=int((_rows(
+        decision_count_rows=_rows(
             f"""SELECT COUNT(*) n FROM paper_decisions d
                 WHERE {live_day} AND EXISTS (
                     SELECT 1 FROM candidate_identity_v2 r
                     WHERE r.ticker=d.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
                 )"""
-        ) or [{"n":0}])[0]["n"] or 0)
+        )
+        decision_total=int(
+            ((decision_count_rows[0].get("n") if decision_count_rows else 0) or 0)
+        )
         live_decisions=_rows(
             f"""SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
                 FROM paper_decisions d
@@ -3363,8 +3366,34 @@ def install(app,check_auth):
             "/config":config_page,
         }
         if request.method=="GET" and (path in fast_html or path=="/sre"):
+            # This middleware is registered after the legacy browser-session
+            # middleware and therefore executes first. Preserve the exact
+            # token->cookie redirect and persistent-cookie renewal semantics
+            # here so the canonical fast path can skip the expensive legacy
+            # handler without weakening authentication.
+            import ay_dashboard_auth as dashboard_auth
+            token=request.query_params.get("token","")
+            session_cookie=request.cookies.get("porota_dashboard_session")
+            if token and dashboard_auth.token_valido(token):
+                session=dashboard_auth.crear_sesion_desde_token(
+                    token,origen=request.client.host if request.client else "local")
+                params=[(k,v) for k,v in request.query_params.multi_items() if k!="token"]
+                target=path
+                if params:
+                    target+="?"+urlencode(params)
+                response=RedirectResponse(target,status_code=303)
+                response.set_cookie(
+                    "porota_dashboard_session",session,
+                    max_age=dashboard_auth.COOKIE_MAX_AGE_SECONDS,
+                    httponly=True,secure=dashboard_auth.ENTORNO=="PRODUCTION",
+                    samesite="lax",path="/")
+                response.headers["Cache-Control"]="no-store, no-cache, must-revalidate"
+                response.headers["Pragma"]="no-cache"
+                response.headers["Expires"]="0"
+                return response
+            session_valid=dashboard_auth.sesion_valida(session_cookie)
             try:
-                _authorize(check_auth,request,request.query_params.get("token",""),
+                _authorize(check_auth,request,token,
                            request.headers.get("authorization"))
             except HTTPException as exc:
                 return JSONResponse({"detail":exc.detail},status_code=exc.status_code)
@@ -3383,7 +3412,17 @@ def install(app,check_auth):
                 )
             else:
                 content=fast_html[path]()
-            return HTMLResponse(_dedupe_refresh(content))
+            response=HTMLResponse(_dedupe_refresh(content))
+            if session_valid and dashboard_auth.SESION_SIN_VENCIMIENTO:
+                response.set_cookie(
+                    "porota_dashboard_session",session_cookie,
+                    max_age=dashboard_auth.COOKIE_MAX_AGE_SECONDS,
+                    httponly=True,secure=dashboard_auth.ENTORNO=="PRODUCTION",
+                    samesite="lax",path="/")
+            response.headers["Cache-Control"]="no-store, no-cache, must-revalidate"
+            response.headers["Pragma"]="no-cache"
+            response.headers["Expires"]="0"
+            return response
         response=await call_next(request); ctype=response.headers.get("content-type","")
         legacy_json={"/api/dashboard","/api/v16/estado","/api/v15/estado",
                      "/api/observation-instruments","/api/learning-logs",
