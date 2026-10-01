@@ -23,21 +23,22 @@ def test_policy_retention_is_exactly_three_for_paper_and_history() -> None:
     assert p["backups"]["general"]["keep_newest"] == 3
 
 
-def test_policy_has_operator_authorized_deploy_floor() -> None:
+def test_policy_keeps_two_gib_as_final_reserve_not_start_gate() -> None:
     p = policy()
     assert p["disk"]["green_free_bytes"] == 7 * 1024**3
-    assert p["disk"]["deploy_pretransfer_min_free_bytes"] == 2 * 1024**3
+    assert p["disk"]["deploy_pretransfer_min_free_bytes"] == 0
     assert p["disk"]["post_cleanup_min_free_bytes"] == 2 * 1024**3
     assert p["disk"]["critical_free_bytes"] == 1 * 1024**3
     assert p["disk"]["min_inode_free_percent"] == 10
 
 
-def test_pretransfer_formula_is_fixed_to_authorized_two_gib_floor() -> None:
+def test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size() -> None:
     p = policy()
-    image = 409_264_065
+    image_tar = 409_264_065
+    image_unpacked = 1_650_000_000
     bundle = 1_118_828
-    required = required_pretransfer_free(image, bundle, p)
-    assert required == 2 * 1024**3
+    required = required_pretransfer_free(image_tar, image_unpacked, bundle, p)
+    assert required == image_tar + image_unpacked + 2 * bundle + 2 * 1024**3
 
 
 def test_backup_plan_keeps_three_newest(tmp_path: Path) -> None:
