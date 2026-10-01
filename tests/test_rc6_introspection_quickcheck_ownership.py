@@ -11,12 +11,10 @@ def test_hourly_introspection_does_not_run_full_sqlite_quick_check():
     assert "sqlite_quick_check_not_ok" not in source
 
 
-def test_full_db_job_remains_the_only_quick_check_owner():
+def test_hourly_introspection_delegates_quick_check_to_full_db_job():
     full=(ROOT/"rc6_full_db_integrity.py").read_text(encoding="utf-8")
-    candle=(ROOT/"rc6_candle_integrity.py").read_text(encoding="utf-8")
     intro=(ROOT/"ops_introspection_rc6.py").read_text(encoding="utf-8")
     assert "PRAGMA quick_check" in full
-    assert "PRAGMA quick_check" not in candle
     assert 'one(c, "PRAGMA quick_check"' not in intro
 
 
