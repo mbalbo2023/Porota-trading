@@ -1,0 +1,55 @@
+name: RC6 WS INTEG 13 Reconciled Candidate
+
+on:
+  push:
+    branches:
+      - work/ws-integ-13-reconciled-candidate-20261001
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static PAPER guards
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python - <<'PY'
+          import di_caucion_cash_sweep_runtime_hf6 as c
+          assert c.CASH_SWEEP_ORDER_ROUTING_ALLOWED is False
+          print("PAPER_STATIC_GUARDS=GREEN")
+          PY
+          python -m compileall -q .
+          git diff --check
+      - name: Install dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Cross-workstream regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q             tests/test_ws_caucion_10_auto_recovery.py             tests/test_ws_dash_05_dashboard_performance.py             tests/test_ws_dash_06_oct01_ux.py             tests/test_ws_dash_07_history_truth.py             tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada             tests/test_rc6_operational_scope.py             tests/test_rc6_table_headers_visible_sticky.py             tests/test_daily_risk_outbox_v17.py             tests/test_rc6_action4_audit.py             tests/test_ws_ops_risk_layout.py             tests/test_rc6_multisource_discovery.py             tests/test_rc6_cauciones_official_contract.py             tests/test_ws_ops_history_all_families.py             tests/test_rc6_history_partial_semantics.py             tests/test_historical_candle_shadow_rc6.py
+          echo WS_INTEG_13_FOCUSED=GREEN
+
+  full-suite:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Full suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q
+          echo WS_INTEG_13_FULL_SUITE=GREEN
