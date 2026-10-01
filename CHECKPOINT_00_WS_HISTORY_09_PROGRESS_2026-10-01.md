@@ -22,3 +22,8 @@
 - capture cutoff state counts and exact READY-vs-history coverage;
 - capture latest canonical date and candle freshness separately;
 - preserve PAPER/0/PPI Watch invariants.
+
+## GitHub publication
+- PR: #396 (DRAFT) -> ops/ws-ops-preopen-closure-20260930
+- Action trigger: this checkpoint update occurs after the dedicated workflow exists on the branch.
+- Status at publication: EN_GITHUB; CI/runtime evidence pending.
