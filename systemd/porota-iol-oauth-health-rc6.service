@@ -1,0 +1,15 @@
+[Unit]
+Description=Porota RC6 IOL MCP OAuth health and proactive refresh
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/root/.config/porota/iol_mcp_oauth_bootstrap.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/porota-trading
+Environment=PYTHONPATH=/opt/porota-trading
+Environment=POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS=300
+ExecStart=/usr/bin/python3 /opt/porota-trading/scripts/rc6_iol_oauth_health.py
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
