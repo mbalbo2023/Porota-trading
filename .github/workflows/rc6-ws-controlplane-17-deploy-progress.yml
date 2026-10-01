@@ -77,7 +77,7 @@ jobs:
           done
 
           echo "ACTIVE_CONTAINERS_BEGIN"
-          sudo -n docker ps --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}' | sort || true
+          sudo -n docker ps --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}|command={{.Command}}' | sort || true
           echo "ACTIVE_CONTAINERS_END"
 
           echo "ZERO_KNOWN_ERROR_FILES_BEGIN"
