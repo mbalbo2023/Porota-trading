@@ -57,6 +57,10 @@ jobs:
             'fci_records':len(x.get('fci') or []),
           }
           print('IOL_CACHE='+json.dumps(keep,sort_keys=True,default=str))
+          q=Path('/opt/porota-trading/data/market/iol_shadow_latest.json')
+          if q.is_file():
+              shadow=json.loads(q.read_text(encoding='utf-8'))
+              print('IOL_SHADOW_TELEMETRY='+json.dumps(shadow.get('telemetry') or {},sort_keys=True,default=str))
           PY
           ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
