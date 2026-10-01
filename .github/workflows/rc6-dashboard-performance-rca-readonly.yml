@@ -84,6 +84,16 @@ jobs:
             FROM trade_gate_evaluations
             WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
             GROUP BY symbol""")
+          timed(paper,'live_latest_snapshots',"""SELECT s.* FROM market_snapshots s JOIN
+            (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
+             GROUP BY symbol,asset_class,settlement,currency,market) x ON x.id=s.id
+            ORDER BY s.symbol,s.asset_class,s.settlement""")
+          timed(paper,'truth_readiness',"""SELECT upper(instrument_type) family,COUNT(*) total,
+            SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE' THEN 1 ELSE 0 END) ready,
+            SUM(CASE WHEN can_simulate<>1 OR upper(status)<>'AVAILABLE' THEN 1 ELSE 0 END) paused,
+            MAX(checked_at) as_of
+            FROM candidate_identity_v2 GROUP BY upper(instrument_type)
+            ORDER BY upper(instrument_type)""")
           c=sqlite3.connect(f'file:{paper}?mode=ro',uri=True,timeout=5)
           c.execute('PRAGMA query_only=ON')
           mode,orders=c.execute('SELECT mode,real_orders_sent FROM observer_state WHERE id=1').fetchone()
