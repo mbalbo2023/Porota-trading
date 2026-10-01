@@ -5,7 +5,7 @@
 - mode: WRITE_OWNER
 - branch: work/ws-integ-11-consolidated-regression-20261001
 - base_ref: ops/ws-ops-preopen-closure-20260930
-- base_sha: TO_CAPTURE_FROM_FIRST_COMMIT_PARENT
+- base_sha: 220501ce3929897ed59264cd70c2ae216a98b450
 - scope: integrated CI only; no product-code mutation intended.
 - paths: dedicated workflow/checkpoints only.
 - no deploy; no direct production write.
