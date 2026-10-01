@@ -73,7 +73,7 @@ jobs:
           set -Eeuo pipefail
           python tests/ci_frozen_candidate_contract.py negative \
             --evidence /tmp/porota-negative-fixtures.json
-          test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 6
+          test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
       - name: Governed automatic test discovery and execution
