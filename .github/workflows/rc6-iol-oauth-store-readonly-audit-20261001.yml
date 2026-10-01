@@ -1,0 +1,71 @@
+name: RC6 IOL OAuth Store Read-Only Audit 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-iol-20261001
+    paths:
+      - '.github/workflows/rc6-iol-oauth-store-readonly-audit-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS || secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Audit OAuth token metadata without secrets or writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 60 python3 -' <<'PY'
+          import json, os, time
+          from pathlib import Path
+
+          p=Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')
+          print('IOL_OAUTH_STORE_AUDIT=START')
+          print('MUTATIONS=NONE')
+          print('SECRETS_PRINTED=NO')
+          print('STORE_PRESENT=' + ('YES' if p.is_file() else 'NO'))
+          if not p.is_file():
+              raise SystemExit(2)
+          data=json.loads(p.read_text(encoding='utf-8'))
+          tokens=data.get('tokens') if isinstance(data.get('tokens'),dict) else {}
+          registration=data.get('client_registration') if isinstance(data.get('client_registration'),dict) else {}
+          print('STORE_MODE=' + oct(p.stat().st_mode & 0o777))
+          print('STORE_AGE_SECONDS=' + str(round(max(0,time.time()-p.stat().st_mtime),1)))
+          print('ACCESS_TOKEN_PRESENT=' + ('YES' if bool(tokens.get('access_token')) else 'NO'))
+          print('REFRESH_TOKEN_PRESENT=' + ('YES' if bool(tokens.get('refresh_token')) else 'NO'))
+          print('EXPIRES_IN=' + str(tokens.get('expires_in')))
+          print('TOKEN_TYPE=' + str(tokens.get('token_type')))
+          print('SCOPE_PRESENT=' + ('YES' if bool(tokens.get('scope')) else 'NO'))
+          print('CLIENT_ID_PRESENT=' + ('YES' if bool(registration.get('client_id')) else 'NO'))
+          print('TOKEN_ENDPOINT_PERSISTED=' + ('YES' if bool(data.get('token_endpoint')) else 'NO'))
+          print('TOKEN_OBTAINED_AT_PERSISTED=' + ('YES' if data.get('token_obtained_at_epoch') is not None else 'NO'))
+          print('IOL_OAUTH_STORE_AUDIT=GREEN')
+          PY
+
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"

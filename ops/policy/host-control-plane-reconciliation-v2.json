@@ -8,7 +8,8 @@
     "scripts/rc6_full_universe_evidence.py covers every AVAILABLE catalog identity and marks missing/stale evidence explicitly",
     "A3 historical background is a read-only source for FUTUROS/OPCIONES and never participates in real-order routing",
     "tests/test_rc6_postclose_history_quarantine.py applies to the legacy postclose history timer, not to A3 background history",
-    "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity"
+    "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity",
+    "IOL MCP OAuth continuity is owned by a bounded guardian; during market hours LIVE_FRESH collector activity is the primary OAuth/data path and the guardian avoids redundant MCP calls"
   ],
   "ppi_watch_evidence_contract": {
     "schema_version": 1,
@@ -340,6 +341,22 @@
       "active": true,
       "remove_on_deploy": false,
       "reason": "Current read-only BYMA authority watch at 08:30 ART"
+    },
+    "systemd/porota-iol-oauth-health-rc6.service": {
+      "role": "ACTIVE_SERVICE",
+      "install": true,
+      "enabled": null,
+      "active": null,
+      "remove_on_deploy": false,
+      "reason": "OAuth-only IOL MCP guardian; defers to the LIVE_FRESH market-hours collector and alerts REAUTH_REQUIRED through the persistent PAPER notification outbox"
+    },
+    "systemd/porota-iol-oauth-health-rc6.timer": {
+      "role": "ACTIVE_TIMER",
+      "install": true,
+      "enabled": true,
+      "active": true,
+      "remove_on_deploy": false,
+      "reason": "Maintains off-hours OAuth continuity and explicit pre-market checks without replacing the productive complementary IOL collector during BYMA hours"
     }
   }
 }
