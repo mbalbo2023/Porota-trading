@@ -80,7 +80,7 @@ def test_proactive_refreshes_before_expiry_without_waiting_for_401(tmp_path, mon
     store.write_text(json.dumps({
         "issuer": "https://mcp.example/rpc",
         "token_endpoint": "https://auth.example/token",
-        "token_obtained_at_epoch": now - 3500,
+        "token_obtained_at_epoch": now - 3550,
         "client_registration": {"client_id": "client"},
         "tokens": {
             "access_token": "almost-expired",
@@ -177,3 +177,29 @@ def test_fresh_token_does_not_refresh_early(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     client = adapter.OAuthStoreReadOnlyMCP(store)
     assert client.list_tools() == {"tools": []}
+
+
+def test_token_with_one_hundred_seconds_remaining_does_not_rotate(tmp_path, monkeypatch):
+    store = Path(tmp_path) / "oauth.json"
+    store.write_text(json.dumps({
+        "issuer": "https://mcp.example/rpc",
+        "token_endpoint": "https://auth.example/token",
+        "token_obtained_at_epoch": time.time() - 3500,
+        "client_registration": {"client_id": "client"},
+        "tokens": {
+            "access_token": "still-valid",
+            "refresh_token": "refresh",
+            "expires_in": 3600,
+        },
+    }))
+
+    def fake_urlopen(request, timeout):
+        assert request.full_url != "https://auth.example/token"
+        assert request.get_header("Authorization") == "Bearer still-valid"
+        body = json.loads(request.data)
+        if body["method"] == "initialize":
+            return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+        return Response({"result": {"tools": []}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert adapter.OAuthStoreReadOnlyMCP(store).list_tools() == {"tools": []}
