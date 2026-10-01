@@ -68,7 +68,7 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
     assert "image_size_bytes" in block
     assert "RC6_DISK_PRECLEAN=START" in block
     assert "rc6_disk_housekeeping.py" in block
-    assert "docker image prune -af" in block
+    assert "docker image prune -f" in block
     assert block.index("RC6_DISK_PRECLEAN=START") < block.index("RC6_DISK_PRETRANSFER_GATE=GREEN")
 
 
@@ -80,5 +80,5 @@ def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     tail = text[validated:cleanup + 200]
     assert "--mode cleanup" in tail
     assert "last-deploy-housekeeping.json" in tail
-    assert "docker image prune -af" in tail
+    assert "docker image prune -f" in tail
     assert "FINAL_INODE_FREE_PERCENT" in tail
