@@ -100,13 +100,13 @@ services:
       - >-
         test ! -L /app/data/paper_v17 &&
         mkdir -p /app/data/logs /app/data/backups /app/data/proposals
-        /app/data/paper_v17
+        /app/data/market /app/data/paper_v17
         /app/sre_vector_db /home/botuser/.cache &&
         test -d /app/data/paper_v17 &&
         test ! -L /app/data/paper_v17/observer_v17.db &&
         { test ! -e /app/data/paper_v17/observer_v17.db ||
         test -f /app/data/paper_v17/observer_v17.db; } &&
-        chown 1000:1000 /app/data /app/data/paper_v17 &&
+        chown 1000:1000 /app/data /app/data/market /app/data/paper_v17 &&
         chown -R 1000:1000 /app/data/logs /app/data/backups
         /app/data/proposals &&
         for f in /app/data/dashboard_sessions.json /app/data/trading_system.db
