@@ -40,6 +40,12 @@ def validate_frozen_candidate(
         raise FrozenContractError("IMAGE_TAR_MISSING")
     if payload.get("image_tar_sha256") != sha256(image_path.read_bytes()).hexdigest():
         raise FrozenContractError("IMAGE_DIGEST_MISMATCH")
+    try:
+        image_size_bytes = int(payload.get("image_size_bytes", 0))
+    except (TypeError, ValueError) as exc:
+        raise FrozenContractError("IMAGE_SIZE_INVALID") from exc
+    if image_size_bytes <= 0:
+        raise FrozenContractError("IMAGE_SIZE_INVALID")
     if payload.get("paper_mode_required") != "PRODUCTION_PAPER":
         raise FrozenContractError("NON_PAPER_MODE")
     if payload.get("real_orders_sent_required") != 0:
@@ -63,6 +69,7 @@ def run_negative_fixtures(evidence_path: Path) -> dict[str, str]:
             "candidate_sha": "a" * 40,
             "candidate_tree_sha": "b" * 40,
             "image_tar_sha256": sha256(image.read_bytes()).hexdigest(),
+            "image_size_bytes": 123456789,
             "paper_mode_required": "PRODUCTION_PAPER",
             "real_orders_sent_required": 0,
             "real_order_capability_required": "BLOCKED",
@@ -84,6 +91,7 @@ def run_negative_fixtures(evidence_path: Path) -> dict[str, str]:
         fixtures["CORRUPT_MANIFEST"] = corrupt_manifest
         fixtures["WRONG_SHA"] = lambda: write({**baseline, "candidate_sha": "0" * 40})
         fixtures["WRONG_DIGEST"] = lambda: write({**baseline, "image_tar_sha256": "0" * 64})
+        fixtures["INVALID_IMAGE_SIZE"] = lambda: write({**baseline, "image_size_bytes": 0})
         fixtures["NON_PAPER_MODE"] = lambda: write({**baseline, "paper_mode_required": "REAL"})
         fixtures["REAL_ROUTE_ENABLED"] = lambda: write(
             {**baseline, "real_order_capability_required": "ENABLED"}
