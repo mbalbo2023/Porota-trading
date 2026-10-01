@@ -1058,8 +1058,15 @@ def scalping_page():
       WHERE features_json LIKE '%\"execution_style\": \"SCALPING_PAPER\"%'
       ORDER BY opened_at DESC LIMIT 100""") if _table("paper_positions") else []
     buy_candidates=sum(row.get("action")=="BUY_CANDIDATE" for row in decisions)
+    contract_labels={
+      "CONFIRMED_INTERVAL_VOLUME":("CONFIRMADO","Contrato intradía confirmado para esta identidad."),
+      "PENDING_LIVE_CONFIRMATION":("PENDIENTE LIVE","La identidad todavía necesita evidencia intradía estable; no implica caída del scanner."),
+      "PPI_INTRADAY_UNSUPPORTED":("PPI INTRADAY NO SOPORTADO","PPI MarketData/Intraday no soporta esta identidad literal; readiness genérico no cambia."),
+      "REJECTED_MUTABLE_CLOSED_POINTS":("RECHAZADO POR CONTRATO","PPI modificó un minuto ya cerrado; esta identidad queda fail-closed para scalping."),
+    }
     blocker_labels={
       "CONTRACT_NOT_SIMULATABLE":"Contrato no simulable",
+      "PPI_INTRADAY_UNSUPPORTED":"PPI Intraday no soportado para esta identidad",
       "PENDING_LIVE_CONFIRMATION":"Contrato intradía aún no confirmado",
       "INSUFFICIENT_INTRADAY_POINTS":"Muestras intradía insuficientes",
       "NO_CURRENT_BOOK":"Sin libro actual",
@@ -1093,9 +1100,12 @@ def scalping_page():
                f"edge {_locale_number(edge*100,2)}%")
     contract_table="".join(
       f"<tr><td><b>{_e(r['symbol'])}</b> · {_e(r['asset_class'])}</td><td>{_e(r['market'])} / {_e(r['currency'])} / {_e(r['settlement'])}</td>"
-      f"<td>{_status(r['state'])}</td><td>{_e(r['observations'])}</td><td>{_e(r['stable_overlap'])}</td>"
+      f"<td><b>{_e(contract_labels.get(str(r['state']).upper(),(str(r['state']).upper(),'Estado técnico persistido.'))[0])}</b></td>"
+      f"<td data-wrap='true'>{_e(contract_labels.get(str(r['state']).upper(),(str(r['state']).upper(),'Estado técnico persistido.'))[1])}<br>"
+      f"<span class='paper-muted'>{_e(r.get('detail') or '')}</span></td>"
+      f"<td>{_e(r['observations'])}</td><td>{_e(r['stable_overlap'])}</td>"
       f"<td>{_e(r['changed_closed_points'])}</td><td>{_local_time(r['last_source_at'])}</td></tr>" for r in contract_rows
-    ) or "<tr><td colspan='7'>Esperando la primera rueda con el colector HF3.</td></tr>"
+    ) or "<tr><td colspan='8'>Esperando la primera rueda con evidencia intradía persistida.</td></tr>"
     candidate_table="".join(
       f"<tr><td>{_local_time(r['evaluated_at'])}</td><td><b>{_e(r['symbol'])}</b> · {_e(r['asset_class'])}</td>"
       f"<td>{_e(r['currency'])}</td><td>{_status(r['action'])}</td><td>{_locale_number(r['score'],4)}</td>"
@@ -1125,9 +1135,14 @@ def scalping_page():
                       "<div class='paper-warning'><b>ACTIVE_OBSERVE: NO ABRE POSICIONES.</b> El scanner observa y persiste evidencia; no genera fills.</div>")
     body=(f"<h1>Scalping intradiario</h1><div class='paper-grid'>{cards}</div>{execution_notice}"
       f"<div class='paper-notice'>{_e(worker.get('detail','Esperando estado del proceso.'))}</div>"
-      "<div class='paper-card'><h2>Contrato intradiario por identidad</h2><table class='paper-table'>"
-      "<tr><th>Instrumento</th><th>Identidad</th><th>Estado</th><th>Observaciones</th><th>Solapamiento estable</th>"
-      f"<th>Minutos modificados</th><th>Último minuto</th></tr>{contract_table}</table></div>"
+      "<div class='paper-card'><h2>Contrato intradiario por identidad</h2>"
+      "<p class='paper-muted'><b>Este estado es por identidad y por endpoint.</b> "
+      "PENDIENTE LIVE o PPI INTRADAY NO SOPORTADO no significan que Scalping global esté caído; "
+      "el estado global del worker se muestra por separado en la tarjeta Scanner.</p>"
+      "<table class='paper-table'>"
+      "<tr><th>Instrumento</th><th>Identidad</th><th>Estado intradía</th><th>Interpretación</th>"
+      "<th>Observaciones</th><th>Solapamiento estable</th><th>Minutos modificados</th><th>Último minuto</th></tr>"
+      f"{contract_table}</table></div>"
       "<div class='paper-card'><h2>Decisiones del scanner</h2><table class='paper-table'>"
       "<tr><th>Hora</th><th>Instrumento</th><th>Moneda</th><th>Acción</th><th>Score</th><th>Puntos</th>"
       f"<th>Motivo</th></tr>{candidate_table}</table></div>"
