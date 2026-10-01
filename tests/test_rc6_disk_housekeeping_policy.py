@@ -23,22 +23,21 @@ def test_policy_retention_is_exactly_three_for_paper_and_history() -> None:
     assert p["backups"]["general"]["keep_newest"] == 3
 
 
-def test_policy_has_conservative_disk_thresholds() -> None:
+def test_policy_has_operator_authorized_deploy_floor() -> None:
     p = policy()
     assert p["disk"]["green_free_bytes"] == 7 * 1024**3
-    assert p["disk"]["deploy_pretransfer_min_free_bytes"] == 6 * 1024**3
-    assert p["disk"]["post_cleanup_min_free_bytes"] == 5 * 1024**3
-    assert p["disk"]["critical_free_bytes"] == 3 * 1024**3
+    assert p["disk"]["deploy_pretransfer_min_free_bytes"] == 2 * 1024**3
+    assert p["disk"]["post_cleanup_min_free_bytes"] == 2 * 1024**3
+    assert p["disk"]["critical_free_bytes"] == 1 * 1024**3
     assert p["disk"]["min_inode_free_percent"] == 10
 
 
-def test_pretransfer_formula_includes_transfer_plus_post_transfer_headroom() -> None:
+def test_pretransfer_formula_is_fixed_to_authorized_two_gib_floor() -> None:
     p = policy()
     image = 409_264_065
     bundle = 1_118_828
     required = required_pretransfer_free(image, bundle, p)
-    calculated = image * 5 + bundle * 3 + 5 * 1024**3
-    assert required == max(6 * 1024**3, calculated)
+    assert required == 2 * 1024**3
 
 
 def test_backup_plan_keeps_three_newest(tmp_path: Path) -> None:
@@ -113,8 +112,9 @@ def test_disk_band_boundaries() -> None:
     gib = 1024**3
     assert disk_band(8 * gib, p) == "GREEN"
     assert disk_band(6 * gib, p) == "YELLOW"
-    assert disk_band(4 * gib, p) == "RED"
-    assert disk_band(2 * gib, p) == "CRITICAL"
+    assert disk_band(4 * gib, p) == "YELLOW"
+    assert disk_band(int(1.5 * gib), p) == "RED"
+    assert disk_band(int(0.5 * gib), p) == "CRITICAL"
 
 
 def test_no_automatic_sqlite_or_containerd_mutation() -> None:

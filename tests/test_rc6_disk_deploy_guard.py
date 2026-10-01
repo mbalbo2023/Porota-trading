@@ -57,3 +57,10 @@ def test_disk_metric_probe_avoids_runner_shell_positional_expansion() -> None:
     assert "os.statvfs" in block
     assert "awk 'NR==2 {print $4}'" not in block
     assert "\\\\$4" not in block
+
+
+def test_operator_authorized_two_gib_floor_is_used_after_transfer() -> None:
+    text = CANONICAL.read_text(encoding="utf-8")
+    assert 'deploy_pretransfer_min_free_bytes' in text
+    assert 'IMAGE_TAR_BYTES * 4 + BUNDLE_BYTES * 2 + 1073741824' not in text
+    assert 'test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_PREFLIGHT_FREE"' in text
