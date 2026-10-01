@@ -190,6 +190,22 @@ def _state(store, identity):
     return dict(row) if row else None
 
 
+def persist_intraday_unsupported(store, record, *, checked_at, detail="PPI_INSTRUMENT_NOT_FOUND"):
+    """Persist endpoint support by exact identity without changing generic readiness."""
+    identity = _identity(record)
+    previous = _state(store, identity) or {}
+    with store.connect() as connection:
+        connection.execute("""INSERT OR REPLACE INTO ppi_intraday_contract_state
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          (*identity, "PPI_INTRADAY_UNSUPPORTED",
+           int(previous.get("observations") or 0),
+           int(previous.get("stable_overlap") or 0),
+           int(previous.get("changed_closed_points") or 0),
+           0, previous.get("last_source_at"), _stamp(checked_at),
+           "endpoint=MarketData/Intraday; " + str(detail)[:180]))
+    return "PPI_INTRADAY_UNSUPPORTED"
+
+
 def persist_payload(store, record, points, *, received_at):
     identity = _identity(record)
     # Contract state is trading-session scoped. A rejection from a prior local
@@ -482,6 +498,9 @@ def run_worker(store, stop, *, clock_fn):
                         unsupported_requests.add((
                             record["ticker"], record["instrument_type"], record["settlement"]))
                         unsupported_this_batch += 1
+                        persist_intraday_unsupported(
+                            store, record, checked_at=clock_fn(),
+                            detail="PPI_INSTRUMENT_NOT_FOUND")
                         store.event("INTRADAY_SCALPING_UNSUPPORTED",
                                     f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND")
                     else:
