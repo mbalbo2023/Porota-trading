@@ -228,3 +228,11 @@ def test_analysis_truth_wrapper_targets_registered_annual_renderer():
     source = __import__("pathlib").Path("zz_wave8_dashboard_live_rc6.py").read_text(encoding="utf-8")
     assert "bg.analysis_page" not in source
     assert "bg.annual_instrument_analysis.render_page=analysis_render_live" in source
+
+
+def test_dashboard_pages_and_observer_api_skip_full_universe_quotes():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert "def snapshot(*, include_quotes=True):" in source
+    assert "if include_quotes:" in source
+    assert "return JSONResponse(snapshot(include_quotes=False))" in source
+    assert "data = snapshot(include_quotes=False)" in source
