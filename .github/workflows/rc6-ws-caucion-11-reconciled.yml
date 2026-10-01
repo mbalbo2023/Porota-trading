@@ -1,4 +1,4 @@
-name: RC6 WS CAUCION 10 Auto Recovery
+name: RC6 WS CAUCION 11 Reconciled
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
           files="$(find tests -maxdepth 1 -type f -iname '*caucion*.py' -print)"
           test -n "$files"
           PYTHONPATH=. pytest -q $files tests/test_ws_caucion_10_auto_recovery.py
-          echo WS_CAUCION_10_REGRESSION=GREEN
+          echo WS_CAUCION_11_REGRESSION=GREEN
 
   runtime-readonly:
     runs-on: ubuntu-24.04
