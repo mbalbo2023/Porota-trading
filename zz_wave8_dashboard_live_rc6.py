@@ -431,15 +431,18 @@ def install(app, check_auth):
     bg._document=document_live
 
     app.add_middleware(_ClassicHTMLMiddleware)
-    old_learning=bg.learning_page; old_validation=bg.validation_page; old_trading=bg.trading_page; old_analysis=bg.analysis_page
+    old_learning=bg.learning_page; old_validation=bg.validation_page; old_trading=bg.trading_page
+    old_analysis_render=bg.annual_instrument_analysis.render_page
     def learning_page_live(): return _append_before_main_end(old_learning(),_learning_section())
     def validation_page_live(): return _append_before_main_end(old_validation(),_learning_section())
-    def analysis_page_live(): return _append_before_main_end(old_analysis(),_evidence_detail_section())
+    def analysis_render_live(*args,**kwargs):
+        return old_analysis_render(*args,**kwargs)+_evidence_detail_section()
     def trading_page_live(section=''):
         section=str(section or '').strip().lower()
         page=_strategy_overview() if section=='estrategias' else old_trading(section)
         return _append_before_main_end(page,_family_activity_section(section)+_evidence_detail_section())
-    bg.learning_page=learning_page_live; bg.validation_page=validation_page_live; bg.trading_page=trading_page_live; bg.analysis_page=analysis_page_live
+    bg.learning_page=learning_page_live; bg.validation_page=validation_page_live; bg.trading_page=trading_page_live
+    bg.annual_instrument_analysis.render_page=analysis_render_live
 
     @app.get('/riesgo',response_class=HTMLResponse)
     def riesgo(request:Request,token:str=Query(default=''),authorization:str|None=Header(default=None)):
