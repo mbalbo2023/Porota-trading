@@ -49,7 +49,7 @@ FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
 })
 ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
-DEFAULT_REFRESH_SKEW_SECONDS = max(60, int(os.environ.get("POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS", "300")))
+DEFAULT_REFRESH_SKEW_SECONDS = max(60, int(os.environ.get("POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS", "60")))
 
 
 class IOLMCPError(RuntimeError):
