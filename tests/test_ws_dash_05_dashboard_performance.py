@@ -125,11 +125,28 @@ def test_runtime_surface_metrics_still_block_real_progressive_dom_rows():
 
 def test_universe_catalog_is_server_paged_and_no_generic_pending_label():
     source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
-    assert "catalog_page=catalog[offset:offset+limit]" in source
+    assert "LIMIT ? OFFSET ?" in source
+    assert "tuple(catalog_params)+(limit,offset)" in source
+    assert "catalog_page=catalog[offset:offset+limit]" not in source
     assert "data-porota-server-page-record='1'" in source
     assert "data-porota-progressive-list='1'" not in source
     assert '"OBSERVED_BLOCKED": bg._status("PENDIENTE")' not in source
     assert '"OBSERVED_BLOCKED": bg._status("OBSERVED_BLOCKED")' in source
+
+
+def test_universe_orphan_detection_uses_global_catalog_not_filtered_page():
+    source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
+    assert "catalog_present" in source
+    assert "row for row in market" in source
+    assert 'if not _int(row.get("catalog_present"))' in source
+    assert "catalog_key" not in source
+
+
+def test_universe_family_capability_counts_are_aggregated_in_sql():
+    source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
+    assert "SELECT c.instrument_type,c.capability,COUNT(*) count" in source
+    assert "for row in family_cap_rows" in source
+    assert "for row in catalog:" not in source
 
 
 def test_live_page_never_serializes_the_full_decision_day():
