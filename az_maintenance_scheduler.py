@@ -51,7 +51,7 @@ def _run_job(job_name: str) -> None:
                      job_name, result.returncode)
 
 
-def build_scheduler() -> BackgroundScheduler:
+def build_scheduler(*, only_jobs: set[str] | None = None) -> BackgroundScheduler:
     scheduler = BackgroundScheduler(
         timezone=SERVER_TIMEZONE,
         job_defaults={
@@ -61,42 +61,46 @@ def build_scheduler() -> BackgroundScheduler:
         },
     )
 
-    scheduler.add_job(_run_job, "cron", id="maintenance_monthly_autotune",
-                      day=1, hour=1, args=["monthly_autotune"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_data_retention",
-                      day=1, hour=1, minute=30, args=["data_retention"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_macro_refresh",
-                      hour=2, minute=30, args=["macro_refresh"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_daily_backup",
-                      hour=3, minute=0, args=["backup"])
+    def add(job_name, trigger, **kwargs):
+        if only_jobs is None or job_name in only_jobs:
+            scheduler.add_job(_run_job, trigger, args=[job_name], **kwargs)
+
+    add("monthly_autotune", "cron", id="maintenance_monthly_autotune",
+        day=1, hour=1)
+    add("data_retention", "cron", id="maintenance_data_retention",
+        day=1, hour=1, minute=30)
+    add("macro_refresh", "cron", id="maintenance_macro_refresh",
+        hour=2, minute=30)
+    add("backup", "cron", id="maintenance_daily_backup",
+        hour=3, minute=0)
     # Sin catch-up de arranque ni cron histórico: sólo PPI Watch puede gestionar
     # ese circuito tras su revisión individual.
-    scheduler.add_job(_run_job, "cron", id="maintenance_model_guardian",
-                      day_of_week="mon", hour=9, args=["model_guardian"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_monthly_report",
-                      day=1, hour=9, args=["monthly_report"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_learning_diagnostic",
-                      day_of_week="sun", hour=19, args=["learning_diagnostic"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_weekly_report",
-                      day_of_week="sun", hour=20, args=["weekly_report"])
-    scheduler.add_job(_run_job, "interval", id="maintenance_news_scan",
-                      minutes=45, args=["news_scan"])
-    scheduler.add_job(_run_job, "interval", id="maintenance_gdelt_shadow",
-                      minutes=30, args=["gdelt_shadow_refresh"])
+    add("model_guardian", "cron", id="maintenance_model_guardian",
+        day_of_week="mon", hour=9)
+    add("monthly_report", "cron", id="maintenance_monthly_report",
+        day=1, hour=9)
+    add("learning_diagnostic", "cron", id="maintenance_learning_diagnostic",
+        day_of_week="sun", hour=19)
+    add("weekly_report", "cron", id="maintenance_weekly_report",
+        day_of_week="sun", hour=20)
+    add("news_scan", "interval", id="maintenance_news_scan",
+        minutes=45)
+    add("gdelt_shadow_refresh", "interval", id="maintenance_gdelt_shadow",
+        minutes=30)
 
-    scheduler.add_job(_run_job, "cron", id="maintenance_action4_audit",
-                      hour=7, minute=5, args=["action4_audit"])
-    scheduler.add_job(_run_job, "cron", id="maintenance_validation_projection",
-                      hour=7, minute=15, args=["validation_projection"])
+    add("action4_audit", "cron", id="maintenance_action4_audit",
+        hour=7, minute=5)
+    add("validation_projection", "cron", id="maintenance_validation_projection",
+        hour=7, minute=15)
     # Evidencia pre-rueda: lectura solamente contra la última sesión esperada.
-    scheduler.add_job(_run_job, "cron", id="maintenance_preopen_freshness_audit",
-                      hour=8, minute=30, args=["preopen_freshness_audit"])
+    add("preopen_freshness_audit", "cron", id="maintenance_preopen_freshness_audit",
+        hour=8, minute=30)
 
     return scheduler
 
 
-def start() -> BackgroundScheduler:
-    scheduler = build_scheduler()
+def start(*, only_jobs: set[str] | None = None) -> BackgroundScheduler:
+    scheduler = build_scheduler(only_jobs=only_jobs)
     scheduler.start()
     logger.info("Scheduler de mantenimiento activo en %s (%s tareas).",
                 SERVER_TIMEZONE, len(scheduler.get_jobs()))
