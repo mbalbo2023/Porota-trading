@@ -1,0 +1,80 @@
+name: RC6 Consolidated SRE RCA Read-Only 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-sre-20261001
+    paths:
+      - '.github/workflows/rc6-consolidated-sre-rca-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Audit failed services and SQLite contention signals
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 180s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo SRE_RCA=START
+          sudo -n python3 - "$DB" <<'PY'
+          import json,sqlite3,sys,time,os
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          state=dict(c.execute("SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          sweep=dict(c.execute("SELECT * FROM paper_caucion_cash_sweep_state WHERE id=1").fetchone()) if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_caucion_cash_sweep_state'").fetchone() else {}
+          pragmas={
+            "journal_mode":c.execute("PRAGMA journal_mode").fetchone()[0],
+            "locking_mode":c.execute("PRAGMA locking_mode").fetchone()[0],
+            "busy_timeout":c.execute("PRAGMA busy_timeout").fetchone()[0],
+            "page_count":c.execute("PRAGMA page_count").fetchone()[0],
+            "freelist_count":c.execute("PRAGMA freelist_count").fetchone()[0],
+          }
+          c.close()
+          print("SAFETY="+json.dumps(state,sort_keys=True,default=str))
+          print("CAUCION_SWEEP="+json.dumps(sweep,sort_keys=True,default=str))
+          print("SQLITE_PRAGMAS="+json.dumps(pragmas,sort_keys=True))
+          print("DB_BYTES="+str(os.path.getsize(p)))
+          print("WAL_BYTES="+str(os.path.getsize(p+"-wal") if os.path.exists(p+"-wal") else 0))
+          assert state["mode"]=="PRODUCTION_PAPER" and int(state["real_orders_sent"] or 0)==0
+          PY
+          for unit in porota-candle-integrity-rc6.service porota-full-db-integrity-rc6.service porota-introspection-rc6.service porota-preopen-rc6.service; do
+            echo "UNIT=$unit"
+            systemctl show "$unit" -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager || true
+            echo "JOURNAL_BEGIN=$unit"
+            sudo -n journalctl -u "$unit" -n 40 --no-pager 2>/dev/null || true
+            echo "JOURNAL_END=$unit"
+          done
+          echo "LOCK_ERRORS_RECENT_BEGIN"
+          sudo -n docker logs --since 90m porota_production_observer 2>&1 | grep -Ei 'database is locked|OperationalError|locked' | tail -n 120 || true
+          echo "LOCK_ERRORS_RECENT_END"
+          echo REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED
+          echo SRE_RCA=GREEN_READONLY
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
