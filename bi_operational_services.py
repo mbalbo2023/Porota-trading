@@ -148,7 +148,11 @@ def collect_sre(store):
     db_path = Path(store.path)
     try:
         with store.connect() as c:
-            integrity = str(c.execute("PRAGMA quick_check").fetchone()[0])
+            database_probe = "ok" if c.execute("SELECT 1").fetchone()[0] == 1 else "error"
+            # Full PRAGMA quick_check has one owner: rc6_full_db_integrity.py.
+            # Running it every 5 minutes on the 24x7 observer caused redundant
+            # multi-minute scans and SQLite contention with other PAPER workers.
+            integrity = "DELEGATED_TO_FULL_DB_INTEGRITY"
             counts = {}
             for table in ("market_snapshots", "paper_decisions", "paper_positions",
                           "paper_learning_samples", "financial_news"):
@@ -163,17 +167,22 @@ def collect_sre(store):
         wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0
         rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024)
         free_pct = usage.free / usage.total * 100 if usage.total else 0
-        state = "VERDE" if integrity == "ok" and free_pct >= 20 and query_ms < 250 else "AMARILLO"
+        state = "VERDE" if database_probe == "ok" and free_pct >= 20 and query_ms < 250 else "AMARILLO"
         payload = {"tables": counts, "disk_free_pct": round(free_pct, 2),
-                   "python": os.sys.version.split()[0], "pid": os.getpid()}
+                   "python": os.sys.version.split()[0], "pid": os.getpid(),
+                   "database_probe": database_probe,
+                   "integrity_authority": "porota-full-db-integrity-rc6.service"}
         with store.connect() as c:
             c.execute("""INSERT INTO sre_snapshots VALUES(NULL,?,?,?,?,?,?,?,?,?,?)""",
                       (now_iso(), state, db_bytes, wal_bytes, usage.total, usage.free,
                        rss, query_ms, integrity, json.dumps(payload, ensure_ascii=False)))
             c.execute("DELETE FROM sre_snapshots WHERE id NOT IN (SELECT id FROM sre_snapshots ORDER BY id DESC LIMIT 2016)")
-        _job(store, "SRE_SNAPSHOT", state, f"quick_check={integrity}; libre={free_pct:.1f}%", success=state == "VERDE")
+        _job(store, "SRE_SNAPSHOT", state,
+             f"bounded_probe={database_probe}; full_integrity=delegated; libre={free_pct:.1f}%",
+             success=state == "VERDE")
         return payload | {"state": state, "db_bytes": db_bytes, "wal_bytes": wal_bytes,
-                          "query_ms": query_ms, "integrity": integrity}
+                          "query_ms": query_ms, "integrity": integrity,
+                          "database_probe": database_probe}
     except Exception as exc:
         _job(store, "SRE_SNAPSHOT", "ROJO", f"{type(exc).__name__}: {exc}")
         return {"state": "ROJO", "detail": str(exc)}
