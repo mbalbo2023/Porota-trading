@@ -259,7 +259,9 @@ def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
     block = source[immediate:preopen]
     assert 'rm -f "$REMOTE_DIR/porota-predeploy-image.tar.gz" "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"' in block
     assert 'rm -rf "$STAGE"' in block
-    assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge 2147483648' in block
+    assert "rc6-disk-housekeeping-v1.json" in block
+    assert "post_cleanup_min_free_bytes" in block
+    assert 'test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"' in block
 
 
 def test_deploy_refreshes_byma_authority_before_dry_preopen():

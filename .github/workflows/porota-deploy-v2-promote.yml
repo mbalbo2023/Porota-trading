@@ -141,10 +141,55 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
 
+      - name: Pre-transfer Droplet disk guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          RC6_DISK_PREFLIGHT_REQUIRED=1
+          IMAGE_TAR_BYTES="$(stat -c '%s' /tmp/porota-predeploy-image.tar.gz)"
+          BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
+          REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
+            --policy ops/policy/rc6-disk-housekeeping-v1.json \
+            --image-tar-bytes "$IMAGE_TAR_BYTES" \
+            --bundle-bytes "$BUNDLE_BYTES")"
+          echo "$REQUIRED_LINE"
+          REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
+          [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+
+          REMOTE_METRICS="$(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" \
+            "df -PB1 / | awk 'NR==2 {print \\$4}'; df -Pi / | awk 'NR==2 {printf \"%.6f\\n\", (100.0*\\$4/\\$2)}'")"
+          mapfile -t METRICS <<< "$REMOTE_METRICS"
+          test "${#METRICS[@]}" -eq 2
+          AVAILABLE_BYTES="${METRICS[0]}"
+          INODE_FREE_PERCENT="${METRICS[1]}"
+          [[ "$AVAILABLE_BYTES" =~ ^[0-9]+$ ]]
+          [[ "$INODE_FREE_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]]
+
+          python scripts/rc6_disk_space_guard.py \
+            --policy ops/policy/rc6-disk-housekeeping-v1.json \
+            --image-tar-bytes "$IMAGE_TAR_BYTES" \
+            --bundle-bytes "$BUNDLE_BYTES" \
+            --available-bytes "$AVAILABLE_BYTES" \
+            --inode-free-percent "$INODE_FREE_PERCENT" \
+            --json
+
+          {
+            echo "RC6_DISK_PREFLIGHT_GREEN=1"
+            echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$REQUIRED_PRETRANSFER_FREE"
+            echo "RC6_DISK_AVAILABLE_PRETRANSFER=$AVAILABLE_BYTES"
+          } >> "$GITHUB_ENV"
+          echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+
       - name: Transfer frozen artifact
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           SCP=(scp -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
@@ -584,7 +629,9 @@ jobs:
           rm -rf "$STAGE"
           DISK_PREOPEN_AFTER_SAFE_RECLAIM="$(df -PB1 / | awk 'NR==2 {print $4}')"
           echo "RC6_PREOPEN_SAFE_RECLAIM=GREEN|free=$DISK_PREOPEN_AFTER_SAFE_RECLAIM"
-          test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge 2147483648
+          POST_CLEANUP_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          echo "RC6_DISK_POST_CLEANUP_MIN_FREE=$POST_CLEANUP_MIN_FREE"
+          test "$DISK_PREOPEN_AFTER_SAFE_RECLAIM" -ge "$POST_CLEANUP_MIN_FREE"
 
           # Refresh the official BYMA morning evidence with the just-installed
           # candidate. The structured public capture remains complementary:
@@ -732,7 +779,9 @@ jobs:
           DISK_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
           echo "DISK_AFTER=$DISK_AFTER"
           echo "SPACE_RECOVERED=$((DISK_AFTER-DISK_BEFORE))"
-          test "$DISK_AFTER" -ge 1073741824
+          FINAL_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          echo "RC6_DISK_FINAL_MIN_FREE=$FINAL_MIN_FREE"
+          test "$DISK_AFTER" -ge "$FINAL_MIN_FREE"
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
