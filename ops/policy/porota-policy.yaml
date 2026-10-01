@@ -49,6 +49,10 @@ deployment:
   artifact_manifest_required: true
   artifact_hashes_required: true
   manual_partial_runtime_file_lists_allowed: false
+  canonical_deploy_workflow: .github/workflows/porota-deploy-v2-promote.yml
+  droplet_disk_pretransfer_gate_required: true
+  droplet_disk_pretransfer_min_free_bytes: 6442450944
+  droplet_disk_guard_must_run_before_transfer: true
 
 predeploy_gates:
   required:
@@ -83,6 +87,13 @@ cleanup:
   required_after_failure_when_safe: true
   maximize_safe_space_recovery: true
   report_before_after: true
+  periodic_housekeeping_required: true
+  disk_housekeeping_policy: ops/policy/rc6-disk-housekeeping-v1.json
+  paper_backup_keep_newest: 3
+  history_backup_keep_newest: 3
+  general_backup_keep_newest: 3
+  journal_max_bytes: 536870912
+  tmp_min_age_days: 7
   allowed_targets:
     - unreferenced_candidate_images
     - dangling_images
@@ -91,6 +102,10 @@ cleanup:
     - deploy_staging_directories
     - deploy_tarballs
     - stopped_deploy_containers
+    - stale_porota_tmp_older_than_policy
+    - apt_cache_and_lists
+    - journal_above_policy_cap
+    - backup_retention_excess
   forbidden_targets:
     - active_containers
     - referenced_runtime_images
