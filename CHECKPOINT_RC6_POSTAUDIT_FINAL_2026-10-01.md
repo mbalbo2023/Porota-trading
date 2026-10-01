@@ -27,7 +27,7 @@
   - Predeploy `36930477241`
   - artifact `11196017653`
   - digest `sha256:d4ed0af64396d57d1bc5cf315d08d411f87ea888303ef71c768834a21ce48992`
-  - operator-authorized deploy/final disk floor: **2 GiB**
+  - corrected disk admission: **dynamic peak requirement** = compressed image + exact unpacked Docker image + bundle/staging + **2 GiB residual reserve**; safe cleanup runs before heavy artifact transfer when needed, then the gate is re-evaluated
   - fail-safe CURRENT_STATE + frozen candidate provenance
   - narrow BYMA shared-path ownership
 - #429 — multi-currency postclose reporting
@@ -50,7 +50,7 @@
 - observer-loop full DB quick-check removed;
 - canonical dashboard fast path avoids discarded legacy work;
 - dashboard/API operational reads do not materialize full-universe quotes;
-- deploy/final disk guard remains blocking at explicit 2 GiB floor;
+- deploy admission is dynamically sized from the exact frozen image/bundle, performs safe pre-clean before heavy transfer when needed, re-measures, and performs mandatory measured housekeeping again after runtime validation;
 - CURRENT_STATE and frozen candidate provenance are persisted immediately after promoted runtime identity is proven, before long validation;
 - full DB timer is non-persistent;
 - BYMA shared market directory becomes writable by runtime UID without recursive privilege widening;
