@@ -121,6 +121,7 @@ jobs:
           assert frozen["paper_mode_required"]=="PRODUCTION_PAPER"
           assert int(frozen["real_orders_sent_required"])==0
           assert frozen["build_once"] is True
+          assert int(frozen.get("image_size_bytes", 0)) > 0
           def sha(path):
               h=hashlib.sha256()
               with open(path,"rb") as f:
@@ -141,49 +142,132 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
 
-      - name: Pre-transfer Droplet disk guard
+      - name: Dynamic pre-transfer disk guard and conditional safe cleanup
         shell: bash
         run: |
           set -Eeuo pipefail
           RC6_DISK_PREFLIGHT_REQUIRED=1
           IMAGE_TAR_BYTES="$(stat -c '%s' /tmp/porota-predeploy-image.tar.gz)"
           BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
+          IMAGE_UNPACKED_BYTES="$(python -c 'import json; print(int(json.load(open("/tmp/porota-frozen-candidate.json"))["image_size_bytes"]))')"
           REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
             --policy ops/policy/rc6-disk-housekeeping-v1.json \
             --image-tar-bytes "$IMAGE_TAR_BYTES" \
+            --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
             --bundle-bytes "$BUNDLE_BYTES")"
           echo "$REQUIRED_LINE"
           REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
           [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
 
-          REMOTE_METRICS="$(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "python3 -c 'import os,shutil; d=shutil.disk_usage(\"/\"); s=os.statvfs(\"/\"); print(d.free); print(f\"{100.0*s.f_ffree/s.f_files:.6f}\")'")"
-          mapfile -t METRICS <<< "$REMOTE_METRICS"
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+
+          probe_disk() {
+            "${SSH[@]}" "$DO_USER@$DO_HOST" \
+              "python3 -c 'import os,shutil; d=shutil.disk_usage(\"/\"); v=os.statvfs(\"/\"); print(d.free); print(f\"{100.0*v.f_ffree/v.f_files:.6f}\")'"
+          }
+
+          evaluate_gate() {
+            local available="$1" inode_free="$2"
+            python scripts/rc6_disk_space_guard.py \
+              --policy ops/policy/rc6-disk-housekeeping-v1.json \
+              --image-tar-bytes "$IMAGE_TAR_BYTES" \
+              --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
+              --bundle-bytes "$BUNDLE_BYTES" \
+              --available-bytes "$available" \
+              --inode-free-percent "$inode_free" \
+              --json
+          }
+
+          mapfile -t METRICS < <(probe_disk)
           test "${#METRICS[@]}" -eq 2
           AVAILABLE_BYTES="${METRICS[0]}"
           INODE_FREE_PERCENT="${METRICS[1]}"
-          [[ "$AVAILABLE_BYTES" =~ ^[0-9]+$ ]]
-          [[ "$INODE_FREE_PERCENT" =~ ^[0-9]+([.][0-9]+)?$ ]]
+          AVAILABLE_BEFORE_PRECLEAN="$AVAILABLE_BYTES"
 
-          python scripts/rc6_disk_space_guard.py \
-            --policy ops/policy/rc6-disk-housekeeping-v1.json \
-            --image-tar-bytes "$IMAGE_TAR_BYTES" \
-            --bundle-bytes "$BUNDLE_BYTES" \
-            --available-bytes "$AVAILABLE_BYTES" \
-            --inode-free-percent "$INODE_FREE_PERCENT" \
-            --json
+          set +e
+          GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+          GATE_RC=$?
+          set -e
+          echo "$GATE_OUTPUT"
 
+          RC6_DISK_PRECLEAN_TRIGGERED=0
+          if [ "$GATE_RC" -ne 0 ]; then
+            RC6_DISK_PRECLEAN_TRIGGERED=1
+            echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+            POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
+            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' bash -s" <<'PRECLEAN_REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
+          printf '%s' "$POLICY_B64" | base64 -d > "$TMP_POLICY"
+          test -f "$REPO/scripts/rc6_disk_housekeeping.py"
+
+          PPI_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+
+          find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' -exec rm -rf -- {} +
+          sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
+            --policy "$TMP_POLICY" --mode cleanup \
+            --json-out /tmp/porota-predeploy-housekeeping.json
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
+
+          STATE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=1000")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          test "$STATE" = "PRODUCTION_PAPER|0"
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+
+          PPI_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+          rm -f "$TMP_POLICY"
+          echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
+          PRECLEAN_REMOTE
+
+            mapfile -t METRICS < <(probe_disk)
+            test "${#METRICS[@]}" -eq 2
+            AVAILABLE_BYTES="${METRICS[0]}"
+            INODE_FREE_PERCENT="${METRICS[1]}"
+            set +e
+            GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
+            GATE_RC=$?
+            set -e
+            echo "$GATE_OUTPUT"
+          fi
+
+          test "$GATE_RC" -eq 0
+          SAFE_PREFLIGHT_RECLAIM=$((AVAILABLE_BYTES-AVAILABLE_BEFORE_PRECLEAN))
+          echo "SAFE_PREFLIGHT_RECLAIM=$SAFE_PREFLIGHT_RECLAIM"
           {
             echo "RC6_DISK_PREFLIGHT_GREEN=1"
             echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$REQUIRED_PRETRANSFER_FREE"
             echo "RC6_DISK_AVAILABLE_PRETRANSFER=$AVAILABLE_BYTES"
+            echo "RC6_DISK_IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
+            echo "RC6_DISK_IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
+            echo "RC6_DISK_BUNDLE_BYTES=$BUNDLE_BYTES"
+            echo "RC6_DISK_PRECLEAN_TRIGGERED=$RC6_DISK_PRECLEAN_TRIGGERED"
           } >> "$GITHUB_ENV"
-          echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
+          echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
 
       - name: Transfer frozen artifact
         shell: bash
@@ -217,27 +301,25 @@ jobs:
           echo "DOCKER_SYSTEM_DF_BEFORE=$DOCKER_DF_BEFORE"
           REMOTE_TMP_BEFORE="$(du -sb /tmp/porota-deploy-v2-* 2>/dev/null | awk '{sum += $1} END {print sum+0}')"
           echo "REMOTE_DEPLOY_TMP_BEFORE=$REMOTE_TMP_BEFORE"
-          # Safe preflight reclamation: only this deploy's temporary directories,
-          # dangling images, and build caches. Never volumes, SQLite, active images,
-          # persistent data, or PPI Watch state.
+          # The heavy pre-transfer gate already cleaned first when required.
+          # After transfer, re-check the remaining peak needed for bundle staging
+          # + Docker image materialization + the final residual reserve.
           find /tmp -maxdepth 1 -type d -name 'porota-deploy-v2-*' ! -path "$REMOTE_DIR" -exec rm -rf -- {} +
-          sudo -n docker image prune -af
-          sudo -n docker builder prune -af
-          if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           DISK_PREFLIGHT_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
           DOCKER_DF_AFTER="$(sudo -n docker system df 2>&1 || true)"
-          echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
-          echo "SAFE_PREFLIGHT_RECLAIM=$((DISK_PREFLIGHT_AFTER-DISK_BEFORE))"
-          echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
           IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
           BUNDLE_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-deploy-bundle-v2.tgz")"
-          # Loading/unpacking a compressed image needs materially more space than
-          # its tarball. Keep a 1 GiB floor plus conservative artifact headroom.
-          REQUIRED_PREFLIGHT_FREE=$((IMAGE_TAR_BYTES * 4 + BUNDLE_BYTES * 2 + 1073741824))
+          IMAGE_UNPACKED_BYTES="$(python3 -c 'import json; print(int(json.load(open("'"$REMOTE_DIR"'/porota-frozen-candidate.json"))["image_size_bytes"]))')"
+          FINAL_RESERVE_BYTES="$(python3 -c 'import json; print(int(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"]))')"
+          REQUIRED_LOAD_FREE=$((IMAGE_UNPACKED_BYTES + BUNDLE_BYTES + FINAL_RESERVE_BYTES))
+          echo "DISK_PREFLIGHT_AFTER=$DISK_PREFLIGHT_AFTER"
+          echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
           echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
+          echo "IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
           echo "BUNDLE_BYTES=$BUNDLE_BYTES"
-          echo "REQUIRED_PREFLIGHT_FREE=$REQUIRED_PREFLIGHT_FREE"
-          test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_PREFLIGHT_FREE"
+          echo "REQUIRED_LOAD_FREE=$REQUIRED_LOAD_FREE"
+          test "$DISK_PREFLIGHT_AFTER" -ge "$REQUIRED_LOAD_FREE"
+          echo "RC6_DISK_POSTTRANSFER_LOAD_GATE=GREEN|available=$DISK_PREFLIGHT_AFTER|required=$REQUIRED_LOAD_FREE"
 
           PRE_STATE="NO_RUNNING_OBSERVER"
           if [ "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer 2>/dev/null || true)" = running ]; then
@@ -313,6 +395,16 @@ jobs:
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --json-out "$REMOTE_DIR/host-control-plane-applied.json"
 
+          # Shared /app/data/market is writable only by the unprivileged RC6
+          # runtime UID. Fix the directory itself (not recursively) so atomic
+          # *.tmp -> latest replacements work without broadening privileges.
+          test ! -L "$REPO/data/market"
+          sudo -n install -d -o 1000 -g 1000 -m 0750 "$REPO/data/market"
+          MARKET_DIR_IDENTITY="$(sudo -n stat -c '%u:%g|%a' "$REPO/data/market")"
+          echo "RC6_MARKET_DIR_IDENTITY=$MARKET_DIR_IDENTITY"
+          test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
+          echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
+
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
@@ -355,6 +447,50 @@ jobs:
           test "$POST_STATE_RC" -eq 0
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"
+
+          # Fail-safe provenance is materialized immediately after the exact
+          # image is running and PAPER safety is proven. If any later audit
+          # fails, CURRENT_STATE_V2 describes the actual promoted runtime as
+          # DEPLOYED_VALIDATION_PENDING instead of silently describing the
+          # previous image.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          # The promoted runtime already proves the exact frozen artifact
+          # identity. Persist that provenance before any long validation so a
+          # later fail-closed audit cannot leave the previous candidate on disk.
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-frozen-candidate.json" \
+            "$REPO/data/deploy/porota-frozen-candidate.json"
+          sudo -n install -m 0644 "$REMOTE_DIR/porota-deploy-bundle-v2-manifest.json" \
+            "$REPO/data/deploy/porota-deploy-bundle-v2-manifest.json"
+          echo "RC6_FROZEN_PROVENANCE_PROVISIONAL=GREEN|candidate=$CANDIDATE_SHA"
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
+          import json,os,sys,tempfile
+          from datetime import datetime,timezone
+          path,candidate,deploy,image_id,post=sys.argv[1:]
+          payload={
+            "schema_version":2,
+            "recorded_at":datetime.now(timezone.utc).isoformat(),
+            "candidate_sha":candidate,
+            "deploy_sha":deploy,
+            "image_id":image_id,
+            "mode":"PRODUCTION_PAPER",
+            "real_orders_sent":0,
+            "real_order_routes":"NOT_CALLED",
+            "observer_state":post,
+            "ppi_watch_untouched":True,
+            "deployment_strategy":"FIX_FORWARD_ONLY",
+            "build_once":True,
+            "validation_status":"DEPLOYED_VALIDATION_PENDING",
+          }
+          directory=os.path.dirname(path)
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
+          try:
+              with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
+              os.replace(tmp,path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print("RC6_CURRENT_STATE_PROVISIONAL=GREEN")
+          PY
           echo "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER"
 
           # Full contract evidence reconciliation remains read-only at the broker
@@ -766,22 +902,55 @@ jobs:
             "ppi_watch_untouched":True,
             "deployment_strategy":"FIX_FORWARD_ONLY",
             "build_once":True,
+            "validation_status":"VALIDATED_RUNTIME",
           }
-          open(path,"w",encoding="utf-8").write(json.dumps(payload,indent=2,sort_keys=True)+"\n")
-          print("CURRENT_STATE_V2=GREEN")
+          import os,tempfile
+          directory=os.path.dirname(path)
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
+          try:
+              with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
+              os.replace(tmp,path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print("CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME")
           PY
 
+          # Mandatory final cleanup after runtime validation/provenance.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
+            --policy "$REPO/ops/policy/rc6-disk-housekeeping-v1.json" \
+            --mode cleanup \
+            --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
           sudo -n docker image prune -f
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           rm -rf "$REMOTE_DIR"
-          DISK_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          mapfile -t FINAL_DISK_METRICS < <(python3 -c 'import os,shutil; d=shutil.disk_usage("/"); v=os.statvfs("/"); print(d.free); print(f"{100.0*v.f_ffree/v.f_files:.6f}")')
+          DISK_AFTER="${FINAL_DISK_METRICS[0]}"
+          FINAL_INODE_FREE_PERCENT="${FINAL_DISK_METRICS[1]}"
           echo "DISK_AFTER=$DISK_AFTER"
+          echo "FINAL_INODE_FREE_PERCENT=$FINAL_INODE_FREE_PERCENT"
           echo "SPACE_RECOVERED=$((DISK_AFTER-DISK_BEFORE))"
           FINAL_MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          FINAL_MIN_INODE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["min_inode_free_percent"])')"
           echo "RC6_DISK_FINAL_MIN_FREE=$FINAL_MIN_FREE"
+          echo "RC6_DISK_FINAL_MIN_INODE_PERCENT=$FINAL_MIN_INODE"
           test "$DISK_AFTER" -ge "$FINAL_MIN_FREE"
+          python3 - "$FINAL_INODE_FREE_PERCENT" "$FINAL_MIN_INODE" <<'PY'
+          import sys
+          assert float(sys.argv[1]) >= float(sys.argv[2])
+          PY
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
+          test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          PPI_WATCH_FINAL="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$PPI_WATCH_FINAL" = "$PPI_WATCH_BEFORE"
+          echo "RC6_FINAL_HOUSEKEEPING=GREEN|free=$DISK_AFTER|inode_free_percent=$FINAL_INODE_FREE_PERCENT"
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE

@@ -1,12 +1,14 @@
 from pathlib import Path
 
 
-def test_live_page_is_day_only_paginated_and_manual_refresh():
+def test_live_page_is_day_only_sql_paginated_and_manual_refresh():
     s=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
-    assert "live_policy.decisions_for_live" in s
-    assert "live_policy.closed_for_live" in s
-    assert "closed=closed_all[closed_offset:closed_offset+limit]" in s
-    assert "live_decisions=all_live_decisions[decision_offset:decision_offset+limit]" in s
+    assert "def _live_session_snapshot" in s
+    assert "ORDER BY closed_at DESC LIMIT ? OFFSET ?" in s
+    assert "ORDER BY d.decided_at DESC,d.id DESC LIMIT ? OFFSET ?" in s
+    assert "closed_total" in s and "decision_total" in s
+    assert "closed_all=list(" not in s
+    assert "all_live_decisions=list(" not in s
     assert "decision_pager=_live_pager" in s
     assert "return _document(\"En vivo\",body,refresh=0)" in s
     assert "return _document(\"En vivo\",body,refresh=15)" not in s

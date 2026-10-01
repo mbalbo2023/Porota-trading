@@ -11,7 +11,7 @@ import o_dashboard
 import porota_mode_manager as mode_manager
 
 
-def _paper_snapshot():
+def _paper_snapshot(*, include_quotes=True):
     now = datetime.now(dashboard.TZ).isoformat()
     balances = [
         {"currency": currency, "cash": value, "pending_proceeds": "0",

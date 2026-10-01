@@ -125,19 +125,79 @@ def test_runtime_surface_metrics_still_block_real_progressive_dom_rows():
 
 def test_universe_catalog_is_server_paged_and_no_generic_pending_label():
     source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
-    assert "catalog_page=catalog[offset:offset+limit]" in source
+    assert "LIMIT ? OFFSET ?" in source
+    assert "tuple(catalog_params)+(limit,offset)" in source
+    assert "catalog_page=catalog[offset:offset+limit]" not in source
     assert "data-porota-server-page-record='1'" in source
     assert "data-porota-progressive-list='1'" not in source
     assert '"OBSERVED_BLOCKED": bg._status("PENDIENTE")' not in source
     assert '"OBSERVED_BLOCKED": bg._status("OBSERVED_BLOCKED")' in source
 
 
+def test_universe_orphan_detection_uses_global_catalog_not_filtered_page():
+    source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
+    assert "catalog_present" in source
+    assert "row for row in market" in source
+    assert 'if not _int(row.get("catalog_present"))' in source
+    assert "catalog_key" not in source
+
+
+def test_universe_family_capability_counts_are_aggregated_in_sql():
+    source = __import__("pathlib").Path("bh_universe_dashboard_hf6.py").read_text(encoding="utf-8")
+    assert "SELECT c.instrument_type,c.capability,COUNT(*) count" in source
+    assert "for row in family_cap_rows" in source
+    assert "for row in catalog:" not in source
+
+
 def test_live_page_never_serializes_the_full_decision_day():
     source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
-    assert "live_decisions=all_live_decisions[decision_offset:decision_offset+limit]" in source
-    assert "closed=closed_all[closed_offset:closed_offset+limit]" in source
+    assert "_live_session_snapshot(closed_offset=closed_offset,limit=limit)" in source
+    assert "ORDER BY closed_at DESC LIMIT ? OFFSET ?" in source
+    assert "ORDER BY d.decided_at DESC,d.id DESC LIMIT ? OFFSET ?" in source
+    assert "closed_all=" not in source
+    assert "all_live_decisions=" not in source
     assert "data-porota-server-page-record='1'" in source
     assert "data-porota-record='1'" not in source
+
+
+def test_canonical_middleware_short_circuits_legacy_handlers_before_call_next():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    middleware = source.split('async def paper_truth(request,call_next):',1)[1]
+    fast = middleware.index('if request.method=="GET" and (path in fast_html or path=="/sre")')
+    legacy = middleware.index('response=await call_next(request)')
+    assert fast < legacy
+    assert '"/vivo":live_page' in middleware
+    assert '"/historicos":history_page' in middleware
+    assert '"/":home_page' in middleware
+
+
+def test_financial_proxy_reads_only_two_latest_samples_per_symbol():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert "ROW_NUMBER() OVER (" in source
+    assert "SELECT symbol,trade_at,last FROM ranked WHERE rn<=2" in source
+    assert "_spot_snapshot()\n    amounts={}" not in source
+
+
+def test_trading_landing_reuses_single_truth_and_history_projection():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert "shared_truth=truth_projection()" in source
+    assert "shared_history=_paper_history_by_family" in source
+    assert "_family_ux_snapshot(families,truth=shared_truth,paper_history=shared_history)" in source
+
+
+def test_introspection_reads_observer_state_without_full_snapshot():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    block = source.split("def introspection_content():",1)[1].split("\ndef ",1)[0]
+    assert "live_state=_observer_state_snapshot()" in block
+    assert "snapshot().get" not in block
+
+
+def test_home_accepts_delegated_full_integrity_as_readable_not_green_verified():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    block = source.split("def home_page():",1)[1].split("\ndef ",1)[0]
+    assert 'db_delegated = db_integrity == "DELEGATED_TO_RC6_FULL_DB_INTEGRITY"' in block
+    assert "db_readable = db_ok or db_delegated" in block
+    assert '"POSTCIERRE PENDIENTE"' in block
 
 
 def test_runtime_budgets_cover_all_three_previous_full_dom_hotspots():
@@ -168,3 +228,11 @@ def test_analysis_truth_wrapper_targets_registered_annual_renderer():
     source = __import__("pathlib").Path("zz_wave8_dashboard_live_rc6.py").read_text(encoding="utf-8")
     assert "bg.analysis_page" not in source
     assert "bg.annual_instrument_analysis.render_page=analysis_render_live" in source
+
+
+def test_dashboard_pages_and_observer_api_skip_full_universe_quotes():
+    source = __import__("pathlib").Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert "def snapshot(*, include_quotes=True):" in source
+    assert "if include_quotes:" in source
+    assert "return JSONResponse(snapshot(include_quotes=False))" in source
+    assert "data = snapshot(include_quotes=False)" in source

@@ -170,10 +170,6 @@ def test_vivo_es_alias_del_panel_consolidado(monkeypatch, tmp_path):
     assert "href='/sistema'" in respuesta.text
     assert "Embudo de rechazos — última hora" not in respuesta.text
     assert respuesta.text.count("id='porota-canonical-nav'") == 1
-    # La ruta heredada conserva sus lecturas SQLite para no saltear la
-    # autenticación y renovación de sesión existentes. Son exclusivamente
-    # SELECT locales: no implican llamadas a PPI ni capacidad de ordenar.
-    assert consultas
-    assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
-    consulta_senales = next(sql for sql in consultas if "FROM signals" in sql)
-    assert "__SISTEMA__" in consulta_senales
+    # El fast path canónico conserva autenticación/cookie pero ya no
+    # ejecuta el handler legacy para después descartar su HTML.
+    assert consultas == []

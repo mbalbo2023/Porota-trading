@@ -49,12 +49,17 @@ def _number(value: object) -> float | None:
         return None
 
 def _operation(row: dict) -> dict:
+    currency = str(row.get("currency") or "").strip().upper() or "NO_VERIFICADO"
+    net_pnl = _number(row.get("net_pnl"))
     return {
         "symbol": row.get("symbol"),
         "type": "PAPER",
         "opened_at": row.get("opened_at"),
         "closed_at": row.get("closed_at"),
-        "net_pnl_ars": _number(row.get("net_pnl")),
+        "currency": currency,
+        "net_pnl": net_pnl,
+        # Backward-compatible field: it now means ARS only, never a mixed sum.
+        "net_pnl_ars": net_pnl if currency == "ARS" else None,
         "decision_reason": row.get("close_reason") or "NO_CLOSE_REASON",
         "external_sources": [],
         "counterfactual": "INSUFFICIENT_EVIDENCE",
@@ -71,13 +76,25 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         real_orders_sent = int(state.get("real_orders_sent"))
     except (TypeError, ValueError):
         real_orders_sent = None
-    closed_pnl = [item["net_pnl_ars"] for item in operations if item.get("net_pnl_ars") is not None]
+    closed_pnl = [item["net_pnl"] for item in operations if item.get("net_pnl") is not None]
+    pnl_by_currency = {}
+    for item in operations:
+        value = item.get("net_pnl")
+        if value is None:
+            continue
+        currency = str(item.get("currency") or "NO_VERIFICADO")
+        pnl_by_currency[currency] = pnl_by_currency.get(currency, 0.0) + value
+    pnl_by_currency = {
+        currency: round(value, 2)
+        for currency, value in sorted(pnl_by_currency.items())
+    }
     winners = sum(value > 0 for value in closed_pnl)
     losers = sum(value < 0 for value in closed_pnl)
     flat = sum(value == 0 for value in closed_pnl)
     metrics = {
         "closed_operations": len(operations),
-        "net_pnl_ars": round(sum(closed_pnl), 2) if closed_pnl else 0.0,
+        "net_pnl_by_currency": pnl_by_currency,
+        "net_pnl_ars": pnl_by_currency.get("ARS", 0.0),
         "winners": winners,
         "losers": losers,
         "breakeven": flat,
@@ -89,9 +106,14 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         alerts.append("MODE_NOT_PRODUCTION_PAPER")
     if real_orders_sent != 0:
         alerts.append("REAL_ORDERS_NOT_ZERO_OR_UNVERIFIED")
+    if any(
+        item.get("currency") == "NO_VERIFICADO" and item.get("net_pnl") is not None
+        for item in operations
+    ):
+        alerts.append("CLOSED_OPERATION_CURRENCY_MISSING")
     status = "VERIFIED" if not alerts else "INSUFFICIENT_EVIDENCE"
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": status,
         "phase": phase,
         "generated_at": now.astimezone(TZ).isoformat(timespec="seconds"),

@@ -97,9 +97,10 @@ def collect():
     hour = (now-timedelta(hours=1)).isoformat()
     day = datetime.combine(now.date(), datetime.min.time(), TZ).isoformat()
     result = {"version": VERSION, "hotfix": HOTFIX_TAG,
-              "timestamp": now.isoformat(timespec="seconds"), "warnings": [], "anomalies": []}
+              "timestamp": now.isoformat(timespec="seconds"), "warnings": [], "anomalies": [],
+              "quick_check": "DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
+              "quick_check_executed": False}
     with connect() as c:
-        result["quick_check"] = one(c, "PRAGMA quick_check", default="missing")
         observer = dict(c.execute("SELECT * FROM observer_state WHERE id=1").fetchone() or {})
         result["observer"] = {k: observer.get(k) for k in (
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
@@ -312,8 +313,6 @@ def collect():
                 "branch": "runtime-observability", "day": None,
                 "detail": None, "retention_days": 90,
             }
-    if result["quick_check"] != "ok":
-        result["anomalies"].append("sqlite_quick_check_not_ok")
     if int(result["observer"].get("real_orders_sent") or 0) != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
     market_open = str(result["observer"].get("session_state") or "").upper() == "MARKET_OPEN"

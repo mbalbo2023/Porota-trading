@@ -76,6 +76,48 @@ def _catalog():
                 ORDER BY family, symbol, market, settlement""")]
 
 
+def _families():
+    """Read only distinct historical families for the first selector."""
+    with closing(_connect()) as connection:
+        if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (TABLE,)
+        ).fetchone():
+            return []
+        return [
+            str(row["family"])
+            for row in connection.execute(
+                f"""SELECT DISTINCT UPPER(instrument_type) AS family
+                    FROM {TABLE}
+                    WHERE TRIM(COALESCE(instrument_type,''))<>''
+                    ORDER BY family"""
+            )
+            if row["family"]
+        ]
+
+
+def _identities_for_family(family):
+    """Read selector identities for one family only; never materialize all history identities."""
+    family=str(family or "").strip().upper()
+    if not family:
+        return []
+    with closing(_connect()) as connection:
+        if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (TABLE,)
+        ).fetchone():
+            return []
+        return [
+            (str(row["symbol"]),str(row["market"]),str(row["settlement"]))
+            for row in connection.execute(
+                f"""SELECT DISTINCT symbol,market,settlement
+                    FROM {TABLE}
+                    WHERE UPPER(instrument_type)=?
+                      AND TRIM(COALESCE(symbol,''))<>''
+                    ORDER BY symbol,market,settlement""",
+                (family,),
+            )
+        ]
+
+
 def _identity(value):
     parts = str(value or "").split("|", 3)
     if len(parts) != 4:
@@ -327,9 +369,9 @@ def _evidence_label(state):
     }.get(str(state or "UNKNOWN").upper(), str(state or "SIN EVIDENCIA").upper())
 
 
-def _render_reconciliation_evidence():
+def _render_reconciliation_evidence(truth=None):
     """Show current IOL/cache and caucion state without redefining readiness."""
-    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    truth = truth or truth_projection.build(_runtime_rows, _runtime_table)
     iol = truth["iol"]
     quote = iol["quotes"]
     family = iol["families"]
@@ -368,9 +410,10 @@ def _family_tone(state):
             "BLOCKED": "red"}.get(str(state or "PENDING").upper(), "gray")
 
 
-def _render_family_readiness(catalog):
+def _render_family_readiness(catalog=None, truth=None):
     """Readiness comes only from candidate_identity_v2; catalog/history stay separate."""
-    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    del catalog
+    truth = truth or truth_projection.build(_runtime_rows, _runtime_table)
     readiness = truth["readiness"]
     rows = "".join(
         "<tr>"
@@ -402,17 +445,17 @@ def _render_family_readiness(catalog):
 def render_page(family="", instrument=""):
     year = datetime.now(TZ).year
     try:
-        catalog = _catalog()
+        families = _families()
     except (sqlite3.Error, OSError, ValueError):
         return ("<h1>Análisis anual</h1><div class='paper-warning'><b>Histórico no disponible para lectura.</b> "
                 "La pantalla no crea ni repara la base. Revisar ruta/esquema mediante el procedimiento del repositorio.</div>")
-    families = sorted({str(row["family"]) for row in catalog if row.get("family")})
     family = str(family or "").strip().upper()
     if family not in families:
         family = ""
-    family_rows = [row for row in catalog if row.get("family") == family]
-    identities = sorted({(str(row["symbol"]), str(row["market"]), str(row["settlement"]))
-                         for row in family_rows})
+    try:
+        identities = _identities_for_family(family)
+    except (sqlite3.Error, OSError, ValueError):
+        identities = []
     wanted = _identity(instrument)
     if wanted and wanted[0].upper() != family:
         wanted = None
@@ -448,8 +491,10 @@ def render_page(family="", instrument=""):
     elif not families:
         report = ("<div class='paper-warning'><b>Sin series canónicas disponibles.</b> "
                   "No se generará un informe a partir de datos ausentes.</div>")
+    runtime_truth = truth_projection.build(_runtime_rows, _runtime_table)
     return (
         "<h1>Análisis</h1><p class='paper-muted'>Performance del año calendario "
         + str(year) + " por instrumento, usando histórico canónico v2.</p>"
-        + form + _render_family_readiness(catalog) + _render_reconciliation_evidence() + report
+        + form + _render_family_readiness(truth=runtime_truth)
+        + _render_reconciliation_evidence(runtime_truth) + report
     )

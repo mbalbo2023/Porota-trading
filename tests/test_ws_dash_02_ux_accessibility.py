@@ -58,10 +58,9 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
         }
         for i in range(25)
     ]
-    monkeypatch.setattr(
-        dashboard,
-        "snapshot",
-        lambda: {
+    def live_snapshot(*, closed_offset=0, limit=10):
+        page=closed[closed_offset:closed_offset+limit]
+        return {
             "state": {
                 "ppi_auth": "OK",
                 "real_orders_sent": 0,
@@ -69,10 +68,13 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
                 "last_market_data_at": stamp,
             },
             "open": [],
-            "closed": closed,
+            "closed": page,
+            "closed_total": len(closed),
+            "close_counts": {"TEST": len(closed)},
             "exit_intents": [],
-        },
-    )
+        }
+
+    monkeypatch.setattr(dashboard, "_live_session_snapshot", live_snapshot)
     monkeypatch.setattr(
         dashboard,
         "_table",
@@ -80,7 +82,12 @@ def test_live_html_keeps_all_30_decisions_and_25_closures_reachable(monkeypatch)
     )
 
     def fake_rows(sql, params=(), path=None):
-        return decisions if "FROM paper_decisions" in sql else []
+        if "COUNT(*) n FROM paper_decisions" in sql:
+            return [{"n": len(decisions)}]
+        if "FROM paper_decisions" in sql:
+            limit, offset = params
+            return decisions[offset:offset+limit]
+        return []
 
     monkeypatch.setattr(dashboard, "_rows", fake_rows)
 

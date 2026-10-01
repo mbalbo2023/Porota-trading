@@ -186,9 +186,9 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             c.execute('CREATE TABLE paper_caucion_allocations(x)')
         response = cliente.get('/api/paper/caucion-allocations')
         assert response.status_code == 503 and response.json()['state'] == 'READ_ERROR'
-    assert consultas
-    assert all(sql.lstrip().upper().startswith("SELECT") for sql in consultas)
-    assert any("FROM signals" in sql and "__SISTEMA__" in sql for sql in consultas)
+    # /vivo y /testing usan el renderer canónico directamente después de
+    # autenticación; no ejecutan el handler legacy sólo para descartar su HTML.
+    assert consultas == []
 
 
 def test_inyeccion_del_banner_es_idempotente(monkeypatch):

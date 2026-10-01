@@ -67,35 +67,71 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         clauses.append("NOT (r.can_simulate=1 AND upper(r.status)='AVAILABLE')")
     catalog_filter_sql=(" AND "+" AND ".join(clauses)) if clauses else ""
 
-    catalog = bg._rows(f"""
-        SELECT
-            c.ticker,
-            c.instrument_type,
-            c.market,
-            c.currency,
-            c.settlement,
-            c.status,
-            c.capability,
-            c.last_seen_at,
-            CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
-            COALESCE(r.status,'NO_CANDIDATE') readiness_status,
-            r.checked_at readiness_as_of
-        FROM financial_instrument_catalog c
+    has_catalog=bg._table("financial_instrument_catalog")
+    has_readiness=bg._table("candidate_identity_v2")
+    join_sql=("""
         LEFT JOIN candidate_identity_v2 r
           ON r.ticker=c.ticker
          AND r.instrument_type=c.instrument_type
          AND r.market=c.market
          AND r.currency=c.currency
          AND r.settlement=c.settlement
-        WHERE c.status='AVAILABLE' {catalog_filter_sql}
-        ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
-    """, tuple(catalog_params)) if bg._table("financial_instrument_catalog") and bg._table("candidate_identity_v2") else bg._rows(f"""
-        SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,
-               0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of
-        FROM financial_instrument_catalog c WHERE c.status='AVAILABLE'
-        {(" AND "+" AND ".join(x for x in clauses if not x.startswith("r." ) and "r." not in x)) if clauses else ""}
-        ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
-    """, tuple(catalog_params[:len(catalog_params)])) if bg._table("financial_instrument_catalog") else []
+    """ if has_readiness else "")
+    if str(state or "").strip().upper()=="RUNTIME_READY" and not has_readiness:
+        effective_filter_sql=" AND 1=0"
+    elif str(state or "").strip().upper()=="PAUSED_EXPLICIT" and not has_readiness:
+        effective_filter_sql=(" AND "+" AND ".join(
+            clause for clause in clauses if "r." not in clause
+        )) if clauses else ""
+    else:
+        effective_filter_sql=catalog_filter_sql
+
+    catalog_total=0
+    catalog_page=[]
+    family_cap_rows=[]
+    if has_catalog:
+        count_row=(bg._rows(
+            f"""SELECT COUNT(*) total
+                FROM financial_instrument_catalog c {join_sql}
+                WHERE c.status='AVAILABLE' {effective_filter_sql}""",
+            tuple(catalog_params),
+        ) or [{"total":0}])[0]
+        catalog_total=_int(count_row.get("total"))
+        if has_readiness:
+            catalog_page=bg._rows(
+                f"""SELECT
+                    c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+                    c.status,c.capability,c.last_seen_at,
+                    CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
+                    COALESCE(r.status,'NO_CANDIDATE') readiness_status,
+                    r.checked_at readiness_as_of
+                  FROM financial_instrument_catalog c {join_sql}
+                  WHERE c.status='AVAILABLE' {effective_filter_sql}
+                  ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
+                  LIMIT ? OFFSET ?""",
+                tuple(catalog_params)+(limit,offset),
+            )
+        else:
+            catalog_page=bg._rows(
+                f"""SELECT
+                    c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+                    c.status,c.capability,c.last_seen_at,
+                    0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of
+                  FROM financial_instrument_catalog c
+                  WHERE c.status='AVAILABLE' {effective_filter_sql}
+                  ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
+                  LIMIT ? OFFSET ?""",
+                tuple(catalog_params)+(limit,offset),
+            )
+        family_cap_rows=bg._rows(
+            f"""SELECT c.instrument_type,c.capability,COUNT(*) count
+                FROM financial_instrument_catalog c {join_sql}
+                WHERE c.status='AVAILABLE' {effective_filter_sql}
+                GROUP BY c.instrument_type,c.capability
+                ORDER BY c.instrument_type,c.capability""",
+            tuple(catalog_params),
+        )
+
 
     market = bg._rows("""
         SELECT
@@ -105,7 +141,16 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
             currency,
             settlement,
             COUNT(*) snapshots,
-            MAX(observed_at) last_observed
+            MAX(observed_at) last_observed,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM financial_instrument_catalog c
+              WHERE c.status='AVAILABLE'
+                AND c.ticker=market_snapshots.symbol
+                AND c.instrument_type=market_snapshots.asset_class
+                AND c.market=market_snapshots.market
+                AND c.currency=market_snapshots.currency
+                AND c.settlement=market_snapshots.settlement
+            ) THEN 1 ELSE 0 END catalog_present
         FROM market_snapshots
         GROUP BY
             symbol,
@@ -211,17 +256,6 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         or [{}]
     )[0]
 
-    catalog_key = {
-        (
-            r.get("ticker"),
-            r.get("instrument_type"),
-            r.get("market"),
-            r.get("currency"),
-            r.get("settlement"),
-        ): r
-        for r in catalog
-    }
-
     market_by_key = {
         (
             r.get("symbol"),
@@ -244,38 +278,34 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         for r in positions
     }
 
-    decisions_by_symbol = {
-        r.get("symbol"): r
-        for r in decisions
-    }
+    decisions_by_symbol = {r.get("symbol"): r for r in decisions}
+    gates_by_symbol = {r.get("symbol"): r for r in gates}
 
-    gates_by_symbol = {
-        r.get("symbol"): r
-        for r in gates
-    }
+    activity_sources=[]
+    if bg._table("paper_decisions"):
+        activity_sources.append("SELECT symbol FROM paper_decisions")
+    if bg._table("trade_gate_evaluations"):
+        activity_sources.append("SELECT symbol FROM trade_gate_evaluations")
+    activity_family_rows=[]
+    if has_catalog and activity_sources:
+        activity_union=" UNION ".join(activity_sources)
+        activity_family_rows=bg._rows(f"""
+            SELECT c.ticker,
+                   CASE WHEN COUNT(DISTINCT c.instrument_type)=1
+                        THEN MIN(c.instrument_type)
+                        ELSE 'AMBIGUO/SIN_MAPEAR' END family
+            FROM financial_instrument_catalog c
+            WHERE c.status='AVAILABLE'
+              AND c.ticker IN ({activity_union})
+            GROUP BY c.ticker
+        """)
+    family_by_symbol={row.get("ticker"):row.get("family") for row in activity_family_rows}
 
-    symbol_families = defaultdict(set)
-
-    for row in catalog:
-        symbol_families[
-            row.get("ticker")
-        ].add(
-            row.get("instrument_type")
-        )
 
     family_decisions = defaultdict(int)
 
     for row in decisions:
-        families = symbol_families.get(
-            row.get("symbol"),
-            set(),
-        )
-
-        family = (
-            next(iter(families))
-            if len(families) == 1
-            else "AMBIGUO/SIN_MAPEAR"
-        )
+        family = family_by_symbol.get(row.get("symbol"), "AMBIGUO/SIN_MAPEAR")
 
         family_decisions[family] += _int(
             row.get("decisions")
@@ -290,16 +320,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
     )
 
     for row in gates:
-        families = symbol_families.get(
-            row.get("symbol"),
-            set(),
-        )
-
-        family = (
-            next(iter(families))
-            if len(families) == 1
-            else "AMBIGUO/SIN_MAPEAR"
-        )
+        family = family_by_symbol.get(row.get("symbol"), "AMBIGUO/SIN_MAPEAR")
 
         family_gates[family]["evaluations"] += _int(
             row.get("evaluations")
@@ -362,13 +383,8 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         )
 
     family_caps = defaultdict(Counter)
-
-    for row in catalog:
-        family_caps[
-            row.get("instrument_type")
-        ][
-            row.get("capability") or "UNKNOWN"
-        ] += 1
+    for row in family_cap_rows:
+        family_caps[row.get("instrument_type")][row.get("capability") or "UNKNOWN"] += _int(row.get("count"))
 
     coverage_by_family = {
         r.get("family"): r
@@ -382,7 +398,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         | set(family_caps)
     )
 
-    total_catalog = len(catalog)
+    total_catalog = catalog_total
 
     total_ready = _int(truth.get("readiness", {}).get("ready"))
 
@@ -520,9 +536,6 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         )
 
     instrument_rows = []
-    catalog_total=len(catalog)
-    catalog_page=catalog[offset:offset+limit]
-
     for row in catalog_page:
         key = (
             row.get("ticker"),
@@ -575,9 +588,8 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         )
 
     orphan_market = [
-        row
-        for key, row in market_by_key.items()
-        if key not in catalog_key
+        row for row in market
+        if not _int(row.get("catalog_present"))
     ]
 
     today = datetime.now(bg.TZ).date()

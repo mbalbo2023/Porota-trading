@@ -1,7 +1,7 @@
 [Unit]
 Description=Publish Porota RC6 introspection after hourly snapshot
 [Timer]
-OnCalendar=*-*-* *:20:00
+OnCalendar=*-*-* *:42:00
 Persistent=true
 RandomizedDelaySec=30
 Unit=porota-introspection-publish-rc6.service
