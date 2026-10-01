@@ -1,4 +1,4 @@
-name: RC6 WS-DISK Deploy Progress Readonly
+name: RC6 WS-DISK Deploy Progress Readonly #2
 
 on:
   push:
