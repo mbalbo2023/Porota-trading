@@ -1,0 +1,79 @@
+name: RC6 History Residual Classification Read-Only 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-sre-20261001
+    paths:
+      - '.github/workflows/rc6-history-residual-classification-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Classify unresolved history targets without retry
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 150s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json, sqlite3
+          from collections import Counter,defaultdict
+
+          hist='/opt/porota-trading/data/market_history.db'
+          paper='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          h=sqlite3.connect(f'file:{hist}?mode=ro',uri=True,timeout=5)
+          h.row_factory=sqlite3.Row; h.execute('PRAGMA query_only=ON')
+          p=sqlite3.connect(f'file:{paper}?mode=ro',uri=True,timeout=5)
+          p.row_factory=sqlite3.Row; p.execute('PRAGMA query_only=ON')
+          rows=[dict(r) for r in h.execute("""
+            SELECT cutoff,symbol,instrument_type,market,settlement,state,source,
+                   requested_from,requested_to,valid_rows,latest_date,error_class,updated_at
+            FROM rc6_history_cutoff_repair
+            WHERE state NOT IN ('COMPLETE','ALREADY_COVERED')
+            ORDER BY state,instrument_type,symbol,market,settlement
+          """)]
+          summary=Counter(r['state'] for r in rows)
+          by_family=defaultdict(Counter)
+          for r in rows: by_family[r['instrument_type']][r['state']]+=1
+          details=[]
+          for r in rows:
+              cat=p.execute("""SELECT status,capability,currency,last_seen_at
+                FROM financial_instrument_catalog
+                WHERE ticker=? AND instrument_type=? AND market=? AND settlement=?
+                ORDER BY last_seen_at DESC LIMIT 1""",
+                (r['symbol'],r['instrument_type'],r['market'],r['settlement'])).fetchone()
+              item=dict(r)
+              item['catalog']=dict(cat) if cat else None
+              details.append(item)
+          run=[dict(r) for r in h.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff")]
+          h.close(); p.close()
+          print('HISTORY_RESIDUAL_SUMMARY='+json.dumps(dict(summary),sort_keys=True))
+          print('HISTORY_RESIDUAL_BY_FAMILY='+json.dumps({k:dict(v) for k,v in sorted(by_family.items())},sort_keys=True))
+          print('HISTORY_REPAIR_RUN='+json.dumps(run,sort_keys=True,default=str))
+          print('HISTORY_RESIDUAL_SAMPLE='+json.dumps(details[:250],sort_keys=True,default=str))
+          print('HISTORY_RESIDUAL_TOTAL='+str(len(details)))
+          print('HISTORY_RESIDUAL_CLASSIFICATION=GREEN_READONLY')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
