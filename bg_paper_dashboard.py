@@ -1061,6 +1061,7 @@ def scalping_page():
     blocker_labels={
       "CONTRACT_NOT_SIMULATABLE":"Contrato no simulable",
       "PENDING_LIVE_CONFIRMATION":"Contrato intradía aún no confirmado",
+      "PPI_INTRADAY_UNSUPPORTED":"PPI no ofrece intradía para esta identidad",
       "INSUFFICIENT_INTRADAY_POINTS":"Muestras intradía insuficientes",
       "NO_CURRENT_BOOK":"Sin libro actual",
       "STALE_BOOK":"Libro vencido",
@@ -1069,6 +1070,20 @@ def scalping_page():
       "ECONOMICS_BINDING_RANGE_BELOW_COST":"Rango observado no cubre costos",
       "SCALPING_SCORE_BELOW_THRESHOLD":"Score debajo del umbral",
     }
+    contract_state_labels={
+      "PENDING_LIVE_CONFIRMATION":"Pendiente de confirmación intradía para esta identidad",
+      "PPI_INTRADAY_UNSUPPORTED":"PPI no ofrece intradía para esta identidad",
+      "CONFIRMED_INTERVAL_VOLUME":"Contrato intradiario confirmado para esta identidad",
+    }
+    raw_worker_detail=str(worker.get('detail') or 'Esperando estado del proceso.')
+    identity_detail_tokens=(
+      "PENDING_LIVE_CONFIRMATION","PPI_INTRADAY_UNSUPPORTED",
+      "contrato intradía","contrato intradiario","intraday unsupported","instrument not found",
+    )
+    worker_detail=(f"Worker {state}: operativo. Las limitaciones de contrato intradiario se detallan por identidad."
+                   if state in {"RUNNING","WAITING_MARKET"}
+                   and any(token.lower() in raw_worker_detail.lower() for token in identity_detail_tokens)
+                   else raw_worker_detail)
     blocker_counts=Counter(str(row.get('reason') or 'Sin motivo publicado') for row in decisions
                            if row.get('action')!='BUY_CANDIDATE')
     blocker_rows="".join(
@@ -1093,7 +1108,7 @@ def scalping_page():
                f"edge {_locale_number(edge*100,2)}%")
     contract_table="".join(
       f"<tr><td><b>{_e(r['symbol'])}</b> · {_e(r['asset_class'])}</td><td>{_e(r['market'])} / {_e(r['currency'])} / {_e(r['settlement'])}</td>"
-      f"<td>{_status(r['state'])}</td><td>{_e(r['observations'])}</td><td>{_e(r['stable_overlap'])}</td>"
+      f"<td>{_status(r['state'])}<br><small>{_e(contract_state_labels.get(r['state'],str(r['state']).replace('_',' ').title()))}</small></td><td>{_e(r['observations'])}</td><td>{_e(r['stable_overlap'])}</td>"
       f"<td>{_e(r['changed_closed_points'])}</td><td>{_local_time(r['last_source_at'])}</td></tr>" for r in contract_rows
     ) or "<tr><td colspan='7'>Esperando la primera rueda con el colector HF3.</td></tr>"
     candidate_table="".join(
@@ -1124,7 +1139,7 @@ def scalping_page():
                       if PAPER_SCALPING_MODE=="ACTIVE_PAPER" else
                       "<div class='paper-warning'><b>ACTIVE_OBSERVE: NO ABRE POSICIONES.</b> El scanner observa y persiste evidencia; no genera fills.</div>")
     body=(f"<h1>Scalping intradiario</h1><div class='paper-grid'>{cards}</div>{execution_notice}"
-      f"<div class='paper-notice'>{_e(worker.get('detail','Esperando estado del proceso.'))}</div>"
+      f"<div class='paper-notice'><b>Estado global del worker:</b> {_e(worker_detail)}</div>"
       "<div class='paper-card'><h2>Contrato intradiario por identidad</h2><table class='paper-table'>"
       "<tr><th>Instrumento</th><th>Identidad</th><th>Estado</th><th>Observaciones</th><th>Solapamiento estable</th>"
       f"<th>Minutos modificados</th><th>Último minuto</th></tr>{contract_table}</table></div>"
