@@ -1,0 +1,53 @@
+name: RC6 WS DASH 06 Oct-01 UX
+
+on:
+  push:
+    branches:
+      - work/ws-dash-06-oct01-ux-truth-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-ux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER guard and compile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q bg_paper_dashboard.py bh_universe_dashboard_hf6.py er_dashboard_truth_projection_rc6.py ei_dashboard_table_accessibility_rc5.py eq_dashboard_table_layout_rc6.py dg_dashboard_daily_result_ux_hf6.py tests/test_ws_dash_06_oct01_ux.py
+          git diff --check
+      - name: Install dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Focused dashboard regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q             tests/test_ws_dash_06_oct01_ux.py             tests/test_ws_dash_05_dashboard_performance.py             tests/test_ws_dash_04_full_dashboard_truth.py             tests/test_dashboard_table_layout_rc6.py             tests/test_dashboard_global_a11y_rc5.py
+          echo WS_DASH_06_TESTS=GREEN
+      - name: Evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p evidence
+          {
+            echo "# WS-DASH-06"
+            echo "sha=$GITHUB_SHA"
+            echo "paper_only=required"
+            echo "real_order_test=NOT_PERFORMED"
+            echo "ppi_watch=UNTOUCHED_BY_THIS_WORKFLOW"
+          } > evidence/ws-dash-06.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-dash-06-evidence
+          path: evidence/ws-dash-06.md
+          if-no-files-found: error
