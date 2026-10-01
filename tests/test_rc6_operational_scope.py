@@ -16,7 +16,7 @@ def test_trading_navigation_exposes_all_families_without_expanding_operation():
     assert ux.OPERATIONAL_FAMILIES == frozenset(("ACCIONES", "CEDEARS"))
 
 
-def test_historical_shadow_rejects_non_operational_family_without_database():
+def test_historical_shadow_accepts_operational_bond_family_but_stays_observe_only_without_data():
     quote = SimpleNamespace(
         symbol="AL30", asset_class="BONOS", market="BYMA",
         currency="ARS", settlement="CI",
@@ -24,5 +24,5 @@ def test_historical_shadow_rejects_non_operational_family_without_database():
 
     result = candle_shadow.collect(store=None, q=quote, at="2026-09-16T10:00:00-03:00")
 
-    assert result["state"] == "OUT_OF_SCOPE"
+    assert result["state"] == "INSUFFICIENT_DATA"
     assert result["decision_effect"] == "OBSERVE_ONLY"
