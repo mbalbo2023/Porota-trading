@@ -76,6 +76,10 @@ jobs:
             fi
           done
 
+          echo "ACTIVE_CONTAINERS_BEGIN"
+          sudo -n docker ps --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}' | sort || true
+          echo "ACTIVE_CONTAINERS_END"
+
           echo "ZERO_KNOWN_ERROR_FILES_BEGIN"
           sudo -n find "$REPO/data/deploy" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
             -printf '%f|%TY-%Tm-%TdT%TH:%TM:%TSZ|%s\n' 2>/dev/null | sort || true
