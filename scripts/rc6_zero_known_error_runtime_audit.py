@@ -141,7 +141,7 @@ def _surface_metrics(path, body):
     lowered = markup.lower()
     return {
         "bytes": len(body),
-        "table_rows": len(re.findall(r"<tr\\b", markup, re.I)),
+        "table_rows": len(re.findall(r"<tr\b", markup, re.I)),
         "paper_cards": len(re.findall(r"class=['\"][^'\"]*paper-card", markup, re.I)),
         "server_page_records": len(
             re.findall(r"data-porota-server-page-record=['\"]1['\"]", markup, re.I)
@@ -150,7 +150,7 @@ def _surface_metrics(path, body):
             re.findall(r"data-porota-record=['\"]1['\"]", markup, re.I)
         ),
         "literal_pending_badges": len(
-            re.findall(r">\\s*(?:PENDING|PENDIENTE)\\s*<", markup, re.I)
+            re.findall(r">\s*(?:PENDING|PENDIENTE)\s*<", markup, re.I)
         ),
         "mostrar_mas": lowered.count("mostrar más"),
         "legacy_text_hits": [
