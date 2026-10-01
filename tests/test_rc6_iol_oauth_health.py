@@ -6,12 +6,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_iol_oauth_health_is_premarket_not_24x7_collector() -> None:
+def test_iol_oauth_guardian_runs_every_ten_minutes_without_market_polling() -> None:
     timer = (ROOT / "systemd/porota-iol-oauth-health-rc6.timer").read_text()
-    assert "09:30:00 America/Argentina/Buenos_Aires" in timer
-    assert "10:20:00 America/Argentina/Buenos_Aires" in timer
-    assert "Persistent=false" in timer
-    assert "OnUnitActiveSec" not in timer
+    assert "OnBootSec=2min" in timer
+    assert "OnUnitActiveSec=10min" in timer
+    assert "AccuracySec=15s" in timer
+    assert "OnCalendar" not in timer
 
 
 def test_iol_oauth_health_has_bounded_runtime_and_no_order_tool() -> None:
