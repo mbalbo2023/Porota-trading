@@ -45,3 +45,15 @@ def test_deploy_transfer_step_cannot_precede_guard_by_reordering() -> None:
     assert text.index("Pre-transfer Droplet disk guard") < text.index(
         "Transfer frozen artifact"
     )
+
+
+def test_disk_metric_probe_avoids_runner_shell_positional_expansion() -> None:
+    text = CANONICAL.read_text(encoding="utf-8")
+    start = text.index("- name: Pre-transfer Droplet disk guard")
+    end = text.index("- name: Transfer frozen artifact")
+    block = text[start:end]
+    assert "python3 -c 'import os,shutil;" in block
+    assert "shutil.disk_usage" in block
+    assert "os.statvfs" in block
+    assert "awk 'NR==2 {print $4}'" not in block
+    assert "\\\\$4" not in block
