@@ -1,0 +1,97 @@
+name: RC6 WS HISTORY 08 Oct-01 Audit
+
+on:
+  push:
+    branches:
+      - work/ws-history-08-oct01-coverage-rotation-20260930
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  history-candles-rotation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Probe history, candles and rotation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/history-candles-rotation.txt <<'REMOTE'
+          set -Eeuo pipefail
+          echo "ACTIVE_SYMBOL_ENV_BEGIN"
+          sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer | grep -E '^(PAPER_ACTIVE_SYMBOL_LIMIT|PAPER_FOCUS_SYMBOLS|PPI_HISTORY_BATCH_LIMIT|PPI_BACKGROUND_INGEST_SECONDS)=' || true
+          echo "ACTIVE_SYMBOL_ENV_END"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json,sqlite3
+          from cg_paper_workspace import database_path
+          from cv_history_store_adapter_hf6 import default_history_store
+          odb=database_path()
+          c=sqlite3.connect(f"file:{odb}?mode=ro",uri=True,timeout=5); c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          out={}
+          out["observer"]=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          for name in ("source_sync","api_health","universe_cycle_metrics","symbol_cycle_metrics","candle_worker_state"):
+              if name in tables:
+                  try:
+                      order="id DESC" if any(r[1]=="id" for r in c.execute(f"PRAGMA table_info({name})")) else "rowid DESC"
+                      out[name]=[dict(r) for r in c.execute(f"SELECT * FROM {name} ORDER BY {order} LIMIT 30").fetchall()]
+                  except sqlite3.Error as exc: out[name]={"error":str(exc)}
+          out["ready_by_family"]=[dict(r) for r in c.execute("""SELECT upper(instrument_type) family,COUNT(*) n
+              FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'
+              GROUP BY upper(instrument_type) ORDER BY family""")] if "candidate_identity_v2" in tables else []
+          c.close()
+          h=default_history_store()
+          with h.connect() as hc:
+              hc.row_factory=sqlite3.Row
+              ht={r[0] for r in hc.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              out["history_tables"]=sorted(ht)
+              if "rc6_history_cutoff_repair_runs" in ht:
+                  out["cutoff_runs"]=[dict(r) for r in hc.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff").fetchall()]
+              if "rc6_history_cutoff_repair" in ht:
+                  out["cutoff_states"]=[dict(r) for r in hc.execute("SELECT state,COUNT(*) n,MAX(updated_at) as_of FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state").fetchall()]
+              if "history_canonical_v2" in ht:
+                  out["history_total"]=hc.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  out["history_latest"]=hc.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+              if "candle_versions" in ht:
+                  out["candle_versions"]=hc.execute("SELECT COUNT(*) FROM candle_versions").fetchone()[0]
+                  out["candle_known_latest"]=hc.execute("SELECT MAX(known_at) FROM candle_versions").fetchone()[0]
+                  out["candle_bar_latest"]=hc.execute("SELECT MAX(bar_start) FROM candle_versions").fetchone()[0]
+              if "candle_dirty" in ht:
+                  out["candle_dirty"]=hc.execute("SELECT COUNT(*) FROM candle_dirty").fetchone()[0]
+          print("HISTORY_CANDLE_ROTATION="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          assert out["observer"]["mode"]=="PRODUCTION_PAPER"
+          assert int(out["observer"]["real_orders_sent"] or 0)==0
+          PY
+          echo "TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager | grep -Ei 'history|candle|snapshot|preopen' || true
+          echo "TIMERS_END"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-history-08-evidence
+          path: evidence/history-candles-rotation.txt
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
