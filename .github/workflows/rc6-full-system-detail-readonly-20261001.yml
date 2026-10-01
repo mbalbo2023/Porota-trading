@@ -44,6 +44,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3
           )
+          set +e
           timeout --signal=TERM --kill-after=10s 540s \
             ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/detail.txt 2>&1 <<'REMOTE'
           set -Eeuo pipefail
@@ -133,10 +134,13 @@ jobs:
                 GROUP BY action,reason ORDER BY n DESC LIMIT 40
               """)
           if exists("ppi_intraday_contract_state"):
-              out["intraday_contract_states"]=rows("""
-                SELECT state,COUNT(*) n,MAX(last_verified_at) latest
-                FROM ppi_intraday_contract_state GROUP BY state ORDER BY n DESC
-              """)
+              cc=[r[1] for r in c.execute("PRAGMA table_info(ppi_intraday_contract_state)")]
+              ts=next((x for x in ("last_verified_at","verified_at","updated_at","checked_at","last_observed_at","observed_at","evaluated_at","last_success_at") if x in cc),None)
+              latest=(f",MAX(\"{ts}\") latest" if ts else "")
+              out["intraday_contract_states"]=rows(
+                  f'SELECT state,COUNT(*) n{latest} FROM ppi_intraday_contract_state GROUP BY state ORDER BY n DESC'
+              )
+              out["intraday_contract_columns"]=cc
           if exists("paper_positions"):
               out["scalping_positions"]=rows("""
                 SELECT status,close_reason,COUNT(*) n,ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
@@ -165,11 +169,13 @@ jobs:
                 WHERE day=date(datetime('now','-3 hours')) ORDER BY currency
               """)
           if exists("paper_equity_by_currency"):
-              out["latest_equity_by_currency"]=rows("""
-                SELECT e.* FROM paper_equity_by_currency e
-                JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x ON x.id=e.id
-                ORDER BY e.currency
-              """)
+              eqrows=rows('SELECT * FROM paper_equity_by_currency ORDER BY rowid DESC LIMIT 100')
+              seen=set(); latest=[]
+              for row in eqrows:
+                  cur=str(row.get("currency") or "")
+                  if cur not in seen:
+                      seen.add(cur); latest.append(row)
+              out["latest_equity_by_currency"]=sorted(latest,key=lambda x:str(x.get("currency") or ""))
 
           if exists("universe_cycle_metrics"):
               out["universe_cycles_recent"]=rows("""
@@ -252,7 +258,11 @@ jobs:
 
           echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
           REMOTE
+          RC=$?
+          set -e
           cat evidence/detail.txt
+          echo "DETAIL_REMOTE_RC=$RC"
+          test "$RC" -eq 0
 
       - uses: actions/upload-artifact@v4
         if: always()
