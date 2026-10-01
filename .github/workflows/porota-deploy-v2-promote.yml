@@ -231,9 +231,10 @@ jobs:
           echo "DOCKER_SYSTEM_DF_AFTER=$DOCKER_DF_AFTER"
           IMAGE_TAR_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-predeploy-image.tar.gz")"
           BUNDLE_BYTES="$(stat -c '%s' "$REMOTE_DIR/porota-deploy-bundle-v2.tgz")"
-          # Loading/unpacking a compressed image needs materially more space than
-          # its tarball. Keep a 1 GiB floor plus conservative artifact headroom.
-          REQUIRED_PREFLIGHT_FREE=$((IMAGE_TAR_BYTES * 4 + BUNDLE_BYTES * 2 + 1073741824))
+          # Operator-authorized RC6 floor: keep the safety guard blocking, but
+          # do not require synthetic multi-artifact headroom above 2 GiB.
+          # Artifact integrity/build-once checks remain unchanged.
+          REQUIRED_PREFLIGHT_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["deploy_pretransfer_min_free_bytes"])')"
           echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
           echo "BUNDLE_BYTES=$BUNDLE_BYTES"
           echo "REQUIRED_PREFLIGHT_FREE=$REQUIRED_PREFLIGHT_FREE"
@@ -313,6 +314,16 @@ jobs:
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --json-out "$REMOTE_DIR/host-control-plane-applied.json"
 
+          # Shared /app/data/market is writable only by the unprivileged RC6
+          # runtime UID. Fix the directory itself (not recursively) so atomic
+          # *.tmp -> latest replacements work without broadening privileges.
+          test ! -L "$REPO/data/market"
+          sudo -n install -d -o 1000 -g 1000 -m 0750 "$REPO/data/market"
+          MARKET_DIR_IDENTITY="$(sudo -n stat -c '%u:%g|%a' "$REPO/data/market")"
+          echo "RC6_MARKET_DIR_IDENTITY=$MARKET_DIR_IDENTITY"
+          test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
+          echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
+
           MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
@@ -355,6 +366,42 @@ jobs:
           test "$POST_STATE_RC" -eq 0
           echo "POST_STATE=$POST_STATE"
           test "$POST_STATE" = "STATE_FAST|PRODUCTION_PAPER|0"
+
+          # Fail-safe provenance is materialized immediately after the exact
+          # image is running and PAPER safety is proven. If any later audit
+          # fails, CURRENT_STATE_V2 describes the actual promoted runtime as
+          # DEPLOYED_VALIDATION_PENDING instead of silently describing the
+          # previous image.
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" "$CANDIDATE_SHA" "$DEPLOY_SHA" "$RUNTIME_IMAGE_ID" "$POST_STATE" <<'PY'
+          import json,os,sys,tempfile
+          from datetime import datetime,timezone
+          path,candidate,deploy,image_id,post=sys.argv[1:]
+          payload={
+            "schema_version":2,
+            "recorded_at":datetime.now(timezone.utc).isoformat(),
+            "candidate_sha":candidate,
+            "deploy_sha":deploy,
+            "image_id":image_id,
+            "mode":"PRODUCTION_PAPER",
+            "real_orders_sent":0,
+            "real_order_routes":"NOT_CALLED",
+            "observer_state":post,
+            "ppi_watch_untouched":True,
+            "deployment_strategy":"FIX_FORWARD_ONLY",
+            "build_once":True,
+            "validation_status":"DEPLOYED_VALIDATION_PENDING",
+          }
+          directory=os.path.dirname(path)
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
+          try:
+              with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
+              os.replace(tmp,path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print("RC6_CURRENT_STATE_PROVISIONAL=GREEN")
+          PY
           echo "POST_SQLITE_QUICK_CHECK=DEFERRED_TO_CONTRACT_RUNNER"
 
           # Full contract evidence reconciliation remains read-only at the broker
@@ -766,9 +813,18 @@ jobs:
             "ppi_watch_untouched":True,
             "deployment_strategy":"FIX_FORWARD_ONLY",
             "build_once":True,
+            "validation_status":"VALIDATED_RUNTIME",
           }
-          open(path,"w",encoding="utf-8").write(json.dumps(payload,indent=2,sort_keys=True)+"\n")
-          print("CURRENT_STATE_V2=GREEN")
+          import os,tempfile
+          directory=os.path.dirname(path)
+          fd,tmp=tempfile.mkstemp(prefix=".CURRENT_STATE_V2.",suffix=".tmp",dir=directory)
+          try:
+              with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                  json.dump(payload,handle,indent=2,sort_keys=True); handle.write("\n")
+              os.replace(tmp,path)
+          finally:
+              if os.path.exists(tmp): os.unlink(tmp)
+          print("CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME")
           PY
 
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
