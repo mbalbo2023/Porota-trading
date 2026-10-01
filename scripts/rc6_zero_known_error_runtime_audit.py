@@ -133,7 +133,7 @@ def _surface_metrics(path, body):
     # marker string as code; counting it as an HTML row made server-side paging
     # fail closed after the actual unbounded rows had already been removed.
     markup = re.sub(
-        r"<(?:script|style)\\b[^>]*>.*?</(?:script|style)>",
+        r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>",
         "",
         text,
         flags=re.I | re.S,
