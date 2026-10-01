@@ -37,7 +37,8 @@
     "state": "MISSING_CURRENT_CONTRACT_TERMS"
   },
   "changes": [
-    "trading.open: 0 -> 1",
+    "trading.closed_today: 0 -> 1",
+    "trading.net_pnl_today: 0 -> -1715.8758",
     "ingestion.rows: 15624 -> 242636"
   ],
   "coherence": {
@@ -50,24 +51,24 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-10-01T14:18:34.695463+00:00",
-      "observed_symbols": 41
+      "last_observed_at": "2026-10-01T15:14:13.442138+00:00",
+      "observed_symbols": 102
     },
     {
       "currency": "USD_CCL",
-      "last_observed_at": "2026-10-01T14:13:31.658823+00:00",
-      "observed_symbols": 24
+      "last_observed_at": "2026-10-01T15:14:00.033993+00:00",
+      "observed_symbols": 43
     },
     {
       "currency": "USD_MEP",
-      "last_observed_at": "2026-10-01T14:13:25.328060+00:00",
-      "observed_symbols": 26
+      "last_observed_at": "2026-10-01T15:13:54.563023+00:00",
+      "observed_symbols": 49
     }
   ],
   "economics": {
     "blocked_1h": 0,
-    "evaluated_1h": 1,
-    "opened_1h": 1
+    "evaluated_1h": 0,
+    "opened_1h": 0
   },
   "family_readiness": [
     {
@@ -330,33 +331,33 @@
     "branch": "runtime-observability",
     "day": "2026-10-01",
     "detail": null,
-    "recorded_at": "2026-10-01T13:20:28.246451+00:00",
+    "recorded_at": "2026-10-01T14:20:32.352725+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 95295,
+    "candle_versions": 95636,
     "instruments": 1151,
     "last_download": "2026-09-25T20:02:13.939573+00:00",
     "last_market_date": "2026-09-25",
-    "latest_candle_known_at": "2026-10-01T14:18:28.302068+00:00",
+    "latest_candle_known_at": "2026-10-01T15:15:00.565429+00:00",
     "raw": 0,
     "rows": 242636
   },
   "learning_expectancy": [
     {
-      "average_loss": "838.7626",
+      "average_loss": "851.4744",
       "average_win": "388.8316",
       "binding": false,
       "currency": "ARS",
-      "empirical_expectancy": "-681.3788",
-      "losses": 68,
+      "empirical_expectancy": "-694.4737",
+      "losses": 69,
       "minimum_sample": 30,
-      "net_total": "-53147.5435",
-      "profit_factor": "0.0682",
+      "net_total": "-54863.4193",
+      "profit_factor": "0.0662",
       "sample_state": "OBSERVATIONAL",
-      "samples": 78,
-      "win_rate_pct": "12.8205",
+      "samples": 79,
+      "win_rate_pct": "12.6582",
       "wins": 10,
       "zeros": 0
     },
@@ -379,20 +380,20 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 7,
+    "falling": 9,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 2,
+    "rising": 1,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 21,
-    "unchanged": 12
+    "symbols": 40,
+    "unchanged": 30
   },
   "observer": {
-    "heartbeat_at": "2026-10-01T14:13:32.342484+00:00",
-    "http_allowed": 508,
+    "heartbeat_at": "2026-10-01T15:14:17.222766+00:00",
+    "http_allowed": 1103,
     "http_blocked": 0,
-    "last_market_data_at": "2026-10-01T14:18:17.445421+00:00",
+    "last_market_data_at": "2026-10-01T15:14:02.076325+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "OK",
     "process_state": "RUNNING",
@@ -401,19 +402,19 @@
   },
   "ppi_errors_1h": [
     {
+      "count": 3,
+      "event_type": "DATA_ERROR"
+    },
+    {
       "count": 2,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 1,
+      "count": 2,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 1,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 1,
+      "count": 2,
       "event_type": "DATA_ERROR"
     },
     {
@@ -484,9 +485,9 @@
   "quick_check": "ok",
   "scalping": {
     "approved_1h": 0,
-    "evaluated_1h": 310,
+    "evaluated_1h": 383,
     "paper_positions_today": 0,
-    "rejected_1h": 310
+    "rejected_1h": 383
   },
   "schema": "porota-introspection-public-v1",
   "sector_concentration": {
@@ -497,28 +498,28 @@
     "maximum_observed_concentration": 0,
     "policy": "OBSERVATION_ONLY",
     "state": "MAP_UNAVAILABLE",
-    "unmapped_positions": 1
+    "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 1197711360,
-    "filesystem_free": 8108556288,
+    "database_bytes": 1201348608,
+    "filesystem_free": 8102825984,
     "filesystem_total": 24883167232,
-    "filesystem_used": 16757833728,
-    "filesystem_used_pct": 67.35,
+    "filesystem_used": 16763564032,
+    "filesystem_used_pct": 67.37,
     "wal_bytes": 15400592
   },
   "telegram": {
-    "SENT": 330,
+    "SENT": 332,
     "SUPPRESSED_WEEKEND": 3
   },
-  "timestamp": "2026-10-01T11:15:06-03:00",
+  "timestamp": "2026-10-01T12:15:09-03:00",
   "trading": {
-    "buys_1h": 1,
-    "closed_today": 0,
-    "decisions_1h": 121,
-    "net_pnl_today": 0,
-    "open": 1,
-    "sells_1h": 0
+    "buys_1h": 0,
+    "closed_today": 1,
+    "decisions_1h": 137,
+    "net_pnl_today": -1715.8758,
+    "open": 0,
+    "sells_1h": 2
   },
   "verdict": "WARN",
   "version": "17.0.0-rc6",
@@ -529,32 +530,32 @@
   "workers": {
     "candles": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:18:32.794778+00:00",
+      "heartbeat_at": "2026-10-01T15:17:44.677433+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:17:47.928007+00:00",
-      "state": "ERROR"
+      "heartbeat_at": "2026-10-01T15:17:40.573610+00:00",
+      "state": "WAITING_WINDOW"
     },
     "exit_reader": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:17:58.712432+00:00",
-      "state": "STOPPED"
+      "heartbeat_at": "2026-10-01T15:17:41.717874+00:00",
+      "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:16:33.466829+00:00",
+      "heartbeat_age_seconds": 11.057642,
+      "heartbeat_at": "2026-10-01T15:14:57.948984+00:00",
       "state": "RUNNING"
     },
     "supervisor": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:18:29.201310+00:00",
+      "heartbeat_at": "2026-10-01T15:17:41.577220+00:00",
       "state": "RUNNING"
     },
     "telegram": {
       "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-10-01T14:18:32.848870+00:00",
+      "heartbeat_at": "2026-10-01T15:17:44.361223+00:00",
       "state": "RUNNING"
     }
   }
