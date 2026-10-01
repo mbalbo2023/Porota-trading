@@ -50,12 +50,13 @@ def build(db_path=None, now=None):
     connection.row_factory = sqlite3.Row
     try:
         position_columns = _columns(connection, "paper_positions")
-        position_scope = "FILTERED_ACCIONES_CEDEARS" if "asset_class" in position_columns else "LEGACY_SCHEMA_UNFILTERED"
-        position_filter = " AND UPPER(asset_class) IN ('ACCIONES','CEDEARS')" if "asset_class" in position_columns else ""
-        positions = _rows(connection, """
-            SELECT paper_id,status,opened_at,closed_at,close_reason
+        has_asset_class = "asset_class" in position_columns
+        position_scope = "ALL_PAPER_POSITION_FAMILIES" if has_asset_class else "LEGACY_SCHEMA_UNFILTERED"
+        asset_select = ",asset_class" if has_asset_class else ""
+        positions = _rows(connection, f"""
+            SELECT paper_id,status,opened_at,closed_at,close_reason{asset_select}
             FROM paper_positions
-            WHERE (date(opened_at, '-3 hours')=? OR date(closed_at, '-3 hours')=?)""" + position_filter,
+            WHERE (date(opened_at, '-3 hours')=? OR date(closed_at, '-3 hours')=?)""",
             (day, day))
         gates = _rows(connection, """
             SELECT final_result FROM trade_gate_evaluations
@@ -86,6 +87,10 @@ def build(db_path=None, now=None):
                       for row in events}
     outcomes = {str(row.get("outcome") or "UNLABELED"): int(row.get("total") or 0)
                 for row in learning}
+    families = Counter(
+        str(row.get("asset_class") or "UNKNOWN").upper()
+        for row in positions if "asset_class" in row
+    )
     lessons = []
     if closed:
         lessons.append(
@@ -128,11 +133,12 @@ def build(db_path=None, now=None):
             "event_counts": dict(sorted(events_by_type.items())),
             "learning_outcomes": dict(sorted(outcomes.items())),
             "lessons": lessons,
-            "scope": "ACCIONES_Y_CEDEARS_PAPER",
+            "scope": "ALL_CONTRACT_FAMILIES_PAPER",
             "scope_evidence": {
                 "positions": position_scope,
+                "position_families": dict(sorted(families.items())),
                 "gates_events_learning": "LEGACY_ACTIVITY_UNATTRIBUTED_BY_ASSET_CLASS",
-                "interpretation": "Las posiciones se filtran por familia cuando el esquema la conserva; los conteos de gates, eventos y aprendizaje no se atribuyen retroactivamente.",
+                "interpretation": "Las posiciones PAPER se informan para todas las familias persistidas. Los conteos legacy de gates, eventos y aprendizaje que no guardan familia no se atribuyen retroactivamente.",
             },
         },
         "safety": {

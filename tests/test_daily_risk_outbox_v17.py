@@ -421,6 +421,30 @@ def test_config_y_reloj_no_pueden_resetear_control(store):
     assert broker.daily_risk.evaluate(AT)['ARS']['state']=='CLOCK_ROLLBACK'
 
 
+def test_riesgo_reusa_snapshot_mas_fresco_en_carrera_misma_rueda(store):
+    broker=PaperBroker(store,initial_cash='10000',daily_loss_pct='1')
+    base=datetime.fromisoformat(AT)
+    first=broker.daily_risk.evaluate(base)['ARS']
+    assert first['state']=='READY'
+    newer=broker.daily_risk.evaluate(base+timedelta(seconds=30))['ARS']
+    assert newer['state']=='READY'
+    raced=broker.daily_risk.evaluate(base+timedelta(seconds=20))['ARS']
+    assert raced['state']=='READY'
+    assert raced['reused_fresher_evaluation_at']==newer['evaluated_at']
+    assert raced['clock_skew_seconds']==pytest.approx(10.0)
+    persisted=next(r for r in records(store,'paper_daily_risk') if r['currency']=='ARS')
+    assert persisted['evaluated_at']==newer['evaluated_at']
+
+
+def test_riesgo_sigue_fail_closed_ante_retroceso_real_misma_rueda(store):
+    broker=PaperBroker(store,initial_cash='10000',daily_loss_pct='1')
+    base=datetime.fromisoformat(AT)
+    broker.daily_risk.evaluate(base+timedelta(minutes=10))
+    result=broker.daily_risk.evaluate(base)['ARS']
+    assert result['state']=='CLOCK_ROLLBACK'
+    assert result['clock_skew_seconds']>=600
+
+
 def test_caucion_devenga_sin_contar_principal_y_bloqueo_no_impide_vencer(store):
     broker=PaperBroker(store,initial_cash='10000',daily_loss_pct='1')
     offer=caucion_offer()

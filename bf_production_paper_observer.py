@@ -40,7 +40,12 @@ INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 PUBLIC_STRUCTURED_CAPTURE_SECONDS = max(900, int(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS", "900")))
-PUBLIC_CAPTURE_PATH = Path(os.getenv("POROTA_PUBLIC_SOURCE_CAPTURE_PATH", "/opt/porota-trading/data/market/rc6_public_sources_latest.json"))
+# Inside the immutable observer container, persistent market data is mounted
+# at /app/data. Host-side systemd pipelines keep their explicit /opt root.
+PUBLIC_CAPTURE_PATH = Path(os.getenv(
+    "POROTA_PUBLIC_SOURCE_CAPTURE_PATH",
+    "/app/data/market/rc6_public_sources_latest.json",
+))
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))

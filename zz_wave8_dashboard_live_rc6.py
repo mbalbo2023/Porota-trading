@@ -262,6 +262,22 @@ def _risk_html():
         rows.append(f"<tr><td data-wrap='true'><b>{_esc(name)}</b></td><td>{_esc(n)}</td><td data-wrap='true'>Persistencia runtime</td></tr>")
     table=''.join(rows) or "<tr><td colspan='3'>No se encontraron tablas de riesgo; requiere reconciliación.</td></tr>"
     requirements=_risk_requirement_rows(all_tables)
+    daily = bg._rows("""SELECT day,currency,state,baseline_equity,daily_pnl,loss_budget,evaluated_at,detail
+        FROM paper_daily_risk ORDER BY julianday(evaluated_at) DESC LIMIT 12""") if bg._table('paper_daily_risk') else []
+    daily_rows=''.join(
+        "<tr>"+f"<td>{_esc(r.get('day'))}</td><td><b>{_esc(r.get('currency'))}</b></td>"
+        +f"<td>{bg._status(r.get('state'))}</td><td>{_esc(r.get('daily_pnl'))}</td>"
+        +f"<td>{_esc(r.get('loss_budget'))}</td><td>{_esc(r.get('evaluated_at'))}</td>"
+        +f"<td data-wrap='true'>{_esc(r.get('detail'))}</td></tr>" for r in daily
+    ) or "<tr><td colspan='7'>Sin evaluaciones persistidas.</td></tr>"
+    health = bg._rows("""SELECT component,source,state,checked_at,last_success_at,detail
+        FROM api_health ORDER BY julianday(checked_at) DESC LIMIT 30""") if bg._table('api_health') else []
+    health_rows=''.join(
+        "<tr>"+f"<td><b>{_esc(r.get('component'))}</b></td><td>{_esc(r.get('source'))}</td>"
+        +f"<td>{bg._status(r.get('state'))}</td><td>{_esc(r.get('checked_at'))}</td>"
+        +f"<td>{_esc(r.get('last_success_at'))}</td><td data-wrap='true'>{_esc(r.get('detail'))}</td></tr>"
+        for r in health
+    ) or "<tr><td colspan='6'>api_health no tiene filas; estado NO_VERIFICADO.</td></tr>"
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>{bg.THEME}{bg.TABLE_A11Y_CSS}{CLASSIC_CSS}{RISK_READABLE_CSS}</head><body>{bg.top_nav_html()}<main class='paper-page porota-risk-page'>
     <h1>Riesgo — controles RC6</h1><div class='paper-grid'>
     <div class='paper-card'><h3>Modo</h3><b class='metric'>{_esc(observer.get('mode'))}</b></div>
@@ -270,25 +286,40 @@ def _risk_html():
     <div class='paper-card'><h3>Event Risk</h3><b class='metric'>SHADOW</b><div class='paper-muted'>{len(event_contract.EVENT_TYPES)} tipos contractuales; una noticia aislada nunca habilita trading.</div></div>
     </div>
     <section class='paper-card'><h2>Matriz de controles exigidos</h2><p class='paper-muted'>EVIDENCE significa que existe persistencia identificable; no implica por sí sola que el control ya esté BINDING. PENDIENTE queda visible hasta demostrar wiring live.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Requisito RC6</th><th>Evidencia</th><th>Persistencia encontrada</th></tr></thead><tbody>{requirements}</tbody></table></section>
+    <section class='paper-card'><h2>Estado financiero de riesgo</h2><p class='paper-muted'>Fuente: paper_daily_risk. Un estado CLOCK_ROLLBACK sólo es válido ante un retroceso real; las carreras de workers reutilizan el snapshot más fresco dentro del presupuesto de freshness.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Día</th><th>Moneda</th><th>Estado</th><th>PnL diario</th><th>Presupuesto</th><th>Evaluado</th><th>Detalle</th></tr></thead><tbody>{daily_rows}</tbody></table></section>
+    <section class='paper-card'><h2>Salud de APIs y fuentes</h2><p class='paper-muted'>Fuente directa: api_health. ROJO/AMARILLO describen el componente nombrado; no se extrapolan al proveedor completo.</p><table class='paper-table classic-responsive-table'><thead><tr><th>Componente</th><th>Fuente</th><th>Estado</th><th>Chequeado</th><th>Último éxito</th><th>Detalle</th></tr></thead><tbody>{health_rows}</tbody></table></section>
     <section class='paper-card'><h2>Persistencia de riesgo / gates / alertas</h2><table class='paper-table classic-responsive-table'><thead><tr><th>Tabla</th><th>Registros</th><th>Rol</th></tr></thead><tbody>{table}</tbody></table></section>
     {_learning_section()}</main></body></html>"""
 
 
 def _strategy_overview():
     subnav=bg.trading_nav_html()
+    truth=bg.truth_projection()
+    by_family={str(row.get('family') or '').upper():row for row in truth.get('readiness',{}).get('families',[])}
     links=(
-      ('/trading/acciones-cedears','Acciones y CEDEAR','Readiness spot, PPI primario e IOL complementario.'),
-      ('/trading/bonos','Bonos','Identidad, nominales, liquidación y evidencia.'),
-      ('/trading/on','Obligaciones negociables','Nominal, flujo, vencimiento, costos y contrato.'),
-      ('/trading/cauciones','Cauciones','Colocadora PAPER: fuente, tasa, ventana, caja, reserva y liquidación.'),
-      ('/trading/letras','Letras','Nominales, vencimiento y contrato PPI.'),
-      ('/trading/etf','ETF','Catálogo, identidad y datos de mercado.'),
-      ('/trading/indices','Índices','Tipo de instrumento y fuente contractual.'),
-      ('/trading/futuros','Futuros','Contrato, margen, vencimiento y riesgo.'),
-      ('/trading/opciones','Opciones','Contrato, strike, vencimiento y prima.'),
-      ('/scalping','Scalping','Evidencia intradiaria, scanner y PAPER/SHADOW.'),
+      ('/trading/acciones-cedears','Acciones y CEDEAR',('ACCIONES','CEDEARS'),'Readiness spot, PPI primario e IOL complementario.'),
+      ('/trading/bonos','Bonos',('BONOS',),'Identidad, nominales, liquidación y evidencia.'),
+      ('/trading/on','Obligaciones negociables',('OBLIGACIONES','ON'),'Nominal, flujo, vencimiento, costos y contrato.'),
+      ('/trading/cauciones','Cauciones',('CAUCIONES',),'Colocadora PAPER: fuente, tasa, ventana, caja, reserva y liquidación.'),
+      ('/trading/letras','Letras',('LETRAS',),'Nominales, vencimiento y contrato PPI.'),
+      ('/trading/etf','ETF',('ETFS','ETF'),'Catálogo, identidad y datos de mercado.'),
+      ('/trading/indices','Índices',('INDICES',),'Tipo de instrumento y fuente contractual.'),
+      ('/trading/futuros','Futuros',('FUTUROS',),'Contrato, margen, vencimiento y riesgo.'),
+      ('/trading/opciones','Opciones',('OPCIONES',),'Contrato, strike, vencimiento y prima.'),
+      ('/scalping','Scalping',(),'Evidencia intradiaria, scanner y PAPER/SHADOW.'),
     )
-    cards=''.join(f"<a class='paper-card' href='{href}' style='text-decoration:none'><h3>{label}</h3><p class='paper-muted'>{desc}</p></a>" for href,label,desc in links)
+    cards=[]
+    for href,label,families,desc in links:
+        rows=[by_family.get(f) for f in families if by_family.get(f)]
+        ready=sum(int(r.get('runtime_ready') or 0) for r in rows)
+        total=sum(int(r.get('candidate_total') or 0) for r in rows)
+        states=sorted({str(r.get('state') or 'NO_VERIFICADO') for r in rows})
+        state=(" / ".join(states) if states else
+               (str(truth.get('scalping',{}).get('worker_state') or 'NO_VERIFICADO') if label=='Scalping' else 'NO_VERIFICADO'))
+        tone='s-verde' if rows and all(x=='RUNTIME_READY' for x in states) else 's-amarillo' if rows else 's-gris'
+        counts=(f"{bg._locale_number(ready,0)}/{bg._locale_number(total,0)} RUNTIME_READY" if rows else desc)
+        cards.append(f"<a class='paper-card' href='{href}' style='text-decoration:none'><h3>{label}</h3><span class='paper-status {tone}'>{_esc(state)}</span><p><b>{_esc(counts)}</b></p><p class='paper-muted'>{desc}</p></a>")
+    cards=''.join(cards)
     body=("<h1>Trading — Estrategias y readiness</h1>"+subnav+
           "<div class='paper-notice'><b>Readiness por familia:</b> cada pantalla muestra objetivo, evidencia observada, brechas y siguiente acción. Una familia visible no equivale a permiso operativo.</div>"+
           "<section><h2>Familias y evaluadores</h2><div class='paper-grid'>"+cards+"</div></section>")
@@ -369,7 +400,11 @@ def _evidence_detail_section():
         "<section class='paper-card' id='rc6-evidence-progress'>"
         "<h2>Evidence v2 e IOL actual</h2>"
         "<p class='paper-muted'>Contrato usa contract_evidence_v2_current. Readiness usa candidate_identity_v2. "
-        "IOL es complementario y se informa como LIVE, CACHE_FRESH, CACHE_STALE o SOURCE_UNAVAILABLE.</p>"
+        "IOL es complementario. SOURCE_UNAVAILABLE describe exclusivamente el collector/cache interno de la sección: "
+        "no equivale a IOL/MCP caído ni cambia un READY de PPI. Se muestra timestamp/LKG para distinguir ambos conceptos.</p>"
+        f"<p class='paper-muted'><b>IOL family cache:</b> {bg._status(iol.get('families',{}).get('state'))} · "
+        f"refrescado {bg._local_time(iol.get('families',{}).get('as_of'))} · "
+        f"LKG {bg._local_time(iol.get('families',{}).get('last_known_good_at'))}</p>"
         "<table class='paper-table classic-responsive-table'><thead><tr><th>Familia</th><th>Identidades</th>"
         "<th>Filas Evidence v2</th><th>Fuentes</th><th>Actualizado</th></tr></thead><tbody>"+
         (''.join(family_rows) or "<tr><td colspan='5'>Evidence v2 no disponible.</td></tr>")+"</tbody></table>"
@@ -396,14 +431,15 @@ def install(app, check_auth):
     bg._document=document_live
 
     app.add_middleware(_ClassicHTMLMiddleware)
-    old_learning=bg.learning_page; old_validation=bg.validation_page; old_trading=bg.trading_page
+    old_learning=bg.learning_page; old_validation=bg.validation_page; old_trading=bg.trading_page; old_analysis=bg.analysis_page
     def learning_page_live(): return _append_before_main_end(old_learning(),_learning_section())
     def validation_page_live(): return _append_before_main_end(old_validation(),_learning_section())
+    def analysis_page_live(): return _append_before_main_end(old_analysis(),_evidence_detail_section())
     def trading_page_live(section=''):
         section=str(section or '').strip().lower()
         page=_strategy_overview() if section=='estrategias' else old_trading(section)
         return _append_before_main_end(page,_family_activity_section(section)+_evidence_detail_section())
-    bg.learning_page=learning_page_live; bg.validation_page=validation_page_live; bg.trading_page=trading_page_live
+    bg.learning_page=learning_page_live; bg.validation_page=validation_page_live; bg.trading_page=trading_page_live; bg.analysis_page=analysis_page_live
 
     @app.get('/riesgo',response_class=HTMLResponse)
     def riesgo(request:Request,token:str=Query(default=''),authorization:str|None=Header(default=None)):
