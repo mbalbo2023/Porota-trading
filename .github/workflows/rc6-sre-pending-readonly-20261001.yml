@@ -6,6 +6,11 @@ on:
       - audit/ws-sre-pending-readonly-20261001
     paths:
       - '.github/workflows/rc6-sre-pending-readonly-20261001.yml'
+  pull_request:
+    branches:
+      - deploy/rc6-pr69-isolated-20260915
+    paths:
+      - '.github/workflows/rc6-sre-pending-readonly-20261001.yml'
   workflow_dispatch:
 
 permissions:
