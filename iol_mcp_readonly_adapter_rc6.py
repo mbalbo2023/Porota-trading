@@ -227,17 +227,7 @@ class OAuthStoreReadOnlyMCP:
         return expiry is not None and time.time() >= expiry - DEFAULT_REFRESH_SKEW_SECONDS
 
     def _stored_token_endpoint(self, data: dict[str, Any]) -> str | None:
-        endpoint = _https_url(data.get("token_endpoint"))
-        if endpoint:
-            return endpoint
-        issuer = _https_url(data.get("issuer"))
-        if issuer:
-            # IOL's registered OAuth flow exchanges the authorization code at
-            # the MCP resource's /token endpoint. Persist it after the first
-            # successful refresh so later refreshes do not depend on a 401
-            # challenge containing resource_metadata.
-            return issuer.rstrip("/") + "/token"
-        return None
+        return _https_url(data.get("token_endpoint"))
 
     def _refresh_if_due(self) -> None:
         data = self._load_store()
@@ -305,7 +295,16 @@ class OAuthStoreReadOnlyMCP:
                 fields["client_secret"] = secret
         endpoint = self._stored_token_endpoint(data)
         if not endpoint:
-            endpoint = self._token_endpoint(headers)
+            try:
+                endpoint = self._token_endpoint(headers)
+            except IOLMCPError:
+                issuer = _https_url(data.get("issuer"))
+                if not issuer:
+                    raise
+                # The verified IOL authorization-code flow exchanges at
+                # <issuer>/token. This fallback is needed for proactive refresh,
+                # which runs before there is a 401 challenge to inspect.
+                endpoint = issuer.rstrip("/") + "/token"
         request = urllib.request.Request(
             endpoint, data=urllib.parse.urlencode(fields).encode(),
             headers=request_headers, method="POST",
