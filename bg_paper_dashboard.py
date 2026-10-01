@@ -391,13 +391,18 @@ def _canonicalize(content, path=""):
     return content
 
 
-def snapshot():
+def snapshot(*, include_quotes=True):
     state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":_effective_mode(),"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
-    identity_extra = ",currency,market" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(market_snapshots)")) else ""
-    quotes = _rows(f"""SELECT s.* FROM market_snapshots s JOIN
-      (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
-       GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
-      ORDER BY s.symbol,s.asset_class,s.settlement""")
+    # Quotes are a compatibility surface for explicit snapshot callers only.
+    # Dashboard pages and the public operational-state API do not consume them,
+    # so they must not scan/materialize the whole universe on every request.
+    quotes = []
+    if include_quotes:
+        identity_extra = ",currency,market" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(market_snapshots)")) else ""
+        quotes = _rows(f"""SELECT s.* FROM market_snapshots s JOIN
+          (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
+           GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
+          ORDER BY s.symbol,s.asset_class,s.settlement""")
     spot = _spot_snapshot()
     opened, closed = spot['open'],spot['closed']
     decisions = _rows("SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 100")
@@ -472,7 +477,7 @@ def _live_session_snapshot(*, closed_offset=0, limit=10):
 
 
 def _daily_risk_panel():
-    rows = snapshot()['daily_risk']
+    rows = snapshot(include_quotes=False)['daily_risk']
     today = datetime.now(TZ).date().isoformat()
     soft_pct = Decimal(os.getenv("PAPER_DAILY_SOFT_STOP_PCT", "1.5"))
     current = [r for r in rows if r['day']==today]
@@ -506,7 +511,7 @@ def _daily_risk_panel():
 
 
 def _exit_supervision_panel():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     health = data["exit_supervisor"]
     # Sólo lectura: abrir el panel no crea bases, migra ni ejecuta supervisión.
     state = health.get("state", "NOT_STARTED")
@@ -669,7 +674,7 @@ def _trade_metrics(closed):
 
 
 def _balances_panel():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     if data['caucion_state']!='READY' or data['spot_state']!='READY':
         return ("<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"
                 +_spot_warning(data['spot_state'])+_caucion_warning(data['caucion_state'])+'</div>')
@@ -841,7 +846,7 @@ def _health_components():
 
 
 def _daily_summary_panel(data=None):
-    data = data or snapshot()
+    data = data or snapshot(include_quotes=False)
     if data["spot_state"] != "READY" or data["caucion_state"] != "READY":
         return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
                 + _spot_warning(data["spot_state"]) + _caucion_warning(data["caucion_state"]) + "</div>")
@@ -944,7 +949,7 @@ def _daily_results_panel():
                 "<div class='paper-warning'>Resumen diario no conciliable; no se inventa un resultado.</div></section>")
 
 def home_page():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     state = data["state"]
     heartbeat_ok = _fresh(state.get("heartbeat_at"), 180)
     sre = (_rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("sre_snapshots") else {}
@@ -1011,7 +1016,7 @@ def home_page():
         + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
 
 def paper_page(compact=False):
-    data=snapshot(); state=data["state"]
+    data=snapshot(include_quotes=False); state=data["state"]
     latest=(_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("universe_cycle_metrics") else {}
     pnl,wins,wr=_trade_metrics(data["closed"])
     pnl=sum(_num(p["net_pnl"]) for p in data["realized"] if p.get("currency","ARS")=="ARS")
@@ -1813,7 +1818,7 @@ def _current_source_health_panel():
 
 
 def learning_page():
-    data=snapshot(); _pnl,wins,wr=_trade_metrics(data["closed"])
+    data=snapshot(include_quotes=False); _pnl,wins,wr=_trade_metrics(data["closed"])
     sample, per_currency = [], {}
     for position in data["closed"]:
         currency = str(position.get("currency") or "ARS").upper()
@@ -2093,7 +2098,7 @@ def telegram_page():
     jobs=_rows("SELECT * FROM operational_jobs WHERE job_key LIKE 'TELEGRAM%' ORDER BY last_run_at DESC LIMIT 30") if _table("operational_jobs") else []
     report=_report_state("telegram"); rows="".join(f"<tr><td>{_e(r['job_key'])}</td><td>{_health_status(r['state'])}</td><td>{_local_time(r['last_run_at'])}</td><td>{_e(r['detail'])}</td></tr>" for r in jobs) or "<tr><td colspan='4'>Aún no hay cierre enviado en esta base.</td></tr>"
     body=f"<h1>Telegram</h1><div class='paper-grid'>{_card('Canal',report[0],report[1],'green' if report[0]=='VERDE' else 'red' if report[0]=='ROJO' else 'gray')}{_card('Autorización paper','NO APLICA','La simulación no espera autorización por Telegram','green')}</div><div class='paper-card'><h2>Resúmenes de cierre</h2><table class='paper-table'><tr><th>Evento</th><th>Estado</th><th>Hora</th><th>Detalle</th></tr>{rows}</table></div>"
-    data=snapshot(); worker=data['notification_worker']
+    data=snapshot(include_quotes=False); worker=data['notification_worker']
     notices=_rows('SELECT * FROM paper_notification_outbox ORDER BY id DESC LIMIT 100') if _table('paper_notification_outbox') else []
     worker_state=worker.get('state','NOT_STARTED')
     try:
@@ -3286,7 +3291,7 @@ def install(app,check_auth):
     @app.get("/reportes",response_class=HTMLResponse)
     def reports(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(reports_page())
     @app.get("/api/observer/state")
-    def observer_state(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return JSONResponse(snapshot())
+    def observer_state(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return JSONResponse(snapshot(include_quotes=False))
     @app.get("/api/paper/caucion-allocations")
     def caucion_allocations(request:Request,limit:int=Query(default=25,ge=1,le=100),
                             offset:int=Query(default=0,ge=0,le=100000),
