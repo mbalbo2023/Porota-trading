@@ -329,9 +329,9 @@ def test_introspection_superseded_snapshot_uses_live_observer_state(monkeypatch)
     }
     monkeypatch.setattr(dash,'_latest_introspection',lambda:stale)
     monkeypatch.setattr(dash,'_latest_publication_status',lambda:None)
-    monkeypatch.setattr(dash,'snapshot',lambda:{'state':{
+    monkeypatch.setattr(dash,'_observer_state_snapshot',lambda:{
         'process_state':'RUNNING','session_state':'MARKET_OPEN','heartbeat_at':'2026-09-03T16:37:00+00:00',
-        'real_orders_sent':0,'ppi_auth':'OK'}})
+        'real_orders_sent':0,'ppi_auth':'OK'})
     html=dash.introspection_content()
     assert 'RUNNING / MARKET_OPEN' in html
     assert 'SUPERSEDED_BY_LIVE_STATE' in html

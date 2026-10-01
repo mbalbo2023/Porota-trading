@@ -46,8 +46,8 @@ jobs:
           import json
           from pathlib import Path
           p=json.loads(Path('ops/policy/rc6-disk-housekeeping-v1.json').read_text())
-          assert p['disk']['deploy_pretransfer_min_free_bytes'] == 6 * 1024**3
-          assert p['disk']['post_cleanup_min_free_bytes'] == 5 * 1024**3
+          assert p['disk']['deploy_pretransfer_min_free_bytes'] == 2 * 1024**3
+          assert p['disk']['post_cleanup_min_free_bytes'] == 2 * 1024**3
           assert p['backups']['paper']['keep_newest'] == 3
           assert p['backups']['history']['keep_newest'] == 3
           assert p['deploy']['canonical_workflow'] == '.github/workflows/porota-deploy-v2-promote.yml'

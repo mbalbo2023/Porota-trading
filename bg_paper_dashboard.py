@@ -391,13 +391,18 @@ def _canonicalize(content, path=""):
     return content
 
 
-def snapshot():
+def snapshot(*, include_quotes=True):
     state = (_rows("SELECT * FROM observer_state WHERE id=1") or [{"mode":_effective_mode(),"process_state":"STOPPED","session_state":"UNKNOWN","ppi_auth":"NOT_ATTEMPTED","real_orders_sent":0,"detail":"Observador todavía no iniciado."}])[0]
-    identity_extra = ",currency,market" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(market_snapshots)")) else ""
-    quotes = _rows(f"""SELECT s.* FROM market_snapshots s JOIN
-      (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
-       GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
-      ORDER BY s.symbol,s.asset_class,s.settlement""")
+    # Quotes are a compatibility surface for explicit snapshot callers only.
+    # Dashboard pages and the public operational-state API do not consume them,
+    # so they must not scan/materialize the whole universe on every request.
+    quotes = []
+    if include_quotes:
+        identity_extra = ",currency,market" if any(r["name"] == "currency" for r in _rows("PRAGMA table_info(market_snapshots)")) else ""
+        quotes = _rows(f"""SELECT s.* FROM market_snapshots s JOIN
+          (SELECT symbol,asset_class,settlement,MAX(id) id FROM market_snapshots
+           GROUP BY symbol,asset_class,settlement{identity_extra}) x ON x.id=s.id
+          ORDER BY s.symbol,s.asset_class,s.settlement""")
     spot = _spot_snapshot()
     opened, closed = spot['open'],spot['closed']
     decisions = _rows("SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 100")
@@ -422,8 +427,57 @@ def snapshot():
             "notification_counts":_rows('SELECT state,COUNT(*) total FROM paper_notification_outbox GROUP BY state') if _table('paper_notification_outbox') else []}
 
 
+def _observer_state_snapshot():
+    return (_rows("SELECT * FROM observer_state WHERE id=1") or [{
+        "mode": _effective_mode(), "process_state": "STOPPED", "session_state": "UNKNOWN",
+        "ppi_auth": "NOT_ATTEMPTED", "real_orders_sent": 0,
+        "detail": "Observador todavía no iniciado."
+    }])[0]
+
+
+def _live_session_snapshot(*, closed_offset=0, limit=10):
+    """Bounded live-session projection; never materializes the full PAPER history."""
+    limit=max(1,min(10,int(limit)))
+    closed_offset=max(0,int(closed_offset))
+    state=_observer_state_snapshot()
+    positions=(_rows("SELECT * FROM paper_positions WHERE upper(status)='OPEN' ORDER BY opened_at")
+               if _table("paper_positions") else [])
+    closed,closed_total,close_counts=[],0,Counter()
+    if _table("paper_positions"):
+        day_sql="date(datetime(closed_at,'-3 hours'))=date(datetime('now','-3 hours'))"
+        closed_total=int((_rows(
+            f"SELECT COUNT(*) n FROM paper_positions WHERE upper(status)='CLOSED' AND {day_sql}"
+        ) or [{"n":0}])[0]["n"] or 0)
+        closed=_rows(
+            f"""SELECT * FROM paper_positions
+                WHERE upper(status)='CLOSED' AND {day_sql}
+                ORDER BY closed_at DESC LIMIT ? OFFSET ?""",
+            (limit,closed_offset))
+        close_counts=Counter({
+            str(row.get("close_reason") or "SIN_MOTIVO"): int(row.get("n") or 0)
+            for row in _rows(
+                f"""SELECT COALESCE(close_reason,'SIN_MOTIVO') close_reason,COUNT(*) n
+                    FROM paper_positions
+                    WHERE upper(status)='CLOSED' AND {day_sql}
+                    GROUP BY COALESCE(close_reason,'SIN_MOTIVO')"""
+            )
+        })
+    exit_intents=[]
+    paper_ids=[row.get("paper_id") for row in positions if row.get("paper_id")]
+    if paper_ids and _table("paper_exit_intents"):
+        marks=",".join("?" for _ in paper_ids)
+        exit_intents=_rows(
+            f"SELECT * FROM paper_exit_intents WHERE paper_id IN ({marks})",
+            tuple(paper_ids))
+    return {
+        "state":state, "open":positions, "closed":closed,
+        "closed_total":closed_total, "close_counts":close_counts,
+        "exit_intents":exit_intents,
+    }
+
+
 def _daily_risk_panel():
-    rows = snapshot()['daily_risk']
+    rows = snapshot(include_quotes=False)['daily_risk']
     today = datetime.now(TZ).date().isoformat()
     soft_pct = Decimal(os.getenv("PAPER_DAILY_SOFT_STOP_PCT", "1.5"))
     current = [r for r in rows if r['day']==today]
@@ -457,7 +511,7 @@ def _daily_risk_panel():
 
 
 def _exit_supervision_panel():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     health = data["exit_supervisor"]
     # Sólo lectura: abrir el panel no crea bases, migra ni ejecuta supervisión.
     state = health.get("state", "NOT_STARTED")
@@ -620,7 +674,7 @@ def _trade_metrics(closed):
 
 
 def _balances_panel():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     if data['caucion_state']!='READY' or data['spot_state']!='READY':
         return ("<div class='paper-card'><h2>Caja y patrimonio por moneda</h2>"
                 +_spot_warning(data['spot_state'])+_caucion_warning(data['caucion_state'])+'</div>')
@@ -792,7 +846,7 @@ def _health_components():
 
 
 def _daily_summary_panel(data=None):
-    data = data or snapshot()
+    data = data or snapshot(include_quotes=False)
     if data["spot_state"] != "READY" or data["caucion_state"] != "READY":
         return ("<div class='paper-card'><h2>Resumen simulado del día</h2>"
                 + _spot_warning(data["spot_state"]) + _caucion_warning(data["caucion_state"]) + "</div>")
@@ -895,11 +949,14 @@ def _daily_results_panel():
                 "<div class='paper-warning'>Resumen diario no conciliable; no se inventa un resultado.</div></section>")
 
 def home_page():
-    data = snapshot()
+    data = snapshot(include_quotes=False)
     state = data["state"]
     heartbeat_ok = _fresh(state.get("heartbeat_at"), 180)
     sre = (_rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("sre_snapshots") else {}
-    db_ok = sre.get("db_integrity") == "ok"
+    db_integrity = str(sre.get("db_integrity") or "")
+    db_ok = db_integrity == "ok"
+    db_delegated = db_integrity == "DELEGATED_TO_RC6_FULL_DB_INTEGRITY"
+    db_readable = db_ok or db_delegated
     financial_ready = data["caucion_state"] == "READY" and data["spot_state"] == "READY"
     health = _health_components()
     applicable = [item for item in health if item["applicable"]]
@@ -912,8 +969,9 @@ def home_page():
     if len(pending_items) > 4:
         pending_detail += f"; +{len(pending_items)-4} más"
     overall = heartbeat_ok and db_ok and financial_ready and red == 0 and pending == 0
-    overall_label = ("TODO OPERATIVO" if overall else "REVISAR" if red or not heartbeat_ok or not db_ok
-                     or not financial_ready else "VERIFICACIONES PENDIENTES")
+    critical_issue = red or not heartbeat_ok or not db_readable or not financial_ready
+    overall_label = ("TODO OPERATIVO" if overall else "REVISAR" if critical_issue
+                     else "VERIFICACIONES PENDIENTES")
     overall_color = "green" if overall else "red" if overall_label == "REVISAR" else "yellow"
     telegram = next((item["state"] for item in health if item["key"] == "TELEGRAM"), "PENDIENTE")
     balances = {row["currency"]: row for row in data["balances_by_currency"]}
@@ -938,8 +996,9 @@ def home_page():
               f"Último latido {_local_time(state.get('heartbeat_at'))}", "green" if heartbeat_ok else "red"),
         _card("Telegram", telegram, "Avisos de modo y resumen de cierre",
               "green" if telegram == "VERDE" else "red" if telegram == "ROJO" else "yellow"),
-        _card("Base paper", "OK" if db_ok else "REVISAR",
-              f"Integridad {sre.get('db_integrity','sin medición')}", "green" if db_ok else "red"),
+        _card("Base paper", "OK" if db_ok else "POSTCIERRE PENDIENTE" if db_delegated else "REVISAR",
+              (f"Integridad {db_integrity}" if db_integrity else "Sin medición"),
+              "green" if db_ok else "yellow" if db_delegated else "red"),
         _card("PPI solo lectura", state.get("ppi_auth"), "Órdenes reales bloqueadas por transporte",
               "green" if state.get("ppi_auth") == "OK" else "yellow"
               if state.get("ppi_auth") in {"NOT_ATTEMPTED","COOLDOWN"} else "red"),
@@ -957,7 +1016,7 @@ def home_page():
         + _daily_results_panel() + _daily_summary_panel(data) + _balances_panel())
 
 def paper_page(compact=False):
-    data=snapshot(); state=data["state"]
+    data=snapshot(include_quotes=False); state=data["state"]
     latest=(_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1") or [{}])[0] if _table("universe_cycle_metrics") else {}
     pnl,wins,wr=_trade_metrics(data["closed"])
     pnl=sum(_num(p["net_pnl"]) for p in data["realized"] if p.get("currency","ARS")=="ARS")
@@ -1759,7 +1818,7 @@ def _current_source_health_panel():
 
 
 def learning_page():
-    data=snapshot(); _pnl,wins,wr=_trade_metrics(data["closed"])
+    data=snapshot(include_quotes=False); _pnl,wins,wr=_trade_metrics(data["closed"])
     sample, per_currency = [], {}
     for position in data["closed"]:
         currency = str(position.get("currency") or "ARS").upper()
@@ -1832,9 +1891,15 @@ def _porota_leaders_proxy():
     if not _table("market_snapshots"):
         return {"returns": [], "average": None, "breadth": "s/d", "as_of": None}
     placeholders = ",".join("?" for _ in focus)
-    rows = _rows(f"""SELECT symbol,trade_at,last FROM market_snapshots
-      WHERE symbol IN ({placeholders}) AND last_kind='TRADE' AND trade_at IS NOT NULL
-      ORDER BY symbol,julianday(trade_at) DESC,id DESC""", focus)
+    rows = _rows(f"""WITH ranked AS (
+        SELECT symbol,trade_at,last,
+               ROW_NUMBER() OVER (
+                   PARTITION BY symbol ORDER BY julianday(trade_at) DESC,id DESC
+               ) rn
+        FROM market_snapshots
+        WHERE symbol IN ({placeholders}) AND last_kind='TRADE' AND trade_at IS NOT NULL
+      )
+      SELECT symbol,trade_at,last FROM ranked WHERE rn<=2 ORDER BY symbol,rn""", focus)
     samples = {}
     for row in rows:
         values = samples.setdefault(row["symbol"], [])
@@ -1860,13 +1925,17 @@ def _porota_leaders_proxy():
 def financial_page():
     latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
-    spot=_spot_snapshot()
-    amounts={}
-    for p in spot['realized']:
-        if p.get('currency','ARS')=='ARS':
-            month=aware_datetime(p['closed_at']).astimezone(TZ).strftime('%Y-%m')
-            amounts[month]=amounts.get(month,Decimal(0))+Decimal(p['net_pnl'])
-    monthly=[{'month':key,'pnl':str(amounts[key])} for key in sorted(amounts,reverse=True)[:24]]
+    try:
+        monthly=_rows("""SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
+                                CAST(SUM(CAST(net_pnl AS REAL)) AS TEXT) pnl
+                         FROM paper_positions
+                         WHERE upper(status)='CLOSED' AND COALESCE(currency,'ARS')='ARS'
+                         GROUP BY substr(date(datetime(closed_at,'-3 hours')),1,7)
+                         ORDER BY month DESC LIMIT 24""") if _table("paper_positions") else []
+        spot_state="READY"
+    except Exception:
+        monthly=[]
+        spot_state="UNAVAILABLE"
     ipc=_rows("SELECT substr(observed_date,1,7) month,value FROM financial_series WHERE indicator='IPC mensual INDEC' ORDER BY observed_date DESC LIMIT 24") if _table("financial_series") else []
     ipc_map={r['month']:r['value'] for r in ipc}
     compare="".join(f"<tr><td>{_e(r['month'])}</td><td>{_e(ipc_map.get(r['month'],'s/d'))}%</td><td class='{'positive' if _num(r['pnl'])>0 else 'negative' if _num(r['pnl'])<0 else 'neutral'}'>{_money(r['pnl'])} ARS</td><td>NO COMPARABLE: falta rentabilidad porcentual del período</td></tr>" for r in monthly) or "<tr><td colspan='4'>Aún no hay meses cerrados.</td></tr>"
@@ -1882,7 +1951,7 @@ def financial_page():
                   'red' if proxy['average'] is not None and proxy['median']<0 else
                   'gray')
     body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria con datos observados y cálculos propios reproducibles.</p><div class='paper-grid'>{_card('Pulso Porota - líderes',proxy_value,proxy['breadth'],pulse_state,'negative' if pulse_state=='red' else 'positive' if pulse_state=='green' else 'neutral')}{_card('Mediana de líderes',median_value,proxy_asof,median_state,'negative' if median_state=='red' else 'positive' if median_state=='green' else 'neutral')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Componentes del pulso propio</h2><table class='paper-table'><tr><th>Instrumento</th><th>Variación entre muestras</th><th>Último negocio</th></tr>{proxy_rows}</table><p class='paper-muted'>Indicador interno equiponderado; sirve para amplitud y contexto. No representa un índice oficial ni reemplaza precios ejecutables.</p></div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación válida requiere rentabilidad porcentual del patrimonio PAPER y del pulso propio sobre períodos idénticos; se habilitará al completar el primer mes.</div>"
-    return _document("Información financiera",_spot_warning(spot["state"])+body,refresh=300)
+    return _document("Información financiera",_spot_warning(spot_state)+body,refresh=300)
 
 
 _ACTION4_FILENAME = "rc6_action4_auditoria_latest.json"
@@ -2029,7 +2098,7 @@ def telegram_page():
     jobs=_rows("SELECT * FROM operational_jobs WHERE job_key LIKE 'TELEGRAM%' ORDER BY last_run_at DESC LIMIT 30") if _table("operational_jobs") else []
     report=_report_state("telegram"); rows="".join(f"<tr><td>{_e(r['job_key'])}</td><td>{_health_status(r['state'])}</td><td>{_local_time(r['last_run_at'])}</td><td>{_e(r['detail'])}</td></tr>" for r in jobs) or "<tr><td colspan='4'>Aún no hay cierre enviado en esta base.</td></tr>"
     body=f"<h1>Telegram</h1><div class='paper-grid'>{_card('Canal',report[0],report[1],'green' if report[0]=='VERDE' else 'red' if report[0]=='ROJO' else 'gray')}{_card('Autorización paper','NO APLICA','La simulación no espera autorización por Telegram','green')}</div><div class='paper-card'><h2>Resúmenes de cierre</h2><table class='paper-table'><tr><th>Evento</th><th>Estado</th><th>Hora</th><th>Detalle</th></tr>{rows}</table></div>"
-    data=snapshot(); worker=data['notification_worker']
+    data=snapshot(include_quotes=False); worker=data['notification_worker']
     notices=_rows('SELECT * FROM paper_notification_outbox ORDER BY id DESC LIMIT 100') if _table('paper_notification_outbox') else []
     worker_state=worker.get('state','NOT_STARTED')
     try:
@@ -2049,16 +2118,13 @@ def telegram_page():
 
 
 def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
-    data=snapshot(); state=data['state']; now=datetime.now(TZ)
+    now=datetime.now(TZ)
     limit=max(1,min(10,int(limit)))
     closed_offset=max(0,int(closed_offset))
     decision_offset=max(0,int(offset if decision_offset is None else decision_offset))
-    positions=data.get('open',[])
-    closed_today=live_policy.closed_for_live(data.get('closed',[]),now=now)
-    # Browser/voice-access safety: never serialize the full day merely to hide
-    # records after row ten. Each large list gets a server-side page.
-    closed_all=list(closed_today)
-    closed=closed_all[closed_offset:closed_offset+limit]
+    data=_live_session_snapshot(closed_offset=closed_offset,limit=limit)
+    state=data['state']; positions=data.get('open',[]); closed=data.get('closed',[])
+    closed_total=int(data.get('closed_total') or 0)
     intents={r.get('paper_id'):r for r in data.get('exit_intents',[])}
 
     gates=[]
@@ -2118,7 +2184,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
             f"<h3>Lección aprendida</h3><p class='{cls}'>{_e(_trade_lesson(pos))}</p></div></details>"
         )
 
-    close_counts = Counter(str(row.get("close_reason") or "SIN_MOTIVO") for row in closed_all)
+    close_counts = data.get("close_counts") or Counter()
     close_reason_html = (
         "<div class='paper-card'><h3>Causas de cierre persistidas</h3>"
         "<p class='paper-muted'>Se muestra la causa guardada por el motor; esta vista no convierte STOP/TARGET en EOD ni completa motivos faltantes.</p>"
@@ -2131,20 +2197,29 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
     decision_rows=[]
     # Fail-closed también en presentación: sólo identidades RUNTIME_READY.
     if _table('paper_decisions') and _table('candidate_identity_v2'):
-        decision_source = _rows(
-            """SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
-               FROM paper_decisions d
-               WHERE EXISTS (
-                   SELECT 1 FROM candidate_identity_v2 r
-                   WHERE r.ticker=d.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
-               )
-               ORDER BY d.decided_at DESC LIMIT 500"""
+        live_day="date(datetime(d.decided_at,'-3 hours'))=date(datetime('now','-3 hours'))"
+        decision_count_rows=_rows(
+            f"""SELECT COUNT(*) n FROM paper_decisions d
+                WHERE {live_day} AND EXISTS (
+                    SELECT 1 FROM candidate_identity_v2 r
+                    WHERE r.ticker=d.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
+                )"""
         )
+        decision_total=int(
+            ((decision_count_rows[0].get("n") if decision_count_rows else 0) or 0)
+        )
+        live_decisions=_rows(
+            f"""SELECT d.decided_at,d.symbol,d.action,d.score,d.reason
+                FROM paper_decisions d
+                WHERE {live_day} AND EXISTS (
+                    SELECT 1 FROM candidate_identity_v2 r
+                    WHERE r.ticker=d.symbol AND r.can_simulate=1 AND upper(r.status)='AVAILABLE'
+                )
+                ORDER BY d.decided_at DESC,d.id DESC LIMIT ? OFFSET ?""",
+            (limit,decision_offset))
     else:
-        decision_source = []
-    all_live_decisions=list(live_policy.decisions_for_live(decision_source,now=now))
-    decision_total=len(all_live_decisions)
-    live_decisions=all_live_decisions[decision_offset:decision_offset+limit]
+        decision_total=0
+        live_decisions=[]
     for row in live_decisions:
         action=str(row.get('action') or '').upper()
         gate=gate_by_symbol.get(row.get('symbol')) if action=='BUY' else None
@@ -2158,7 +2233,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
             f"<td>{_status(action)}</td><td>{technical}</td><td>{patrimonial}</td>"
             f"<td>{_e(explanation)}</td></tr>"
         )
-    if not decision_rows and not all_live_decisions:
+    if not decision_rows and decision_total == 0:
         decision_total=len(gates)
         for row in gates[decision_offset:decision_offset+limit]:
             result=str(row.get('final_result') or '')
@@ -2186,7 +2261,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
                          f"#{'porota-live-closed' if kind=='closed_offset' else 'porota-live-decisions'}'>Mostrar más</a>")
         return "<nav class='compact-pager' aria-label='Paginación'>"+ "".join(links)+"</nav>"
 
-    closed_pager=_live_pager("closed_offset",closed_offset,len(closed_all))
+    closed_pager=_live_pager("closed_offset",closed_offset,closed_total)
     decision_pager=_live_pager("decision_offset",decision_offset,decision_total)
 
     settlement_diag_html=""
@@ -2230,7 +2305,6 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
     scalp_worker=(_rows("SELECT * FROM intraday_scalping_worker_state WHERE id=1") or [{}])[0] if _table('intraday_scalping_worker_state') else {}
     scalp_recent=(_rows("SELECT COUNT(*) n FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)",
                         ((now-timedelta(hours=1)).isoformat(),)) or [{'n':0}])[0]['n'] if _table('scalping_candidates') else 0
-    scalp_fills=sum(1 for p in positions+closed_all if 'SCALPING_PAPER' in str(p.get('features_json') or ''))
 
     workers=[]
     for label,table in (("Supervisor de salidas","paper_supervisor_state"),
@@ -2248,7 +2322,7 @@ def live_page(*, offset=0, limit=10, closed_offset=0, decision_offset=None):
 
     cards=''.join((
       _card('Operaciones abiertas',len(positions),'Lo primero de /vivo: dinero PAPER y marks actuales','green' if positions else 'gray'),
-      _card('Cerradas hoy',len(closed_today),f'{len(closed_today)} disponibles; 10 visibles por tanda','green' if closed else 'gray'),
+      _card('Cerradas hoy',closed_total,f'{closed_total} disponibles; 10 visibles por tanda','green' if closed_total else 'gray'),
       _card('PPI autenticación',state.get('ppi_auth','UNKNOWN'),f"Último mercado {_local_time(state.get('last_market_data_at'))}",'green' if state.get('ppi_auth')=='OK' else 'yellow'),
       _card('Órdenes reales',state.get('real_orders_sent',0),'Invariante permanente: cero','green' if state.get('real_orders_sent',0)==0 else 'red'),
     ))
@@ -2296,14 +2370,15 @@ def _paper_history_by_family(normalize_family):
     return history
 
 
-def _family_ux_snapshot(families):
+def _family_ux_snapshot(families, *, truth=None, paper_history=None):
     requested=tuple(dashboard_truth_projection.normalize_family(x) for x in families)
     if not requested:
         return []
-    truth=truth_projection()
+    truth=truth or truth_projection()
     authority={item['family']:item for item in truth['readiness']['families']}
     contracts={item['family']:item for item in truth['contract']['families']}
-    paper_history=_paper_history_by_family(dashboard_truth_projection.normalize_family)
+    paper_history=(paper_history if paper_history is not None else
+                   _paper_history_by_family(dashboard_truth_projection.normalize_family))
     result=[]
     for family in requested:
         item=authority.get(family,{})
@@ -2528,11 +2603,13 @@ def trading_page(section=''):
         return _document('Trading — ruta no reconocida',body,refresh=60)
 
     cards=[]
+    shared_truth=truth_projection()
+    shared_history=_paper_history_by_family(dashboard_truth_projection.normalize_family)
     for group,all_families in FAMILY_GROUPS.items():
         families=families_for_group(group)
         if not families:
             continue
-        snap=_family_ux_snapshot(families)
+        snap=_family_ux_snapshot(families,truth=shared_truth,paper_history=shared_history)
         ready=sum(x['ready'] for x in snap)
         observed=sum(x['observed'] for x in snap)
         evidence_v2=sum(x['evidence_v2'] for x in snap)
@@ -2773,7 +2850,7 @@ def introspection_content():
                 "El dashboard no lo interpreta como estado sano.</div>")
     trading = report.get("trading", {})
     observer = report.get("observer", {})
-    live_state=(snapshot().get("state") or {})
+    live_state=_observer_state_snapshot()
     snapshot_freshness="FRESH"
     snapshot_age=None
     try:
@@ -3214,7 +3291,7 @@ def install(app,check_auth):
     @app.get("/reportes",response_class=HTMLResponse)
     def reports(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(reports_page())
     @app.get("/api/observer/state")
-    def observer_state(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return JSONResponse(snapshot())
+    def observer_state(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return JSONResponse(snapshot(include_quotes=False))
     @app.get("/api/paper/caucion-allocations")
     def caucion_allocations(request:Request,limit:int=Query(default=25,ge=1,le=100),
                             offset:int=Query(default=0,ge=0,le=100000),
@@ -3278,6 +3355,79 @@ def install(app,check_auth):
         return FileResponse(selected.path,media_type="text/plain",filename=f"porota_{selected.source_id}.log")
     @app.middleware("http")
     async def paper_truth(request,call_next):
+        path=request.url.path
+        fast_html={
+            "/":home_page,
+            "/vivo":live_page,
+            "/en-vivo":live_page,
+            "/testing":lambda:paper_page(True),
+            "/salud":health_page,
+            "/scalping":scalping_page,
+            "/validacion":validation_page,
+            "/historicos":history_page,
+            "/aprendizaje":learning_page,
+            "/telegram":telegram_page,
+            "/dashboard/logs":logs_page,
+            "/config":config_page,
+        }
+        if request.method=="GET" and (path in fast_html or path=="/sre"):
+            # This middleware is registered after the legacy browser-session
+            # middleware and therefore executes first. Preserve the exact
+            # token->cookie redirect and persistent-cookie renewal semantics
+            # here so the canonical fast path can skip the expensive legacy
+            # handler without weakening authentication.
+            import ay_dashboard_auth as dashboard_auth
+            token=request.query_params.get("token","")
+            session_cookie=request.cookies.get("porota_dashboard_session")
+            if token and dashboard_auth.token_valido(token):
+                session=dashboard_auth.crear_sesion_desde_token(
+                    token,origen=request.client.host if request.client else "local")
+                params=[(k,v) for k,v in request.query_params.multi_items() if k!="token"]
+                target=path
+                if params:
+                    target+="?"+urlencode(params)
+                response=RedirectResponse(target,status_code=303)
+                response.set_cookie(
+                    "porota_dashboard_session",session,
+                    max_age=dashboard_auth.COOKIE_MAX_AGE_SECONDS,
+                    httponly=True,secure=dashboard_auth.ENTORNO=="PRODUCTION",
+                    samesite="lax",path="/")
+                response.headers["Cache-Control"]="no-store, no-cache, must-revalidate"
+                response.headers["Pragma"]="no-cache"
+                response.headers["Expires"]="0"
+                return response
+            session_valid=dashboard_auth.sesion_valida(session_cookie)
+            try:
+                _authorize(check_auth,request,token,
+                           request.headers.get("authorization"))
+            except HTTPException as exc:
+                return JSONResponse({"detail":exc.detail},status_code=exc.status_code)
+            if path=="/sre":
+                content=sre_page(request.query_params.get("section","overview"))
+            elif path in {"/vivo","/en-vivo"}:
+                def _qint(name,default,low=0,high=100000):
+                    try: value=int(request.query_params.get(name,str(default)))
+                    except (TypeError,ValueError): value=default
+                    return max(low,min(high,value))
+                content=live_page(
+                    offset=_qint("offset",0),
+                    limit=_qint("limit",10,1,10),
+                    closed_offset=_qint("closed_offset",0),
+                    decision_offset=_qint("decision_offset",_qint("offset",0)),
+                )
+            else:
+                content=fast_html[path]()
+            response=HTMLResponse(_dedupe_refresh(content))
+            if session_valid and dashboard_auth.SESION_SIN_VENCIMIENTO:
+                response.set_cookie(
+                    "porota_dashboard_session",session_cookie,
+                    max_age=dashboard_auth.COOKIE_MAX_AGE_SECONDS,
+                    httponly=True,secure=dashboard_auth.ENTORNO=="PRODUCTION",
+                    samesite="lax",path="/")
+            response.headers["Cache-Control"]="no-store, no-cache, must-revalidate"
+            response.headers["Pragma"]="no-cache"
+            response.headers["Expires"]="0"
+            return response
         response=await call_next(request); ctype=response.headers.get("content-type","")
         legacy_json={"/api/dashboard","/api/v16/estado","/api/v15/estado",
                      "/api/observation-instruments","/api/learning-logs",

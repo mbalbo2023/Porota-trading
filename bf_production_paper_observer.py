@@ -1279,6 +1279,38 @@ def _history_provider_instrument_type(metadata, canonical_family):
     return provider or str(canonical_family or "").strip().upper()
 
 
+def _history_covered_target_count(connection, targets):
+    """Count covered production-history identities inside the same target scope.
+
+    The numerator and denominator must describe the same identity set. Legacy
+    production_history may contain rows from older/wider scopes, so a global
+    COUNT(*) can legitimately exceed the current target universe and must never
+    be rendered as coverage.
+    """
+    target_keys = {
+        (
+            str(symbol or "").strip().upper(),
+            str(instrument_type or "").strip().upper(),
+            str(settlement or "").strip().upper(),
+        )
+        for symbol, instrument_type, settlement in targets
+    }
+    if not target_keys:
+        return 0
+    covered_keys = {
+        (
+            str(row[0] or "").strip().upper(),
+            str(row[1] or "").strip().upper(),
+            str(row[2] or "").strip().upper(),
+        )
+        for row in connection.execute(
+            """SELECT symbol,instrument_type,settlement
+               FROM production_history WHERE row_count>0"""
+        )
+    }
+    return len(target_keys & covered_keys)
+
+
 def _download_histories_locked(reader, store, history_store):
     end = _history_end_date()
     if end is None:
@@ -1373,7 +1405,9 @@ def _download_histories_locked(reader, store, history_store):
     semantics = _history_batch_semantics(batch_statuses)
     state = semantics["state"]
     with store.connect() as c:
-        covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
+        covered = _history_covered_target_count(c, all_symbols)
+    if covered > len(all_symbols):
+        raise RuntimeError("HISTORY_COVERAGE_SCOPE_BROKEN")
     detail = (f"Lote histórico incremental={semantics['full_valid']}/{len(symbols)}; "
               f"parciales usables={semantics['partial_with_valid_evidence']}; "
               f"fallas duras={semantics['hard_failures']} "
