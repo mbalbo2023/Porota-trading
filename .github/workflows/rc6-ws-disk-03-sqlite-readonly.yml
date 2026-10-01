@@ -1,0 +1,100 @@
+name: RC6 WS-DISK-03 sqlite reclaim and runtime metadata
+
+on:
+  push:
+    branches:
+      - audit/ws-disk-01-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-03-sqlite-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-disk-audit-readonly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only SQLite and runtime audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_audit" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "POROTA_SQLITE_DISK_AUDIT=START"
+          echo "READ_ONLY=true"
+          sudo -n timeout 60 python3 - <<'PY'
+          import os,sqlite3
+          paths=[
+            "/opt/porota-trading/data/paper_v17/observer_v17.db",
+            "/opt/porota-trading/data/market_history.db",
+            "/opt/porota-trading/data/evidence/ppi_history_exact_v1/manifest_exact_v1.db",
+          ]
+          for p in paths:
+              print(f"DB={p}")
+              try:
+                  c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=3)
+                  c.execute("PRAGMA query_only=ON")
+                  vals={}
+                  for k in ("page_size","page_count","freelist_count","auto_vacuum","journal_mode"):
+                      vals[k]=c.execute(f"PRAGMA {k}").fetchone()[0]
+                  size=os.path.getsize(p)
+                  free=int(vals["page_size"])*int(vals["freelist_count"])
+                  used_pages=int(vals["page_count"])-int(vals["freelist_count"])
+                  theoretical=used_pages*int(vals["page_size"])
+                  print("SIZE_BYTES="+str(size))
+                  print("PAGE_SIZE="+str(vals["page_size"]))
+                  print("PAGE_COUNT="+str(vals["page_count"]))
+                  print("FREELIST_COUNT="+str(vals["freelist_count"]))
+                  print("FREELIST_BYTES="+str(free))
+                  print("THEORETICAL_MIN_PAGE_BYTES="+str(theoretical))
+                  print("AUTO_VACUUM="+str(vals["auto_vacuum"]))
+                  print("JOURNAL_MODE="+str(vals["journal_mode"]))
+                  try:
+                      rows=c.execute("SELECT name, SUM(pgsize) AS bytes FROM dbstat GROUP BY name ORDER BY bytes DESC LIMIT 20").fetchall()
+                      for name,b in rows:
+                          print(f"DBSTAT|{b}|{name}")
+                  except Exception as e:
+                      print("DBSTAT_UNAVAILABLE="+type(e).__name__)
+                  c.close()
+              except Exception as e:
+                  print("ERROR="+repr(e))
+          PY
+
+          echo "=== OBSERVER_RUNTIME_METADATA ==="
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            sudo -n docker inspect -f '{{.Name}}|status={{.State.Status}}|running={{.State.Running}}|oom={{.State.OOMKilled}}|exit={{.State.ExitCode}}|error={{.State.Error}}|started={{.State.StartedAt}}|finished={{.State.FinishedAt}}|restarts={{.RestartCount}}|image={{.Image}}' "$c" 2>/dev/null || true
+          done
+          echo "=== FINAL_FREE ==="
+          df -PB1 /
+          echo "POROTA_SQLITE_DISK_AUDIT=GREEN"
+          REMOTE
+
+      - name: Cleanup runner key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_audit"
