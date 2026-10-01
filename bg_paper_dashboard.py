@@ -13,6 +13,7 @@ from contextlib import closing
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import Header, HTTPException, Query, Request
@@ -94,10 +95,11 @@ box-shadow:0 3px 14px #14213d0c;margin:12px 0;overflow:hidden;min-width:0}.paper
 .paper-table th,.paper-table td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
 .paper-muted{color:var(--muted);font-size:.86rem}.paper-action{display:inline-block;background:var(--blue);color:#fff!important;
 border:0;border-radius:8px;padding:9px 13px;text-decoration:none;font-weight:700;cursor:pointer;margin:2px}
-.paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:nowrap}
+.paper-status{display:inline-block;border-radius:999px;padding:3px 8px;font-weight:750;color:#fff;white-space:normal;max-width:100%;line-height:1.15;text-align:center}
 .s-verde{background:var(--green)}.s-amarillo{background:var(--yellow)}.s-rojo{background:var(--red)}.s-gris{background:var(--gray)}
 .paper-notice{padding:11px 14px;border:1px solid #c9d4e3;background:#eef3f8;border-radius:9px;margin:10px 0}
 .paper-warning{padding:11px 14px;border:1px solid #e7c979;background:#fff7df;border-radius:9px;margin:10px 0}
+.table-filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;align-items:end;margin:10px 0}.table-filter-grid label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;font-weight:700}.table-filter-grid input,.table-filter-grid select{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
 .subnav{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 16px}.subnav a{background:#fff;border:1px solid var(--line);
 padding:7px 10px;border-radius:8px;text-decoration:none;color:var(--blue);font-weight:700}
 .system-layout{display:grid;grid-template-columns:minmax(180px,230px) minmax(0,1fr);gap:14px;align-items:start}
@@ -886,10 +888,10 @@ def _daily_results_panel():
         uri="file:"+str(Path(DB_PATH).resolve())+"?mode=ro"
         with closing(sqlite3.connect(uri,uri=True,timeout=5)) as c:
             c.row_factory=sqlite3.Row
-            days=daily_operation_summaries(c,limit_days=5)
+            days=daily_operation_summaries(c,limit_days=8)
         return daily_results_html(days)
     except (sqlite3.Error,ValueError,TypeError,ArithmeticError):
-        return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
+        return ("<section class='paper-card'><h2>Resultado de las últimas ocho ruedas BYMA</h2>"
                 "<div class='paper-warning'>Resumen diario no conciliable; no se inventa un resultado.</div></section>")
 
 def home_page():
@@ -902,7 +904,13 @@ def home_page():
     health = _health_components()
     applicable = [item for item in health if item["applicable"]]
     red = sum(item["state"] == "ROJO" for item in applicable)
-    pending = sum(item["state"] in {"PENDIENTE", "AMARILLO"} for item in applicable)
+    pending_items = [item for item in applicable if item["state"] in {"PENDIENTE", "AMARILLO"}]
+    pending = len(pending_items)
+    pending_detail = "; ".join(
+        f"{item.get('name')}: {item.get('state')}" for item in pending_items[:4]
+    )
+    if len(pending_items) > 4:
+        pending_detail += f"; +{len(pending_items)-4} más"
     overall = heartbeat_ok and db_ok and financial_ready and red == 0 and pending == 0
     overall_label = ("TODO OPERATIVO" if overall else "REVISAR" if red or not heartbeat_ok or not db_ok
                      or not financial_ready else "VERIFICACIONES PENDIENTES")
@@ -922,7 +930,8 @@ def home_page():
     real_orders = int(state.get("real_orders_sent") or 0)
     cards = "".join((
         _card("Estado general", overall_label,
-              f"{red} fuentes en rojo; {pending} pendientes/degradadas; NO APLICA no cuenta como falla",
+              ((f"{red} fuentes en rojo; {pending} pendientes/degradadas. " + pending_detail)
+               if pending_detail else f"{red} fuentes en rojo; {pending} pendientes/degradadas; NO APLICA no cuenta como falla"),
               overall_color),
         _card("Dashboard 24x7", "ACTIVO", "Esta página responde aunque la rueda esté cerrada", "green"),
         _card("Observador / simulador", "ACTIVO" if heartbeat_ok else "SIN LATIDO",
@@ -2274,7 +2283,8 @@ def _family_ux_table(families):
         detail=('RUNTIME_READY desde candidate_identity_v2' if item['ready'] else
                 'PAUSED_EXPLICIT según candidate_identity_v2; revisar detalle por instrumento')
         evidence_label=(f"{_locale_number(item['contract_identities'],0)} identidades · "
-                        f"{_locale_number(item['evidence_v2'],0)} filas · {_locale_number(item['contract_sources'],0)} fuentes")
+                        f"{_locale_number(item['evidence_v2'],0)} filas · {_locale_number(item['contract_sources'],0)} fuentes · "
+                        f"observada {_local_time(item.get('evidence_at'))}")
         rows.append(
             f"<tr><td><b>{_e(item['label'])}</b></td><td>{_status(item['state'])}</td>"
             f"<td>{_locale_number(item['catalog_available'],0)}/{_locale_number(item['observed'],0)}</td>"
@@ -2502,13 +2512,37 @@ def trading_page(section=''):
 
 
 
-def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
+def _instrument_filter_form(action, *, q="", family="", market="", currency="", settlement="", state=""):
+    values={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    state_key=str(state or "").upper()
+    return (
+        f"<form class='table-filter-grid' method='get' action='{_e(action)}' aria-label='Buscar y filtrar instrumentos'>"
+        f"<label>Instrumento / texto<input name='q' value='{_e(q)}' placeholder='Ticker, familia, mercado…'></label>"
+        f"<label>Familia<input name='family' value='{_e(family)}' placeholder='ACCIONES, BONOS…'></label>"
+        f"<label>Mercado<input name='market' value='{_e(market)}' placeholder='BYMA'></label>"
+        f"<label>Moneda<input name='currency' value='{_e(currency)}' placeholder='ARS, USD…'></label>"
+        f"<label>Plazo<input name='settlement' value='{_e(settlement)}' placeholder='A-24HS'></label>"
+        "<label>Readiness<select name='state'>"
+        f"<option value=''{' selected' if not state_key else ''}>Todos</option>"
+        f"<option value='RUNTIME_READY'{' selected' if state_key=='RUNTIME_READY' else ''}>RUNTIME_READY</option>"
+        f"<option value='PAUSED_EXPLICIT'{' selected' if state_key=='PAUSED_EXPLICIT' else ''}>No READY / pausado</option>"
+        "</select></label>"
+        "<div><button class='paper-action' type='submit'>Buscar</button>"
+        f"<a class='paper-action' href='{_e(action)}'>Limpiar</a></div></form>"
+    )
+
+
+def _instrument_readiness_matrix(*, offset=0, limit=10, total=0, q="", family="", market="", currency="", settlement="", state=""):
     """Render one bounded server-side page of the full-key instrument matrix."""
     offset=max(0,int(offset))
     limit=max(1,min(10,int(limit)))
+    filters={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    active_filters={k:v for k,v in filters.items() if str(v or "").strip()}
     items=dashboard_truth_projection.instrument_rows(
-        _rows,_table,limit=limit,offset=offset,
+        _rows,_table,limit=limit,offset=offset,**active_filters,
     )
+    if active_filters or int(total or 0) <= 0:
+        total=dashboard_truth_projection.instrument_count(_rows,_table,**active_filters)
     rows=[]
     for item in items:
         rows.append(
@@ -2524,26 +2558,28 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
     if not rows:
         return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
     total=max(int(total or 0),offset+len(items))
-    start=offset+1
+    query_base=active_filters
+    start=0 if total==0 else offset+1
     end=offset+len(items)
     controls=[
         f"<span class='paper-muted'>Mostrando {start}-{end} de {_locale_number(total,0)}</span>"
     ]
     if offset>0:
         controls.append(
-            f"<a class='paper-action' href='/instrumentos?offset={max(0,offset-limit)}#instrument-matrix'>Anterior</a>"
+            f"<a class='paper-action' href='/instrumentos?{_e(urlencode({**query_base,'offset':max(0,offset-limit)}))}#instrument-matrix'>Anterior</a>"
         )
     if end<total:
         controls.append(
-            f"<a class='paper-action' href='/instrumentos?offset={offset+limit}#instrument-matrix' "
+            f"<a class='paper-action' href='/instrumentos?{_e(urlencode({**query_base,'offset':offset+limit}))}#instrument-matrix' "
             "aria-label='Mostrar más instrumentos, diez por tanda'>Mostrar más</a>"
         )
     return (
         "<div class='paper-card' id='instrument-matrix'><h2>Matriz por instrumento</h2>"
         "<p class='paper-muted'>Catálogo = financial_instrument_catalog. Contrato = Evidence v2. "
         "RUNTIME_READY = candidate_identity_v2. IOL complementa y su ausencia no reinterpreta READY. "
-        "La tabla consulta sólo diez instrumentos por request para no saturar el navegador.</p>"
-        "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
+        "La tabla consulta sólo diez instrumentos por request y permite buscar el instrumento sin recorrer página por página.</p>"
+        + _instrument_filter_form("/instrumentos", **filters)
+        + "<table class='paper-table' data-porota-force-compact='1'><tr><th>Instrumento</th>"
         "<th>Familia</th><th>Mercado · plazo · moneda</th><th>Catálogo PPI</th>"
         "<th>Readiness runtime</th><th>Evidence v2</th><th>Detalle</th><th>Actualizado</th></tr>"
         + "".join(rows) + "</table>"
@@ -2552,12 +2588,12 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0):
     )
 
 
-def instruments_page(*, offset=0, limit=10):
+def instruments_page(*, offset=0, limit=10, q="", family="", market="", currency="", settlement="", state=""):
     canonical=truth_projection()
     families=tuple(item['family'] for item in canonical['readiness']['families'])
     table=_family_ux_table(families)
     matrix=_instrument_readiness_matrix(
-        offset=offset,limit=limit,total=canonical['catalog'].get('total',0),
+        offset=offset,limit=limit,q=q,family=family,market=market,currency=currency,settlement=settlement,state=state,
     )
     body=("<h1>Instrumentos y contratos</h1>"
           "<div class='paper-notice'><b>Lectura corregida: readiness contractual actual separada del historial PAPER.</b> "
@@ -3104,9 +3140,12 @@ def install(app,check_auth):
     def trading_section(section:str,request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(trading_page(section))
     @app.get("/instrumentos",response_class=HTMLResponse)
     def instrumentos(request:Request,offset:int=Query(default=0,ge=0,le=50000),
+                     q:str=Query(default="",max_length=80),family:str=Query(default="",max_length=40),
+                     market:str=Query(default="",max_length=40),currency:str=Query(default="",max_length=40),
+                     settlement:str=Query(default="",max_length=40),state:str=Query(default="",max_length=40),
                      token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
-        return HTMLResponse(instruments_page(offset=offset,limit=10))
+        return HTMLResponse(instruments_page(offset=offset,limit=10,q=q,family=family,market=market,currency=currency,settlement=settlement,state=state))
     @app.get("/sistema",response_class=HTMLResponse)
     def sistema(request:Request,section:str=Query(default="introspeccion"),token:str=Query(default=""),authorization:str|None=Header(default=None)): auth(request,token,authorization); return HTMLResponse(system_page(section))
     @app.get("/scalping",response_class=HTMLResponse)

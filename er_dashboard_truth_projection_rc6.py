@@ -416,7 +416,9 @@ def build(query: Callable[..., list[dict[str, Any]]],
 
 def instrument_rows(query: Callable[..., list[dict[str, Any]]],
                     table: Callable[[str], bool], *, limit: int = 10000,
-                    offset: int = 0) -> list[dict[str, Any]]:
+                    offset: int = 0, q: str = "", family: str = "",
+                    market: str = "", currency: str = "",
+                    settlement: str = "", state: str = "") -> list[dict[str, Any]]:
     """Bounded full-key catalog/readiness/contract projection for instrument tables.
 
     LIMIT/OFFSET are applied in SQL so UI pagination never materializes the full
@@ -446,14 +448,34 @@ def instrument_rows(query: Callable[..., list[dict[str, Any]]],
         joins += """ LEFT JOIN contract_evidence_v2_current e ON e.ticker=c.ticker
           AND upper(e.family)=upper(c.instrument_type) AND e.market=c.market
           AND e.currency=c.currency AND e.settlement=c.settlement"""
+    where = []
+    params: list[Any] = []
+    if str(q or "").strip():
+        needle = "%" + str(q).strip().upper() + "%"
+        where.append("(upper(c.ticker) LIKE ? OR upper(c.instrument_type) LIKE ? OR upper(c.market) LIKE ? OR upper(c.currency) LIKE ? OR upper(c.settlement) LIKE ?)")
+        params.extend([needle] * 5)
+    for column, value in (
+        ("c.instrument_type", family), ("c.market", market),
+        ("c.currency", currency), ("c.settlement", settlement),
+    ):
+        if str(value or "").strip():
+            where.append(f"upper({column})=upper(?)")
+            params.append(str(value).strip())
+    if str(state or "").strip() and readiness_join:
+        key = str(state).strip().upper()
+        if key == "RUNTIME_READY":
+            where.append("r.can_simulate=1 AND upper(r.status)='AVAILABLE'")
+        elif key == "PAUSED_EXPLICIT":
+            where.append("NOT (r.can_simulate=1 AND upper(r.status)='AVAILABLE')")
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     sql = f"""SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
                      c.status catalog_status,c.capability catalog_capability,c.last_seen_at catalog_as_of,
                      {readiness_columns},{contract_columns}
-              FROM financial_instrument_catalog c {joins}
+              FROM financial_instrument_catalog c {joins}{where_sql}
               GROUP BY c.ticker,c.instrument_type,c.market,c.currency,c.settlement
               ORDER BY upper(c.instrument_type),c.ticker,c.market,c.currency,c.settlement
               LIMIT ? OFFSET ?"""
-    rows = query(sql, (
+    rows = query(sql, tuple(params) + (
         max(1, min(int(limit), 500)),
         max(0, int(offset)),
     ))
@@ -461,3 +483,40 @@ def instrument_rows(query: Callable[..., list[dict[str, Any]]],
         row["family"] = normalize_family(row.get("instrument_type"))
         row["ui_state"] = "RUNTIME_READY" if _int(row.get("runtime_ready")) else "PAUSED_EXPLICIT"
     return rows
+
+def instrument_count(query: Callable[..., list[dict[str, Any]]],
+                     table: Callable[[str], bool], *, q: str = "",
+                     family: str = "", market: str = "", currency: str = "",
+                     settlement: str = "", state: str = "") -> int:
+    """Count the same filtered identity space used by instrument_rows."""
+    if not table("financial_instrument_catalog"):
+        return 0
+    readiness_join = table("candidate_identity_v2")
+    joins = ""
+    if readiness_join:
+        joins = """ LEFT JOIN candidate_identity_v2 r ON r.ticker=c.ticker
+          AND r.instrument_type=c.instrument_type AND r.market=c.market
+          AND r.currency=c.currency AND r.settlement=c.settlement"""
+    where = []
+    params: list[Any] = []
+    if str(q or "").strip():
+        needle = "%" + str(q).strip().upper() + "%"
+        where.append("(upper(c.ticker) LIKE ? OR upper(c.instrument_type) LIKE ? OR upper(c.market) LIKE ? OR upper(c.currency) LIKE ? OR upper(c.settlement) LIKE ?)")
+        params.extend([needle] * 5)
+    for column, value in (
+        ("c.instrument_type", family), ("c.market", market),
+        ("c.currency", currency), ("c.settlement", settlement),
+    ):
+        if str(value or "").strip():
+            where.append(f"upper({column})=upper(?)")
+            params.append(str(value).strip())
+    if str(state or "").strip() and readiness_join:
+        key = str(state).strip().upper()
+        if key == "RUNTIME_READY":
+            where.append("r.can_simulate=1 AND upper(r.status)='AVAILABLE'")
+        elif key == "PAUSED_EXPLICIT":
+            where.append("NOT (r.can_simulate=1 AND upper(r.status)='AVAILABLE')")
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    row = (query(f"""SELECT COUNT(*) total FROM financial_instrument_catalog c {joins}{where_sql}""",
+                 tuple(params)) or [{"total": 0}])[0]
+    return _int(row.get("total"))

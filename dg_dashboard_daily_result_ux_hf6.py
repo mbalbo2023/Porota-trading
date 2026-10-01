@@ -59,7 +59,7 @@ def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
     # must never publish a Saturday/Sunday/holiday card if an old cache leaks in.
     days = [item for item in days if _is_operational_day(item.get("day"))]
     if not days:
-        return ("<section class='paper-card'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
+        return ("<section class='paper-card'><h2>Resultado de las últimas ocho ruedas BYMA</h2>"
                 "<p class='paper-muted'>Aún no existe cierre diario conciliado.</p></section>")
     cards=[]
     for item in days:
@@ -82,7 +82,7 @@ def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
             "</article>"
         )
     return ("<section class='paper-card daily-results-section'><h2>Resultado de las últimas cinco ruedas BYMA</h2>"
-            "<p class='paper-muted'>Se muestran sólo las últimas cinco ruedas BYMA; fines de semana y feriados quedan excluidos. PnL y retorno permanecen separados por moneda/plaza. No se suman ARS y USD.</p>"
+            "<p class='paper-muted'>Se muestran sólo las últimas ocho ruedas BYMA; fines de semana y feriados quedan excluidos. PnL y retorno permanecen separados por moneda/plaza. No se suman ARS y USD.</p>"
             f"<div class='daily-results-grid'>{''.join(cards)}</div></section>")
 
 
@@ -115,13 +115,14 @@ def report_cards_html(rows: list[dict], *, report_link_builder=None) -> str:
 
 RESPONSIVE_CSS = """
 <style id='porota-hf6-v2-responsive-cards'>
-.daily-results-grid,.report-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.daily-results-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.report-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
 .daily-result-card,.report-card{background:#fff;border:1px solid var(--line);border-radius:11px;padding:13px;min-width:0;overflow-wrap:anywhere}
 .daily-result-card header,.report-card-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
 .daily-money{margin:7px 0 10px;padding-left:19px}.daily-result-card p,.report-card p{margin:7px 0}
 .report-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
 .paper-table-responsive{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .compact-list-limit{max-height:70vh;overflow:auto;overscroll-behavior:contain}
+@media(max-width:900px){.daily-results-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){
   .daily-results-grid,.report-card-grid{grid-template-columns:1fr}
   .paper-grid{grid-template-columns:1fr}
