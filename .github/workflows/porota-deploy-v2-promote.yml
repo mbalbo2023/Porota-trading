@@ -161,8 +161,11 @@ jobs:
             -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" \
-            "df -PB1 / | awk 'NR==2 {print \\$4}'; df -Pi / | awk 'NR==2 {printf \"%.6f\\n\", (100.0*\\$4/\\$2)}'")"
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE_DISK'
+df -PB1 / | awk 'NR==2 {print $4}'
+df -Pi / | awk 'NR==2 {printf "%.6f\\n", (100.0*$4/$2)}'
+REMOTE_DISK
+          )"
           mapfile -t METRICS <<< "$REMOTE_METRICS"
           test "${#METRICS[@]}" -eq 2
           AVAILABLE_BYTES="${METRICS[0]}"
