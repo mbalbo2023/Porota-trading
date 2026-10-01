@@ -85,6 +85,24 @@ jobs:
             echo "HTTP|$path|$code|bytes=$bytes"
             test "$code" = 200
           done
+          echo "VALIDATION_FILES_BEGIN"
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json
+          from pathlib import Path
+          import rc6_validation_projection as projection
+          import rc6_action4_audit as action4
+          from cg_paper_workspace import artifact_root,database_path
+          snap=projection.read()
+          print("VALIDATION_SNAPSHOT="+json.dumps(snap,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          target=Path(artifact_root(database_path())).resolve()/"reports"/action4.FILENAME
+          try:
+              payload=json.loads(target.read_text(encoding="utf-8"))
+          except Exception as exc:
+              payload={"read_error":type(exc).__name__,"path":str(target)}
+          print("ACTION4_SNAPSHOT="+json.dumps(payload,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          PY
+          systemctl list-timers --all --no-pager | grep -Ei 'valid|audit|action4' || true
+          echo "VALIDATION_FILES_END"
           echo "PPI_WATCH_UNTOUCHED=GREEN"
           echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
           REMOTE
@@ -100,3 +118,27 @@ jobs:
       - name: Cleanup SSH
         if: always()
         run: rm -f "$HOME/.ssh/key"
+
+  focused-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: PAPER guard and compile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          python -m compileall -q bw_daily_risk.py bf_production_paper_observer.py zz_wave8_dashboard_live_rc6.py
+          git diff --check
+      - name: Install test dependencies
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Runtime regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q tests/test_daily_risk_outbox_v17.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_ws_ops_risk_layout.py
+          echo WS_RUNTIME_07_REGRESSION=GREEN
