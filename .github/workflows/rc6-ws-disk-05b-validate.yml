@@ -1,0 +1,87 @@
+name: RC6 WS-DISK-05B validate phase-1 cleanup
+
+on:
+  push:
+    branches:
+      - cleanup/ws-disk-05-safe-cleanup-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-05b-validate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_validate"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_validate" "$HOME/.ssh/known_hosts"
+
+      - name: Validate cleaned runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/porota_rc6_validate" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          free="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_FREE_BYTES=$free"
+          test "$free" -ge 5368709120
+
+          state="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          echo "STATE=$state"
+          test "$state" = "PRODUCTION_PAPER|0"
+
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            row="$(sudo -n docker inspect -f '{{.Name}}|{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' "$c")"
+            echo "$row"
+            [[ "$row" == *"|running|false|"* ]]
+          done
+
+          echo "JOURNAL=$(sudo -n journalctl --disk-usage 2>&1 | tr '\n' ' ')"
+          echo "TMP_BYTES=$(sudo -n du -x -s -B1 /tmp | awk '{print $1}')"
+          echo "APT_LISTS_BYTES=$(sudo -n du -x -s -B1 /var/lib/apt/lists | awk '{print $1}')"
+          echo "APT_CACHE_BYTES=$(sudo -n du -x -s -B1 /var/cache/apt | awk '{print $1}')"
+          echo "PPI_WATCH_STATE_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_STATE_END"
+          echo "RC6_DISK_CLEANUP_PHASE1_VALIDATION=GREEN"
+          REMOTE
+
+      - name: Cleanup runner key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_validate"
