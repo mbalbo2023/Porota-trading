@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,6 +49,7 @@ FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
 })
 ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
+DEFAULT_REFRESH_SKEW_SECONDS = max(60, int(os.environ.get("POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS", "300")))
 
 
 class IOLMCPError(RuntimeError):
@@ -201,6 +203,65 @@ class OAuthStoreReadOnlyMCP:
         except OSError as exc:
             raise IOLMCPError("IOL_MCP_OAUTH_STORE_WRITE_FAILED") from exc
 
+    def _token_expiry_epoch(self, data: dict[str, Any]) -> float | None:
+        tokens = data.get("tokens")
+        if not isinstance(tokens, dict):
+            return None
+        try:
+            expires_in = float(tokens.get("expires_in"))
+        except (TypeError, ValueError):
+            return None
+        if expires_in <= 0:
+            return None
+        try:
+            obtained = float(data.get("token_obtained_at_epoch"))
+        except (TypeError, ValueError):
+            try:
+                obtained = float(self.store.stat().st_mtime)
+            except OSError:
+                return None
+        return obtained + expires_in
+
+    def _refresh_due(self, data: dict[str, Any]) -> bool:
+        expiry = self._token_expiry_epoch(data)
+        return expiry is not None and time.time() >= expiry - DEFAULT_REFRESH_SKEW_SECONDS
+
+    def _stored_token_endpoint(self, data: dict[str, Any]) -> str | None:
+        endpoint = _https_url(data.get("token_endpoint"))
+        if endpoint:
+            return endpoint
+        issuer = _https_url(data.get("issuer"))
+        if issuer:
+            # IOL's registered OAuth flow exchanges the authorization code at
+            # the MCP resource's /token endpoint. Persist it after the first
+            # successful refresh so later refreshes do not depend on a 401
+            # challenge containing resource_metadata.
+            return issuer.rstrip("/") + "/token"
+        return None
+
+    def _refresh_if_due(self) -> None:
+        data = self._load_store()
+        if not self._refresh_due(data):
+            return
+        tokens = data.get("tokens")
+        expected = (tokens or {}).get("access_token") if isinstance(tokens, dict) else None
+        lock_path = self.store.with_suffix(self.store.suffix + ".refresh.lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            current_data = self._load_store()
+            current_tokens = current_data.get("tokens")
+            current = (current_tokens or {}).get("access_token") if isinstance(current_tokens, dict) else None
+            if expected and current and current != expected:
+                self._headers = None
+                return
+            if self._refresh_due(current_data):
+                self._refresh_locked({}, current_data)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
     def _refresh_after_401(self, headers: dict[str, str]) -> None:
         lock_path = self.store.with_suffix(self.store.suffix + ".refresh.lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -242,8 +303,11 @@ class OAuthStoreReadOnlyMCP:
                 fields.pop("client_id")
             else:
                 fields["client_secret"] = secret
+        endpoint = self._stored_token_endpoint(data)
+        if not endpoint:
+            endpoint = self._token_endpoint(headers)
         request = urllib.request.Request(
-            self._token_endpoint(headers), data=urllib.parse.urlencode(fields).encode(),
+            endpoint, data=urllib.parse.urlencode(fields).encode(),
             headers=request_headers, method="POST",
         )
         try:
@@ -258,7 +322,16 @@ class OAuthStoreReadOnlyMCP:
         for key in ("access_token", "refresh_token", "expires_in", "scope", "token_type"):
             if key in refreshed and refreshed[key] is not None:
                 updated_tokens[key] = refreshed[key]
+        now = time.time()
         data["tokens"] = updated_tokens
+        data["token_endpoint"] = endpoint
+        data["token_obtained_at_epoch"] = now
+        try:
+            expires_in = float(updated_tokens.get("expires_in"))
+        except (TypeError, ValueError):
+            expires_in = None
+        if expires_in is not None and expires_in > 0:
+            data["token_expires_at_epoch"] = now + expires_in
         self._write_store(data)
         self._headers = None
 
@@ -299,6 +372,7 @@ class OAuthStoreReadOnlyMCP:
         """Discover server capabilities without invoking any tool."""
         for attempt in range(2):
             try:
+                self._refresh_if_due()
                 if self._headers is None:
                     self._initialize()
                 result, _ = self._rpc("tools/list", {})
@@ -315,6 +389,7 @@ class OAuthStoreReadOnlyMCP:
             raise PermissionError("IOL_SHADOW_TOOL_DENIED:" + tool_name)
         for attempt in range(2):
             try:
+                self._refresh_if_due()
                 if self._headers is None:
                     self._initialize()
                 result, _ = self._rpc("tools/call", {"name": tool_name, "arguments": dict(arguments)})
