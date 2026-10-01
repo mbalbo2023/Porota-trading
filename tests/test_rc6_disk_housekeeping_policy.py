@@ -37,7 +37,7 @@ def test_pretransfer_formula_includes_transfer_plus_post_transfer_headroom() -> 
     image = 409_264_065
     bundle = 1_118_828
     required = required_pretransfer_free(image, bundle, p)
-    calculated = image * 5 + bundle * 3 + 1024**3
+    calculated = image * 5 + bundle * 3 + 5 * 1024**3
     assert required == max(6 * 1024**3, calculated)
 
 
