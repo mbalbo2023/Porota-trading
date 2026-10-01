@@ -144,6 +144,35 @@ TABLE_A11Y_SCRIPT = r"""
     paint(null);
   }
 
+  const SIGNED_RESULT_HEADER=/(^|\b)(pnl|resultado|retorno|variaci[oó]n|expectativa|profit)(\b|$)/i;
+  function signedNumber(text){
+    let raw=String(text||'').replace(/\u00a0/g,' ').trim();
+    if(!raw || raw==='—') return null;
+    const negativeParen=/^\(.*\)$/.test(raw);
+    raw=raw.replace(/[^0-9,.-]/g,'');
+    if(!raw) return null;
+    if(raw.includes(',') && raw.includes('.')) raw=raw.replace(/\./g,'').replace(',','.');
+    else if(raw.includes(',')) raw=raw.replace(',','.');
+    const value=Number(raw);
+    return Number.isFinite(value) ? (negativeParen ? -Math.abs(value) : value) : null;
+  }
+  function decorateSignedResults(table,headers){
+    const signedColumns=[];
+    headers.forEach((header,index)=>{if(SIGNED_RESULT_HEADER.test(String(header||''))) signedColumns.push(index);});
+    if(!signedColumns.length) return;
+    Array.from(table.rows||[]).forEach(row=>{
+      if(Array.from(row.cells||[]).some(cell=>cell.tagName==='TH')) return;
+      signedColumns.forEach(index=>{
+        const cell=row.cells?.[index];
+        if(!cell) return;
+        const value=signedNumber(cell.textContent);
+        cell.classList.remove('positive','negative','neutral');
+        if(value===null) return;
+        cell.classList.add(value>0?'positive':value<0?'negative':'neutral');
+      });
+    });
+  }
+
   function startObserver(){
     if(observer) observer.observe(document.documentElement,{childList:true,subtree:true});
   }
@@ -157,6 +186,7 @@ TABLE_A11Y_SCRIPT = r"""
         table.dataset.porotaCompact='1';
         const headers=headersFor(table);
         labelCells(table,headers);
+        decorateSignedResults(table,headers);
         progressive(table,index);
       });
     } finally {
@@ -192,4 +222,6 @@ def assert_table_accessibility_contract():
     assert "Mostrando '+shown+' de '+total" in TABLE_A11Y_SCRIPT
     assert "sessionStorage" in TABLE_A11Y_SCRIPT
     assert "MutationObserver" in TABLE_A11Y_SCRIPT
+    assert "decorateSignedResults" in TABLE_A11Y_SCRIPT
+    assert "SIGNED_RESULT_HEADER" in TABLE_A11Y_SCRIPT
     assert "observer.disconnect()" in TABLE_A11Y_SCRIPT
