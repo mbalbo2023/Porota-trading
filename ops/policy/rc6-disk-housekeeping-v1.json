@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "project": "POROTA_TRADING_RC6",
+  "mode": "PAPER_SHADOW_ONLY",
+  "disk": {
+    "green_free_bytes": 7516192768,
+    "auto_cleanup_below_bytes": 7516192768,
+    "deploy_pretransfer_min_free_bytes": 6442450944,
+    "post_cleanup_min_free_bytes": 5368709120,
+    "critical_free_bytes": 3221225472,
+    "min_inode_free_percent": 10
+  },
+  "deploy": {
+    "canonical_workflow": ".github/workflows/porota-deploy-v2-promote.yml",
+    "pretransfer_guard_required": true,
+    "pretransfer_formula": {
+      "image_tar_multiplier": 5,
+      "bundle_multiplier": 3,
+      "fixed_headroom_bytes": 1073741824
+    }
+  },
+  "tmp": {
+    "root": "/tmp",
+    "prefixes": [
+      "porota",
+      "rc6"
+    ],
+    "min_age_days": 7
+  },
+  "backups": {
+    "general": {
+      "root": "/opt/porota-backups",
+      "glob": "porota-general-*.tar.gz",
+      "keep_newest": 3,
+      "pinned_names": [
+        "porota-general-20260912T071509Z.tar.gz"
+      ]
+    },
+    "paper": {
+      "root": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper",
+      "glob": "observer_*.db.gz",
+      "keep_newest": 3
+    },
+    "history": {
+      "root": "/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history",
+      "glob": "market_history_*.db.gz",
+      "keep_newest": 3
+    },
+    "protected_paths": [
+      "/opt/porota-trading/data/backups/wave4_closure"
+    ]
+  },
+  "journal": {
+    "max_bytes": 536870912
+  },
+  "apt": {
+    "clean_cache": true,
+    "clean_lists": true
+  },
+  "docker": {
+    "cleanup_mode": "OBSERVE_ONLY",
+    "manual_containerd_mutation_allowed": false
+  },
+  "sqlite": {
+    "automatic_vacuum_allowed": false,
+    "automatic_wal_delete_allowed": false
+  },
+  "safety": {
+    "required_runtime_mode": "PRODUCTION_PAPER",
+    "required_real_orders_sent": 0,
+    "ppi_watch_must_remain_untouched": true,
+    "active_runtime_images_must_remain_untouched": true,
+    "swap_must_remain_untouched": true
+  },
+  "schedule": {
+    "daily_auto_utc": "30 23 * * *",
+    "weekly_cleanup_utc": "00 14 * * 0",
+    "timezone_note": "America/Argentina/Buenos_Aires (ART = UTC-3)"
+  }
+}
