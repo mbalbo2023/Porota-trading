@@ -5,19 +5,20 @@
   "disk": {
     "green_free_bytes": 7516192768,
     "auto_cleanup_below_bytes": 7516192768,
-    "deploy_pretransfer_min_free_bytes": 6442450944,
-    "post_cleanup_min_free_bytes": 5368709120,
-    "critical_free_bytes": 3221225472,
+    "deploy_pretransfer_min_free_bytes": 2147483648,
+    "post_cleanup_min_free_bytes": 2147483648,
+    "critical_free_bytes": 1073741824,
     "min_inode_free_percent": 10
   },
   "deploy": {
     "canonical_workflow": ".github/workflows/porota-deploy-v2-promote.yml",
     "pretransfer_guard_required": true,
     "pretransfer_formula": {
-      "image_tar_multiplier": 5,
-      "bundle_multiplier": 3,
-      "fixed_headroom_bytes": 5368709120
-    }
+      "image_tar_multiplier": 0,
+      "bundle_multiplier": 0,
+      "fixed_headroom_bytes": 2147483648
+    },
+    "operator_authorized_floor_note": "2026-10-01: deploy/final free-space floor explicitly set to 2 GiB; inode guard and safe cleanup remain mandatory"
   },
   "tmp": {
     "root": "/tmp",
