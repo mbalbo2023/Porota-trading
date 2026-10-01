@@ -5,7 +5,7 @@
 - mode: WRITE_OWNER (workflow/checkpoint only; runtime probe READ_ONLY)
 - branch: work/ws-history-09-progress-audit-20261001
 - base_ref: ops/ws-ops-preopen-closure-20260930
-- base_sha: TO_CAPTURE_FROM_FIRST_COMMIT_PARENT
+- base_sha: 220501ce3929897ed59264cd70c2ae216a98b450
 - scope: history coverage/repair progress evidence only.
 - paths: dedicated workflow/checkpoints only.
 - NO second history repair is authorized from this workstream.
