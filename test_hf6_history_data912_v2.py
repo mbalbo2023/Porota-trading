@@ -52,7 +52,7 @@ def test_context_thresholds_match_audited_policy():
 
 def test_history_collection_does_not_equal_ready_paper():
     capability=policy.history_collection_capability("BONOS",status="AVAILABLE",identity_complete=True)
-    assert capability=="OUT_OF_SCOPE_READONLY_LEGACY"
+    assert capability=="READONLY_HISTORY_ALLOWED"
     assert "READY_PAPER" not in capability
 
 
