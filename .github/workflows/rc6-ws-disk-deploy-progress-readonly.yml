@@ -1,0 +1,76 @@
+name: RC6 WS-DISK Deploy Progress Readonly
+
+on:
+  push:
+    branches:
+      - audit/ws-disk-deploy-progress-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-deploy-progress-readonly.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          echo "PROBE_AT=$(date -u +%FT%TZ)"
+          df -h /
+          sudo -n python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print("OBSERVER_STATE="+json.dumps(dict(row),sort_keys=True,default=str))
+          PY
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' "$c" 2>/dev/null || true
+          done
+          echo "ACTIVE_POROTA_BEGIN"
+          sudo -n docker ps --format 'name={{.Names}}|image={{.Image}}|status={{.Status}}|command={{.Command}}' | grep -E 'porota|ck_contract' || true
+          echo "ACTIVE_POROTA_END"
+          echo "ZERO_KNOWN_BEGIN"
+          sudo -n find "$REPO/data/deploy" -maxdepth 1 -type f -name 'zero-known-error-*.json' -printf '%f|%TY-%Tm-%TdT%TH:%TM:%TSZ|%s\n' 2>/dev/null | sort || true
+          echo "ZERO_KNOWN_END"
+          echo "CURRENT_STATE_BEGIN"
+          sudo -n cat "$REPO/data/deploy/CURRENT_STATE_V2.json" 2>/dev/null || true
+          echo "CURRENT_STATE_END"
+          echo "PPI_WATCH_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_END"
+          echo "READ_ONLY_PROBE=GREEN"
+          REMOTE
+      - name: Cleanup key
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
