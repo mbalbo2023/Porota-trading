@@ -147,7 +147,7 @@ def collect_sre(store):
     started = time.perf_counter()
     db_path = Path(store.path)
     try:
-        # Full-DB PRAGMA quick_check is intentionally NOT owned by this frequent
+        # Full-DB integrity verification is intentionally NOT owned by this frequent
         # observer-loop telemetry.  On the production-sized SQLite file it can
         # take minutes and stall the observer heartbeat.  The dedicated
         # rc6_full_db_integrity post-close service is the single recurring owner.
