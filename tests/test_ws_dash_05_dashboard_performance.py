@@ -162,3 +162,9 @@ def test_runtime_surface_metrics_count_real_rows_and_pending_badges():
     metrics = runtime_audit._surface_metrics("/validacion", body)
     assert metrics["table_rows"] == 3
     assert metrics["literal_pending_badges"] == 1
+
+
+def test_analysis_truth_wrapper_targets_registered_annual_renderer():
+    source = __import__("pathlib").Path("zz_wave8_dashboard_live_rc6.py").read_text(encoding="utf-8")
+    assert "bg.analysis_page" not in source
+    assert "bg.annual_instrument_analysis.render_page=analysis_render_live" in source
