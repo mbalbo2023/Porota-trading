@@ -18,7 +18,7 @@ def test_full_db_integrity_is_postclose_low_priority_and_non_persistent():
     assert "Nice=15" in service
     assert "IOSchedulingClass=idle" in service
     assert "17:20:00 America/Argentina/Buenos_Aires" in timer
-    assert "Persistent=false" in timer
+    assert "Persistent=true" in timer
 
 
 def test_integrity_split_remains_read_only():
@@ -29,3 +29,10 @@ def test_integrity_split_remains_read_only():
         assert "PRAGMA query_only=ON" in source
         assert "UPDATE " not in source
         assert "DELETE " not in source
+
+
+def test_full_db_main_defers_expensive_scan_during_market_hours():
+    full=(ROOT/"rc6_full_db_integrity.py").read_text(encoding="utf-8")
+    assert "def probe(db_path=DB, *, defer_when_market_open=False)" in full
+    assert "DEFERRED_MARKET_OPEN" in full
+    assert "probe(defer_when_market_open=True)" in full
