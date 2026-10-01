@@ -31,5 +31,5 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q tests/test_ws_dash_07_history_truth.py tests/test_dashboard_hf6_v2.py tests/test_dashboard_table_layout_rc6.py
+          PYTHONPATH=. pytest -q tests/test_ws_dash_07_history_truth.py tests/test_dashboard_truth_layer_rc6.py tests/test_dashboard_table_layout_rc6.py
           echo WS_DASH_07_HISTORY=GREEN
