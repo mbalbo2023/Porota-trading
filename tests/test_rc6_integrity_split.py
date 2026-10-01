@@ -18,7 +18,7 @@ def test_full_db_integrity_is_postclose_low_priority_and_non_persistent():
     assert "Nice=15" in service
     assert "IOSchedulingClass=idle" in service
     assert "17:20:00 America/Argentina/Buenos_Aires" in timer
-    assert "Persistent=true" in timer
+    assert "Persistent=false" in timer
 
 
 def test_integrity_split_remains_read_only():
