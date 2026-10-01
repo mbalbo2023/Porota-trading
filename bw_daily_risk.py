@@ -89,14 +89,32 @@ class DailyRisk:
                 (currency,)).fetchone()
             latest_at = latest_row['evaluated_at'] if latest_row else None
             input_at = at.isoformat()
-            rollback = bool(latest_at and c.execute(
-                'SELECT julianday(?) > julianday(?)',(latest_at,input_at)).fetchone()[0])
-            if rollback:
+            latest_dt = aware_datetime(latest_at) if latest_at else None
+            rollback_seconds = ((latest_dt - at).total_seconds()
+                                if latest_dt is not None and latest_dt > at else 0)
+            if rollback_seconds > 0:
+                # Live PAPER has several read-only evaluators. A fresher risk
+                # snapshot can legitimately win the SQLite race after another
+                # worker captured its candidate timestamp. Reusing that newer
+                # same-day snapshot is conservative: LATCHED/STALE states stay
+                # blocking and a hard loss latch can never be reset by it.
+                # A larger/previous-day clock reversal remains fail-closed.
+                freshness_budget = max(0.0, float(self.broker.quote_max_age_seconds))
+                same_day = latest_dt.astimezone(TZ).date() == at.astimezone(TZ).date()
+                if (same_day and rollback_seconds <= freshness_budget and previous
+                        and previous['evaluated_at'] == latest_at):
+                    reused = dict(previous)
+                    reused['input_at'] = input_at
+                    reused['reused_fresher_evaluation_at'] = latest_at
+                    reused['clock_skew_seconds'] = rollback_seconds
+                    results[currency] = reused
+                    continue
                 results[currency] = {
                     'state':'CLOCK_ROLLBACK',
                     'latched_at':previous['latched_at'] if previous else None,
                     'input_at':input_at,
                     'latest_evaluated_at':latest_at,
+                    'clock_skew_seconds':rollback_seconds,
                 }
                 continue
             c.execute('INSERT OR IGNORE INTO paper_risk_capital VALUES(?,?)',(currency,str(capital)))
