@@ -201,7 +201,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' REQUIRED_PREFLIGHT_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
@@ -234,7 +234,11 @@ jobs:
           # Operator-authorized RC6 floor: keep the safety guard blocking, but
           # do not require synthetic multi-artifact headroom above 2 GiB.
           # Artifact integrity/build-once checks remain unchanged.
-          REQUIRED_PREFLIGHT_FREE="$(python3 -c 'import json; print(json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))["disk"]["deploy_pretransfer_min_free_bytes"])')"
+          # Reuse the exact candidate policy value computed on the Actions
+          # checkout before transfer. Do NOT read the still-old host checkout here:
+          # the immutable bundle has not been installed yet.
+          : "${REQUIRED_PREFLIGHT_FREE:?missing exact candidate disk floor}"
+          [[ "$REQUIRED_PREFLIGHT_FREE" =~ ^[0-9]+$ ]]
           echo "IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
           echo "BUNDLE_BYTES=$BUNDLE_BYTES"
           echo "REQUIRED_PREFLIGHT_FREE=$REQUIRED_PREFLIGHT_FREE"
