@@ -67,3 +67,24 @@ def test_motor_no_duplica_mantenimientos():
 
 def test_ejecutor_rechaza_tareas_desconocidas():
     assert az_maintenance_job.main(["no_existe"]) == 2
+
+
+def test_scoped_scheduler_can_own_only_gdelt_without_duplicate_maintenance():
+    scheduler = az_maintenance_scheduler.build_scheduler(
+        only_jobs={"gdelt_shadow_refresh"})
+    jobs = scheduler.get_jobs()
+    assert [job.id for job in jobs] == ["maintenance_gdelt_shadow"]
+    assert "interval[0:30:00]" in str(jobs[0].trigger)
+
+
+def test_production_observer_reuses_only_gdelt_job():
+    source=(RAIZ/"bf_production_paper_observer.py").read_text(encoding="utf-8")
+    assert 'az_maintenance_scheduler.start(' in source
+    assert 'only_jobs={"gdelt_shadow_refresh"}' in source
+    assert "gdelt_scheduler.shutdown(wait=False)" in source
+    for duplicated in (
+        '"backup"', '"macro_refresh"', '"news_scan"',
+        '"weekly_report"', '"monthly_report"',
+    ):
+        scoped=source.split("az_maintenance_scheduler.start(",1)[1].split(")",1)[0]
+        assert duplicated not in scoped
