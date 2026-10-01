@@ -11,7 +11,9 @@ on:
       - 'rc6_gdelt_event_risk_job.py'
       - 'az_maintenance_scheduler.py'
       - 'bf_production_paper_observer.py'
-      - 'tests/test_maintenance_scheduler.py'
+      - 'bi_operational_services.py'
+      - 'tests/test_operational_services_v1635.py'
+      - 'tests/test_maintenance_scheduler.py tests/test_operational_services_v1635.py'
       - 'tests/test_rc6_consolidated_sre_guards.py'
       - 'tests/test_rc6_gdelt_event_risk_job.py'
       - '.github/workflows/rc6-consolidated-sre-tests.yml'
@@ -28,6 +30,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Compile
-        run: python -m py_compile di_caucion_cash_sweep_runtime_hf6.py rc6_candle_integrity.py ops_introspection_rc6.py rc6_gdelt_event_risk_job.py az_maintenance_scheduler.py bf_production_paper_observer.py
+        run: python -m py_compile di_caucion_cash_sweep_runtime_hf6.py rc6_candle_integrity.py ops_introspection_rc6.py rc6_gdelt_event_risk_job.py az_maintenance_scheduler.py bf_production_paper_observer.py bi_operational_services.py
       - name: Run SRE focal tests
         run: python -m pytest -q tests/test_rc6_consolidated_sre_guards.py tests/test_rc6_gdelt_event_risk_job.py tests/test_maintenance_scheduler.py
