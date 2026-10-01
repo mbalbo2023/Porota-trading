@@ -67,52 +67,57 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         clauses.append("NOT (r.can_simulate=1 AND upper(r.status)='AVAILABLE')")
     catalog_filter_sql=(" AND "+" AND ".join(clauses)) if clauses else ""
 
-    catalog = bg._rows(f"""
-        SELECT
-            c.ticker,
-            c.instrument_type,
-            c.market,
-            c.currency,
-            c.settlement,
-            c.status,
-            c.capability,
-            c.last_seen_at,
-            CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
-            COALESCE(r.status,'NO_CANDIDATE') readiness_status,
-            r.checked_at readiness_as_of
-        FROM financial_instrument_catalog c
-        LEFT JOIN candidate_identity_v2 r
+    has_catalog = bg._table("financial_instrument_catalog")
+    has_readiness = bg._table("candidate_identity_v2")
+    catalog_join = ("""LEFT JOIN candidate_identity_v2 r
           ON r.ticker=c.ticker
          AND r.instrument_type=c.instrument_type
          AND r.market=c.market
          AND r.currency=c.currency
-         AND r.settlement=c.settlement
+         AND r.settlement=c.settlement""" if has_readiness else "")
+    readiness_columns = (
+        """CASE WHEN r.can_simulate=1 AND upper(r.status)='AVAILABLE' THEN 1 ELSE 0 END runtime_ready,
+           COALESCE(r.status,'NO_CANDIDATE') readiness_status,
+           r.checked_at readiness_as_of"""
+        if has_readiness else
+        """0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of"""
+    )
+    catalog = bg._rows(f"""
+        SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+               c.status,c.capability,c.last_seen_at,{readiness_columns}
+        FROM financial_instrument_catalog c
+        {catalog_join}
         WHERE c.status='AVAILABLE' {catalog_filter_sql}
         ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
-    """, tuple(catalog_params)) if bg._table("financial_instrument_catalog") and bg._table("candidate_identity_v2") else bg._rows(f"""
-        SELECT ticker,instrument_type,market,currency,settlement,status,capability,last_seen_at,
-               0 runtime_ready,'NO_CANDIDATE' readiness_status,NULL readiness_as_of
-        FROM financial_instrument_catalog c WHERE c.status='AVAILABLE'
-        {(" AND "+" AND ".join(x for x in clauses if not x.startswith("r." ) and "r." not in x)) if clauses else ""}
-        ORDER BY c.instrument_type,c.ticker,c.market,c.currency,c.settlement
-    """, tuple(catalog_params[:len(catalog_params)])) if bg._table("financial_instrument_catalog") else []
+        LIMIT ? OFFSET ?
+    """, tuple(catalog_params) + (limit, offset)) if has_catalog else []
+    catalog_total = _int((bg._rows(f"""
+        SELECT COUNT(*) total FROM financial_instrument_catalog c
+        {catalog_join}
+        WHERE c.status='AVAILABLE' {catalog_filter_sql}
+    """, tuple(catalog_params)) or [{"total":0}])[0].get("total")) if has_catalog else 0
+    catalog_identities = bg._rows("""
+        SELECT ticker,instrument_type,market,currency,settlement
+        FROM financial_instrument_catalog
+        WHERE status='AVAILABLE'
+    """) if has_catalog else []
+    family_caps_rows = bg._rows("""
+        SELECT instrument_type,COALESCE(capability,'UNKNOWN') capability,COUNT(*) total
+        FROM financial_instrument_catalog
+        WHERE status='AVAILABLE'
+        GROUP BY instrument_type,COALESCE(capability,'UNKNOWN')
+    """) if has_catalog else []
 
     market = bg._rows("""
-        SELECT
-            symbol,
-            asset_class,
-            market,
-            currency,
-            settlement,
-            COUNT(*) snapshots,
-            MAX(observed_at) last_observed
-        FROM market_snapshots
-        GROUP BY
-            symbol,
-            asset_class,
-            market,
-            currency,
-            settlement
+        SELECT s.symbol,s.asset_class,s.market,s.currency,s.settlement,
+               1 snapshots,s.observed_at last_observed
+        FROM market_snapshots s
+        JOIN (
+            SELECT symbol,asset_class,settlement,currency,market,MAX(id) id
+            FROM market_snapshots
+            GROUP BY symbol,asset_class,settlement,currency,market
+        ) latest ON latest.id=s.id
+        ORDER BY s.symbol,s.asset_class,s.market,s.currency,s.settlement
     """) if bg._table("market_snapshots") else []
 
     positions = bg._rows("""
@@ -155,31 +160,22 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         ORDER BY julianday(opened_at) DESC,paper_id DESC
     """) if bg._table("paper_positions") else []
 
+    day_start = datetime.combine(datetime.now(bg.TZ).date(), datetime.min.time(), bg.TZ).isoformat()
     decisions = bg._rows("""
-        SELECT
-            symbol,
-            COUNT(*) decisions
+        SELECT symbol,COUNT(*) decisions
         FROM paper_decisions
-        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
+        WHERE decided_at>=?
         GROUP BY symbol
-    """) if bg._table("paper_decisions") else []
+    """, (day_start,)) if bg._table("paper_decisions") else []
 
     gates = bg._rows("""
-        SELECT
-            symbol,
-            COUNT(*) evaluations,
-            SUM(CASE
-                WHEN final_result='BLOCKED' THEN 1
-                ELSE 0
-            END) blocked,
-            SUM(CASE
-                WHEN final_result='OPENED_SIMULATED' THEN 1
-                ELSE 0
-            END) opened
+        SELECT symbol,COUNT(*) evaluations,
+               SUM(CASE WHEN final_result='BLOCKED' THEN 1 ELSE 0 END) blocked,
+               SUM(CASE WHEN final_result='OPENED_SIMULATED' THEN 1 ELSE 0 END) opened
         FROM trade_gate_evaluations
-        WHERE symbol IN (SELECT ticker FROM financial_instrument_catalog WHERE status='AVAILABLE')
+        WHERE evaluated_at>=?
         GROUP BY symbol
-    """) if bg._table("trade_gate_evaluations") else []
+    """, (day_start,)) if bg._table("trade_gate_evaluations") else []
 
     cauciones = bg._rows("""
         SELECT
@@ -219,7 +215,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
             r.get("currency"),
             r.get("settlement"),
         ): r
-        for r in catalog
+        for r in catalog_identities
     }
 
     market_by_key = {
@@ -256,7 +252,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
 
     symbol_families = defaultdict(set)
 
-    for row in catalog:
+    for row in catalog_identities:
         symbol_families[
             row.get("ticker")
         ].add(
@@ -362,13 +358,8 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         )
 
     family_caps = defaultdict(Counter)
-
-    for row in catalog:
-        family_caps[
-            row.get("instrument_type")
-        ][
-            row.get("capability") or "UNKNOWN"
-        ] += 1
+    for row in family_caps_rows:
+        family_caps[row.get("instrument_type")][row.get("capability") or "UNKNOWN"] += _int(row.get("total"))
 
     coverage_by_family = {
         r.get("family"): r
@@ -382,7 +373,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         | set(family_caps)
     )
 
-    total_catalog = len(catalog)
+    total_catalog = catalog_total
 
     total_ready = _int(truth.get("readiness", {}).get("ready"))
 
@@ -428,7 +419,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         bg._card(
             "Observadas en mercado",
             total_market,
-            "Identidades con snapshots guardados",
+            "Identidades con última observación guardada",
             "green" if total_market else "yellow",
         ),
         bg._card(
@@ -520,8 +511,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         )
 
     instrument_rows = []
-    catalog_total=len(catalog)
-    catalog_page=catalog[offset:offset+limit]
+    catalog_page=catalog
 
     for row in catalog_page:
         key = (
@@ -695,7 +685,7 @@ def _page(*, offset=0, limit=10, q="", family="", market="", currency="", settle
         "<th>Catálogo</th>"
         "<th>READY</th>"
         "<th>Mercado</th>"
-        "<th>Snapshots</th>"
+        "<th>Snapshots actuales</th>"
         "<th>Decisiones</th>"
         "<th>Gates</th>"
         "<th>Aperturas gate</th>"
