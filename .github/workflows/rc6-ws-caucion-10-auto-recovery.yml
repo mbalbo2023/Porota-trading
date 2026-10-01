@@ -12,7 +12,7 @@ permissions:
 env:
   DO_HOST: ${{ secrets.DO_HOST }}
   DO_USER: ${{ secrets.DO_USER }}
-  SSH_KEY: ${{ secrets.SSH_KEY }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
   KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
 
 jobs:
