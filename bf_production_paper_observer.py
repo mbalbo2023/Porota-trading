@@ -1372,13 +1372,24 @@ def _download_histories_locked(reader, store, history_store):
             store.event("HISTORY_ERROR", f"{symbol}: {type(exc).__name__}: {str(exc)[:180]}")
     semantics = _history_batch_semantics(batch_statuses)
     state = semantics["state"]
+    current_scope = {
+        (str(symbol).upper(), str(instrument_type).upper(), str(settlement).upper())
+        for symbol, instrument_type, settlement in all_symbols
+    }
     with store.connect() as c:
-        covered = c.execute("SELECT COUNT(*) FROM production_history WHERE row_count>0").fetchone()[0]
+        historical_scope = {
+            (str(row[0]).upper(), str(row[1]).upper(), str(row[2]).upper())
+            for row in c.execute(
+                """SELECT symbol,instrument_type,settlement
+                   FROM production_history WHERE row_count>0"""
+            ).fetchall()
+        }
+    covered = len(current_scope & historical_scope)
     detail = (f"Lote histórico incremental={semantics['full_valid']}/{len(symbols)}; "
               f"parciales usables={semantics['partial_with_valid_evidence']}; "
               f"fallas duras={semantics['hard_failures']} "
               f"(vacío/inválido={semantics['empty_invalid']}, errores={semantics['errors']}); "
-              f"cobertura acumulada {covered}/{len(all_symbols)} instrumentos; "
+              f"cobertura scope actual {covered}/{len(current_scope)} instrumentos; "
               f"{total} filas válidas desde el último cierre hasta {end.isoformat()}.")
     usable = bool(semantics["usable"])
     _sync_state(store, "PPI_PRODUCTION_HISTORY", state, total, detail, success=usable)
