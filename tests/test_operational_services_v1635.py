@@ -79,7 +79,8 @@ def test_sre_y_backup_incluyen_restore_real(tmp_path, monkeypatch):
     monkeypatch.setattr(services, "BACKUP_DIR", tmp_path / "backups")
     services.init_schema(store)
     metric = services.collect_sre(store)
-    assert metric["integrity"] == "ok"
+    assert metric["database_probe"] == "ok"
+    assert metric["integrity"] == "DELEGATED_TO_FULL_DB_INTEGRITY"
     result = services.create_backup(store, force=True)
     assert result and Path(result).exists()
     with gzip.open(result, "rb") as source:
