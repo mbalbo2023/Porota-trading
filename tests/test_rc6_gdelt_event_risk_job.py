@@ -103,3 +103,22 @@ def test_latest_status_marks_stale_evidence_explicitly(tmp_path):
     assert status["freshness"] == "STALE"
     assert status["last_run_state"] == "GREEN"
     assert status["authority"] == "SHADOW_ONLY"
+
+
+def test_latest_events_tolerates_legacy_schema_without_title(tmp_path):
+    store = tmp_path / "legacy-gdelt.db"
+    conn = sqlite3.connect(store)
+    conn.execute("""CREATE TABLE gdelt_event_risk_events(
+      event_id TEXT PRIMARY KEY,event_type TEXT,first_seen_at TEXT,published_at TEXT,
+      available_to_engine_at TEXT,source TEXT,source_tier TEXT,provenance_url TEXT,
+      payload_hash TEXT,region TEXT,confirmed_at TEXT,retracted_at TEXT,
+      entities_json TEXT,exposures_json TEXT,first_recorded_at TEXT,last_recorded_at TEXT,
+      authority TEXT)""")
+    conn.execute("""INSERT INTO gdelt_event_risk_events VALUES(
+      'legacy','WAR_ESCALATION','2026-09-20T10:00:00Z','2026-09-20T10:00:00Z',
+      '2026-09-20T10:00:00Z','GDELT_DOC','TIER_C','https://example.com','abc','GLOBAL',
+      NULL,NULL,'[]','[]','2026-09-20T10:00:00Z','2026-09-20T10:00:00Z','SHADOW_ONLY')""")
+    conn.commit(); conn.close()
+    # A legacy store cannot provide a title, but the read-only dashboard path
+    # must not crash or require a schema mutation.
+    assert m.latest_events(str(store), limit=10) == []
