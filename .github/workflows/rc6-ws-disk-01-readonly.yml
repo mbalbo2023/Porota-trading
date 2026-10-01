@@ -1,0 +1,192 @@
+name: RC6 WS-DISK-01 read-only capacity audit
+
+on:
+  push:
+    branches:
+      - audit/ws-disk-01-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-01-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-disk-audit-readonly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only disk audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/rc6-disk-audit.txt"
+          ssh -i "$HOME/.ssh/porota_rc6_audit" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee "$OUT"
+          set -u
+          echo "POROTA_DISK_AUDIT=START"
+          echo "READ_ONLY=true"
+          echo "RECORDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "HOST=$(hostname)"
+          echo "UPTIME=$(uptime -p 2>/dev/null || true)"
+
+          echo
+          echo "=== FILESYSTEM_BYTES ==="
+          df -PB1 /
+          echo
+          echo "=== FILESYSTEM_HUMAN ==="
+          df -hT /
+          echo
+          echo "=== INODES ==="
+          df -Pi /
+
+          echo
+          echo "=== ROOT_TOPLEVEL_BYTES ==="
+          sudo -n timeout 90 du -x -B1 -d1 / 2>/dev/null | sort -nr | head -40 || true
+
+          echo
+          echo "=== OPT_POROTA_TOP2_BYTES ==="
+          sudo -n timeout 90 du -x -B1 -d2 /opt/porota-trading 2>/dev/null | sort -nr | head -100 || true
+
+          echo
+          echo "=== POROTA_DATA_TOP3_BYTES ==="
+          sudo -n timeout 120 du -x -B1 -d3 /opt/porota-trading/data 2>/dev/null | sort -nr | head -140 || true
+
+          echo
+          echo "=== VAR_TOP2_BYTES ==="
+          sudo -n timeout 90 du -x -B1 -d2 /var 2>/dev/null | sort -nr | head -100 || true
+
+          echo
+          echo "=== DOCKER_SYSTEM_DF_VERBOSE ==="
+          sudo -n timeout 60 docker system df -v 2>&1 || true
+
+          echo
+          echo "=== DOCKER_CONTAINERS ==="
+          sudo -n timeout 30 docker ps -a --size --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Size}}' 2>&1 || true
+
+          echo
+          echo "=== DOCKER_IMAGES ==="
+          sudo -n timeout 30 docker image ls --no-trunc --digests 2>&1 || true
+
+          echo
+          echo "=== DOCKER_STORAGE_TOP2_BYTES ==="
+          sudo -n timeout 90 du -x -B1 -d2 /var/lib/docker 2>/dev/null | sort -nr | head -100 || true
+
+          echo
+          echo "=== JOURNAL_USAGE ==="
+          sudo -n timeout 30 journalctl --disk-usage 2>&1 || true
+
+          echo
+          echo "=== VAR_LOG_TOP2_BYTES ==="
+          sudo -n timeout 60 du -x -B1 -d2 /var/log 2>/dev/null | sort -nr | head -80 || true
+
+          echo
+          echo "=== LARGE_LOG_FILES_GT20M ==="
+          sudo -n timeout 60 find /var/log -xdev -type f -size +20M -printf '%s\t%p\n' 2>/dev/null | sort -nr | head -100 || true
+
+          echo
+          echo "=== CACHE_AND_TMP_BYTES ==="
+          for p in /var/cache /var/cache/apt /var/cache/apt/archives /var/lib/apt/lists /tmp /var/tmp; do
+            if [ -e "$p" ]; then sudo -n du -x -s -B1 "$p" 2>/dev/null || true; fi
+          done
+
+          echo
+          echo "=== POROTA_TMP_ENTRIES ==="
+          sudo -n timeout 30 find /tmp -maxdepth 1 -mindepth 1 \( -name 'porota*' -o -name '*rc6*' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ\t%p\n' 2>/dev/null | sort || true
+          echo "--- sizes ---"
+          for p in /tmp/porota* /tmp/*rc6*; do
+            [ -e "$p" ] || continue
+            sudo -n du -x -s -B1 "$p" 2>/dev/null || true
+          done
+
+          echo
+          echo "=== POROTA_DB_WAL_FILES ==="
+          sudo -n timeout 90 find /opt/porota-trading/data -xdev -type f \
+            \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*-wal' -o -name '*-shm' \) \
+            -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TSZ\t%p\n' 2>/dev/null | sort -nr | head -160 || true
+
+          echo
+          echo "=== POROTA_LARGE_FILES_GT20M ==="
+          sudo -n timeout 120 find /opt/porota-trading -xdev -type f -size +20M \
+            -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TSZ\t%p\n' 2>/dev/null | sort -nr | head -200 || true
+
+          echo
+          echo "=== ROOT_LARGE_FILES_GT100M ==="
+          sudo -n timeout 120 find / -xdev -type f -size +100M \
+            -printf '%s\t%TY-%Tm-%TdT%TH:%TM:%TSZ\t%p\n' 2>/dev/null | sort -nr | head -200 || true
+
+          echo
+          echo "=== DELETED_BUT_OPEN_FILES ==="
+          if command -v lsof >/dev/null 2>&1; then
+            sudo -n timeout 45 lsof +L1 2>/dev/null | head -200 || true
+          else
+            echo "LSOF_NOT_INSTALLED"
+          fi
+
+          echo
+          echo "=== ACTIVE_POROTA_IMAGES ==="
+          for c in porota_production_observer porota_production_dashboard; do
+            sudo -n docker inspect -f '{{.Name}}|status={{.State.Status}}|image={{.Image}}|restarts={{.RestartCount}}' "$c" 2>/dev/null || true
+          done
+
+          echo
+          echo "=== SAFETY_STATE_READONLY ==="
+          sudo -n timeout 15 python3 - <<'PY' || true
+          import sqlite3
+          p="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"MODE={row[0]}|REAL_ORDERS_SENT={row[1]}")
+          PY
+
+          echo
+          echo "=== PPI_WATCH_READONLY ==="
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|enabled=%s|active=%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+
+          echo "POROTA_DISK_AUDIT=GREEN"
+          REMOTE
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-disk-audit-readonly-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-disk-audit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup runner key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_audit"
