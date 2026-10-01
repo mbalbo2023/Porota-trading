@@ -5,7 +5,7 @@
 - mode: WRITE_OWNER
 - branch: work/ws-caucion-10-auto-recovery-20261001
 - base_ref: ops/ws-ops-preopen-closure-20260930
-- base_sha: TO_CAPTURE_FROM_FIRST_COMMIT_PARENT
+- base_sha: 220501ce3929897ed59264cd70c2ae216a98b450
 - scope: caución PAPER cash-sweep only; regression/probe/checkpoint.
 - paths: di_caucion_cash_sweep_runtime_hf6.py, caución tests, dedicated workflow/checkpoints.
 - no deploy; no direct production write.
