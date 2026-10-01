@@ -1,0 +1,215 @@
+name: RC6 WS-DISK-06 conservative backup retention
+
+on:
+  push:
+    branches:
+      - cleanup/ws-disk-05-safe-cleanup-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-06-backup-retention.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_cleanup"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_cleanup" "$HOME/.ssh/known_hosts"
+
+      - name: Apply conservative retention
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/rc6-backup-retention.txt"
+          ssh -i "$HOME/.ssh/porota_rc6_cleanup" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee "$OUT"
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          GENERAL=/opt/porota-backups
+          PAPER="$REPO/data/paper_v17/artifacts/observer_v17.db/backups/paper"
+          HISTORY="$REPO/data/paper_v17/artifacts/observer_v17.db/backups/history"
+
+          echo "POROTA_BACKUP_RETENTION=START"
+          echo "WORKSTREAM_ID=WS-DISK-06-BACKUP-RETENTION"
+          echo "DEPLOY_OWNER=ACQUIRED"
+          echo "POLICY=GENERAL_KEEP_NEWEST_3_PLUS_OLDEST_PINNED|PAPER_KEEP_7|HISTORY_KEEP_7|WAVE4_UNTOUCHED"
+          date -u '+RECORDED_AT=%Y-%m-%dT%H:%M:%SZ'
+
+          disk_before="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_BEFORE=$disk_before"
+
+          state="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          echo "PRE_STATE=$state"
+          test "$state" = "PRODUCTION_PAPER|0"
+
+          observer_before="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
+          dashboard_before="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          approval_before="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6)"
+          echo "OBSERVER_BEFORE=$observer_before"
+          echo "DASHBOARD_BEFORE=$dashboard_before"
+          echo "APPROVAL_BEFORE=$approval_before"
+
+          ppi_before="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+
+          open_refs="$(sudo -n lsof -nP 2>/dev/null | awk '$0 ~ /\/opt\/porota-backups\// || $0 ~ /\/backups\/(paper|history)\// {print}' || true)"
+          if [ -n "$open_refs" ]; then
+            echo "BACKUP_OPEN_REFERENCES=YES"
+            echo "$open_refs"
+            exit 51
+          fi
+          echo "BACKUP_OPEN_REFERENCES=NO"
+
+          sudo -n python3 - "$GENERAL" "$PAPER" "$HISTORY" <<'PY'
+          import os,sys
+          from pathlib import Path
+          general,paper,history=map(Path,sys.argv[1:])
+
+          def rows(d,pattern):
+              out=[]
+              for p in d.glob(pattern):
+                  if not p.is_file():
+                      continue
+                  st=p.stat()
+                  out.append((st.st_mtime,st.st_size,p))
+              return sorted(out,reverse=True)
+
+          g=rows(general,"porota-general-*.tar.gz")
+          p=rows(paper,"observer_*.db.gz")
+          h=rows(history,"market_history_*.db.gz")
+
+          if len(g) < 4:
+              raise SystemExit(f"GENERAL_BACKUP_COUNT_TOO_LOW={len(g)}")
+          if len(p) < 7:
+              raise SystemExit(f"PAPER_BACKUP_COUNT_TOO_LOW={len(p)}")
+          if len(h) < 7:
+              raise SystemExit(f"HISTORY_BACKUP_COUNT_TOO_LOW={len(h)}")
+
+          keep_g={x[2] for x in g[:3]}
+          keep_g.add(g[-1][2])
+          del_g=[x for x in g if x[2] not in keep_g]
+          del_p=p[7:]
+          del_h=h[7:]
+
+          print(f"GENERAL_BEFORE_COUNT={len(g)}|BYTES={sum(x[1] for x in g)}")
+          print(f"PAPER_BEFORE_COUNT={len(p)}|BYTES={sum(x[1] for x in p)}")
+          print(f"HISTORY_BEFORE_COUNT={len(h)}|BYTES={sum(x[1] for x in h)}")
+          for label,keep in (("GENERAL_KEEP",sorted(keep_g)),("PAPER_KEEP",[x[2] for x in p[:7]]),("HISTORY_KEEP",[x[2] for x in h[:7]])):
+              for q in keep:
+                  print(f"{label}={q}")
+          candidates=[("GENERAL",x) for x in del_g]+[("PAPER",x) for x in del_p]+[("HISTORY",x) for x in del_h]
+          total=sum(x[1][1] for x in candidates)
+          print(f"DELETE_CANDIDATE_COUNT={len(candidates)}")
+          print(f"DELETE_CANDIDATE_BYTES={total}")
+          for label,(mt,sz,q) in candidates:
+              print(f"DELETE_CANDIDATE|{label}|{sz}|{q}")
+
+          for label,(mt,sz,q) in candidates:
+              q.unlink()
+              print(f"DELETED|{label}|{sz}|{q}")
+
+          g2=rows(general,"porota-general-*.tar.gz")
+          p2=rows(paper,"observer_*.db.gz")
+          h2=rows(history,"market_history_*.db.gz")
+          print(f"GENERAL_AFTER_COUNT={len(g2)}|BYTES={sum(x[1] for x in g2)}")
+          print(f"PAPER_AFTER_COUNT={len(p2)}|BYTES={sum(x[1] for x in p2)}")
+          print(f"HISTORY_AFTER_COUNT={len(h2)}|BYTES={sum(x[1] for x in h2)}")
+          if len(g2) != 4: raise SystemExit("GENERAL_RETENTION_COUNT_MISMATCH")
+          if len(p2) != 7: raise SystemExit("PAPER_RETENTION_COUNT_MISMATCH")
+          if len(h2) != 7: raise SystemExit("HISTORY_RETENTION_COUNT_MISMATCH")
+          if g[-1][2] not in {x[2] for x in g2}: raise SystemExit("PINNED_OLDEST_GENERAL_MISSING")
+          print("RETENTION_COUNTS=GREEN")
+          PY
+
+          test -f "$REPO/data/backups/wave4_closure/observer_v17_pre_wave4_cleanup_20260909T024209Z.db.gz"
+          echo "WAVE4_BACKUP_UNTOUCHED=GREEN"
+
+          disk_after="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_AFTER=$disk_after"
+          echo "SPACE_RECOVERED=$((disk_after-disk_before))"
+          test "$disk_after" -gt "$disk_before"
+          test "$disk_after" -ge 7516192768
+
+          post_state="$(sudo -n timeout 15 python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          echo "POST_STATE=$post_state"
+          test "$post_state" = "$state"
+
+          observer_after="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
+          dashboard_after="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          approval_after="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6)"
+          echo "OBSERVER_AFTER=$observer_after"
+          echo "DASHBOARD_AFTER=$dashboard_after"
+          echo "APPROVAL_AFTER=$approval_after"
+          test "$observer_after" = "$observer_before"
+          test "$dashboard_after" = "$dashboard_before"
+          test "$approval_after" = "$approval_before"
+
+          ppi_after="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          test "$ppi_after" = "$ppi_before"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "REAL_ORDERS_SENT=0"
+          echo "REAL_ORDER_ROUTES=NOT_CALLED"
+          echo "DEPLOY_OWNER=RELEASED"
+          echo "POROTA_BACKUP_RETENTION=GREEN"
+          REMOTE
+
+      - name: Upload retention evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-backup-retention-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-backup-retention.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup runner key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_cleanup"
