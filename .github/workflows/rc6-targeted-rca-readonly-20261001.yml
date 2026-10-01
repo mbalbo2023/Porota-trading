@@ -1,0 +1,114 @@
+name: RC6 Targeted RCA Readonly Audit 2026-10-01
+
+on:
+  push:
+    branches:
+      - audit/rc6-full-system-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-targeted-rca-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  rca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only RCA probes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(-i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
+          timeout --signal=TERM --kill-after=10s 360s ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/rca.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          echo "RCA_AT=$(date -u +%FT%TZ)"
+          python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import json,sqlite3,sys
+          p=sys.argv[1]; c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=5); c.row_factory=sqlite3.Row; c.execute("PRAGMA query_only=ON")
+          s=dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,last_market_data_at,ppi_auth FROM observer_state WHERE id=1").fetchone())
+          print("OBSERVER="+json.dumps(s,sort_keys=True))
+          assert s["mode"]=="PRODUCTION_PAPER" and int(s["real_orders_sent"] or 0)==0
+          c.close()
+          PY
+
+          echo "PROVENANCE_BEGIN"
+          for p in "$REPO/data/deploy/CURRENT_STATE_V2.json" "$REPO/data/deploy/porota-frozen-candidate.json"; do
+            if [ -f "$p" ]; then
+              python3 - "$p" <<'PY'
+          import json,sys,os
+          p=sys.argv[1]; d=json.load(open(p,encoding="utf-8"))
+          keep={k:d.get(k) for k in ("candidate_sha","candidate_tree_sha","deploy_sha","image_id","image_tar_sha256","bundle_sha256","mode","real_orders_sent","dashboard_health_http","deployed_at") if k in d}
+          print("PROVENANCE_FILE="+os.path.basename(p)+"|"+json.dumps(keep,sort_keys=True))
+          PY
+            else echo "PROVENANCE_FILE=$(basename "$p")|ABSENT"; fi
+          done
+          echo "PROVENANCE_END"
+
+          echo "MARKET_PERMISSIONS_BEGIN"
+          for p in "$REPO/data" "$REPO/data/market" "$REPO/data/market/rc6_public_sources_latest.json" "$REPO/data/market/rc6_public_sources_latest.json.tmp"; do
+            if [ -e "$p" ]; then stat -c 'PATH=%n|type=%F|uid=%u|gid=%g|mode=%a|size=%s|mtime=%y' "$p"; else echo "PATH=$p|ABSENT"; fi
+          done
+          find "$REPO/data/market" -maxdepth 1 -type f -printf 'MARKET_FILE=%u:%g|%m|%s|%TY-%Tm-%TdT%TH:%TM:%TS|%f\n' 2>/dev/null | sort | tail -40 || true
+          echo "MARKET_PERMISSIONS_END"
+
+          echo "VALIDATION_BEGIN"
+          python3 - "$REPO/data/validation/validation_milestones_rc6.json" <<'PY'
+          import json,os,sys
+          p=sys.argv[1]
+          if not os.path.isfile(p): print("VALIDATION=ABSENT"); raise SystemExit
+          d=json.load(open(p,encoding="utf-8"))
+          ms=d.get("milestones") or []
+          if isinstance(ms,dict): ms=[dict(v,id=k) if isinstance(v,dict) else {"id":k,"value":v} for k,v in ms.items()]
+          out=[]
+          for x in ms:
+              if not isinstance(x,dict): continue
+              out.append({k:x.get(k) for k in ("id","name","milestone","status","state","detail","reason","evidence","updated_at") if k in x})
+          print("VALIDATION="+json.dumps({"schema_version":d.get("schema_version"),"generated_at":d.get("generated_at"),"milestones":out},ensure_ascii=False,sort_keys=True,default=str))
+          PY
+          echo "VALIDATION_END"
+
+          echo "IOL_UNITS_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | grep -Ei 'porota-iol' || true
+          echo "IOL_UNITS_END"
+
+          for u in porota-preopen-rc6.service porota-fast-functional-health-rc6.service porota-live-decision-cockpit-rc6.service porota-rc6-candle-inmarket-verify.service porota-candle-integrity-rc6.service porota-introspection-rc6.service porota-full-db-integrity-rc6.service; do
+            echo "JOURNAL_BEGIN=$u"
+            sudo -n journalctl -u "$u" --since '2026-10-01 12:30:00 UTC' -n 100 --no-pager 2>/dev/null | tail -100 | sed -E 's/(Bearer[[:space:]]+|token=)[^[:space:]]+/\1***REDACTED***/Ig' || true
+            echo "JOURNAL_END=$u"
+          done
+
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          REMOTE
+          cat evidence/rca.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-targeted-rca-readonly-20261001
+          path: evidence/rca.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
