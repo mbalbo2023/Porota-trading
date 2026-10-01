@@ -18,3 +18,8 @@ WS-INTEG-11 full suite run 36804101506 exposed three stale assertions while the 
 
 ## Rule
 Reconcile tests to the current explicit product contract only. Do not change product behavior merely to satisfy legacy assertions.
+
+## GitHub publication
+- PR: #398 (DRAFT) -> ops/ws-ops-preopen-closure-20260930
+- Trigger evidence: this checkpoint commit occurs after the dedicated workflow exists.
+- Status: EN_GITHUB; focal/full-suite CI pending.
