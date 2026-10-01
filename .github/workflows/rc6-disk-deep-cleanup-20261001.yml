@@ -1,0 +1,233 @@
+name: RC6 Deep Disk Cleanup 2026-10-01
+
+on:
+  push:
+    branches:
+      - ops/rc6-disk-deep-cleanup-20261001
+    paths:
+      - '.github/workflows/rc6-disk-deep-cleanup-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Rotate pinned control-plane image and deep-clean disk
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          set +e
+          OUTPUT="$(timeout --signal=TERM --kill-after=15s 900s \
+            ssh -i "$HOME/.ssh/key" \
+              -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+              "$DO_USER@$DO_HOST" 'bash -s' 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          POLICY="$REPO/ops/policy/rc6-disk-housekeeping-v1.json"
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          STABLE_TAG=porota-trading-bot:17.0.0-rc6
+          CRIT=porota_critical_approval_rc6
+
+          ppi_watch_state() {
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          }
+
+          observer_state() {
+            sudo -n timeout 10 python3 - "$DB" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=1000")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{int(orders)}")
+          PY
+          }
+
+          echo "RC6_DEEP_DISK_CLEANUP=START"
+          DISK_BEFORE="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "DISK_BEFORE=$DISK_BEFORE"
+          echo "DOCKER_SYSTEM_DF_BEFORE_BEGIN"
+          sudo -n docker system df
+          echo "DOCKER_SYSTEM_DF_BEFORE_END"
+
+          STATE_BEFORE="$(observer_state)"
+          test "$STATE_BEFORE" = "PRODUCTION_PAPER|0"
+          PPI_BEFORE="$(ppi_watch_state)"
+          OBS_ID_BEFORE="$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)"
+          DASH_ID_BEFORE="$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)"
+          OBS_RESTART_BEFORE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)"
+          DASH_RESTART_BEFORE="$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)"
+          OBS_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          DASH_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_dashboard)"
+          STABLE_IMAGE_ID="$(sudo -n docker image inspect -f '{{.Id}}' "$STABLE_TAG")"
+          CRIT_IMAGE_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' "$CRIT")"
+
+          echo "STABLE_IMAGE_ID=$STABLE_IMAGE_ID"
+          echo "OBSERVER_IMAGE_ID=$OBS_IMAGE"
+          echo "DASHBOARD_IMAGE_ID=$DASH_IMAGE"
+          echo "CRITICAL_IMAGE_BEFORE=$CRIT_IMAGE_BEFORE"
+          test "$OBS_IMAGE" = "$STABLE_IMAGE_ID"
+          test "$DASH_IMAGE" = "$STABLE_IMAGE_ID"
+          test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+          test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+
+          UNIT_TEXT="$(sudo -n systemctl cat porota-critical-approval-rc6.service)"
+          grep -Fq "$STABLE_TAG" <<<"$UNIT_TEXT"
+          grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+
+          sudo -n docker run --rm --pull never --read-only --user botuser \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code \
+            -v /opt/porota-control-plane-rc6/current:/code:ro \
+            --entrypoint python "$STABLE_TAG" \
+            -c 'import fm_critical_approval_unix_runtime_rc6; print("CRITICAL_IMAGE_COMPATIBILITY=GREEN")'
+
+          CRIT_RECREATED=0
+          if [ "$CRIT_IMAGE_BEFORE" != "$STABLE_IMAGE_ID" ]; then
+            echo "CRITICAL_IMAGE_ROTATION=START"
+            sudo -n systemctl restart porota-critical-approval-rc6.service
+            CRIT_RECREATED=1
+            READY=0
+            for _ in $(seq 1 40); do
+              if [ "$(sudo -n systemctl is-active porota-critical-approval-rc6.service 2>/dev/null || true)" = active ]; then
+                STATUS="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' "$CRIT" 2>/dev/null || true)"
+                if [ "$STATUS" = "running|healthy|0|$STABLE_IMAGE_ID" ]; then
+                  READY=1
+                  break
+                fi
+              fi
+              sleep 2
+            done
+            test "$READY" -eq 1
+          fi
+
+          CRIT_IMAGE_AFTER="$(sudo -n docker inspect -f '{{.Image}}' "$CRIT")"
+          CRIT_CONFIG_IMAGE="$(sudo -n docker inspect -f '{{.Config.Image}}' "$CRIT")"
+          CRIT_HEALTH="$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT")"
+          test "$CRIT_IMAGE_AFTER" = "$STABLE_IMAGE_ID"
+          test "$CRIT_CONFIG_IMAGE" = "$STABLE_TAG"
+          test "$CRIT_HEALTH" = healthy
+          sudo -n docker exec "$CRIT" python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only",h; print("ISSUES_CAPABILITY_BROKER=GREEN")'
+          GATEWAY_LOG="$(sudo -n journalctl -u porota-critical-approval-rc6.service --since '-5 min' --no-pager)"
+          if grep -Eiq 'HTTP_409|terminated by other getUpdates|TELEGRAM_SINGLE_CONSUMER_NOT_ENFORCED' <<<"$GATEWAY_LOG"; then
+            echo "TELEGRAM_SINGLE_CONSUMER=RED"
+            exit 61
+          fi
+          echo "CRITICAL_IMAGE_ROTATION=GREEN|recreated=$CRIT_RECREATED"
+
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = "$OBS_RESTART_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = "$DASH_RESTART_BEFORE"
+          test "$(observer_state)" = "$STATE_BEFORE"
+          test "$(ppi_watch_state)" = "$PPI_BEFORE"
+
+          if [ "$CRIT_IMAGE_BEFORE" != "$STABLE_IMAGE_ID" ]; then
+            OLD_USERS="$(sudo -n docker ps -aq | xargs -r sudo -n docker inspect -f '{{.Name}}|{{.Image}}' | awk -F'|' -v id="$CRIT_IMAGE_BEFORE" '$2==id {print $1}')"
+            if [ -n "$OLD_USERS" ]; then
+              echo "OLD_IMAGE_STILL_REFERENCED=$OLD_USERS"
+              exit 62
+            fi
+            for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE_BEFORE" 2>/dev/null | sed '/^<none>:/d' || true); do
+              test "$tag" != "$STABLE_TAG"
+              echo "REMOVE_OLD_IMAGE_TAG=$tag"
+              sudo -n docker image rm "$tag"
+            done
+            sudo -n docker image rm "$CRIT_IMAGE_BEFORE" >/dev/null 2>&1 || true
+          fi
+
+          sudo -n docker image prune -f
+          sudo -n docker builder prune -af
+          if sudo -n docker buildx version >/dev/null 2>&1; then
+            sudo -n docker buildx prune -af
+          fi
+
+          sudo -n mkdir -p "$REPO/data/deploy"
+          sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
+            --policy "$POLICY" --mode cleanup \
+            --json-out "$REPO/data/deploy/deep-disk-cleanup-20261001.json"
+
+          DISK_AFTER="$(df -PB1 / | awk 'NR==2 {print $4}')"
+          RECOVERED=$((DISK_AFTER-DISK_BEFORE))
+          TARGET="$(python3 -c 'import json; print(int(json.load(open("'"$POLICY"'"))["disk"]["green_free_bytes"]))')"
+          echo "DISK_AFTER=$DISK_AFTER"
+          echo "SPACE_RECOVERED=$RECOVERED"
+          echo "GREEN_TARGET=$TARGET"
+          echo "DOCKER_SYSTEM_DF_AFTER_BEGIN"
+          sudo -n docker system df
+          echo "DOCKER_SYSTEM_DF_AFTER_END"
+
+          test "$(observer_state)" = "PRODUCTION_PAPER|0"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_observer)" = "$OBS_ID_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.Id}}' porota_production_dashboard)" = "$DASH_ID_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_observer)" = "$OBS_RESTART_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.RestartCount}}' porota_production_dashboard)" = "$DASH_RESTART_BEFORE"
+          test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT")" = "$STABLE_IMAGE_ID"
+          test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT")" = healthy
+          test "$(ppi_watch_state)" = "$PPI_BEFORE"
+
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "REAL_ORDERS_SENT=0|REAL_ORDER_ROUTES=NOT_CALLED"
+          if [ "$DISK_AFTER" -ge "$TARGET" ]; then
+            echo "RC6_DISK_TARGET=GREEN"
+          else
+            echo "RC6_DISK_TARGET=AMBER|remaining=$DISK_AFTER|target=$TARGET"
+            echo "REMAINING_DISK_TOPLEVEL_BEGIN"
+            sudo -n du -x -B1 -d1 /opt /var /tmp 2>/dev/null | sort -nr | head -30 || true
+            echo "REMAINING_DISK_TOPLEVEL_END"
+          fi
+          echo "RC6_DEEP_DISK_CLEANUP=GREEN|recovered=$RECOVERED|free_after=$DISK_AFTER"
+          REMOTE
+          )"
+          RC=$?
+          set -e
+          printf '%s\n' "$OUTPUT" | tee evidence/deep-disk-cleanup.txt
+          echo "REMOTE_RC=$RC"
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-deep-disk-cleanup-20261001
+          path: evidence/deep-disk-cleanup.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
