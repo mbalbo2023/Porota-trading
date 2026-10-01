@@ -1,0 +1,25 @@
+name: RC6 WS HISTORY 10 Mutex Drain Sentinel
+
+on:
+  push:
+    branches:
+      - work/ws-history-10-mutex-drain-20261001
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: No-op mutex drain
+        run: |
+          set -Eeuo pipefail
+          echo "MUTEX_DRAIN_SENTINEL=GREEN"
+          echo "RUNTIME_MUTATION=NONE"
+          echo "DEPLOY=NONE"
