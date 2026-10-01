@@ -97,6 +97,29 @@ jobs:
           print("SQLITE_READONLY=GREEN")
           PY
 
+          python3 - "$REPO/data/event_risk/gdelt_shadow_rc6.db" <<'PY'
+          import json, os, sqlite3, sys
+          db=sys.argv[1]
+          if not os.path.exists(db):
+              print("GDELT_DB=ABSENT")
+              raise SystemExit(0)
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          tables=[r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+          print("GDELT_DB=PRESENT|TABLES="+json.dumps(tables))
+          if "gdelt_event_risk_events" in tables:
+              cols=[r[1] for r in c.execute("PRAGMA table_info(gdelt_event_risk_events)")]
+              print("GDELT_EVENT_COLUMNS="+json.dumps(cols))
+              row=c.execute("SELECT COUNT(*) n,MAX(available_to_engine_at) latest FROM gdelt_event_risk_events").fetchone()
+              print("GDELT_EVENTS="+json.dumps(dict(row),sort_keys=True,default=str))
+          if "gdelt_event_risk_runs" in tables:
+              row=c.execute("SELECT * FROM gdelt_event_risk_runs ORDER BY started_at DESC LIMIT 1").fetchone()
+              print("GDELT_LAST_RUN="+json.dumps(dict(row) if row else {},sort_keys=True,default=str))
+          c.close()
+          print("GDELT_SQLITE_READONLY=GREEN")
+          PY
+
           echo "UNITS_BEGIN"
           mapfile -t UNITS < <(systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}' | grep -Ei 'caucion|candle|integrity|introspect|gdelt' | sort -u | head -40 || true)
           for unit in "${UNITS[@]}"; do
