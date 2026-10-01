@@ -29,3 +29,11 @@ def test_frozen_candidate_identity_is_persisted_before_long_runtime_validation()
     block = DEPLOY[early-1200:contract]
     assert '"$REMOTE_DIR/porota-frozen-candidate.json"' in block
     assert '"$REPO/data/deploy/porota-frozen-candidate.json"' in block
+
+
+def test_remote_preflight_uses_candidate_policy_not_old_host_checkout():
+    assert "REQUIRED_PREFLIGHT_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE'" in DEPLOY
+    assert 'missing exact candidate disk floor' in DEPLOY
+    promote = DEPLOY.split("Promote exact frozen candidate and verify", 1)[1]
+    before_install = promote.split('tar -xzf "$REMOTE_DIR/porota-deploy-bundle-v2.tgz"', 1)[0]
+    assert 'json.load(open("'"$REPO"'/ops/policy/rc6-disk-housekeeping-v1.json"))' not in before_install
