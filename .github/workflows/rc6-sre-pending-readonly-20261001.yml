@@ -1,0 +1,139 @@
+name: RC6 SRE Pending Readonly Audit 2026-10-01
+
+on:
+  push:
+    branches:
+      - audit/ws-sre-pending-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-sre-pending-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.KNOWN_HOSTS }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Bounded read-only SRE census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(
+            -i "$HOME/.ssh/key"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ConnectTimeout=10
+            -o ConnectionAttempts=2
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+          set +e
+          timeout --signal=TERM --kill-after=10s 180s \
+            ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/sre-pending-readonly.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          echo "AUDIT_AT=$(date -u +%FT%TZ)"
+          echo "SCOPE=CAUCION|CANDLE_INTEGRITY|FULL_DB_INTEGRITY|INTROSPECTION|GDELT"
+
+          python3 - "$DB" <<'PY'
+          import json, sqlite3, sys
+          db=sys.argv[1]
+          c=sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          state=c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone()
+          print("OBSERVER_STATE="+json.dumps(dict(state),sort_keys=True,default=str))
+          assert state["mode"]=="PRODUCTION_PAPER"
+          assert int(state["real_orders_sent"] or 0)==0
+          names=[r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+          targets=[n for n in names if any(k in n.lower() for k in ("cauc","candle","integrity","introspect","gdelt"))]
+          print("MATCHED_TABLES="+json.dumps(targets))
+          for name in targets[:40]:
+              cols=[r[1] for r in c.execute(f'PRAGMA table_info("{name}")')]
+              print("TABLE="+name+"|COLS="+json.dumps(cols))
+              try:
+                  rows=[dict(r) for r in c.execute(f'SELECT * FROM "{name}" ORDER BY rowid DESC LIMIT 3')]
+              except Exception:
+                  rows=[dict(r) for r in c.execute(f'SELECT * FROM "{name}" LIMIT 3')]
+              safe=[]
+              for row in rows:
+                  clean={}
+                  for k,v in row.items():
+                      lk=k.lower()
+                      if any(x in lk for x in ("token","secret","password","credential","authorization")):
+                          clean[k]="***REDACTED***"
+                      else:
+                          clean[k]=v
+                  safe.append(clean)
+              print("ROWS="+name+"|"+json.dumps(safe,sort_keys=True,default=str))
+          c.close()
+          print("SQLITE_READONLY=GREEN")
+          PY
+
+          echo "UNITS_BEGIN"
+          mapfile -t UNITS < <(systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}' | grep -Ei 'caucion|candle|integrity|introspect|gdelt' | sort -u | head -40 || true)
+          for unit in "${UNITS[@]}"; do
+            enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+            failed="$(systemctl is-failed "$unit" 2>/dev/null || true)"
+            echo "UNIT=$unit|enabled=$enabled|active=$active|failed=$failed"
+            sudo -n journalctl -u "$unit" -n 120 --no-pager 2>/dev/null \
+              | grep -Ei 'error|failed|timeout|locked|stale|exception|traceback|no such column' \
+              | tail -20 \
+              | sed -E 's/(Bearer[[:space:]]+|token=)[^[:space:]]+/\1***REDACTED***/Ig' || true
+          done
+          echo "UNITS_END"
+
+          echo "CONTAINERS_BEGIN"
+          for name in porota_production_observer porota_production_dashboard; do
+            if sudo -n docker inspect "$name" >/dev/null 2>&1; then
+              sudo -n docker inspect -f "CONTAINER=$name|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}" "$name"
+            fi
+          done
+          echo "CONTAINERS_END"
+
+          echo "PPI_WATCH_READONLY_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1"|"$2}' | sort || true
+          echo "PPI_WATCH_READONLY_END"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "SRE_PENDING_READONLY=GREEN"
+          REMOTE
+          RC=$?
+          set -e
+          cat evidence/sre-pending-readonly.txt || true
+          echo "SRE_PENDING_READONLY_RC=$RC"
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-sre-pending-readonly-20261001
+          path: evidence/sre-pending-readonly.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
