@@ -1,0 +1,143 @@
+name: RC6 WS INTEG 04 Oct-01 Final Candidate
+
+on:
+  push:
+    branches:
+      - work/ws-integ-04-oct01-final-candidate-20261001
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  integrated-code-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Safety and integration invariants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -Fq 'required_mode: PRODUCTION_PAPER' ops/policy/porota-policy.yaml
+          grep -Fq 'real_trading_allowed: false' ops/policy/porota-policy.yaml
+          grep -Fq 'rollback_allowed: false' ops/policy/porota-policy.yaml
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          ! grep -R --line-number --fixed-strings 'bg.analysis_page' zz_wave8_dashboard_live_rc6.py
+          grep -Fq 'ALL_CONTRACT_FAMILIES_PAPER' rc6_action4_audit.py
+          grep -Fq 'Rotación universo completo' bg_paper_dashboard.py
+          grep -Fq 'limit_days=8' bg_paper_dashboard.py
+          grep -Fq 'table-filter-grid' bg_paper_dashboard.py
+          echo OCT01_STATIC_INTEGRATION=GREEN
+      - name: Compile productive Python
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m compileall -q -x '(^|/)(\.git|\.venv|venv|docs)/' .
+          git diff --check
+          echo OCT01_COMPILE=GREEN
+      - name: Install locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check -q -r requirements.lock.txt
+          python -m pip install -q pytest
+      - name: Cross-workstream regression
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python -m pytest -q             tests/test_ws_dash_06_oct01_ux.py             tests/test_ws_dash_07_history_truth.py             tests/test_ws_dash_05_dashboard_performance.py             tests/test_ws_dash_04_full_dashboard_truth.py             tests/test_dashboard_live_integration_rc5.py             tests/test_dashboard_table_layout_rc6.py             tests/test_dashboard_global_a11y_rc5.py             tests/test_daily_risk_outbox_v17.py             tests/test_rc6_action4_audit.py             tests/test_rc6_risk_gdelt_dashboard.py             tests/test_ws_ops_risk_layout.py             tests/test_historical_candle_shadow_rc6.py             tests/test_candle_archive_v17.py             tests/test_rc6_candle_inmarket_evidence.py             tests/test_ws_ops_history_all_families.py             tests/test_rc6_multisource_discovery.py             tests/test_rc6_validation_dashboard_operational_wiring.py             tests/test_history_freshness_metrics_rc5.py             tests/test_rc6_history_partial_semantics.py             tests/test_rc6_postclose_history_quarantine.py
+          echo OCT01_CROSS_WORKSTREAM_REGRESSION=GREEN
+      - name: Write code evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p evidence
+          {
+            echo "# WS-INTEG-04 code evidence"
+            echo "sha=$GITHUB_SHA"
+            echo "paper_mode=PRODUCTION_PAPER"
+            echo "real_order_capability=BLOCKED"
+            echo "ppi_watch_mutation=NONE"
+          } > evidence/code.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-integ-04-code
+          path: evidence/code.md
+          if-no-files-found: error
+
+  current-runtime-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime snapshot
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime.txt <<'REMOTE'
+          set -Eeuo pipefail
+          DB=/opt/porota-trading/data/paper_v17/observer_v17.db
+          echo "DISK_FREE_BYTES=$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "CONTAINERS_BEGIN"
+          sudo -n docker inspect -f '{{.Name}}|{{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' porota_production_observer porota_production_dashboard
+          echo "CONTAINERS_END"
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+          out={"observer":dict(c.execute("SELECT mode,real_orders_sent,process_state,session_state,ppi_auth,heartbeat_at FROM observer_state WHERE id=1").fetchone())}
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          if "candidate_identity_v2" in tables:
+              out["ready"]=c.execute("SELECT COUNT(*) FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'").fetchone()[0]
+          if "rc6_history_cutoff_repair_runs" in tables:
+              out["repair_runs"]=[dict(r) for r in c.execute("SELECT * FROM rc6_history_cutoff_repair_runs ORDER BY cutoff").fetchall()]
+          if "rc6_history_cutoff_repair" in tables:
+              out["repair_states"]=[dict(r) for r in c.execute("SELECT state,COUNT(*) n,MAX(updated_at) as_of FROM rc6_history_cutoff_repair GROUP BY state ORDER BY state").fetchall()]
+          print("RUNTIME="+json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str))
+          assert out["observer"]["mode"]=="PRODUCTION_PAPER"
+          assert int(out["observer"]["real_orders_sent"] or 0)==0
+          c.close()
+          PY
+          echo "PPI_WATCH_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_END"
+          TOKEN="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_dashboard | sed -n 's/^DASHBOARD_ACCESS_TOKEN=//p' | head -n1)"
+          test -n "$TOKEN"
+          for path in /health /vivo /trading /instrumentos /universo-operativo /validacion /analisis /riesgo /historicos /api/dashboard/truth; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8000$path")"
+            echo "HTTP|$path|$code"
+            test "$code" = 200
+          done
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "CURRENT_RUNTIME_READONLY=GREEN"
+          REMOTE
+          cat evidence/runtime.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-integ-04-runtime-readonly
+          path: evidence/runtime.txt
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
