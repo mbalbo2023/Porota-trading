@@ -8,7 +8,7 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 def payload(mode="PRODUCTION_PAPER", real_orders_sent=0):
     return {
         "state": {"mode": mode, "real_orders_sent": real_orders_sent},
-        "closed": [{"symbol": "GGAL", "opened_at": "2026-09-18T11:00:00-03:00", "closed_at": "2026-09-18T15:00:00-03:00", "net_pnl": "125.5", "close_reason": "TAKE_PROFIT"}],
+        "closed": [{"symbol": "GGAL", "currency": "ARS", "opened_at": "2026-09-18T11:00:00-03:00", "closed_at": "2026-09-18T15:00:00-03:00", "net_pnl": "125.5", "close_reason": "TAKE_PROFIT"}],
         "decisions": [{"action": "BUY"}],
     }
 
@@ -16,10 +16,10 @@ def test_verified_snapshot_is_paper_only_and_keeps_operation_trace():
     snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), payload())
     assert snap["status"] == "VERIFIED"
     assert snap["real_orders_sent"] == 0
-    assert snap["metrics"] == {"closed_operations": 1, "net_pnl_ars": 125.5, "winners": 1, "losers": 0, "breakeven": 0, "win_rate_pct": 100.0, "decisions_observed": 1}
+    assert snap["metrics"] == {"closed_operations": 1, "net_pnl_by_currency": {"ARS": 125.5}, "net_pnl_ars": 125.5, "winners": 1, "losers": 0, "breakeven": 0, "win_rate_pct": 100.0, "decisions_observed": 1}
     assert snap["operations"] == [{
         "symbol": "GGAL", "type": "PAPER", "opened_at": "2026-09-18T11:00:00-03:00",
-        "closed_at": "2026-09-18T15:00:00-03:00", "net_pnl_ars": 125.5,
+        "closed_at": "2026-09-18T15:00:00-03:00", "currency": "ARS", "net_pnl": 125.5, "net_pnl_ars": 125.5,
         "decision_reason": "TAKE_PROFIT", "external_sources": [],
         "counterfactual": "INSUFFICIENT_EVIDENCE",
     }]
@@ -42,3 +42,31 @@ def test_snapshot_reports_zero_closed_operations_without_inventing_win_rate():
     assert snap["metrics"]["closed_operations"] == 0
     assert snap["metrics"]["net_pnl_ars"] == 0.0
     assert snap["metrics"]["win_rate_pct"] is None
+
+
+def test_snapshot_never_sums_different_currencies_as_ars():
+    data = payload()
+    data["closed"].append({
+        "symbol": "AAPL",
+        "currency": "USD_MEP",
+        "opened_at": "2026-09-18T11:10:00-03:00",
+        "closed_at": "2026-09-18T15:10:00-03:00",
+        "net_pnl": "10.0",
+        "close_reason": "EOD_PAPER",
+    })
+    snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), data)
+    assert snap["status"] == "VERIFIED"
+    assert snap["metrics"]["net_pnl_by_currency"] == {"ARS": 125.5, "USD_MEP": 10.0}
+    assert snap["metrics"]["net_pnl_ars"] == 125.5
+    usd = next(item for item in snap["operations"] if item["currency"] == "USD_MEP")
+    assert usd["net_pnl"] == 10.0
+    assert usd["net_pnl_ars"] is None
+
+
+def test_snapshot_fails_closed_when_closed_pnl_currency_is_missing():
+    data = payload()
+    data["closed"][0].pop("currency")
+    snap = build_snapshot("postclose", datetime(2026, 9, 18, 17, 15, tzinfo=TZ), data)
+    assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert "CLOSED_OPERATION_CURRENCY_MISSING" in snap["urgent_alerts"]
+    assert snap["metrics"]["net_pnl_ars"] == 0.0
