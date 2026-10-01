@@ -233,6 +233,11 @@ jobs:
           test "$STATE" = "PRODUCTION_PAPER|0"
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
+            test "$(sudo -n docker inspect -f '{{.State.Status}}' "$CRIT_CONTAINER")" = running
+            test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")" = "$RUNTIME_IMAGE_ID"
+            test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT_CONTAINER")" = healthy
+          fi
 
           PPI_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
@@ -921,6 +926,94 @@ jobs:
               if os.path.exists(tmp): os.unlink(tmp)
           print("CURRENT_STATE_V2=GREEN|validation_status=VALIDATED_RUNTIME")
           PY
+
+          # Reconcile the critical approval gateway to the already-promoted
+          # stable image before image cleanup. The control-plane code remains
+          # host-mounted; this only removes the old immutable image pin.
+          CRIT_CONTAINER=porota_critical_approval_rc6
+          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
+            CRIT_IMAGE_BEFORE="$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")"
+            if [ "$CRIT_IMAGE_BEFORE" != "$RUNTIME_IMAGE_ID" ]; then
+              test "$(sudo -n systemctl is-active porota-critical-github-proxy-rc6.service)" = active
+              test "$(sudo -n systemctl is-active porota-critical-approval-rc6.service)" = active
+              UNIT_TEXT="$(sudo -n systemctl cat porota-critical-approval-rc6.service)"
+              grep -Fq "$STABLE_IMAGE" <<<"$UNIT_TEXT"
+              grep -Fq '/opt/porota-control-plane-rc6/current:/code:ro' <<<"$UNIT_TEXT"
+
+              sudo -n docker run --rm --pull never --read-only --user botuser \
+                --cap-drop ALL --security-opt no-new-privileges:true \
+                --pids-limit 32 --memory 128m --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+                -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/code \
+                -v /opt/porota-control-plane-rc6/current:/code:ro \
+                --entrypoint python "$STABLE_IMAGE" \
+                -c 'import fm_critical_approval_unix_runtime_rc6; print("CRITICAL_IMAGE_COMPATIBILITY=GREEN")'
+
+              sudo -n systemctl restart porota-critical-approval-rc6.service
+              CRIT_READY=0
+              for _ in $(seq 1 40); do
+                if [ "$(sudo -n systemctl is-active porota-critical-approval-rc6.service 2>/dev/null || true)" = active ]; then
+                  CRIT_STATUS="$(sudo -n docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.Image}}' "$CRIT_CONTAINER" 2>/dev/null || true)"
+                  if [ "$CRIT_STATUS" = "running|healthy|0|$RUNTIME_IMAGE_ID" ]; then
+                    CRIT_READY=1
+                    break
+                  fi
+                fi
+                sleep 2
+              done
+              test "$CRIT_READY" -eq 1
+              sudo -n docker exec "$CRIT_CONTAINER" python -c 'from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; h=UnixGithubIssuesClient().health(); assert h.get("status")=="ok" and h.get("capability")=="issues_only",h; print("ISSUES_CAPABILITY_BROKER=GREEN")'
+
+              OLD_IMAGE_USERS=0
+              for cid in $(sudo -n docker ps -aq); do
+                CID_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' "$cid")"
+                if [ "$CID_IMAGE" = "$CRIT_IMAGE_BEFORE" ]; then
+                  OLD_IMAGE_USERS=1
+                  echo "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED=$cid"
+                fi
+              done
+              test "$OLD_IMAGE_USERS" -eq 0
+
+              for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$CRIT_IMAGE_BEFORE" 2>/dev/null | sed '/^<none>:/d' || true); do
+                case "$tag" in
+                  "$STABLE_IMAGE")
+                    echo "RC6_OLD_CRITICAL_IMAGE_STABLE_TAG_COLLISION=RED"
+                    exit 63
+                    ;;
+                  porota-trading-bot:17.0.0-rc6-candidate-*)
+                    sudo -n docker image rm "$tag"
+                    ;;
+                  *)
+                    echo "RC6_PRESERVE_NONCANDIDATE_IMAGE_TAG=$tag"
+                    ;;
+                esac
+              done
+              sudo -n docker image rm "$CRIT_IMAGE_BEFORE" >/dev/null 2>&1 || true
+              echo "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN|image=$RUNTIME_IMAGE_ID"
+            fi
+          fi
+
+          # Remove only tagged RC6 candidate images that no container references.
+          # Other unused images remain untouched; dangling layers are handled below.
+          for image_id in $(sudo -n docker image ls -q --no-trunc | sort -u); do
+            IMAGE_IN_USE=0
+            for cid in $(sudo -n docker ps -aq); do
+              if [ "$(sudo -n docker inspect -f '{{.Image}}' "$cid")" = "$image_id" ]; then
+                IMAGE_IN_USE=1
+                break
+              fi
+            done
+            if [ "$IMAGE_IN_USE" -eq 1 ]; then
+              continue
+            fi
+            for tag in $(sudo -n docker image inspect -f '{{range .RepoTags}}{{println .}}{{end}}' "$image_id" 2>/dev/null | sed '/^<none>:/d' || true); do
+              case "$tag" in
+                porota-trading-bot:17.0.0-rc6-candidate-*)
+                  echo "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE=$tag"
+                  sudo -n docker image rm "$tag"
+                  ;;
+              esac
+            done
+          done
 
           # Mandatory final cleanup after runtime validation/provenance.
           sudo -n mkdir -p "$REPO/data/deploy"
