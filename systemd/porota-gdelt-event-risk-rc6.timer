@@ -1,0 +1,11 @@
+[Unit]
+Description=Porota RC6 structured GDELT event-risk hourly SHADOW refresh
+
+[Timer]
+OnCalendar=*-*-* *:35:00
+RandomizedDelaySec=300
+Persistent=false
+Unit=porota-gdelt-event-risk-rc6.service
+
+[Install]
+WantedBy=timers.target
