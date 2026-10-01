@@ -101,6 +101,27 @@ jobs:
           print("CURRENT_STATE_V2="+json.dumps(keep,sort_keys=True,default=str))
           PY
 
+          echo "CRITICAL_CONTROL_PLANE_BEGIN"
+          for unit in porota-critical-github-proxy-rc6.service porota-critical-approval-rc6.service; do
+            printf '%s|enabled=%s|active=%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          if [ -S /run/porota-critical-approval-rc6/github.sock ]; then
+            echo "CRITICAL_GITHUB_SOCKET=READY"
+          else
+            echo "CRITICAL_GITHUB_SOCKET=ABSENT"
+          fi
+          if sudo -n journalctl -u porota-critical-github-proxy-rc6.service -n 80 --no-pager 2>/dev/null | grep -q 'critical-github-broker: READY'; then
+            echo "CRITICAL_GITHUB_PROXY_READY_LOG=YES"
+          else
+            echo "CRITICAL_GITHUB_PROXY_READY_LOG=NO"
+          fi
+          if sudo -n journalctl -u porota-critical-approval-rc6.service -n 120 --no-pager 2>/dev/null | grep -q 'critical-approval-runtime: READY'; then
+            echo "CRITICAL_APPROVAL_READY_LOG=YES"
+          else
+            echo "CRITICAL_APPROVAL_READY_LOG=NO"
+          fi
+          echo "CRITICAL_CONTROL_PLANE_END"
+
           echo "PPI_WATCH_BEGIN"
           for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
             printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
