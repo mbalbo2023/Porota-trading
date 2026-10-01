@@ -22,18 +22,17 @@ def main() -> int:
         'network_order_test_performed': False,
         'checked_versions': 0,
         'violations': [],
+        'db_integrity_check': 'DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
     }
     try:
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
         c.row_factory = sqlite3.Row
         c.execute('PRAGMA query_only=ON')
-        qc = c.execute('PRAGMA quick_check').fetchone()[0]
         tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {'candle_series', 'candle_versions', 'candle_worker_state'}
         missing = sorted(required - tables)
-        result['quick_check'] = qc
         result['missing_tables'] = missing
-        if qc != 'ok' or missing:
+        if missing:
             result['status'] = 'RED'
             c.close()
             print(json.dumps(result, ensure_ascii=False, sort_keys=True))
