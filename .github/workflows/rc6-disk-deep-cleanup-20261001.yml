@@ -170,7 +170,7 @@ jobs:
             sudo -n docker image rm "$CRIT_IMAGE_BEFORE" >/dev/null 2>&1 || true
           fi
 
-          sudo -n docker image prune -f
+          sudo -n docker image prune -af
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then
             sudo -n docker buildx prune -af
