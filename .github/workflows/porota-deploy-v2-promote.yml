@@ -186,6 +186,7 @@ jobs:
           test "${#METRICS[@]}" -eq 2
           AVAILABLE_BYTES="${METRICS[0]}"
           INODE_FREE_PERCENT="${METRICS[1]}"
+          AVAILABLE_BEFORE_PRECLEAN="$AVAILABLE_BYTES"
 
           set +e
           GATE_OUTPUT="$(evaluate_gate "$AVAILABLE_BYTES" "$INODE_FREE_PERCENT" 2>&1)"
@@ -198,7 +199,7 @@ jobs:
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             POLICY_B64="$(base64 -w0 ops/policy/rc6-disk-housekeeping-v1.json)"
-            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' bash -s" <<'REMOTE'
+            "${SSH[@]}" "$DO_USER@$DO_HOST" "POLICY_B64='$POLICY_B64' bash -s" <<'PRECLEAN_REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           TMP_POLICY=/tmp/porota-dynamic-deploy-disk-policy.json
@@ -215,7 +216,7 @@ jobs:
           sudo -n python3 "$REPO/scripts/rc6_disk_housekeeping.py" \
             --policy "$TMP_POLICY" --mode cleanup \
             --json-out /tmp/porota-predeploy-housekeeping.json
-          sudo -n docker image prune -af
+          sudo -n docker image prune -f
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
 
@@ -241,7 +242,7 @@ jobs:
           test "$PPI_AFTER" = "$PPI_BEFORE"
           rm -f "$TMP_POLICY"
           echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
-          REMOTE
+          PRECLEAN_REMOTE
 
             mapfile -t METRICS < <(probe_disk)
             test "${#METRICS[@]}" -eq 2
@@ -255,6 +256,8 @@ jobs:
           fi
 
           test "$GATE_RC" -eq 0
+          SAFE_PREFLIGHT_RECLAIM=$((AVAILABLE_BYTES-AVAILABLE_BEFORE_PRECLEAN))
+          echo "SAFE_PREFLIGHT_RECLAIM=$SAFE_PREFLIGHT_RECLAIM"
           {
             echo "RC6_DISK_PREFLIGHT_GREEN=1"
             echo "RC6_DISK_REQUIRED_PRETRANSFER_FREE=$REQUIRED_PRETRANSFER_FREE"
@@ -920,7 +923,7 @@ jobs:
             --mode cleanup \
             --json-out "$REPO/data/deploy/last-deploy-housekeeping.json"
           sudo -n docker image rm "$FROZEN_IMAGE" >/dev/null 2>&1 || true
-          sudo -n docker image prune -af
+          sudo -n docker image prune -f
           sudo -n docker builder prune -af
           if sudo -n docker buildx version >/dev/null 2>&1; then sudo -n docker buildx prune -af; fi
           rm -rf "$REMOTE_DIR"
