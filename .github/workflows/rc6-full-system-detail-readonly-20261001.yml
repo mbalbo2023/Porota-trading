@@ -1,0 +1,267 @@
+name: RC6 Full System Detail Readonly Audit 2026-10-01
+
+on:
+  push:
+    branches:
+      - audit/rc6-full-system-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-full-system-detail-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  detail-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Detailed financial, ingestion and control-plane census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(
+            -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3
+          )
+          timeout --signal=TERM --kill-after=10s 540s \
+            ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/detail.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          echo "DETAIL_AUDIT_AT=$(date -u +%FT%TZ)"
+
+          echo "SERVICE_SHOW_BEGIN"
+          for u in             porota-candle-integrity-rc6.service             porota-full-db-integrity-rc6.service             porota-introspection-rc6.service             porota-preopen-rc6.service             porota-fast-functional-health-rc6.service             porota-live-decision-cockpit-rc6.service             porota-rc6-candle-inmarket-verify.service             porota-iol-shadow-collector-rc6.service             porota-scheduler-export-rc6.service             porota-snapshot-postclose-rc6.service             porota-runtime-evidence-rc6.service; do
+            systemctl show "$u" --no-pager               -p Id -p LoadState -p ActiveState -p SubState -p Result               -p ExecMainStatus -p ExecMainCode -p ActiveEnterTimestamp               -p InactiveEnterTimestamp -p StateChangeTimestamp 2>/dev/null               | tr '\n' '|' | sed "s/^/SERVICE_SHOW=$u|/"; echo
+          done
+          echo "SERVICE_SHOW_END"
+
+          sudo -n docker inspect porota_production_observer porota_production_dashboard             --format 'IMAGE_IDENTITY={{.Name}}|image={{.Image}}|created={{.Created}}|labels={{json .Config.Labels}}' 2>/dev/null || true
+
+          python3 - "$DB" "$REPO" <<'PY'
+          import json, os, sqlite3, sys
+          from datetime import datetime, timezone, timedelta
+          db,repo=sys.argv[1:3]
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def exists(t): return t in tables
+          def rows(sql,args=()):
+              return [dict(r) for r in c.execute(sql,args)]
+          out={}
+          out["observer"]=dict(c.execute("SELECT * FROM observer_state WHERE id=1").fetchone())
+          assert out["observer"]["mode"]=="PRODUCTION_PAPER"
+          assert int(out["observer"]["real_orders_sent"] or 0)==0
+
+          if exists("paper_positions"):
+              out["positions_by_currency_family_status"]=rows("""
+                SELECT currency,upper(asset_class) family,upper(status) status,COUNT(*) n,
+                       ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
+                FROM paper_positions GROUP BY 1,2,3 ORDER BY 1,2,3
+              """)
+              out["close_reason_all"]=rows("""
+                SELECT close_reason,COUNT(*) n,ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
+                FROM paper_positions WHERE status='CLOSED'
+                GROUP BY close_reason ORDER BY n DESC
+              """)
+              out["close_reason_today"]=rows("""
+                SELECT currency,upper(asset_class) family,close_reason,COUNT(*) n,
+                       ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
+                FROM paper_positions
+                WHERE status='CLOSED' AND date(datetime(closed_at,'-3 hours'))=date(datetime('now','-3 hours'))
+                GROUP BY 1,2,3 ORDER BY 1,2,3
+              """)
+              out["open_positions"]=rows("""
+                SELECT paper_id,symbol,asset_class,settlement,currency,market,quantity,
+                       entry_price,stop_price,target_price,opened_at,features_json
+                FROM paper_positions WHERE status='OPEN' ORDER BY opened_at
+              """)
+              for p in out["open_positions"]:
+                  try:
+                      f=json.loads(p.pop("features_json") or "{}")
+                  except Exception:
+                      f={}
+                  p["execution_style"]=f.get("execution_style")
+                  p["exit_policy"]=f.get("exit_policy")
+                  p["risk_budget"]=f.get("risk_budget")
+
+          if exists("paper_exit_intents"):
+              out["exit_intents"]=rows("""
+                SELECT state,cause,COUNT(*) n,MAX(supervised_at) latest,MAX(attempts) max_attempts
+                FROM paper_exit_intents GROUP BY state,cause ORDER BY n DESC
+              """)
+              out["exit_pending_rows"]=rows("""
+                SELECT e.paper_id,p.symbol,p.currency,e.state,e.cause,e.due_at,
+                       e.blocked_reason,e.supervised_at,e.attempts
+                FROM paper_exit_intents e LEFT JOIN paper_positions p USING(paper_id)
+                WHERE e.state LIKE 'EXIT_PENDING%' OR e.state='EXIT_DUE' OR e.state='EXIT_PARTIAL'
+                ORDER BY e.supervised_at DESC LIMIT 50
+              """)
+          for t in ("paper_supervisor_state","paper_exit_reader_state","intraday_scalping_worker_state",
+                    "paper_notification_worker","paper_caucion_cash_sweep_state","candle_worker_state"):
+              if exists(t):
+                  try: out[t]=rows(f'SELECT * FROM "{t}" ORDER BY rowid DESC LIMIT 5')
+                  except Exception as e: out[t]={"error":type(e).__name__}
+
+          if exists("scalping_candidates"):
+              out["scalping_last_2h_actions"]=rows("""
+                SELECT action,reason,COUNT(*) n,MAX(evaluated_at) latest
+                FROM scalping_candidates
+                WHERE julianday(evaluated_at)>=julianday('now','-2 hours')
+                GROUP BY action,reason ORDER BY n DESC LIMIT 40
+              """)
+          if exists("ppi_intraday_contract_state"):
+              out["intraday_contract_states"]=rows("""
+                SELECT state,COUNT(*) n,MAX(last_verified_at) latest
+                FROM ppi_intraday_contract_state GROUP BY state ORDER BY n DESC
+              """)
+          if exists("paper_positions"):
+              out["scalping_positions"]=rows("""
+                SELECT status,close_reason,COUNT(*) n,ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
+                FROM paper_positions
+                WHERE json_extract(features_json,'$.execution_style')='SCALPING_PAPER'
+                GROUP BY status,close_reason ORDER BY n DESC
+              """)
+
+          if exists("paper_decisions"):
+              out["decisions_today"]=rows("""
+                SELECT action,COUNT(*) n,MAX(decided_at) latest
+                FROM paper_decisions
+                WHERE date(datetime(decided_at,'-3 hours'))=date(datetime('now','-3 hours'))
+                GROUP BY action ORDER BY n DESC
+              """)
+          if exists("trade_gate_evaluations"):
+              out["gates_today"]=rows("""
+                SELECT final_result,technical_gate,patrimonial_gate,COUNT(*) n,MAX(evaluated_at) latest
+                FROM trade_gate_evaluations
+                WHERE date(datetime(evaluated_at,'-3 hours'))=date(datetime('now','-3 hours'))
+                GROUP BY 1,2,3 ORDER BY n DESC
+              """)
+          if exists("paper_daily_risk"):
+              out["daily_risk_today"]=rows("""
+                SELECT * FROM paper_daily_risk
+                WHERE day=date(datetime('now','-3 hours')) ORDER BY currency
+              """)
+          if exists("paper_equity_by_currency"):
+              out["latest_equity_by_currency"]=rows("""
+                SELECT e.* FROM paper_equity_by_currency e
+                JOIN (SELECT currency,MAX(id) id FROM paper_equity_by_currency GROUP BY currency) x ON x.id=e.id
+                ORDER BY e.currency
+              """)
+
+          if exists("universe_cycle_metrics"):
+              out["universe_cycles_recent"]=rows("""
+                SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 15
+              """)
+          if exists("symbol_cycle_metrics"):
+              out["symbol_latency_recent"]=rows("""
+                SELECT COUNT(*) n,ROUND(AVG(latency_ms),2) avg_ms,MAX(latency_ms) max_ms,
+                       SUM(CASE WHEN state<>'VERDE' THEN 1 ELSE 0 END) non_green
+                FROM (SELECT * FROM symbol_cycle_metrics ORDER BY id DESC LIMIT 1000)
+              """)
+
+          if exists("candle_rejections"):
+              out["candle_rejections_recent"]=rows("""
+                SELECT reason,COUNT(*) n,MAX(processed_at) latest
+                FROM candle_rejections
+                WHERE julianday(processed_at)>=julianday('now','-2 hours')
+                GROUP BY reason ORDER BY n DESC LIMIT 30
+              """)
+          if exists("candle_dirty"):
+              out["candle_dirty_count"]=c.execute("SELECT COUNT(*) FROM candle_dirty").fetchone()[0]
+
+          if exists("paper_notification_outbox"):
+              out["notification_outbox"]=rows("""
+                SELECT state,COUNT(*) n FROM paper_notification_outbox GROUP BY state ORDER BY n DESC
+              """)
+          if exists("report_registry"):
+              out["reports_latest"]=rows("""
+                SELECT * FROM report_registry ORDER BY id DESC LIMIT 20
+              """)
+          if exists("operational_jobs"):
+              out["operational_jobs"]=rows("""
+                SELECT * FROM operational_jobs ORDER BY rowid DESC LIMIT 30
+              """)
+          if exists("source_sync"):
+              out["source_sync"]=rows("""
+                SELECT * FROM source_sync ORDER BY rowid DESC LIMIT 30
+              """)
+          if exists("sre_snapshots"):
+              out["sre_latest"]=rows("SELECT * FROM sre_snapshots ORDER BY id DESC LIMIT 10")
+              out["sre_24h"]=rows("""
+                SELECT COUNT(*) n,
+                       MIN(disk_free_bytes) min_disk_free,MAX(disk_free_bytes) max_disk_free,
+                       ROUND(AVG(memory_rss_bytes),2) avg_rss,MAX(memory_rss_bytes) max_rss,
+                       ROUND(AVG(db_query_ms),2) avg_db_query_ms,MAX(db_query_ms) max_db_query_ms
+                FROM sre_snapshots WHERE julianday(measured_at)>=julianday('now','-24 hours')
+              """)
+
+          if exists("candidate_identity_v2"):
+              out["ready_total"]=c.execute("""
+                SELECT COUNT(*) FROM candidate_identity_v2
+                WHERE status='AVAILABLE' AND can_simulate=1
+              """).fetchone()[0]
+          c.close()
+
+          files={}
+          expected=[
+            "data/paper_v17/snapshots/latest.json",
+            "data/paper_v17/reports/postclose_review_latest.json",
+            "data/validation/validation_milestones_rc6.json",
+          ]
+          for rel in expected:
+              path=os.path.join(repo,rel)
+              item={"exists":os.path.isfile(path)}
+              if item["exists"]:
+                  st=os.stat(path); item.update(size=st.st_size,mtime=datetime.fromtimestamp(st.st_mtime,timezone.utc).isoformat())
+                  if path.endswith(".json"):
+                      try:
+                          data=json.load(open(path,encoding="utf-8"))
+                          if isinstance(data,dict):
+                              item["summary"]={k:data.get(k) for k in ("status","phase","generated_at","schema_version","mode","real_orders_sent") if k in data}
+                              if "milestones" in data and isinstance(data["milestones"],list):
+                                  item["milestones_count"]=len(data["milestones"])
+                      except Exception as e:item["json_error"]=type(e).__name__
+              files[rel]=item
+          out["expected_files"]=files
+          print("DETAIL_DB="+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          print("DETAIL_READONLY=GREEN")
+          PY
+
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          REMOTE
+          cat evidence/detail.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-full-system-detail-audit-20261001
+          path: evidence/detail.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
