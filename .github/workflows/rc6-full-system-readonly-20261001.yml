@@ -1,0 +1,452 @@
+name: RC6 Full System Readonly Audit 2026-10-01
+
+on:
+  push:
+    branches:
+      - audit/rc6-full-system-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-full-system-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  static-candidate-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Candidate topology and static control-plane audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          python3 - <<'PY' | tee evidence/static-candidate-audit.txt
+          import json, pathlib, re, subprocess
+          root=pathlib.Path(".")
+          files=[p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts]
+          py=[p for p in files if p.suffix==".py"]
+          tests=[p for p in files if p.suffix==".py" and ("tests" in p.parts or p.name.startswith("test_"))]
+          workflows=sorted(root.glob(".github/workflows/*.yml"))
+          timers=sorted(root.glob("systemd/*.timer"))
+          services=sorted(root.glob("systemd/*.service"))
+          route_re=re.compile(r"@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)")
+          routes=[]
+          real_route_refs=[]
+          for p in py:
+              try: text=p.read_text(encoding="utf-8")
+              except Exception: continue
+              for method,path in route_re.findall(text):
+                  routes.append({"method":method.upper(),"path":path,"file":str(p)})
+              if re.search(r"(?i)(send_real_order|real_order_route|place_real_order|submit_real_order)",text):
+                  real_route_refs.append(str(p))
+          timer_rows=[]
+          for p in timers:
+              text=p.read_text(encoding="utf-8",errors="replace")
+              def vals(key):
+                  return re.findall(rf"(?m)^\s*{re.escape(key)}=(.+)$",text)
+              timer_rows.append({
+                  "file":str(p),
+                  "OnCalendar":vals("OnCalendar"),
+                  "OnBootSec":vals("OnBootSec"),
+                  "OnUnitActiveSec":vals("OnUnitActiveSec"),
+                  "OnUnitInactiveSec":vals("OnUnitInactiveSec"),
+                  "Persistent":vals("Persistent"),
+                  "RandomizedDelaySec":vals("RandomizedDelaySec"),
+                  "Unit":vals("Unit"),
+              })
+          service_rows=[]
+          for p in services:
+              text=p.read_text(encoding="utf-8",errors="replace")
+              def vals(key):
+                  return re.findall(rf"(?m)^\s*{re.escape(key)}=(.+)$",text)
+              service_rows.append({
+                  "file":str(p),
+                  "ExecStart":vals("ExecStart"),
+                  "TimeoutStartSec":vals("TimeoutStartSec"),
+                  "Nice":vals("Nice"),
+                  "IOSchedulingClass":vals("IOSchedulingClass"),
+                  "Restart":vals("Restart"),
+              })
+          workflow_rows=[]
+          schedule_files=[]
+          deploy_mutex=[]
+          for p in workflows:
+              text=p.read_text(encoding="utf-8",errors="replace")
+              if re.search(r"(?m)^\s*schedule\s*:",text):
+                  schedule_files.append(str(p))
+              if "rc6-unified-paper-deploy" in text:
+                  deploy_mutex.append(str(p))
+              workflow_rows.append({
+                  "file":str(p),
+                  "has_schedule":bool(re.search(r"(?m)^\s*schedule\s*:",text)),
+                  "has_workflow_dispatch":"workflow_dispatch" in text,
+                  "has_pull_request":bool(re.search(r"(?m)^\s*pull_request\s*:",text)),
+                  "has_push":bool(re.search(r"(?m)^\s*push\s*:",text)),
+                  "deploy_mutex":"rc6-unified-paper-deploy" in text,
+              })
+          markers={}
+          for token in ("TODO","FIXME","NO_VERIFICADO","BLOQUEADO","PENDING","DEPRECATED"):
+              hits=[]
+              for p in py:
+                  try: text=p.read_text(encoding="utf-8",errors="replace")
+                  except Exception: continue
+                  n=text.upper().count(token)
+                  if n: hits.append({"file":str(p),"count":n})
+              markers[token]=sorted(hits,key=lambda x:(-x["count"],x["file"]))[:40]
+          sha=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
+          print("STATIC_AUDIT="+json.dumps({
+              "sha":sha,
+              "files":len(files),
+              "python_files":len(py),
+              "test_files":len(tests),
+              "workflow_files":len(workflows),
+              "systemd_timers":len(timers),
+              "systemd_services":len(services),
+              "routes":routes,
+              "non_get_routes":[r for r in routes if r["method"]!="GET"],
+              "real_order_symbol_references":real_route_refs,
+              "scheduled_workflow_files":schedule_files,
+              "deploy_mutex_workflows":deploy_mutex,
+              "timer_definitions":timer_rows,
+              "service_definitions":service_rows,
+              "markers":markers,
+          },ensure_ascii=False,sort_keys=True,default=str))
+          PY
+
+      - name: Python syntax audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m compileall -q . 2>&1 | tee evidence/compileall.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-full-system-static-audit-20261001
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  runtime-readonly-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Full bounded runtime census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(
+            -i "$HOME/.ssh/key"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ConnectTimeout=10
+            -o ConnectionAttempts=2
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=3
+          )
+          set +e
+          timeout --signal=TERM --kill-after=15s 780s \
+            ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime-full-audit.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          echo "AUDIT_AT=$(date -u +%FT%TZ)"
+          echo "AUDIT_MODE=READ_ONLY"
+          echo "HOSTNAME=$(hostname)"
+          echo "UPTIME=$(uptime -p 2>/dev/null || true)"
+          echo "KERNEL=$(uname -srmo 2>/dev/null || true)"
+          echo "LOAD=$(cat /proc/loadavg 2>/dev/null || true)"
+          echo "CPU_COUNT=$(nproc 2>/dev/null || true)"
+          echo "MEMORY_BEGIN"; free -b || true; echo "MEMORY_END"
+          echo "DISK_BEGIN"; df -B1 -T / /opt /var/lib/docker 2>/dev/null || df -B1 -T /; echo "DISK_END"
+          echo "INODES_BEGIN"; df -i / /opt /var/lib/docker 2>/dev/null || df -i /; echo "INODES_END"
+
+          echo "FAILED_UNITS_BEGIN"
+          systemctl --failed --no-legend --no-pager 2>/dev/null || true
+          echo "FAILED_UNITS_END"
+
+          echo "POROTA_TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager 2>/dev/null | grep -Ei 'porota|NEXT|LEFT' || true
+          echo "POROTA_TIMERS_END"
+
+          echo "POROTA_UNITS_BEGIN"
+          mapfile -t POROTA_UNITS < <(systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}' | grep -E '^porota-' | sort -u || true)
+          for unit in "${POROTA_UNITS[@]}"; do
+            echo "UNIT=$unit|enabled=$(systemctl is-enabled "$unit" 2>/dev/null || true)|active=$(systemctl is-active "$unit" 2>/dev/null || true)|failed=$(systemctl is-failed "$unit" 2>/dev/null || true)"
+          done
+          echo "POROTA_UNITS_END"
+
+          echo "DOCKER_PS_BEGIN"
+          sudo -n docker ps -a --format 'CONTAINER={{.Names}}|STATUS={{.Status}}|IMAGE={{.Image}}' 2>/dev/null || true
+          echo "DOCKER_PS_END"
+          echo "DOCKER_INSPECT_BEGIN"
+          mapfile -t CNAMES < <(sudo -n docker ps -a --format '{{.Names}}' 2>/dev/null || true)
+          for name in "${CNAMES[@]}"; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}}|state={{.State.Status}}|oom={{.State.OOMKilled}}|restart={{.RestartCount}}|image_id={{.Image}}|started={{.State.StartedAt}}' "$name" 2>/dev/null || true
+          done
+          echo "DOCKER_INSPECT_END"
+          echo "DOCKER_DF_BEGIN"; sudo -n docker system df 2>/dev/null || true; echo "DOCKER_DF_END"
+
+          echo "NETWORK_BEGIN"
+          sudo -n ss -lntp 2>/dev/null | grep -E '(:8000|:8001|:22|LISTEN)' | head -80 || true
+          echo "NETWORK_END"
+
+          echo "RUNTIME_PROVENANCE_BEGIN"
+          git -C "$REPO" rev-parse HEAD 2>/dev/null | sed 's/^/REPO_HEAD=/' || echo "REPO_HEAD=NO_GIT_METADATA"
+          git -C "$REPO" status --short 2>/dev/null | head -80 | sed 's/^/REPO_STATUS=/' || true
+          echo "RUNTIME_PROVENANCE_END"
+
+          python3 - "$DB" <<'PY'
+          import json, re, sqlite3, sys
+          db=sys.argv[1]
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=8)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          def has(name): return name in tables
+          def cols(name):
+              return [r[1] for r in c.execute(f'PRAGMA table_info("{name}")')] if has(name) else []
+          def safe_count(name):
+              try: return c.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0]
+              except Exception as e: return "ERR:"+type(e).__name__
+          out={"table_count":len(tables),"tables":sorted(tables)}
+          if has("observer_state"):
+              row=c.execute("SELECT * FROM observer_state WHERE id=1").fetchone()
+              out["observer_state"]=dict(row) if row else {}
+              assert out["observer_state"].get("mode")=="PRODUCTION_PAPER"
+              assert int(out["observer_state"].get("real_orders_sent") or 0)==0
+          if has("financial_instrument_catalog"):
+              out["catalog_by_family"]=[dict(r) for r in c.execute("""
+                SELECT upper(instrument_type) family,upper(status) status,COUNT(*) n
+                FROM financial_instrument_catalog
+                GROUP BY 1,2 ORDER BY 1,2
+              """)]
+          if has("candidate_identity_v2"):
+              out["readiness_by_family"]=[dict(r) for r in c.execute("""
+                SELECT upper(instrument_type) family,upper(status) status,can_simulate,COUNT(*) n
+                FROM candidate_identity_v2 GROUP BY 1,2,3 ORDER BY 1,2,3
+              """)]
+              out["readiness_violations"]=[dict(r) for r in c.execute("""
+                SELECT ticker,instrument_type,market,currency,settlement,status,can_simulate,checked_at
+                FROM candidate_identity_v2
+                WHERE (can_simulate=1 AND upper(status)<>'AVAILABLE')
+                   OR (upper(status)='PAUSED_EXPLICIT' AND can_simulate<>0)
+                LIMIT 100
+              """)]
+          if has("paper_positions"):
+              out["positions_by_family_status"]=[dict(r) for r in c.execute("""
+                SELECT upper(asset_class) family,upper(status) status,COUNT(*) n,
+                       ROUND(COALESCE(SUM(net_pnl),0),6) net_pnl
+                FROM paper_positions GROUP BY 1,2 ORDER BY 1,2
+              """)]
+              out["close_reasons"]=[dict(r) for r in c.execute("""
+                SELECT COALESCE(close_reason,'') close_reason,COUNT(*) n
+                FROM paper_positions WHERE upper(status)='CLOSED'
+                GROUP BY 1 ORDER BY n DESC LIMIT 30
+              """)]
+          if has("trade_gate_evaluations"):
+              gc=cols("trade_gate_evaluations")
+              if "final_result" in gc:
+                  out["gate_results"]=[dict(r) for r in c.execute("""
+                    SELECT final_result,COUNT(*) n FROM trade_gate_evaluations
+                    GROUP BY final_result ORDER BY n DESC
+                  """)]
+          patterns=re.compile(r"(scalp|risk|eod|cauc|settle|report|valid|milestone|history|candle|iol|snapshot|decision|gate|position|learning|evidence)",re.I)
+          domain={}
+          ts_candidates=("updated_at","checked_at","heartbeat_at","observed_at","created_at","started_at","finished_at","evaluated_at","opened_at","closed_at","known_at","received_at","bar_start","date","as_of")
+          for name in sorted(t for t in tables if patterns.search(t)):
+              cc=cols(name)
+              item={"count":safe_count(name),"columns":cc}
+              for col in ts_candidates:
+                  if col in cc:
+                      try:item["max_"+col]=c.execute(f'SELECT MAX("{col}") FROM "{name}"').fetchone()[0]
+                      except Exception: pass
+              if name.endswith("_state") or name in {"paper_caucion_cash_sweep_state","scalping_worker_state","candle_worker_state","paper_daily_risk"}:
+                  try:
+                      rows=[dict(r) for r in c.execute(f'SELECT * FROM "{name}" ORDER BY rowid DESC LIMIT 5')]
+                      clean=[]
+                      for row in rows:
+                          clean.append({k:("***REDACTED***" if any(x in k.lower() for x in ("token","secret","password","authorization","credential")) else v) for k,v in row.items()})
+                      item["sample"]=clean
+                  except Exception as e:item["sample_error"]=type(e).__name__
+              domain[name]=item
+          out["domain_tables"]=domain
+          c.close()
+          print("DB_AUDIT="+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          print("SQLITE_MAIN_READONLY=GREEN")
+          PY
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from cg_paper_workspace import database_path
+          from cv_history_store_adapter_hf6 import default_history_store
+          odb=database_path()
+          o=sqlite3.connect(f"file:{odb}?mode=ro",uri=True,timeout=8)
+          o.row_factory=sqlite3.Row;o.execute("PRAGMA query_only=ON")
+          state=dict(o.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1").fetchone())
+          ready=[tuple(r) for r in o.execute("""SELECT upper(ticker),upper(instrument_type),upper(market),upper(settlement)
+            FROM candidate_identity_v2 WHERE can_simulate=1 AND upper(status)='AVAILABLE'""")]
+          o.close()
+          out={"observer":state,"ready_total":len(ready)}
+          hstore=default_history_store()
+          with hstore.connect() as h:
+              h.row_factory=sqlite3.Row;h.execute("PRAGMA query_only=ON")
+              tables={r[0] for r in h.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              ids=set()
+              if "history_canonical_v2" in tables:
+                  ids={tuple(r) for r in h.execute("""SELECT upper(symbol),upper(instrument_type),upper(market),upper(settlement)
+                    FROM history_canonical_v2 GROUP BY 1,2,3,4""")}
+                  out["canonical_rows"]=h.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0]
+                  out["canonical_latest"]=h.execute("SELECT MAX(date) FROM history_canonical_v2").fetchone()[0]
+              for name in ("rc6_history_cutoff_repair","rc6_history_cutoff_repair_runs","candle_versions","candle_samples","candle_worker_state"):
+                  if name in tables:
+                      cc=[r[1] for r in h.execute(f'PRAGMA table_info("{name}")')]
+                      item={"count":h.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0],"columns":cc}
+                      for col in ("updated_at","known_at","bar_start","received_at","heartbeat_at","date"):
+                          if col in cc:
+                              item["max_"+col]=h.execute(f'SELECT MAX("{col}") FROM "{name}"').fetchone()[0]
+                      if name in ("rc6_history_cutoff_repair","rc6_history_cutoff_repair_runs"):
+                          try:item["states"]=[dict(r) for r in h.execute(f'SELECT * FROM "{name}" ORDER BY rowid DESC LIMIT 10')]
+                          except Exception:pass
+                      out[name]=item
+              by={}
+              for ident in ready:
+                  fam=ident[1]
+                  row=by.setdefault(fam,{"ready":0,"with_history":0,"without_history":0})
+                  row["ready"]+=1
+                  if ident in ids:row["with_history"]+=1
+                  else:row["without_history"]+=1
+              out["coverage_by_family"]=by
+              out["ready_with_history_total"]=sum(1 for x in ready if x in ids)
+              out["ready_without_history_total"]=sum(1 for x in ready if x not in ids)
+          print("HISTORY_AUDIT="+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          assert state["mode"]=="PRODUCTION_PAPER"
+          assert int(state["real_orders_sent"] or 0)==0
+          print("HISTORY_READONLY=GREEN")
+          PY
+
+          python3 - "$REPO/data/event_risk/gdelt_shadow_rc6.db" <<'PY'
+          import json,os,sqlite3,sys
+          db=sys.argv[1]
+          out={"present":os.path.exists(db)}
+          if out["present"]:
+              c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON")
+              tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+              out["tables"]=sorted(tabs)
+              if "gdelt_event_risk_events" in tabs:
+                  out["events_count"]=c.execute("SELECT COUNT(*) FROM gdelt_event_risk_events").fetchone()[0]
+                  out["events_latest"]=c.execute("SELECT MAX(available_to_engine_at) FROM gdelt_event_risk_events").fetchone()[0]
+                  out["event_columns"]=[r[1] for r in c.execute("PRAGMA table_info(gdelt_event_risk_events)")]
+              if "gdelt_event_risk_runs" in tabs:
+                  row=c.execute("SELECT * FROM gdelt_event_risk_runs ORDER BY started_at DESC LIMIT 1").fetchone()
+                  out["last_run"]=dict(row) if row else {}
+              c.close()
+          print("GDELT_AUDIT="+json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          PY
+
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import json,os,re,time
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+          token=os.environ.get("DASHBOARD_ACCESS_TOKEN","").strip()
+          assert token, "DASHBOARD_ACCESS_TOKEN_MISSING"
+          paths=[
+            "/","/vivo","/en-vivo","/observacion","/motor-trading",
+            "/trading","/trading/acciones","/universo-operativo","/instrumentos",
+            "/validacion","/analisis","/aprendizaje","/scalping","/riesgo",
+            "/historicos","/reportes","/informacion-financiera","/sistema","/salud",
+            "/api/dashboard/truth","/api/observer/state","/api/paper/caucion-allocations"
+          ]
+          out={}
+          for path in paths:
+              timeout=60 if path in {"/universo-operativo"} else 45 if path in {"/","/vivo","/en-vivo","/analisis","/historicos","/trading"} else 25
+              started=time.perf_counter()
+              try:
+                  req=Request("http://127.0.0.1:8000"+path,headers={"Authorization":"Bearer "+token})
+                  with urlopen(req,timeout=timeout) as r:
+                      body=r.read();status=r.status
+                  text=body.decode("utf-8","replace")
+                  markup=re.sub(r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>","",text,flags=re.I|re.S)
+                  item={"status":status,"seconds":round(time.perf_counter()-started,3),"bytes":len(body)}
+                  if "text/html" in (r.headers.get("content-type","") if 'r' in locals() else "") or body[:20].lstrip().startswith(b"<"):
+                      item.update({
+                        "rows":len(re.findall(r"<tr\b",markup,re.I)),
+                        "cards":len(re.findall(r"class=['\"][^'\"]*paper-card",markup,re.I)),
+                        "server_page_records":len(re.findall(r"data-porota-server-page-record=['\"]1['\"]",markup,re.I)),
+                        "progressive_records":len(re.findall(r"data-porota-record=['\"]1['\"]",markup,re.I)),
+                        "legacy_pending_contrato":"pending contrato" in markup.lower(),
+                        "legacy_acciones_cedears":("solo acciones/cedears" in markup.lower() or "sólo acciones/cedears" in markup.lower()),
+                      })
+                  out[path]=item
+              except HTTPError as e:
+                  out[path]={"status":e.code,"seconds":round(time.perf_counter()-started,3),"error":"HTTPError"}
+              except Exception as e:
+                  out[path]={"status":None,"seconds":round(time.perf_counter()-started,3),"error":type(e).__name__+":"+str(e)[:160]}
+          print("DASHBOARD_AUDIT="+json.dumps(out,ensure_ascii=False,sort_keys=True))
+          PY
+
+          echo "REPORT_FILES_BEGIN"
+          find "$REPO" -maxdepth 5 -type f \( -iname '*.pdf' -o -iname '*report*.json' -o -iname '*validation*.json' -o -iname '*snapshot*.json' \) -printf '%TY-%Tm-%TdT%TH:%TM:%TSZ|%s|%p\n' 2>/dev/null | sort -r | head -120 || true
+          echo "REPORT_FILES_END"
+
+          echo "JOURNAL_ERROR_COUNTS_BEGIN"
+          for unit in "${POROTA_UNITS[@]}"; do
+            count="$(sudo -n journalctl -u "$unit" --since '-24 hours' --no-pager 2>/dev/null | grep -Eic 'error|failed|timeout|locked|exception|traceback|stale' || true)"
+            if [ "${count:-0}" -gt 0 ] 2>/dev/null; then
+              echo "JOURNAL_ERRORS=$unit|count=$count"
+              sudo -n journalctl -u "$unit" --since '-24 hours' -n 120 --no-pager 2>/dev/null \
+                | grep -Ei 'error|failed|timeout|locked|exception|traceback|stale' \
+                | tail -4 \
+                | sed -E 's/(Bearer[[:space:]]+|token=)[^[:space:]]+/\1***REDACTED***/Ig' || true
+            fi
+          done
+          echo "JOURNAL_ERROR_COUNTS_END"
+
+          echo "PPI_WATCH_READONLY_BEGIN"
+          systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1"|"$2}' | sort || true
+          echo "PPI_WATCH_READONLY_END"
+
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "FULL_SYSTEM_READONLY_AUDIT=GREEN_TRANSPORT"
+          REMOTE
+          RC=$?
+          set -e
+          cat evidence/runtime-full-audit.txt || true
+          echo "FULL_SYSTEM_READONLY_AUDIT_RC=$RC"
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-full-system-runtime-audit-20261001
+          path: evidence/runtime-full-audit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
