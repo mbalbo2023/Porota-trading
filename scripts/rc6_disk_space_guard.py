@@ -15,6 +15,7 @@ def load_policy(path: str | Path) -> dict:
 
 def required_pretransfer_free(
     image_tar_bytes: int,
+    image_unpacked_bytes: int,
     bundle_bytes: int,
     policy: dict,
 ) -> int:
@@ -22,6 +23,7 @@ def required_pretransfer_free(
     disk = policy["disk"]
     calculated = (
         int(image_tar_bytes) * int(deploy["image_tar_multiplier"])
+        + int(image_unpacked_bytes) * int(deploy["image_unpacked_multiplier"])
         + int(bundle_bytes) * int(deploy["bundle_multiplier"])
         + int(deploy["fixed_headroom_bytes"])
     )
@@ -53,6 +55,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy", required=True)
     ap.add_argument("--image-tar-bytes", type=int, required=True)
+    ap.add_argument("--image-unpacked-bytes", type=int, required=True)
     ap.add_argument("--bundle-bytes", type=int, required=True)
     ap.add_argument("--available-bytes", type=int)
     ap.add_argument("--inode-free-percent", type=float)
@@ -61,7 +64,7 @@ def main() -> int:
 
     policy = load_policy(args.policy)
     required = required_pretransfer_free(
-        args.image_tar_bytes, args.bundle_bytes, policy
+        args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy
     )
 
     if args.available_bytes is None or args.inode_free_percent is None:
