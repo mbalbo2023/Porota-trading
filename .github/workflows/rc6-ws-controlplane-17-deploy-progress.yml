@@ -1,0 +1,124 @@
+name: RC6 WS CONTROLPLANE 17 Bounded Deploy Progress
+
+on:
+  push:
+    branches:
+      - audit/ws-controlplane-17-bounded-deploy-progress-20261001
+    paths:
+      - '.github/workflows/rc6-ws-controlplane-17-deploy-progress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  bounded-readonly-progress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Capture bounded deploy progress
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          SSH_OPTS=(
+            -i "$HOME/.ssh/key"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ConnectTimeout=10
+            -o ConnectionAttempts=2
+            -o ServerAliveInterval=10
+            -o ServerAliveCountMax=2
+          )
+          set +e
+          timeout --signal=TERM --kill-after=10s 90s \
+            ssh "${SSH_OPTS[@]}" "$DO_USER@$DO_HOST" 'bash -s' > evidence/deploy-progress.txt 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          echo "PROBE_AT=$(date -u +%FT%TZ)"
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+
+          python3 - "$DB" <<'PY'
+          import json,sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=5)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print("OBSERVER_STATE="+json.dumps(dict(row),sort_keys=True,default=str))
+          assert row["mode"]=="PRODUCTION_PAPER"
+          assert int(row["real_orders_sent"] or 0)==0
+          PY
+
+          for name in porota_production_observer porota_production_dashboard; do
+            if sudo -n docker inspect "$name" >/dev/null 2>&1; then
+              sudo -n docker inspect -f "CONTAINER=$name|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}" "$name"
+            else
+              echo "CONTAINER=$name|status=ABSENT"
+            fi
+          done
+
+          echo "ZERO_KNOWN_ERROR_FILES_BEGIN"
+          sudo -n find "$REPO/data/deploy" -maxdepth 1 -type f -name 'zero-known-error-*.json' \
+            -printf '%f|%TY-%Tm-%TdT%TH:%TM:%TSZ|%s\n' 2>/dev/null | sort || true
+          echo "ZERO_KNOWN_ERROR_FILES_END"
+
+          sudo -n python3 - "$REPO/data/deploy/CURRENT_STATE_V2.json" <<'PY'
+          import json,os,sys
+          p=sys.argv[1]
+          if not os.path.isfile(p):
+              print("CURRENT_STATE_V2=ABSENT")
+              raise SystemExit(0)
+          with open(p,encoding="utf-8") as f:
+              x=json.load(f)
+          keep={k:x.get(k) for k in (
+              "candidate_sha","deploy_sha","image_id","mode","real_orders_sent",
+              "real_order_routes","dashboard_health_http","ppi_watch_untouched",
+              "build_once","recorded_at"
+          )}
+          print("CURRENT_STATE_V2="+json.dumps(keep,sort_keys=True,default=str))
+          PY
+
+          echo "PPI_WATCH_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_END"
+          echo "REAL_ORDERS_SENT=0|REAL_ROUTES=NOT_CALLED"
+          echo "BOUNDED_DEPLOY_PROGRESS=GREEN"
+          REMOTE
+          RC=$?
+          set -e
+          cat evidence/deploy-progress.txt || true
+          echo "BOUNDED_DEPLOY_PROGRESS_RC=$RC"
+          test "$RC" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ws-controlplane-17-bounded-deploy-progress
+          path: evidence/deploy-progress.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
