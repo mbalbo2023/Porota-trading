@@ -5,7 +5,7 @@
   "disk": {
     "green_free_bytes": 7516192768,
     "auto_cleanup_below_bytes": 7516192768,
-    "deploy_pretransfer_min_free_bytes": 2147483648,
+    "deploy_pretransfer_min_free_bytes": 0,
     "post_cleanup_min_free_bytes": 2147483648,
     "critical_free_bytes": 1073741824,
     "min_inode_free_percent": 10
@@ -14,11 +14,12 @@
     "canonical_workflow": ".github/workflows/porota-deploy-v2-promote.yml",
     "pretransfer_guard_required": true,
     "pretransfer_formula": {
-      "image_tar_multiplier": 0,
-      "bundle_multiplier": 0,
+      "image_tar_multiplier": 1,
+      "image_unpacked_multiplier": 1,
+      "bundle_multiplier": 2,
       "fixed_headroom_bytes": 2147483648
     },
-    "operator_authorized_floor_note": "2026-10-01: deploy/final free-space floor explicitly set to 2 GiB; inode guard and safe cleanup remain mandatory"
+    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + bundle/staging + residual reserve; on RED, safe cleanup runs before frozen-artifact transfer and the gate is re-evaluated."
   },
   "tmp": {
     "root": "/tmp",
