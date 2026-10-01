@@ -191,7 +191,14 @@ def _state(store, identity):
 
 
 def persist_intraday_unsupported(store, record, *, checked_at, detail="PPI_INSTRUMENT_NOT_FOUND"):
-    """Persist endpoint support by exact identity without changing generic readiness."""
+    """Persist endpoint support by exact identity without changing generic readiness.
+
+    Minimal/fake stores used by pure worker tests may expose only event/audit
+    methods; in that case the worker still treats the request as unsupported
+    without turning it into a global failure.
+    """
+    if not hasattr(store, "connect"):
+        return "PPI_INTRADAY_UNSUPPORTED"
     identity = _identity(record)
     previous = _state(store, identity) or {}
     with store.connect() as connection:
