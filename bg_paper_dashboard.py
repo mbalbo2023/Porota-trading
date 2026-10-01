@@ -2537,10 +2537,12 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0, q="", family=""
     offset=max(0,int(offset))
     limit=max(1,min(10,int(limit)))
     filters={"q":q,"family":family,"market":market,"currency":currency,"settlement":settlement,"state":state}
+    active_filters={k:v for k,v in filters.items() if str(v or "").strip()}
     items=dashboard_truth_projection.instrument_rows(
-        _rows,_table,limit=limit,offset=offset,**filters,
+        _rows,_table,limit=limit,offset=offset,**active_filters,
     )
-    total=dashboard_truth_projection.instrument_count(_rows,_table,**filters)
+    if active_filters or int(total or 0) <= 0:
+        total=dashboard_truth_projection.instrument_count(_rows,_table,**active_filters)
     rows=[]
     for item in items:
         rows.append(
@@ -2556,7 +2558,7 @@ def _instrument_readiness_matrix(*, offset=0, limit=10, total=0, q="", family=""
     if not rows:
         return "<div class='paper-warning'>Catálogo o candidate_identity_v2 no disponible; estado NO_VERIFICADO.</div>"
     total=max(int(total or 0),offset+len(items))
-    query_base={k:v for k,v in filters.items() if str(v or "").strip()}
+    query_base=active_filters
     start=0 if total==0 else offset+1
     end=offset+len(items)
     controls=[
