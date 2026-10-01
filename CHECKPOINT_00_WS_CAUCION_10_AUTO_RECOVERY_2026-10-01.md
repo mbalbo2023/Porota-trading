@@ -22,3 +22,8 @@
 - existing caución regression set GREEN;
 - read-only runtime snapshot records current state without interpreting off-market STALE as permanent failure;
 - no broker order route and no PPI Watch mutation.
+
+## GitHub publication
+- PR: #395 (DRAFT) -> ops/ws-ops-preopen-closure-20260930
+- Action trigger: this checkpoint update occurs after the dedicated workflow exists on the branch.
+- Status at publication: EN_GITHUB; CI/runtime evidence pending.
