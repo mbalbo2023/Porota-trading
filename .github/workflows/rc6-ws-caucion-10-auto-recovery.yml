@@ -82,7 +82,7 @@ jobs:
           out["catalog"]=[dict(r) for r in c.execute("""SELECT status,COUNT(*) n,MAX(last_seen_at) as_of
               FROM financial_instrument_catalog WHERE upper(instrument_type)='CAUCIONES'
               GROUP BY status ORDER BY status""")] if "financial_instrument_catalog" in tables else []
-          out["candidates"]=[dict(r) for r in c.execute("""SELECT status,can_simulate,COUNT(*) n,MAX(last_checked_at) as_of
+          out["candidates"]=[dict(r) for r in c.execute("""SELECT status,can_simulate,COUNT(*) n,MAX(checked_at) as_of
               FROM candidate_identity_v2 WHERE upper(instrument_type)='CAUCIONES'
               GROUP BY status,can_simulate ORDER BY status,can_simulate""")] if "candidate_identity_v2" in tables else []
           out["evidence"]=[dict(r) for r in c.execute("""SELECT source_class,COUNT(*) n,MIN(observed_at) oldest,MAX(observed_at) newest
