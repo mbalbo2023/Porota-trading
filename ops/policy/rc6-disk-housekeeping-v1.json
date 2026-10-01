@@ -16,7 +16,7 @@
     "pretransfer_formula": {
       "image_tar_multiplier": 5,
       "bundle_multiplier": 3,
-      "fixed_headroom_bytes": 1073741824
+      "fixed_headroom_bytes": 5368709120
     }
   },
   "tmp": {
