@@ -140,5 +140,5 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q tests/test_daily_risk_outbox_v17.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_ws_ops_risk_layout.py
+          PYTHONPATH=. pytest -q tests/test_daily_risk_outbox_v17.py tests/test_rc6_risk_gdelt_dashboard.py tests/test_ws_ops_risk_layout.py tests/test_rc6_action4_audit.py
           echo WS_RUNTIME_07_REGRESSION=GREEN
