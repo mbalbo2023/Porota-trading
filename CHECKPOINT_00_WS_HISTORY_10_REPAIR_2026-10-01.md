@@ -26,3 +26,8 @@ From WS-HISTORY-09 run 36804275137:
 - block if another cutoff-repair process is already active;
 - verify PRODUCTION_PAPER and real_orders_sent=0 before/after;
 - preserve artifact/evidence even when repair exits nonzero or times out.
+
+## GitHub publication
+- PR: #399 (DRAFT) -> ops/ws-ops-preopen-closure-20260930
+- Action trigger: this checkpoint update occurs after the bounded repair workflow exists.
+- Status: EN_GITHUB; runtime repair Action pending.
