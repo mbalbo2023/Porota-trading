@@ -18,15 +18,19 @@ import er_dashboard_truth_projection_rc6 as truth_projection
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 TABLE = "history_canonical_v2"
+_CATALOG_CACHE = {"signature": None, "rows": []}
 
 
 def _e(value) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
 
 
+def _history_path() -> Path:
+    return Path(os.getenv("HIST_DB_PATH", "data/market_history.db")).expanduser().resolve()
+
+
 def _history_uri() -> str:
-    path = Path(os.getenv("HIST_DB_PATH", "data/market_history.db")).expanduser().resolve()
-    return "file:" + quote(str(path), safe="/") + "?mode=ro"
+    return "file:" + quote(str(_history_path()), safe="/") + "?mode=ro"
 
 
 def _connect():
@@ -64,16 +68,28 @@ def _runtime_table(name):
 
 
 def _catalog():
+    path = _history_path()
+    try:
+        stat = path.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        signature = None
+    if signature is not None and _CATALOG_CACHE["signature"] == signature:
+        return list(_CATALOG_CACHE["rows"])
     with closing(_connect()) as connection:
         tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         if TABLE not in tables:
             return []
-        return [dict(row) for row in connection.execute(
+        rows = [dict(row) for row in connection.execute(
             f"""SELECT DISTINCT UPPER(instrument_type) AS family, symbol, market, settlement
                 FROM {TABLE}
                 WHERE TRIM(COALESCE(instrument_type,''))<>'' AND TRIM(COALESCE(symbol,''))<>''
                 ORDER BY family, symbol, market, settlement""")]
+    if signature is not None:
+        _CATALOG_CACHE["signature"] = signature
+        _CATALOG_CACHE["rows"] = list(rows)
+    return rows
 
 
 def _identity(value):
@@ -327,9 +343,9 @@ def _evidence_label(state):
     }.get(str(state or "UNKNOWN").upper(), str(state or "SIN EVIDENCIA").upper())
 
 
-def _render_reconciliation_evidence():
+def _render_reconciliation_evidence(truth=None):
     """Show current IOL/cache and caucion state without redefining readiness."""
-    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    truth = truth or truth_projection.build(_runtime_rows, _runtime_table)
     iol = truth["iol"]
     quote = iol["quotes"]
     family = iol["families"]
@@ -368,9 +384,9 @@ def _family_tone(state):
             "BLOCKED": "red"}.get(str(state or "PENDING").upper(), "gray")
 
 
-def _render_family_readiness(catalog):
+def _render_family_readiness(catalog, truth=None):
     """Readiness comes only from candidate_identity_v2; catalog/history stay separate."""
-    truth = truth_projection.build(_runtime_rows, _runtime_table)
+    truth = truth or truth_projection.build(_runtime_rows, _runtime_table)
     readiness = truth["readiness"]
     rows = "".join(
         "<tr>"
@@ -401,6 +417,7 @@ def _render_family_readiness(catalog):
 
 def render_page(family="", instrument=""):
     year = datetime.now(TZ).year
+    runtime_truth = truth_projection.build(_runtime_rows, _runtime_table)
     try:
         catalog = _catalog()
     except (sqlite3.Error, OSError, ValueError):
@@ -451,5 +468,6 @@ def render_page(family="", instrument=""):
     return (
         "<h1>Análisis</h1><p class='paper-muted'>Performance del año calendario "
         + str(year) + " por instrumento, usando histórico canónico v2.</p>"
-        + form + _render_family_readiness(catalog) + _render_reconciliation_evidence() + report
+        + form + _render_family_readiness(catalog, runtime_truth)
+        + _render_reconciliation_evidence(runtime_truth) + report
     )
