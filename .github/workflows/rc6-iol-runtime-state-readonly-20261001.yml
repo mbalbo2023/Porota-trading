@@ -1,0 +1,67 @@
+name: RC6 IOL Runtime State Read-Only 2026-10-01
+
+on:
+  push:
+    branches:
+      - work/ws-consolidated-iol-20261001
+    paths:
+      - '.github/workflows/rc6-iol-runtime-state-readonly-20261001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  state:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read IOL runtime state only
+        run: |
+          set -Eeuo pipefail
+          timeout --signal=TERM --kill-after=10s 90s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'sudo -n python3 -' <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/opt/porota-trading/data/market/iol_family_reference_latest.json')
+          print('IOL_RUNTIME_STATE=START')
+          if not p.is_file():
+              print('IOL_CACHE=MISSING'); raise SystemExit(2)
+          x=json.loads(p.read_text(encoding='utf-8'))
+          keep={
+            'refreshed_at':x.get('refreshed_at'),
+            'cache_state':x.get('cache_state'),
+            'live_sections':x.get('live_sections'),
+            'section_states':x.get('section_states'),
+            'last_known_good_at':x.get('last_known_good_at'),
+            'continuation_state':x.get('continuation_state'),
+            'fallback_order':x.get('fallback_order'),
+            'errors':x.get('errors'),
+            'caucion_ars_records':len((x.get('cauciones') or {}).get('ARS') or []),
+            'caucion_usd_records':len((x.get('cauciones') or {}).get('USD') or []),
+            'fci_records':len(x.get('fci') or []),
+          }
+          print('IOL_CACHE='+json.dumps(keep,sort_keys=True,default=str))
+          PY
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "systemctl show porota-iol-shadow-collector-rc6.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager || true; systemctl show porota-iol-shadow-collector-rc6.timer -p ActiveState -p UnitFileState -p LastTriggerUSec --no-pager || true"
+          echo 'IOL_RUNTIME_STATE=GREEN_READONLY'
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
