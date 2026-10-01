@@ -23,3 +23,16 @@
 - real_orders_sent=0; real routes NOT_CALLED; PPI Watch untouched.
 
 Interpretation: the GitHub Action failed because SSH transport broke, but the remote repair itself continued. A second READ_ONLY audit is intentionally triggered by this checkpoint update; no retry/mutation is authorized.
+
+## Audit 2 — run 36805375380 — GREEN
+- same repair PID 1861766 remains active.
+- repair row remains RUNNING.
+- traversal advanced materially:
+  - ARCHIVE_PARTIAL_COVERAGE 495 -> 702
+  - BLOCKED_NO_CANONICAL_BASELINE 130 -> 178
+  - current COMPLETE bucket 33; NO_NEW_VALID_ROWS 9
+- canonical store remains 439,833 rows / latest 2026-09-28 while traversal is in progress.
+- observer remains PRODUCTION_PAPER / WAITING_MARKET / MARKET_CLOSED / PPI auth OK.
+- real_orders_sent=0; real routes NOT_CALLED; PPI Watch untouched.
+
+Decision remains: do not retry; allow the single remote process to finish. This update intentionally triggers Audit 3 READ_ONLY.
