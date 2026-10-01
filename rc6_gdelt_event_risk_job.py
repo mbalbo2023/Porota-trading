@@ -262,13 +262,19 @@ def latest_events(db_path: str = DEFAULT_DB, *, limit: int = MAX_STORED_EVENTS_F
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")
+        columns = {str(row[1]) for row in conn.execute(
+            "PRAGMA table_info(gdelt_event_risk_events)")}
+        # Old RC6 event stores predate title/source_domain. Dashboard reads must
+        # stay backward compatible and never require a write-time migration.
+        title_expr = "title" if "title" in columns else "'' AS title"
+        domain_expr = "source_domain" if "source_domain" in columns else "'' AS source_domain"
         rows = conn.execute(
-            """SELECT event_id,event_type,published_at,title,source_domain,provenance_url,
-                      available_to_engine_at,authority
-               FROM gdelt_event_risk_events
-               WHERE title <> ''
-               ORDER BY published_at DESC, first_recorded_at DESC
-               LIMIT ?""",
+            f"""SELECT event_id,event_type,published_at,{title_expr},{domain_expr},provenance_url,
+                       available_to_engine_at,authority
+                FROM gdelt_event_risk_events
+                WHERE {('title <> ' + chr(39) + chr(39)) if 'title' in columns else '1=0'}
+                ORDER BY published_at DESC, first_recorded_at DESC
+                LIMIT ?""",
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
