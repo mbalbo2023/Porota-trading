@@ -36,3 +36,18 @@ Interpretation: the GitHub Action failed because SSH transport broke, but the re
 - real_orders_sent=0; real routes NOT_CALLED; PPI Watch untouched.
 
 Decision remains: do not retry; allow the single remote process to finish. This update intentionally triggers Audit 3 READ_ONLY.
+
+## Audit 3 — run 36805515443 — GREEN
+- same repair PID 1861766 still active.
+- repair script entered live PPI phase; run counters are per-current-execution and therefore not cumulative with the previous run.
+- current run row: complete=203; failed=187; ppi_queries=30; state=RUNNING.
+- identity states at sample:
+  - ALREADY_COVERED 183
+  - ARCHIVE_PARTIAL_COVERAGE 688
+  - BLOCKED_NO_CANONICAL_BASELINE 172
+  - COMPLETE 47
+  - NO_NEW_VALID_ROWS 15
+- canonical store: 439,833 rows / latest 2026-09-28.
+- PRODUCTION_PAPER / MARKET_CLOSED / real_orders_sent=0 / PPI Watch untouched.
+
+Code review confirms run counters are rewritten every 20 symbols from current execution state and are not cumulative across resumptions. This update triggers Audit 4 READ_ONLY.
