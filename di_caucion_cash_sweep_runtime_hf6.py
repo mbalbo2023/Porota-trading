@@ -317,7 +317,9 @@ def offers_from_store(store, *, now):
 
 def _persist_runtime(store, *, at, state, code, request_id=None, paper_id=None,
                      detail="", result=None):
-    init_runtime_schema(store)
+    # Schema ownership belongs to parent/startup. Re-running CREATE TABLE on
+    # every 30s heartbeat adds unnecessary schema-lock contention against the
+    # shared PAPER SQLite database.
     with store.connect() as connection:
         observer = connection.execute(
             "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
