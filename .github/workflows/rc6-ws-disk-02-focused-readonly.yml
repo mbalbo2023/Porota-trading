@@ -1,0 +1,192 @@
+name: RC6 WS-DISK-02 focused reclaim audit
+
+on:
+  push:
+    branches:
+      - audit/ws-disk-01-readonly-20261001
+    paths:
+      - '.github/workflows/rc6-ws-disk-02-focused-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-disk-audit-readonly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_audit"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_audit" "$HOME/.ssh/known_hosts"
+
+      - name: Focused read-only reclaim audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/rc6-disk-focused-audit.txt"
+          ssh -i "$HOME/.ssh/porota_rc6_audit" \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee "$OUT"
+          set -u
+          echo "POROTA_DISK_FOCUSED_AUDIT=START"
+          echo "READ_ONLY=true"
+          date -u '+RECORDED_AT=%Y-%m-%dT%H:%M:%SZ'
+
+          echo
+          echo "=== OPT_TOP2_BYTES ==="
+          sudo -n timeout 60 du -x -B1 -d2 /opt 2>/dev/null | sort -nr | head -120 || true
+
+          echo
+          echo "=== TMP_TOP2_BYTES ==="
+          sudo -n timeout 60 du -x -B1 -d2 /tmp 2>/dev/null | sort -nr | head -140 || true
+
+          echo
+          echo "=== TMP_AGE_SCENARIOS ==="
+          sudo -n python3 - <<'PY'
+          import os,time
+          from pathlib import Path
+          root=Path("/tmp")
+          now=time.time()
+          def size_path(p):
+              try:
+                  if p.is_symlink(): return 0
+                  if p.is_file(): return p.stat().st_size
+                  total=0
+                  for d,_,fs in os.walk(p,followlinks=False):
+                      for f in fs:
+                          q=Path(d)/f
+                          try:
+                              if not q.is_symlink(): total+=q.stat().st_size
+                          except OSError: pass
+                  return total
+              except OSError: return 0
+          rows=[]
+          for p in root.iterdir():
+              try: mt=p.stat().st_mtime
+              except OSError: continue
+              rows.append((mt,size_path(p),str(p)))
+          print("TMP_TOTAL_ENTRY_BYTES="+str(sum(x[1] for x in rows)))
+          for days in (1,3,7,14,21,30):
+              cutoff=now-days*86400
+              cand=[x for x in rows if x[0] < cutoff]
+              print(f"TMP_OLDER_THAN_{days}D_BYTES={sum(x[1] for x in cand)}|ENTRIES={len(cand)}")
+          for mt,sz,p in sorted(rows,key=lambda x:x[1],reverse=True)[:80]:
+              print(f"TMP_ENTRY|{sz}|{time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(mt))}|{p}")
+          PY
+
+          echo
+          echo "=== TMP_OPEN_REFERENCES ==="
+          if command -v lsof >/dev/null 2>&1; then
+            sudo -n timeout 45 lsof -nP 2>/dev/null | awk '$0 ~ /\/tmp\// {print}' | head -160 || true
+          else
+            echo "LSOF_NOT_INSTALLED"
+          fi
+
+          echo
+          echo "=== GENERAL_BACKUPS_RETENTION ==="
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import time
+          root=Path("/opt/porota-backups")
+          files=[p for p in root.rglob("*") if p.is_file()] if root.exists() else []
+          rows=sorted([(p.stat().st_mtime,p.stat().st_size,p) for p in files], reverse=True)
+          total=sum(x[1] for x in rows)
+          print(f"TOTAL_BYTES={total}|FILES={len(rows)}")
+          for keep in (1,2,3,5,7,10):
+              kept=sum(x[1] for x in rows[:keep])
+              print(f"KEEP_NEWEST_{keep}|KEEP_BYTES={kept}|POTENTIAL_RECLAIM_BYTES={total-kept}")
+          for mt,sz,p in rows[:80]:
+              print(f"BACKUP|{sz}|{time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(mt))}|{p}")
+          PY
+
+          echo
+          echo "=== PAPER_HISTORY_BACKUPS_RETENTION ==="
+          sudo -n python3 - <<'PY'
+          from pathlib import Path
+          import time
+          root=Path("/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups")
+          for group in ("paper","history"):
+              d=root/group
+              files=[p for p in d.glob("*") if p.is_file()] if d.exists() else []
+              rows=sorted([(p.stat().st_mtime,p.stat().st_size,p) for p in files], reverse=True)
+              total=sum(x[1] for x in rows)
+              print(f"GROUP={group}|TOTAL_BYTES={total}|FILES={len(rows)}")
+              for keep in (1,2,3,5,7,10):
+                  kept=sum(x[1] for x in rows[:keep])
+                  print(f"GROUP={group}|KEEP_NEWEST_{keep}|KEEP_BYTES={kept}|POTENTIAL_RECLAIM_BYTES={total-kept}")
+              for mt,sz,p in rows[:40]:
+                  print(f"GROUP={group}|FILE={sz}|{time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime(mt))}|{p}")
+          PY
+
+          echo
+          echo "=== JOURNAL_TIME_AND_USAGE ==="
+          sudo -n journalctl --disk-usage 2>&1 || true
+          sudo -n journalctl --list-boots --no-pager 2>/dev/null | tail -20 || true
+          for target in 134217728 268435456 402653184 536870912; do
+            echo "JOURNAL_TARGET_BYTES=$target"
+          done
+
+          echo
+          echo "=== DOCKER_DF ==="
+          sudo -n docker system df 2>&1 || true
+          echo
+          echo "=== BUILDX_DU ==="
+          sudo -n timeout 60 docker buildx du --verbose 2>&1 || true
+          echo
+          echo "=== BUILDER_DU ==="
+          sudo -n timeout 60 docker builder du 2>&1 || true
+
+          echo
+          echo "=== CONTAINERD_TOP2_BYTES ==="
+          sudo -n timeout 60 du -x -B1 -d2 /var/lib/containerd 2>/dev/null | sort -nr | head -100 || true
+
+          echo
+          echo "=== APT_CACHE ==="
+          sudo -n du -x -s -B1 /var/lib/apt/lists /var/cache/apt /var/cache/apt/archives 2>/dev/null || true
+
+          echo
+          echo "=== FINAL_STATE ==="
+          df -PB1 /
+          sudo -n timeout 15 python3 - <<'PY' || true
+          import sqlite3
+          p="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"MODE={mode}|REAL_ORDERS_SENT={orders}")
+          PY
+          echo "POROTA_DISK_FOCUSED_AUDIT=GREEN"
+          REMOTE
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-disk-focused-readonly-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-disk-focused-audit.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup runner key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_audit"
