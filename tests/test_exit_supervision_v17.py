@@ -1,5 +1,6 @@
 """Regresiones de reloj, fuente temporal, ledger y procesos de salidas paper."""
 import json
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -14,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from be_paper_engine import D, PaperBroker, PaperStore, STRATEGY_VERSION
 from bm_exit_supervisor import PositionExitSupervisor, admission_error
 from bq_exit_policy import PaperSessionPolicy
-from bv_paper_runtime import ChildProcesses, collect_exit_books, run_clock, run_reader
+from bv_paper_runtime import (ChildProcesses, collect_exit_books, run_clock, run_reader,
+                              _reader_status_write, _best_effort_runtime_event)
 from test_production_paper_v1634 import quote
 import bf_production_paper_observer as observer
 
@@ -270,3 +272,57 @@ def test_reloj_avanza_mientras_cuatro_procesos_hijos_estan_bloqueados(position,m
         thread.join(timeout=12)
     assert not thread.is_alive()
     assert all(p.poll() is not None for p in children.processes.values())
+
+
+def test_exit_reader_health_write_does_not_die_on_sqlite_contention(tmp_path):
+    store = PaperStore(str(tmp_path / "locked.db"))
+    blocker = sqlite3.connect(store.path, timeout=1)
+    blocker.execute("BEGIN IMMEDIATE")
+    try:
+        assert _reader_status_write(store, "READY", "fixture") is False
+        assert _best_effort_runtime_event(store, "EXIT_TEST", "locked") is False
+    finally:
+        blocker.rollback()
+        blocker.close()
+    assert _reader_status_write(store, "READY", "recovered") is True
+    with store.connect() as connection:
+        row = connection.execute("select state,detail from paper_exit_reader_state where id=1").fetchone()
+    assert tuple(row) == ("READY", "recovered")
+
+
+def test_exit_book_error_records_stage_and_sqlite_code(position, monkeypatch):
+    broker,p,q = position
+    observer._support_schema(broker.store)
+    monkeypatch.setattr(observer,"now_iso",lambda:q.observed_at)
+    raw = {"ticker":"GGAL","type":"ACCIONES","market":"BYMA","currency":"Pesos"}
+    record = observer.financial_catalog.normalize_record(raw,"A-24HS",q.observed_at,"test")
+    with broker.store.connect() as connection:
+        observer.financial_catalog.persist(connection,record)
+
+    class Reader:
+        def book(self,symbol,kind,settlement):
+            return {"date":q.book_at,"bids":[{"price":99,"quantity":1000}],
+                    "offers":[{"price":101,"quantity":1000}]}
+
+    events=[]
+    monkeypatch.setattr(
+        broker.store, "add_quote",
+        lambda *_: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked")))
+    monkeypatch.setattr(
+        broker.store, "event",
+        lambda event_type,detail,paper_id=None: events.append((event_type,detail,paper_id)))
+
+    assert collect_exit_books(Reader(),broker.store,PaperSessionPolicy(),q.observed_at) == 1
+    assert len(events) == 1
+    assert events[0][0] == "EXIT_BOOK_ERROR"
+    assert "stage=PERSIST_QUOTE" in events[0][1]
+    assert "OperationalError" in events[0][1]
+
+
+def test_run_reader_source_has_explicit_sqlite_contention_recovery():
+    import inspect
+    import bv_paper_runtime as runtime
+    source=inspect.getsource(runtime.run_reader)
+    assert "except sqlite3.OperationalError as exc" in source
+    assert "_sqlite_contention(exc)" in source
+    assert "SQLite contention; reintento acotado" in source
