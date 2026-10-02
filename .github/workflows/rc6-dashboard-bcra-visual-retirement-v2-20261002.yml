@@ -1,9 +1,6 @@
-name: RC6 Dashboard BCRA Visual Retirement V2 2026-10-02
+name: Archived RC6 Dashboard BCRA Visual Retirement V2 2026-10-02
 
 on:
-  push:
-    branches:
-      - fix/rc6-dashboard-history-tablet-truth-20261002
   workflow_dispatch:
 
 permissions:
