@@ -1,0 +1,97 @@
+name: RC6 Live Status Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-live-status-20261002]
+    paths: ['.github/workflows/rc6-live-status-readonly-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Live read-only status
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          DB="$REPO/data/paper_v17/observer_v17.db"
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          echo "NOW_ART=$(TZ=America/Argentina/Buenos_Aires date +%FT%T%z)"
+          echo "DISK=$(df -h / | tail -1)"
+          echo "DISK_BYTES=$(df -PB1 / | awk 'NR==2 {print $4}')"
+          echo "GIT_HEAD=$(cd "$REPO" && git rev-parse HEAD 2>/dev/null || true)"
+          echo "CONTAINERS_BEGIN"
+          sudo -n docker ps --format '{{.Names}}|{{.Status}}|{{.Image}}'
+          echo "CONTAINERS_END"
+          echo "DOCKER_DF_BEGIN"; sudo -n docker system df; echo "DOCKER_DF_END"
+          python3 - "$DB" <<'PY'
+          import sqlite3,sys,json
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=3)
+          c.row_factory=sqlite3.Row;c.execute("PRAGMA query_only=ON");c.execute("PRAGMA busy_timeout=1000")
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          cols={r[1] for r in c.execute("pragma table_info(observer_state)")}
+          wanted=["mode","real_orders_sent","process_state","session_state","heartbeat_at","ppi_auth"]
+          use=[x for x in wanted if x in cols]
+          row=c.execute("select "+",".join(use)+" from observer_state where id=1").fetchone()
+          print("OBSERVER="+json.dumps(dict(row),sort_keys=True,default=str))
+          for table in ["candidate_identity_v2","financial_instrument_catalog"]:
+            if table in tables:
+              try:
+                n=c.execute(f"select count(*) from {table}").fetchone()[0]
+                print(f"{table.upper()}_ROWS={n}")
+              except Exception as e: print(f"{table.upper()}_ERR={type(e).__name__}")
+          # Schema-aware status counts.
+          if "candidate_identity_v2" in tables:
+            cc={r[1] for r in c.execute("pragma table_info(candidate_identity_v2)")}
+            for col in ["readiness","status","state","paper_status"]:
+              if col in cc:
+                rows=c.execute(f"select {col},count(*) n from candidate_identity_v2 group by {col} order by n desc").fetchall()
+                print("READINESS_COUNTS="+json.dumps([list(r) for r in rows],default=str));break
+          # Useful tables by name, plus freshest timestamp-like value where cheap.
+          keys=["scalp","cauc","gdelt","iol","snapshot","risk","order","position","pnl"]
+          for t in sorted(tables):
+            if any(k in t.lower() for k in keys):
+              try:
+                n=c.execute(f'select count(*) from "{t}"').fetchone()[0]
+                if n>0: print(f"TABLE_COUNT|{t}|{n}")
+              except: pass
+          c.close()
+          PY
+          echo "TIMERS_BEGIN"
+          systemctl list-timers --all --no-pager | grep -Ei 'porota|iol|gdelt|cauc|scalp|snapshot|byma|candle|risk' || true
+          echo "TIMERS_END"
+          echo "FAILED_UNITS_BEGIN"
+          systemctl --failed --no-pager || true
+          echo "FAILED_UNITS_END"
+          echo "SELECTED_UNITS_BEGIN"
+          for u in porota-preopen-rc6.timer porota-snapshot-preopen-rc6.timer porota-iol-shadow-collector-rc6.timer porota-iol-oauth-health-rc6.timer porota-gdelt-event-risk-rc6.timer porota-byma-morning-watch-rc6.timer porota-candle-integrity-rc6.timer porota-full-db-integrity-rc6.timer; do
+            printf '%s|%s|%s\n' "$u" "$(systemctl is-enabled "$u" 2>/dev/null || true)" "$(systemctl is-active "$u" 2>/dev/null || true)"
+          done
+          echo "SELECTED_UNITS_END"
+          echo "PPI_WATCH_BEGIN"
+          for u in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do printf '%s|%s|%s\n' "$u" "$(systemctl is-enabled "$u" 2>/dev/null || true)" "$(systemctl is-active "$u" 2>/dev/null || true)"; done
+          echo "PPI_WATCH_END"
+          echo "RECENT_SERVICE_ERRORS_BEGIN"
+          journalctl --since '-90 min' --no-pager -p warning..alert | grep -Ei 'porota|iol|ppi|gdelt|cauc|scalp|docker' | tail -120 || true
+          echo "RECENT_SERVICE_ERRORS_END"
+          echo "LIVE_STATUS_READONLY=GREEN"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
