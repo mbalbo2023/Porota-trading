@@ -31,7 +31,8 @@ from ak_byma_calendar import es_dia_habil_operativo
 from bt_caucion_paper import validate_position, pending_proceeds
 from cg_paper_workspace import database_path, checked_path, identity_from_connection, artifact_root
 from _version import VERSION
-from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, effective_store_metrics
+from dd_history_metrics_hf6 import (observer_history_metrics, v2_store_metrics, effective_store_metrics,
+                                    target_store_coverage_metrics)
 import rc6_annual_instrument_analysis as annual_instrument_analysis
 import er_dashboard_truth_projection_rc6 as dashboard_truth_projection
 from ek_history_freshness_metrics_rc5 import freshness_qualified_metrics
@@ -1522,8 +1523,10 @@ def history_page():
     sync=(_rows("""SELECT source,status,last_attempt_at,last_success_at,items,detail
       FROM source_sync WHERE source LIKE 'PPI_%' ORDER BY last_attempt_at DESC""")
       if _table("source_sync") else [])
-    last_attempt=max((str(r.get("last_attempt_at") or "") for r in sync),default="") or None
-    last_success=max((str(r.get("last_success_at") or "") for r in sync),default="") or None
+    history_sync=[r for r in sync if str(r.get("source") or "").upper() in {
+        "PPI_PRODUCTION_HISTORY","PPI_BACKGROUND_INGEST"}]
+    last_attempt=max((str(r.get("last_attempt_at") or "") for r in history_sync),default="") or None
+    last_success=max((str(r.get("last_success_at") or "") for r in history_sync),default="") or None
     cycles=_rows("SELECT * FROM universe_cycle_metrics ORDER BY id DESC LIMIT 30") if _table("universe_cycle_metrics") else []
     latest_cycle=cycles[0] if cycles else {}
     rotation={}
@@ -1561,14 +1564,20 @@ def history_page():
         store_v2=v2_store_metrics(families=operational_families)
     try:
         with closing(_conn()) as c:
+            target_coverage=target_store_coverage_metrics(c,families=operational_families)
+    except Exception as exc:
+        target_coverage={"available":False,"reason":type(exc).__name__,"target_total":0,
+                         "covered_target_total":0,"historical_identity_total":0,"by_family":{}}
+    try:
+        with closing(_conn()) as c:
             fresh_v5=freshness_qualified_metrics(c,families=operational_families)
     except Exception as exc:
         fresh_v5={"available":False,"reason":type(exc).__name__,"target_total":0,
                   "fresh_total":0,"fresh_ge30":0,"fresh_ge90":0,"fresh_ge180":0,
                   "stale_ge90_count":0,"store_latest_date":None}
-    history_target=int(dynamic.get('target_total') or 0)
+    history_target=int(target_coverage.get('target_total') or dynamic.get('target_total') or 0)
     legacy_history_count=int(history.get('instruments') or 0)
-    history_count=int(store_v2.get('identities') or 0)
+    history_count=int(target_coverage.get('covered_target_total') or 0)
     history_rows=int(store_v2.get('canonical_rows') or 0)
     history_pct=min(100.0,history_count/max(1,history_target)*100) if history_target else 0.0
     coverage_complete=bool(history_target and history_count>=history_target)
@@ -1620,8 +1629,10 @@ def history_page():
               f"configurado; último recomendado {latest_cycle.get('recommended_limit','—')} según duración real del ciclo",
               "green"),
         _card("Última fecha PPI legacy",_e(last_market),"Dato de production_history; History Store v2 puede contener otras fuentes","gray"),
-        _card("Última corrida PPI",_local_time(last_attempt),"La cadencia real es por fuente; ver Sistema → Scheduler","gray"),
-        _card("Última ingesta PPI exitosa",_local_time(last_success),"Una fuente puede quedar parcial sin bloquear otras fuentes/familias","green" if last_success else "yellow")))
+        _card("Último intento de historia PPI",_local_time(last_attempt),
+              "Sólo PPI_PRODUCTION_HISTORY / PPI_BACKGROUND_INGEST; catálogo se informa por separado","gray"),
+        _card("Último éxito de historia PPI",_local_time(last_success),
+              "No se mezcla con la corrida de catálogo PPI","green" if last_success else "yellow")))
     def _history_sync_state(row):
         raw=str(row.get('status') or '').upper()
         source=str(row.get('source') or '').upper()
@@ -1630,19 +1641,22 @@ def history_page():
         return raw
     sync_rows="".join(f"<tr><td>{_e(r['source'])}</td><td>{_status(_history_sync_state(r))}</td><td>{_local_time(r['last_attempt_at'])}</td><td>{_local_time(r['last_success_at'])}</td><td>{_e(r['items'])}</td><td>{_e(r['detail'])}</td></tr>" for r in sync) or "<tr><td colspan='6'>Sin corridas registradas.</td></tr>"
     family_history_rows=[]
-    by_family=store_v2.get('by_family',{}) if isinstance(store_v2,dict) else {}
     targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
     caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
+    scoped=target_coverage.get('by_family',{}) if isinstance(target_coverage,dict) else {}
     all_families=sorted(
-        family for family in (set(targets)|set(by_family)|set(caps))
-        if str(family or "").upper() in operational_families
-    )
+        family for family in (set(targets)|set(scoped)|set(caps))
+        if str(family or "").upper() in operational_families)
     for family in all_families:
-        current=by_family.get(family,{})
-        target=int(targets.get(family) or 0)
-        symbols=int(current.get('symbols') or 0)
+        current=(store_v2.get('by_family',{}) or {}).get(family,{})
+        scope=scoped.get(family,{})
+        target=int(scope.get('target') or targets.get(family) or 0)
+        covered=int(scope.get('covered_target') or 0)
+        historical=int(scope.get('historical_identities') or current.get('symbols') or 0)
+        label=(f"{covered}/{target}" if target else "SIN OBJETIVO ACTUAL")
         family_history_rows.append(
-            f"<tr><td><b>{_e(family)}</b></td><td>{symbols}/{target if target else '—'}</td>"
+            f"<tr><td><b>{_e(family)}</b></td>"
+            f"<td><b>{_e(label)}</b><br><span class='paper-muted'>{historical} identidades históricas en store</span></td>"
             f"<td>{_e(current.get('rows',0))}</td><td>{_e(current.get('first_date'))}</td>"
             f"<td>{_e(current.get('last_date'))}</td><td>{_e(', '.join(caps.get(family,())) or 'PROBE_REQUIRED')}</td></tr>")
     family_history=''.join(family_history_rows) or "<tr><td colspan='6'>Esperando métricas multi-familia.</td></tr>"
@@ -1655,7 +1669,7 @@ def history_page():
         "Para CEDEAR cada día faltante exige rueda BYMA y rueda del subyacente US. "
         "CLOSE_ONLY se informa por separado y nunca habilita ATR, VWAP, precio de ejecución ni READY PAPER.</div>"
     )
-    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Histórico diario y velas intradiarias son capas distintas.</b> La fecha del History Store describe cobertura diaria; la tarjeta «Última barra intradiaria» lee candle_versions directamente y el heartbeat del worker se muestra por separado. Un histórico diario atrasado no significa que las velas estén detenidas.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
+    body=f"<h1>Históricos y universo</h1><div class='paper-notice'><b>Histórico diario y velas intradiarias son capas distintas.</b> La fecha del History Store describe cobertura diaria; la tarjeta «Última barra intradiaria» lee candle_versions directamente y el heartbeat del worker se muestra por separado. Un histórico diario atrasado no significa que las velas estén detenidas.</div><div class='paper-notice'><b>Histórico es histórico.</b> La cobertura de series describe disponibilidad para análisis/backtest; no gobierna catálogo, contrato, RUNTIME_READY ni STRATEGY_ELIGIBLE.</div><div class='paper-grid'>{cards}</div>{freshness_notice}<div class='paper-notice'><b>Fecha del dato, fecha de ingesta y readiness PAPER son conceptos distintos.</b> Una identidad puede tener histórico sin estar READY, o estar READY sin serie profunda. Para el readiness actual usar Instrumentos o Validación.</div><div class='paper-card'><h2>Cobertura History Store v2 por familia</h2><p class='paper-muted'>El numerador y el objetivo usan la misma identidad actual (símbolo/familia/mercado/liquidación). Las identidades históricas fuera del universo actual se muestran aparte y nunca inflan la cobertura.</p><table class='paper-table'><tr><th>Familia</th><th>Cobertura objetivo actual</th><th>Filas</th><th>Desde</th><th>Hasta</th><th>Fuentes/capacidad</th></tr>{family_history}</table></div><div class='paper-card'><h2>Estado de ingesta PPI histórica (auditoría)</h2><table class='paper-table'><tr><th>Fuente</th><th>Estado</th><th>Último intento</th><th>Último éxito</th><th>Ítems</th><th>Detalle</th></tr>{sync_rows}</table></div><div class='paper-card'><h2>Base objetiva para ampliar el lote por ciclo</h2><table class='paper-table'><tr><th>Ciclo</th><th>Seleccionados/elegibles</th><th>Correctos</th><th>Fallidos</th><th>Duración</th><th>Límite recomendado</th></tr>{cycle_rows}</table></div>"
     return _document("Históricos",body+_family_coverage_panel()+_candle_archive_panel(),refresh=60)
 
 
@@ -1736,12 +1750,12 @@ def _decision_evidence_status(value):
 
 
 def _decision_evidence_panel():
-    """Standard dashboard only: one read-only published decision-evidence view."""
+    """Tablet-safe read-only comparison of factual PAPER vs SHADOW profiles."""
     evidence = decision_evidence_view.read()
     counts = evidence["counts"]
     cards = "".join((
         _card("Decisiones con evidencia", evidence["total_decisions"],
-              "Se muestran las últimas 10; el writer no pertenece al dashboard",
+              "10 visibles por bloque; hasta 30 cargadas para Mostrar más",
               "green" if evidence["available"] else "gray"),
         _card("Verificadas", counts["VERIFIED"],
               "Inputs contemporáneos y resultado comparable", "green" if counts["VERIFIED"] else "gray"),
@@ -1751,43 +1765,57 @@ def _decision_evidence_panel():
               "Se preserva el límite; nunca se reconstruye con hindsight",
               "yellow" if counts["INSUFFICIENT_EVIDENCE"] else "green"),
     ))
-    decision_rows = []
+    labels={"BASELINE_CONSERVATIVE_V1":"Conservador",
+            "SHADOW_BALANCED_V1":"Balanceado",
+            "SHADOW_AGGRESSIVE_V1":"Agresivo"}
+    decision_rows=[]
     for row in evidence["rows"]:
-        profiles = "<br>".join(
-            f"<b>{_e(item['name'])}</b>: {_e(item['decision'])} · {_decision_evidence_status(item['state'])}"
-            for item in row["profiles"]
-        )
+        profile_rows="".join(
+            "<tr>"
+            f"<td><b>{_e(labels.get(item.get('name'),item.get('name')))}</b><br>"
+            f"<span class='paper-muted'>{_e(item.get('name'))}</span></td>"
+            f"<td><b>{_e(item.get('decision'))}</b></td>"
+            f"<td>{_decision_evidence_status(item.get('state'))}</td>"
+            f"<td>{_e(item.get('reason') or 'Sin detalle publicado')}</td></tr>"
+            for item in row["profiles"])
+        profiles=(
+            "<details class='paper-trade counterfactual-profile-detail'>"
+            f"<summary>Ver {len(row['profiles'])} perfiles y qué habría hecho cada uno</summary>"
+            "<div class='trade-body'><table class='paper-table'>"
+            "<tr><th>Perfil</th><th>Qué habría hecho</th><th>Evidencia</th><th>Motivo</th></tr>"
+            +profile_rows+"</table>"
+            f"<p class='paper-muted'><b>Decisión:</b> <code>{_e(row['decision_key'])}</code><br>"
+            f"<b>Fuentes:</b> {_e(row['sources'])}</p></div></details>")
         decision_rows.append(
-            f"<tr><td><code>{_e(row['decision_key'])}</code></td><td><b>{_e(row['symbol'])}</b></td>"
-            f"<td>{_decision_evidence_status(row['state'])}</td>"
-            f"<td>{_e(row['factual_decision'])}<br><span class='paper-muted'>{_e(row['reason'])}</span></td>"
-            f"<td>{profiles}</td><td>{_e(row['sources'])}</td><td>{_local_time(row['at'])}</td></tr>"
-        )
-    rows_html = "".join(decision_rows) or (
-        "<tr><td colspan='7'>Aún no hay evidencia por decisión publicada. Esto indica que el pipeline está en "
-        "preparación o no registró decisiones; no equivale a una decisión negativa del motor.</td></tr>"
-    )
-    aggregate = evidence["aggregate"]
-    aggregate_rows = "".join(
+            f"<tr><td><b>{_e(row['symbol'])}</b><br>{_decision_evidence_status(row['state'])}</td>"
+            f"<td><b>{_e(row['factual_decision'])}</b><br><span class='paper-muted'>{_e(row['reason'])}</span></td>"
+            f"<td>{profiles}</td><td>{_local_time(row['at'])}</td></tr>")
+    rows_html="".join(decision_rows) or (
+        "<tr><td colspan='4'>Aún no hay evidencia por decisión publicada. Esto indica que el pipeline está en "
+        "preparación o no registró decisiones; no equivale a una decisión negativa del motor.</td></tr>")
+    aggregate=evidence["aggregate"]
+    aggregate_rows="".join(
         f"<tr><td>{_e(key)}</td><td>{_e(value)}</td></tr>"
-        for key, value in list(aggregate.items())[:12]
+        for key,value in list(aggregate.items())[:12]
     ) or "<tr><td colspan='2'>Sin evidencia acumulada publicada todavía.</td></tr>"
+    loaded=len(evidence["rows"]); total=int(evidence["total_decisions"] or 0)
+    range_text=("Mostrando 0 de 0" if not loaded else
+                f"Mostrando 1-{min(10,loaded)} de {total}; usar «Mostrar 10 más» para avanzar.")
     return (
         "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW — histórica</h2>"
-        "<div class='paper-grid'>" + cards + "</div>"
-        "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. Los perfiles SHADOW requieren evidencia de seguridad; ninguno puede alterar ni autorizar órdenes. La decisión factual PAPER no se modifica. "
-        "Los perfiles BASELINE_CONSERVATIVE_V1, SHADOW_BALANCED_V1 y SHADOW_AGGRESSIVE_V1 se comparan sobre "
-        "los inputs publicados. <b>PENDING</b> e <b>INSUFFICIENT_EVIDENCE</b> son límites explícitos de "
-        "evidencia, no errores ni datos completados retrospectivamente.</div>"
-        "<table class='paper-table'><tr><th>Decisión</th><th>Instrumento</th><th>Evidencia</th>"
-        "<th>Factual PAPER</th><th>Perfiles</th><th>Fuentes consumidas</th><th>Momento</th></tr>" +
-        rows_html + "</table>"
-        "<h3>Aprendizaje acumulado publicado</h3><table class='paper-table'><tr><th>Métrica</th><th>Valor</th></tr>" +
-        aggregate_rows + "</table>"
-        f"<p class='paper-muted'><b>Fuentes al momento de la decisión.</b> Fuente: {_e(evidence['source'])} · publicado: {_local_time(evidence['generated_at'])} · "
-        f"política: {_e(evidence['policy'])}</p></div>"
-    )
-
+        "<div class='paper-grid'>"+cards+"</div>"
+        "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> "
+        "Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. "
+        "Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. "
+        "ninguno puede alterar ni autorizar órdenes; la decisión factual PAPER no se modifica.</div>"
+        f"<p class='paper-muted'>{_e(range_text)}</p>"
+        "<table class='paper-table counterfactual-main-table'><tr><th>Instrumento / evidencia</th>"
+        "<th>Factual PAPER</th><th>Perfiles contrafácticos</th><th>Momento</th></tr>"
+        +rows_html+"</table>"
+        "<h3>Aprendizaje acumulado publicado</h3><table class='paper-table'><tr><th>Métrica</th><th>Valor</th></tr>"
+        +aggregate_rows+"</table>"
+        f"<p class='paper-muted'><b>Fuentes al momento de la decisión.</b> Fuente: {_e(evidence['source'])} · "
+        f"publicado: {_local_time(evidence['generated_at'])} · política: {_e(evidence['policy'])}</p></div>")
 
 def _current_source_health_panel():
     """Current source health, deliberately separate from decision-time evidence."""

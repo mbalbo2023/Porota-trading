@@ -13,7 +13,7 @@ def test_decision_evidence_panel_is_standard_read_only_and_bounded(monkeypatch):
                 {"name": "SHADOW_AGGRESSIVE_V1", "decision": "OPEN", "state": "PENDING"},
             ],
         }
-        for index in range(10)
+        for index in range(12)
     ]
     monkeypatch.setattr(dashboard.decision_evidence_view, "read", lambda: {
         "available": True, "total_decisions": 12, "rows": rows,
@@ -28,8 +28,13 @@ def test_decision_evidence_panel_is_standard_read_only_and_bounded(monkeypatch):
     assert "Perfiles evaluados en modo SHADOW, sólo para análisis" in rendered
     assert "ninguno puede alterar ni autorizar órdenes" in rendered
     assert "READ_ONLY_DASHBOARD_NO_DECISION_OR_ORDER_CHANGE" in rendered
-    assert rendered.count("<code>d-") == 10
+    assert rendered.count("<code>d-") == 12
     assert "12" in rendered
+    assert "Ver 3 perfiles y qué habría hecho cada uno" in rendered
+    assert "Conservador" in rendered and "Balanceado" in rendered and "Agresivo" in rendered
+    assert "Mostrando 1-10 de 12" in rendered
+    assert "<th>Decisión</th><th>Instrumento</th>" not in rendered
+    assert "<th>Instrumento / evidencia</th><th>Factual PAPER</th>" in rendered
 
 
 def test_decision_evidence_panel_explains_absence_without_claiming_failure(monkeypatch):
