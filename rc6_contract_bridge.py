@@ -231,10 +231,8 @@ def complements_from_store(store, *, now=None):
         rows = c.execute("""SELECT c.*,s.source_ref,s.effective_at,s.evidence_json
             FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots s
             ON s.snapshot_id=c.snapshot_id""").fetchall()
-        pending = set()
-        if "contract_evidence_v2_changes" in tables:
-            pending = {tuple(r) for r in c.execute("""SELECT family,ticker,market,currency,settlement
-                FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED'""")}
+        from cp_contract_evidence_v2_hf6 import pending_material_changes
+        pending = pending_material_changes(c)
     grouped = defaultdict(list)
     for row in rows:
         r = dict(row)
