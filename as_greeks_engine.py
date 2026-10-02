@@ -322,24 +322,11 @@ def _veredicto_prima(ratio: Optional[float]) -> str:
 
 
 def _tasa_desde_macro() -> Optional[float]:
-    """Toma la tasa de caución del contexto macro, que es la referencia libre
-    de riesgo correcta para el mercado local — no la tasa de un bono del
-    Tesoro estadounidense."""
-    try:
-        import ad_macro_history as macro
-        ctx = macro.get_macro_context(30) or {}
-        indicadores = ctx.get("indicadores") or {}
-        # La caché macro devuelve metadatos por indicador. Se conserva la
-        # lectura plana como compatibilidad con contextos anteriores.
-        for clave in ("tasa_caucion_tna", "tasa_tamar_privados_tna"):
-            dato = indicadores.get(clave, ctx.get(clave))
-            tasa = dato.get("ultimo") if isinstance(dato, dict) else dato
-            if tasa is not None:
-                return float(tasa) / 100.0
-    except Exception as e:
-        logger.debug("Sin tasa macro disponible: %s", e)
-    return None
+    """BCRA/TAMAR cache retired; caller must use its explicit fallback.
 
+    This function intentionally performs no network or cache read.
+    """
+    return None
 
 def lote_por_subyacente(tipo_subyacente: str) -> int:
     """Lote correcto según el tipo de subyacente.

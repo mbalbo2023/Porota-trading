@@ -36,7 +36,7 @@ TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
 ROOT_DATA = artifact_root()
 REPORT_DIR = ROOT_DATA / "reports"
 BACKUP_DIR = ROOT_DATA / "backups" / "paper"
-OFFICIAL_BCRA = "https://api.bcra.gob.ar"
+OFFICIAL_BCRA = None  # RETIRED_OPERATOR_DECISION_2026_10_02
 OFFICIAL_SERIES = "https://apis.datos.gob.ar/series/api/series"
 NEWS_FEEDS = (
     ("Ámbito", "https://www.ambito.com/rss/home.xml"),
@@ -50,11 +50,7 @@ DATOS_AR_SERIES = {
     "EMAE actividad": "143.3_NO_PR_2004_A_21",
     "Tipo de cambio mayorista": "168.1_T_CAMBIOR_D_0_0_26",
 }
-BCRA_VARIABLES = {
-    "Reservas internacionales": 1,
-    "Tasa TAMAR privados TNA": 44,
-    "Base monetaria": 15,
-}
+BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
 
 
 def now_iso():
@@ -298,28 +294,12 @@ def _save_financial(store, source, indicator, points, unit):
 
 
 def refresh_financial(store, timeout=10):
-    """BCRA v4 + series oficiales INDEC/Economía; una vez cada 12 horas."""
+    """Series oficiales INDEC/datos.gob.ar; BCRA activo fue retirado por decisión del operador."""
     init_schema(store)
     if not _job_due(store, "FINANCIAL_REFRESH", 12 * 3600):
         return {"state": "CACHED"}
     successes, failures, rows = 0, [], 0
     since = (datetime.now(TZ).date() - timedelta(days=730)).isoformat()
-    for name, variable_id in BCRA_VARIABLES.items():
-        try:
-            url = (f"{OFFICIAL_BCRA}/estadisticas/v4.0/monetarias/{variable_id}?" +
-                   urlencode({"desde": since, "hasta": date.today().isoformat(), "limit": 3000}))
-            req = Request(url, headers={"Accept": "application/json", "Accept-Language": "es-AR",
-                                        "User-Agent": "PorotaObserver/16.3.5"})
-            with urlopen(req, timeout=timeout) as response:
-                payload = json.load(response)
-            details = []
-            for block in payload.get("results", []):
-                details.extend(block.get("detalle", []) if isinstance(block, dict) else [])
-            points = [(row.get("fecha"), row.get("valor")) for row in details if isinstance(row, dict)]
-            rows += _save_financial(store, "BCRA", name, points, "según BCRA")
-            successes += 1
-        except Exception as exc:
-            failures.append(f"BCRA {name}: {type(exc).__name__}")
     for name, series_id in DATOS_AR_SERIES.items():
         try:
             url = OFFICIAL_SERIES + "?" + urlencode({"ids": series_id, "start_date": since,
