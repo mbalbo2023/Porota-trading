@@ -90,6 +90,29 @@ jobs:
           echo "RECENT_SERVICE_ERRORS_BEGIN"
           journalctl --since '-90 min' --no-pager -p warning..alert | grep -Ei 'porota|iol|ppi|gdelt|cauc|scalp|docker' | tail -120 || true
           echo "RECENT_SERVICE_ERRORS_END"
+          echo "FOCUSED_BEGIN"
+          for u in porota-gdelt-event-risk-rc6.service porota-full-db-integrity-rc6.service porota-iol-shadow-collector-rc6.service; do
+            echo "UNIT=$u"
+            systemctl show "$u" -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp --no-pager || true
+            journalctl -u "$u" -n 40 --no-pager || true
+          done
+          python3 - "$DB" <<'PY2'
+          import sqlite3,sys,json
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          for t in ["intraday_scalping_worker_state","paper_caucion_cash_sweep_state","paper_caucion_cash_sweep_attempts"]:
+            try:
+              cols=[r[1] for r in c.execute(f'pragma table_info("{t}")')]
+              rows=c.execute(f'select * from "{t}" order by rowid desc limit 5').fetchall()
+              print("DETAIL|"+t+"|cols="+json.dumps(cols)+"|rows="+json.dumps([dict(r) for r in rows],default=str,sort_keys=True))
+            except Exception as e: print("DETAIL_ERR|"+t+"|"+type(e).__name__+":"+str(e))
+          c.close()
+          PY2
+          echo "HOST_GIT_STATUS_BEGIN"
+          cd "$REPO"
+          git status --short || true
+          git log -1 --oneline || true
+          git show -s --format='%H|%P|%s' HEAD || true
+          echo "HOST_GIT_STATUS_END"
           echo "LIVE_STATUS_READONLY=GREEN"
           REMOTE
       - name: Cleanup
