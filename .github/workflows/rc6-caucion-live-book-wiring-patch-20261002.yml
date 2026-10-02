@@ -286,7 +286,7 @@ jobs:
               s=s.replace("    last_complementary_reconcile = 0.0\n",
                           "    last_complementary_reconcile = 0.0\n    last_caucion_live_refresh = 0.0\n",1)
           anchor='''            operations.service_tick(store, phase)
-                  if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
+                      if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
           insert='''            operations.service_tick(store, phase)
                   if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                       try:
