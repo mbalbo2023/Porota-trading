@@ -1,0 +1,82 @@
+name: RC6 Dashboard BCRA Visual Retirement 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-dashboard-history-tablet-truth-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Remove retired BCRA dashboard surfaces
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path("bg_paper_dashboard.py")
+          s=p.read_text(encoding="utf-8")
+          s=s.replace('add("BCRA / INDEC", "FINANCIAL_REFRESH", "Contexto de tasas e inflación; no invalida market data.")',
+                      'add("INDEC / datos.gob.ar", "FINANCIAL_REFRESH", "Contexto público no-BCRA; no invalida market data.")')
+          start=s.find("    # Contexto macro SHADOW: informativo y trazable; nunca bloquea ni autoriza.")
+          if start >= 0:
+              end=s.find("    return banner+source+providers+market+recent+plan+positions+trades+universe+macro",start)
+              if end < 0: raise SystemExit("MACRO_DASH_RETURN_SOURCE_DRIFT")
+              line_end=s.find("\n",end)
+              old_return=s[end:line_end]
+              new_return=old_return.replace("+macro","")
+              s=s[:start]+new_return+s[line_end:]
+          elif "Macro riesgo · SHADOW" in s:
+              raise SystemExit("MACRO_DASH_SOURCE_DRIFT")
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("tests/test_rc6_dashboard_truthful_explanations.py")
+          if p.exists():
+              t=p.read_text(encoding="utf-8")
+          else:
+              t=""
+          t += '''
+def test_bcra_is_not_an_active_dashboard_surface():
+    from pathlib import Path
+    source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert 'add("BCRA / INDEC"' not in source
+    assert "Macro riesgo · SHADOW" not in source
+    assert 'add("INDEC / datos.gob.ar"' in source
+'''
+          p.write_text(t,encoding="utf-8")
+          PY
+          python -m py_compile bg_paper_dashboard.py
+          git diff --check
+      - name: Focused dashboard regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q             tests/test_dashboard_decision_evidence_rc6.py             tests/test_ws_dash_07_history_truth.py             tests/test_dashboard_truth_layer_rc6.py             tests/test_rc6_dashboard_truthful_explanations.py
+          python - <<'PY'
+          import bg_paper_dashboard as d
+          assert "overflow-x:hidden" in d.TABLE_A11Y_CSS
+          assert "PAGE_SIZE=10" in d.TABLE_A11Y_SCRIPT
+          assert "Mostrando '+shown+' de '+total" in d.TABLE_A11Y_SCRIPT
+          print("DASH_TABLET_WIDTH_AND_10_ROWS=GREEN")
+          PY
+      - name: Commit validated visual retirement
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bg_paper_dashboard.py tests/test_rc6_dashboard_truthful_explanations.py
+          if git diff --cached --quiet; then echo DASH_BCRA_NO_SOURCE_DELTA; else
+            git commit -m 'fix(dashboard): remove retired BCRA surfaces'
+            git push origin HEAD:fix/rc6-dashboard-history-tablet-truth-20261002
+          fi
