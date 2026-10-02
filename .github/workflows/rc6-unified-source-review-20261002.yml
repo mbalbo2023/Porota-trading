@@ -1,0 +1,49 @@
+name: RC6 unified source review 20261002
+on:
+  push:
+    branches: [audit/rc6-unified-review-20261002]
+    paths: [.github/workflows/rc6-unified-source-review-20261002.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-source-review-20261002
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export exact source inputs without executing repository code
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BASE=136453dc5b6d4146057142bcdd76b2f6b8d474e0
+          test "$(git rev-parse origin/deploy/rc6-pr69-isolated-20260915)" = "$BASE"
+          mkdir -p /tmp/rc6-review/patches
+          python - <<'PY'
+          import json, pathlib, subprocess
+          refs={435:'2c55af7ab4407b9fae218a96f06300a7e0670c71',436:'fd84b4dd736e9f4ebd011495ab16df282ac51d37',437:'5ce5927525866ad001348d48a2eb19850557a3c7',438:'217dbadfe418277f10ee0304c2a9ae0e02d723b9',439:'fe34c2e87d7bb53503cca173209e814b93b45e6e',440:'2c2969e8accf7009ee338ae109258b80d042cb97',442:'e67612fbba198d6c51ac588b38a56bbb57b73314',443:'67a7e06561337b2aaeff76dcf3ede15af013f764',444:'9dde0dfa224ffa9301458b61a5fc659524d831ea'}
+          base='136453dc5b6d4146057142bcdd76b2f6b8d474e0'
+          out=pathlib.Path('/tmp/rc6-review')
+          for pr,sha in refs.items():
+              subprocess.run(['git','cat-file','-e',sha+'^{commit}'],check=True)
+              ancestor=subprocess.check_output(['git','merge-base',base,sha],text=True).strip()
+              patch=subprocess.check_output(['git','diff','--binary',ancestor,sha])
+              (out/'patches'/f'pr-{pr}.patch').write_bytes(patch)
+              print(f'INPUT|PR={pr}|sha={sha}|merge_base={ancestor}')
+              subprocess.run(['git','update-ref',f'refs/heads/review-input-{pr}',sha],check=True)
+          (out/'inputs.json').write_text(json.dumps({'base':base,'inputs':refs},indent=2)+'\n')
+          subprocess.run(['git','update-ref','refs/heads/review-product',base],check=True)
+          subprocess.run(['git','bundle','create',str(out/'sources.bundle'),'refs/heads/review-product',*[f'refs/heads/review-input-{pr}' for pr in refs]],check=True)
+          PY
+          sha256sum /tmp/rc6-review/sources.bundle | tee /tmp/rc6-review/SHA256SUMS
+          echo 'READ_ONLY_SOURCE_REVIEW_EXPORT=GREEN; no droplet access; no source code executed'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rc6-unified-source-review-20261002
+          path: /tmp/rc6-review/
+          retention-days: 7
+          if-no-files-found: error
