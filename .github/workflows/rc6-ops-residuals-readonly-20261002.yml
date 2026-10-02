@@ -1,0 +1,90 @@
+name: RC6 Ops Residuals Readonly 2026-10-02
+
+on:
+  push:
+    branches:
+      - audit/rc6-ops-residuals-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository policy census
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          python - <<'PY' > evidence/repo-policy.json
+          import json
+          p="ops/policy/host-control-plane-reconciliation-v2.json"
+          x=json.load(open(p))
+          names=("porota-full-db-integrity-rc6.service",
+                 "porota-scheduler-export-hf6.service",
+                 "porota-contract-evidence-weekend-backfill-rc6.service")
+          def walk(v,path=""):
+              if isinstance(v,dict):
+                  for k,n in v.items():
+                      q=f"{path}.{k}" if path else k
+                      if any(name in str(k) or (isinstance(n,str) and name in n) for name in names):
+                          print(json.dumps({"path":q,"value":n},ensure_ascii=False,default=str))
+                      walk(n,q)
+              elif isinstance(v,list):
+                  for i,n in enumerate(v): walk(n,f"{path}[{i}]")
+          walk(x)
+          PY
+          cat evidence/repo-policy.json
+      - name: Runtime unit census read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime.txt <<'REMOTE'
+          set -Eeuo pipefail
+          for u in porota-full-db-integrity-rc6.service porota-scheduler-export-hf6.service porota-contract-evidence-weekend-backfill-rc6.service; do
+            echo "===== $u ====="
+            systemctl show "$u" --no-pager               -p LoadState -p ActiveState -p SubState -p Result -p ExecMainStatus               -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p FragmentPath               -p UnitFileState -p TriggeredBy || true
+            systemctl cat "$u" --no-pager 2>/dev/null | sha256sum || true
+          done
+          for t in porota-full-db-integrity-rc6.timer porota-contract-evidence-weekend-backfill-rc6.timer; do
+            echo "===== $t ====="
+            systemctl show "$t" --no-pager -p LoadState -p ActiveState -p SubState -p UnitFileState -p NextElapseUSecRealtime -p LastTriggerUSec || true
+            systemctl cat "$t" --no-pager 2>/dev/null | sha256sum || true
+          done
+          echo "SAFETY"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          from cg_paper_workspace import database_path
+          c=sqlite3.connect("file:"+str(database_path())+"?mode=ro",uri=True,timeout=5)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone()
+          print("MODE=%s|REAL_ORDERS_SENT=%s"%row)
+          assert row[0]=="PRODUCTION_PAPER" and int(row[1])==0
+          PY
+          echo "PPI_WATCH=READ_ONLY_NOT_TOUCHED"
+          REMOTE
+          cat evidence/runtime.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-ops-residuals-readonly-20261002
+          path: evidence
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
