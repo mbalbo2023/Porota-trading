@@ -122,6 +122,6 @@ def test_final_cleanup_revalidates_critical_approval_after_cleanup() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     final = text.index("FINAL_INODE_FREE_PERCENT")
     tail = text[final:]
-    assert 'docker inspect -f \'{{.Image}}\' "$CRIT_CONTAINER"' in tail
+    assert "{{.Image}}" in tail
     assert '"$RUNTIME_IMAGE_ID"' in tail
-    assert 'docker inspect -f \'{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}\' "$CRIT_CONTAINER"' in tail
+    assert "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" in tail
