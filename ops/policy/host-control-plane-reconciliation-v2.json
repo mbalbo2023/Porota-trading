@@ -9,7 +9,8 @@
     "A3 historical background is a read-only source for FUTUROS/OPCIONES and never participates in real-order routing",
     "tests/test_rc6_postclose_history_quarantine.py applies to the legacy postclose history timer, not to A3 background history",
     "the Sept-09 SRE split separates frequent fast health from lower-frequency full DB integrity",
-    "IOL MCP OAuth continuity is owned by a bounded guardian; during market hours LIVE_FRESH collector activity is the primary OAuth/data path and the guardian avoids redundant MCP calls"
+    "IOL MCP OAuth continuity is owned by a bounded guardian; during market hours LIVE_FRESH collector activity is the primary OAuth/data path and the guardian avoids redundant MCP calls",
+    "GDELT deprecated and excluded 2026-10-02: no network collection, no dashboard surface, no scheduler; historical local evidence is retained inert for audit only"
   ],
   "ppi_watch_evidence_contract": {
     "schema_version": 1,
@@ -343,20 +344,20 @@
       "reason": "Current read-only BYMA authority watch at 08:30 ART"
     },
     "systemd/porota-gdelt-event-risk-rc6.service": {
-      "role": "ACTIVE_SERVICE",
-      "install": true,
+      "role": "RETIRED_SERVICE",
+      "install": false,
       "enabled": null,
       "active": null,
-      "remove_on_deploy": false,
-      "reason": "Structured GDELT event-risk SHADOW collector only; migrates the dedicated local schema before bounded GET-only collection and has no trading authority"
+      "remove_on_deploy": true,
+      "reason": "GDELT deprecated and excluded by operator decision 2026-10-02; preserve only historical DB evidence, never execute or install collector"
     },
     "systemd/porota-gdelt-event-risk-rc6.timer": {
-      "role": "ACTIVE_TIMER",
-      "install": true,
-      "enabled": true,
-      "active": true,
-      "remove_on_deploy": false,
-      "reason": "Hourly bounded structured event-risk refresh with randomized delay, no persistent catch-up and no generic news feed"
+      "role": "RETIRED_TIMER",
+      "install": false,
+      "enabled": false,
+      "active": false,
+      "remove_on_deploy": true,
+      "reason": "GDELT deprecated and excluded by operator decision 2026-10-02; disable/remove timer and never schedule collection"
     },
     "systemd/porota-iol-oauth-health-rc6.service": {
       "role": "ACTIVE_SERVICE",
