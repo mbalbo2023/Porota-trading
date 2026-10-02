@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/rc6-dashboard-history-tablet-truth-20261002
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,36 +23,86 @@ jobs:
           set -Eeuo pipefail
           python - <<'PY'
           from pathlib import Path
+
           p=Path("bg_paper_dashboard.py")
           s=p.read_text(encoding="utf-8")
+
+          # Source-health surface: BCRA is no longer an active provider.
+          s=s.replace(
+              'add("BCRA / INDEC", "FINANCIAL_REFRESH", "TODOS", "Información financiera oficial")',
+              'add("INDEC / datos.gob.ar", "FINANCIAL_REFRESH", "TODOS", "Información financiera oficial")')
           s=s.replace(
               'add("BCRA / INDEC", "FINANCIAL_REFRESH", "Contexto de tasas e inflación; no invalida market data.")',
-              'add("INDEC / datos.gob.ar", "FINANCIAL_REFRESH", "Contexto público no-BCRA; no invalida market data.")')
-          marker="    # Contexto macro SHADOW: informativo y trazable; nunca bloquea ni autoriza."
+              'add("INDEC / datos.gob.ar", "FINANCIAL_REFRESH", "Contexto público oficial; no invalida market data.")')
+
+          # Position detail keeps raw persisted features for forensics but does
+          # not render a dedicated active BCRA/macro decision card.
+          marker='        macro_risk=features.get("macro_risk_shadow") if isinstance(features.get("macro_risk_shadow"),dict) else {}'
           start=s.find(marker)
           if start >= 0:
-              target="    return banner+source+providers+market+recent+plan+positions+trades+universe+macro"
-              end=s.find(target,start)
+              end=s.find('        gdelt_risk=features.get("gdelt_risk_shadow")',start)
               if end < 0:
-                  raise SystemExit("MACRO_DASH_RETURN_SOURCE_DRIFT")
-              line_end=s.find("\n",end)
-              s=s[:start]+target.replace("+macro","")+s[line_end:]
-          elif "Macro riesgo · SHADOW" in s:
-              raise SystemExit("MACRO_DASH_SOURCE_DRIFT")
+                  raise SystemExit("POSITION_MACRO_CARD_SOURCE_DRIFT")
+              s=s[:start]+'        macro_risk_html=""\n'+s[end:]
+
+          # Trading overview must not call/render the retired BCRA shadow module.
+          marker='    try:\n        import rc6_macro_risk_shadow'
+          start=s.find(marker)
+          if start >= 0:
+              end=s.find('    return (\n',start)
+              if end < 0:
+                  raise SystemExit("TRADING_MACRO_CARD_SOURCE_DRIFT")
+              s=s[:start]+'    macro_html = ""\n'+s[end:]
+
+          # Current financial page excludes preserved historical BCRA rows.
+          old='latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date ORDER BY f.source,f.indicator""") if _table("financial_series") else []'
+          new='latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date WHERE upper(COALESCE(f.source,\'\')) <> \'BCRA\' ORDER BY f.source,f.indicator""") if _table("financial_series") else []'
+          if old in s:
+              s=s.replace(old,new,1)
+          elif new not in s:
+              raise SystemExit("FINANCIAL_PAGE_SOURCE_DRIFT")
+
+          s=s.replace("Indicadores BCRA e INDEC","Indicadores INDEC / datos.gob.ar")
+          s=s.replace(
+              "<p><b>Contexto BCRA y GDELT:</b> se lee exclusivamente de caché local para candidatos ",
+              "<p><b>Contexto externo histórico:</b> sólo se conserva evidencia persistida para candidatos ")
+
+          forbidden=(
+              'add("BCRA / INDEC"',
+              "Riesgo macro / BCRA — SHADOW",
+              "Riesgo macro BCRA — SHADOW",
+              "Indicadores BCRA e INDEC",
+              "import rc6_macro_risk_shadow",
+          )
+          remaining=[item for item in forbidden if item in s]
+          if remaining:
+              raise SystemExit("BCRA_VISUAL_SURFACE_REMAINS:"+",".join(remaining))
+
           p.write_text(s,encoding="utf-8")
+
           t=Path("tests/test_rc6_dashboard_truthful_explanations.py")
           body=t.read_text(encoding="utf-8") if t.exists() else ""
-          if "def test_bcra_is_not_an_active_dashboard_surface" not in body:
-              body += "\n\ndef test_bcra_is_not_an_active_dashboard_surface():\n"
-              body += "    from pathlib import Path\n"
-              body += '    source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")\n'
-              body += '    assert \'add("BCRA / INDEC"\' not in source\n'
-              body += '    assert "Macro riesgo · SHADOW" not in source\n'
-              body += '    assert \'add("INDEC / datos.gob.ar"\' in source\n'
+          marker="def test_bcra_is_not_an_active_dashboard_surface"
+          if marker not in body:
+              body += """
+\n
+def test_bcra_is_not_an_active_dashboard_surface():
+    from pathlib import Path
+    source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+    assert 'add("BCRA / INDEC"' not in source
+    assert "Riesgo macro / BCRA — SHADOW" not in source
+    assert "Riesgo macro BCRA — SHADOW" not in source
+    assert "Indicadores BCRA e INDEC" not in source
+    assert "import rc6_macro_risk_shadow" not in source
+    assert 'add("INDEC / datos.gob.ar"' in source
+    assert "Indicadores INDEC / datos.gob.ar" in source
+    assert "upper(COALESCE(f.source,'')) <> 'BCRA'" in source
+"""
           t.write_text(body,encoding="utf-8")
           PY
           python -m py_compile bg_paper_dashboard.py
           git diff --check
+
       - name: Test dashboard
         shell: bash
         run: |
@@ -70,6 +121,7 @@ jobs:
           assert "Mostrando '+shown+' de '+total" in d.TABLE_A11Y_SCRIPT
           print("DASH_TABLET_WIDTH_AND_10_ROWS=GREEN")
           PY
+
       - name: Commit source
         shell: bash
         run: |
