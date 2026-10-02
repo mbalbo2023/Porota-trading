@@ -1,0 +1,94 @@
+name: RC6 Caucion Live PPI Readonly 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-caucion-policy-wiring-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Probe exact PPI caucion books read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'sudo -n docker exec -i porota_production_observer python -' > evidence/caucion-ppi-live.json <<'PY'
+          import json, os
+          from bd_ppi_readonly_guard import ProductionMarketReader, retry_read
+          from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
+
+          key=os.environ.get("PPI_API_KEY","")
+          secret=os.environ.get("PPI_API_SECRET","")
+          if not key or not secret:
+              raise SystemExit("PPI_READONLY_CREDENTIALS_UNAVAILABLE")
+          reader=ProductionMarketReader(key,secret)
+          out={"paper_only":True,"real_routes":[],"ppi_watch_touched":False,"rows":[]}
+          try:
+              reader.login_once()
+              for ticker in ("PESOS1","PESOS2","PESOS7","PESOS30","PESOS120"):
+                  item={"ticker":ticker,"term_days":parse_ticker(ticker).term_days}
+                  try:
+                      current=retry_read(lambda t=ticker: reader.current(t,"CAUCIONES","INMEDIATA"),retries=1)
+                      book=retry_read(lambda t=ticker: reader.book(t,"CAUCIONES","INMEDIATA"),retries=1)
+                      bids=list(placed_side_book_levels(book if isinstance(book,dict) else {}))
+                      level=quote_from_book_level(ticker,bids[0]) if bids else None
+                      item["current"]={
+                          k:current.get(k) for k in ("date","price","last","volume","quantity")
+                          if isinstance(current,dict) and current.get(k) is not None
+                      }
+                      item["book_date"]=book.get("date") if isinstance(book,dict) else None
+                      item["placed_bid"]=(None if level is None else {
+                          "tna_percent":str(level.tna_percent),
+                          "quantity":str(level.quantity),
+                          "side_source":level.side_source,
+                      })
+                      item["state"]="BOOK_READY" if level is not None else "NO_PLACED_BID"
+                  except Exception as exc:
+                      item["state"]="READ_ERROR"
+                      item["error_type"]=type(exc).__name__
+                  out["rows"].append(item)
+              out["reader_metrics"]=reader.metrics
+          finally:
+              reader.close()
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,separators=(",",":")))
+          PY
+          cat evidence/caucion-ppi-live.json
+          python - <<'PY'
+          import json
+          x=json.load(open("evidence/caucion-ppi-live.json"))
+          assert x["paper_only"] is True and x["real_routes"]==[] and x["ppi_watch_touched"] is False
+          assert x["reader_metrics"]["calls_blocked"]==0
+          print("CAUCION_PPI_READONLY_PROBE=GREEN")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-caucion-live-ppi-readonly-20261002
+          path: evidence/caucion-ppi-live.json
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
