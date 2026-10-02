@@ -958,30 +958,20 @@ class PaperBroker:
             return "HOLD", score, "Spread superior al 2%", features
         if score < threshold:
             return "HOLD", score, "Score paper debajo del umbral versionado", features
-        # Contexto BCRA/macro: persistido sólo para candidatos BUY y sin
-        # autoridad sobre la decisión. La fuente se actualiza fuera de rueda.
-        if os.getenv("PAPER_MACRO_RISK_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
-            try:
-                import rc6_macro_risk_shadow
-                features["macro_risk_shadow"] = rc6_macro_risk_shadow.collect()
-            except Exception as exc:
-                features["macro_risk_shadow"] = {
-                    "mode": "SHADOW", "state": "ERROR",
-                    "decision_effect": "OBSERVE_ONLY",
-                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
-                }
-        # Noticias GDELT: sólo cache local y sólo contexto reproducible.
-        # Nunca consulta red en la rueda ni tiene autoridad de veto.
-        if os.getenv("PAPER_GDELT_SHADOW", "ON").upper() in {"ON", "SHADOW", "TRUE", "1"}:
-            try:
-                import rc6_gdelt_shadow
-                features["gdelt_risk_shadow"] = rc6_gdelt_shadow.collect()
-            except Exception as exc:
-                features["gdelt_risk_shadow"] = {
-                    "mode": "SHADOW", "state": "ERROR",
-                    "decision_effect": "OBSERVE_ONLY",
-                    "reason": f"{type(exc).__name__}:{str(exc)[:180]}",
-                }
+        # BCRA macro context retired by operator decision 2026-10-02.
+        # Preserve a provenance marker only; no cache/network read and no decision effect.
+        features["macro_risk_shadow"] = {
+            "mode": "RETIRED",
+            "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+            "decision_effect": "NONE",
+            "source": "NONE",
+        }
+        # Noticias GDELT: retired; no collector, cache read or decision effect.
+        features["gdelt_risk_shadow"] = {
+            "mode": "RETIRED", "state": "DEPRECATED_EXCLUDED",
+            "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+            "decision_effect": "EXCLUDED", "source": "NONE",
+        }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
     def _economic_diagnostics(self, q):

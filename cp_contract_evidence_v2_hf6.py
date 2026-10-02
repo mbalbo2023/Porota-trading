@@ -88,6 +88,76 @@ def evidence_hash(value):
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def material_evidence(value):
+    """Remove provenance-only fields while preserving contractual semantics.
+
+    Full evidence snapshots remain byte-for-byte auditable and keep their full
+    evidence_hash. This projection is used only to decide whether a provider
+    observation materially changed the contract.
+    """
+    if isinstance(value, dict):
+        return {
+            str(key): material_evidence(nested)
+            for key, nested in value.items()
+            if str(key) not in PROVENANCE_ONLY_FIELDS
+        }
+    if isinstance(value, list):
+        return [material_evidence(item) for item in value]
+    if isinstance(value, tuple):
+        return [material_evidence(item) for item in value]
+    return value
+
+
+def material_evidence_hash(value):
+    return evidence_hash(material_evidence(value))
+
+
+def pending_material_changes(connection):
+    """Return identities with at least one unresolved *material* change.
+
+    Historical false positives are not mutated or deleted: the append-only
+    change log remains intact. We reclassify them at read time by comparing
+    the exact previous/current snapshot payloads with provenance-only fields
+    removed. Missing/corrupt evidence fails closed as material.
+    """
+    tables = {r[0] for r in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    )}
+    if not {"contract_evidence_v2_changes", "contract_evidence_v2_snapshots"} <= tables:
+        return set()
+    rows = connection.execute("""
+      SELECT ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
+             prev.evidence_json,curr.evidence_json
+      FROM contract_evidence_v2_changes ch
+      LEFT JOIN contract_evidence_v2_snapshots prev
+        ON prev.family=ch.family AND prev.ticker=ch.ticker
+       AND prev.market=ch.market AND prev.currency=ch.currency
+       AND prev.settlement=ch.settlement AND prev.source_class=ch.source_class
+       AND prev.evidence_hash=ch.previous_hash
+      LEFT JOIN contract_evidence_v2_snapshots curr
+        ON curr.family=ch.family AND curr.ticker=ch.ticker
+       AND curr.market=ch.market AND curr.currency=ch.currency
+       AND curr.settlement=ch.settlement AND curr.source_class=ch.source_class
+       AND curr.evidence_hash=ch.current_hash
+      WHERE ch.status='CHANGED_REVIEW_REQUIRED'
+    """).fetchall()
+    pending = set()
+    for row in rows:
+        identity = tuple(row[:5])
+        if row[5] is None or row[6] is None:
+            pending.add(identity)
+            continue
+        try:
+            previous = json.loads(row[5])
+            current = json.loads(row[6])
+            changed = material_evidence_hash(previous) != material_evidence_hash(current)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            changed = True
+        if changed:
+            pending.add(identity)
+    return pending
+
+
 def _assert_sanitized(value, path="evidence"):
     if isinstance(value, dict):
         for key, nested in value.items():
@@ -337,9 +407,12 @@ def _record_snapshot_connection(c, *, family, ticker, market, source_class,
     digest = evidence_hash(evidence)
     payload = canonical_json(evidence)
 
-    previous = c.execute("""SELECT snapshot_id,evidence_hash,observed_at
-      FROM contract_evidence_v2_current WHERE family=? AND ticker=? AND market=?
-      AND currency=? AND settlement=? AND source_class=?""",
+    previous = c.execute("""SELECT cur.snapshot_id,cur.evidence_hash,cur.observed_at,
+                                    snap.evidence_json
+      FROM contract_evidence_v2_current cur
+      JOIN contract_evidence_v2_snapshots snap ON snap.snapshot_id=cur.snapshot_id
+      WHERE cur.family=? AND cur.ticker=? AND cur.market=?
+        AND cur.currency=? AND cur.settlement=? AND cur.source_class=?""",
       (family,ticker,market,storage_currency,settlement,source_class)).fetchone()
     c.execute("""INSERT OR IGNORE INTO contract_evidence_v2_snapshots
       (family,ticker,market,currency,settlement,source_class,source_ref,observed_at,effective_at,
@@ -352,7 +425,15 @@ def _record_snapshot_connection(c, *, family, ticker, market, source_class,
       (family,ticker,market,storage_currency,settlement,source_class,digest)).fetchone()
     snapshot_id = int(snap[0])
     previous_hash = previous[1] if previous else None
-    changed = bool(previous_hash and previous_hash != digest)
+    full_hash_changed = bool(previous_hash and previous_hash != digest)
+    changed = False
+    if full_hash_changed:
+        try:
+            previous_evidence = json.loads(previous[3])
+            changed = material_evidence_hash(previous_evidence) != material_evidence_hash(evidence)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            # Corrupt or unavailable prior evidence must remain fail-closed.
+            changed = True
     first_seen = previous is None
     c.execute("""INSERT INTO contract_evidence_v2_current
       (family,ticker,market,currency,settlement,source_class,snapshot_id,evidence_hash,observed_at)
@@ -374,6 +455,7 @@ def _record_snapshot_connection(c, *, family, ticker, market, source_class,
             "settlement":settlement,"source_class":source_class,
             "snapshot_id":snapshot_id,"evidence_hash":digest,
             "first_seen":first_seen,"changed":changed,
+            "provenance_only_change":bool(full_hash_changed and not changed),
             "status":"CHANGED_REVIEW_REQUIRED" if changed else "RECORDED"}
 
 

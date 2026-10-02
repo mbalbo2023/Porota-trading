@@ -23,7 +23,6 @@ def test_scheduler_siempre_activo_contiene_todas_las_tareas():
         "maintenance_learning_diagnostic",
         "maintenance_weekly_report",
         "maintenance_news_scan",
-        "maintenance_gdelt_shadow",
         "maintenance_action4_audit",
         "maintenance_validation_projection",
         "maintenance_preopen_freshness_audit",

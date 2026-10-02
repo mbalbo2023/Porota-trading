@@ -26,6 +26,13 @@ FOCUS = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 # derivatives and cauciones have different economics/lifecycles.
 SCALPING_STRATEGY_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
 SCALPING_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING", "WAITING_MARKET"})
+# A live intraday identity needs at least two stable observations. With the old
+# 24-row batch, eight permanent focus symbols left only ~16 rotation slots and
+# the current ~1.2k request universe needed ~447 minutes for two passes: longer
+# than the regular 390-minute BYMA PAPER session. 40 is the already-supported
+# upper bound and leaves enough capacity even with the focus/open-position set.
+DEFAULT_INTRADAY_SCAN_SECONDS = 180
+DEFAULT_INTRADAY_BATCH_LIMIT = 40
 
 
 def _stamp(value):
@@ -425,12 +432,21 @@ def run_worker(store, stop, *, clock_fn):
     reader = None
     next_login = 0.0
     unsupported_requests = set()
-    interval = max(60, int(os.getenv("PAPER_INTRADAY_SCAN_SECONDS", "180")))
-    batch_limit = max(8, min(40, int(os.getenv("PAPER_INTRADAY_BATCH_LIMIT", "24"))))
+    interval = max(60, int(os.getenv(
+        "PAPER_INTRADAY_SCAN_SECONDS", str(DEFAULT_INTRADAY_SCAN_SECONDS))))
+    batch_limit = max(8, min(40, int(os.getenv(
+        "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT)))))
+    # Each rotating batch gets a second, fresh DB-selected pass on the next
+    # cycle before the cursor advances. This makes PENDING_LIVE_CONFIRMATION a
+    # bounded warm-up state instead of waiting for a full-universe rotation.
+    paired_recheck = False
+    paired_next_cursor = cursor
     try:
         while not stop.is_set():
             at = aware_datetime(clock_fn())
             if not _market_open(at):
+                paired_recheck = False
+                paired_next_cursor = cursor
                 _heartbeat(store,at=at,state="WAITING_MARKET",cursor=cursor,
                            detail="Scanner activo; espera ventana intradiaria 10:30-17:00 Argentina")
                 stop.wait(20)
@@ -453,7 +469,18 @@ def run_worker(store, stop, *, clock_fn):
                                detail=type(exc).__name__)
                     stop.wait(20)
                     continue
-            selected, cursor, universe = select_batch(store,limit=batch_limit,cursor=cursor)
+            # Keep the rotation cursor fixed for one extra cycle. Calling
+            # select_batch again revalidates exact full-key readiness instead
+            # of replaying stale record dictionaries from memory.
+            selected, next_cursor, universe = select_batch(
+                store, limit=batch_limit, cursor=cursor)
+            phase = "RECHECK" if paired_recheck else "BASELINE"
+            if paired_recheck:
+                cursor = paired_next_cursor
+                paired_recheck = False
+            else:
+                paired_next_cursor = next_cursor
+                paired_recheck = True
             selected = [record for record in selected
                         if (record["ticker"], record["instrument_type"], record["settlement"])
                         not in unsupported_requests]
@@ -499,11 +526,14 @@ def run_worker(store, stop, *, clock_fn):
                        successful=successful,failed=failed,inserted=inserted,
                        confirmed=confirmed,candidates=candidates,
                        detail=(f"universo={universe}; lote={len(selected)}; scanner activo; "
+                               f"fase_confirmacion={phase}; paired_recheck=1; "
                                f"intraday_unavailable={unsupported_this_batch}; "
                                f"unsupported_cached={len(unsupported_requests)}; "
                                f"modo={os.getenv('PAPER_SCALPING_MODE','ACTIVE_OBSERVE')}; "
                                "fills exclusivamente PAPER; órdenes reales bloqueadas"))
             if invalid_session:
+                paired_recheck = False
+                paired_next_cursor = cursor
                 reader.close()
                 reader = None
                 next_login = time.monotonic() + 60

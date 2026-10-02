@@ -388,3 +388,91 @@ def test_numeric_representation_is_not_a_contract_conflict():
     first=catalog.complete_with_complement(primary,comp)
     equivalent=dict(comp,financial_contract_v17={**comp["financial_contract_v17"],"cash_multiplier":".0100"})
     assert catalog.complete_with_complement(first,equivalent)["capability"].startswith("READY_PAPER_")
+
+
+def test_provenance_only_snapshot_churn_is_append_only_but_not_review_blocking(tmp_path):
+    s=store(tmp_path)
+    evidence.init_schema(s)
+    base={
+        "currency":"ARS","cash_multiplier":"100","quantity_step":"1",
+        "quantity_min":"1","capture_timestamp":"2026-10-02T12:00:00+00:00",
+    }
+    first=evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:00:00+00:00",
+        evidence=base)
+    second_payload={**base,"capture_timestamp":"2026-10-02T12:05:00+00:00"}
+    second=evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:05:00+00:00",
+        evidence=second_payload)
+    assert first["first_seen"] is True
+    assert second["changed"] is False
+    assert second["provenance_only_change"] is True
+    with s.connect() as connection:
+        assert connection.execute(
+            "select count(*) from contract_evidence_v2_snapshots where ticker='OPT'"
+        ).fetchone()[0] == 2
+        assert connection.execute(
+            "select count(*) from contract_evidence_v2_changes where ticker='OPT' and status='CHANGED_REVIEW_REQUIRED'"
+        ).fetchone()[0] == 0
+        assert evidence.pending_material_changes(connection) == set()
+
+
+def test_historical_false_change_rows_are_reclassified_without_deleting_audit_log(tmp_path):
+    s=store(tmp_path)
+    evidence.init_schema(s)
+    old={
+        "currency":"ARS","cash_multiplier":"100","quantity_step":"1",
+        "quantity_min":"1","capture_timestamp":"2026-10-02T12:00:00+00:00",
+    }
+    new={**old,"capture_timestamp":"2026-10-02T12:05:00+00:00"}
+    a=evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:00:00+00:00",
+        evidence=old)
+    b=evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:05:00+00:00",
+        evidence=new)
+    # Recreate the historical bug explicitly: an old full-hash-only detector
+    # appended CHANGED_REVIEW_REQUIRED even though only provenance changed.
+    with s.connect() as connection:
+        connection.execute("""insert into contract_evidence_v2_changes(
+          family,ticker,market,currency,settlement,source_class,previous_hash,current_hash,
+          detected_at,status,detail) values(?,?,?,?,?,?,?,?,?,?,?)""",
+          ("OPCIONES","OPT","BYMA","ARS","INMEDIATA","IOL_STRUCTURED_API",
+           a["evidence_hash"],b["evidence_hash"],"2026-10-02T12:05:00+00:00",
+           "CHANGED_REVIEW_REQUIRED","historical fixture"))
+        assert connection.execute(
+            "select count(*) from contract_evidence_v2_changes where ticker='OPT' and status='CHANGED_REVIEW_REQUIRED'"
+        ).fetchone()[0] == 1
+        assert evidence.pending_material_changes(connection) == set()
+
+
+def test_material_contract_change_remains_fail_closed(tmp_path):
+    s=store(tmp_path)
+    evidence.init_schema(s)
+    old={
+        "currency":"ARS","cash_multiplier":"100","quantity_step":"1",
+        "quantity_min":"1","capture_timestamp":"2026-10-02T12:00:00+00:00",
+    }
+    new={**old,"cash_multiplier":"10","capture_timestamp":"2026-10-02T12:05:00+00:00"}
+    evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:00:00+00:00",
+        evidence=old)
+    changed=evidence.record_snapshot(
+        s,family="OPCIONES",ticker="OPT",market="BYMA",currency="ARS",
+        settlement="INMEDIATA",source_class="IOL_STRUCTURED_API",
+        source_ref="fixture:iol",observed_at="2026-10-02T12:05:00+00:00",
+        evidence=new)
+    assert changed["changed"] is True
+    assert changed["status"] == "CHANGED_REVIEW_REQUIRED"
+    with s.connect() as connection:
+        assert ("OPCIONES","OPT","BYMA","ARS","INMEDIATA") in evidence.pending_material_changes(connection)

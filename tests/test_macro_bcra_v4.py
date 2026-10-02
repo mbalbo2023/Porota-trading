@@ -91,14 +91,10 @@ def test_bcra_v4_usa_tamar_privada_tna_vigente():
     }
 
 
-def test_greeks_lee_tamar_desde_contexto_macro(monkeypatch):
+def test_greeks_no_usa_bcra_tamar_retirada(monkeypatch):
     macro_falso = SimpleNamespace(
-        get_macro_context=lambda dias: {
-            "indicadores": {
-                "tasa_tamar_privados_tna": {"ultimo": 29.5},
-            }
-        }
+        get_macro_context=lambda dias: (_ for _ in ()).throw(
+            AssertionError("BCRA cache must not be read"))
     )
     monkeypatch.setitem(sys.modules, "ad_macro_history", macro_falso)
-
-    assert greeks._tasa_desde_macro() == pytest.approx(0.295)
+    assert greeks._tasa_desde_macro() is None
