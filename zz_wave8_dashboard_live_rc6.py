@@ -200,7 +200,7 @@ def _truthful_operator_terms(text):
     # measured excursion. Provenance-aware measurement is a separate offline
     # contract (fc_mfe_mae_provenance_rc6).
     text=re.sub(
-        r"MFE\s*=\s*0(?:[\.,]0{1,8})?\s*[·;|,]?\s*MAE\s*=\s*0(?:[\.,]0{1,8})?(?![\d.,])",
+        r"MFE\s*=\s*0(?:[\.,]0{1,8})?\s*[·;|,]?\s*MAE\s*=\s*0(?:[\.,]0{1,8})?(?!\d|[.,]\d)",
         "MFE=NO_MEDIDO · MAE=NO_MEDIDO (sin trayectoria ejecutable persistida)",
         text,
         flags=re.IGNORECASE,

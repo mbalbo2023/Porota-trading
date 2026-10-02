@@ -150,3 +150,11 @@ def test_zero_mfe_does_not_rewrite_nonzero_mae_prefix(raw):
 def test_stop_explanation_does_not_duplicate_on_repeated_normalization():
     once = dashboard._truthful_operator_terms("causa STOP_PAPER")
     assert dashboard._truthful_operator_terms(once) == once
+
+
+def test_zero_excursions_followed_by_sentence_period_remain_unmeasured():
+    raw = "MFE=0,0000; MAE=0,0000. Cierre PAPER."
+    translated = dashboard._truthful_operator_terms(raw)
+    assert "MFE=NO_MEDIDO" in translated
+    assert "MAE=NO_MEDIDO" in translated
+    assert ". Cierre PAPER." in translated
