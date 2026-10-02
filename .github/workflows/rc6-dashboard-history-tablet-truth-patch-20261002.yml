@@ -94,7 +94,7 @@ jobs:
                   "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> "
                   "Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. "
                   "Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. "
-                  "Ninguno puede alterar ni autorizar órdenes; la decisión factual PAPER no se modifica.</div>"
+                  "ninguno puede alterar ni autorizar órdenes; la decisión factual PAPER no se modifica.</div>"
                   f"<p class='paper-muted'>{_e(range_text)}</p>"
                   "<table class='paper-table counterfactual-main-table'><tr><th>Instrumento / evidencia</th>"
                   "<th>Factual PAPER</th><th>Perfiles contrafácticos</th><th>Momento</th></tr>"
