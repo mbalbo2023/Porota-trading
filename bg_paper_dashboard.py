@@ -837,7 +837,7 @@ def _health_components():
         "next_check": _next_check("TELEGRAM", tg[2]), "mode": tg_mode,
         "use": "Avisos de modo y resumen de cierre", "applicable": tg_applicable})
 
-    add("BCRA / INDEC", "FINANCIAL_REFRESH", "TODOS", "Información financiera oficial")
+    add("INDEC / datos.gob.ar", "FINANCIAL_REFRESH", "TODOS", "Información financiera oficial")
     add("OPENBYMADATA / BYMA", "BYMA_OPEN_DATA", "TODOS",
         "Referencia pública oficial; sin redistribuir market data")
     add("Feeds de noticias", "NEWS_REFRESH", "TODOS",
@@ -1351,17 +1351,7 @@ def motor_page():
         gate=gate_by_paper.get(p.get("paper_id")) or gate_by_symbol.get(p["symbol"],{})
         features=_features(p.get("features_json")); variables="".join(f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k,v in sorted(features.items()))
         economics=features.get("economics") if isinstance(features.get("economics"),dict) else {}
-        macro_risk=features.get("macro_risk_shadow") if isinstance(features.get("macro_risk_shadow"),dict) else {}
-        macro_risk_html=(
-            "<div class='paper-card'><h3>Riesgo macro / BCRA — SHADOW</h3>"
-            f"<p><b>Estado:</b> {_e(macro_risk.get('state','SIN_DATO'))} · "
-            f"<b>Fuente:</b> {_e(macro_risk.get('source','caché local'))}</p>"
-            "<p class='paper-muted'>Se conserva para análisis posterior: no bloquea, "
-            "no modifica tamaño y no autoriza órdenes.</p></div>"
-            if macro_risk else
-            "<div class='paper-warning'><b>Riesgo macro SHADOW sin registro.</b> "
-            "La operación es anterior a esta integración.</div>"
-        )
+        macro_risk_html=""
         gdelt_risk=features.get("gdelt_risk_shadow") if isinstance(features.get("gdelt_risk_shadow"),dict) else {}
         gdelt_risk_html=(
             "<div class='paper-card'><h3>Noticias GDELT — SHADOW</h3>"
@@ -1951,7 +1941,7 @@ def _porota_leaders_proxy():
 
 
 def financial_page():
-    latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date ORDER BY f.source,f.indicator""") if _table("financial_series") else []
+    latest=_rows("""SELECT f.* FROM financial_series f JOIN (SELECT source,indicator,MAX(observed_date) d FROM financial_series GROUP BY source,indicator) x ON x.source=f.source AND x.indicator=f.indicator AND x.d=f.observed_date WHERE upper(COALESCE(f.source,'')) <> 'BCRA' ORDER BY f.source,f.indicator""") if _table("financial_series") else []
     values="".join(f"<tr><td><b>{_e(r['indicator'])}</b></td><td>{_e(r['value'])}</td><td>{_e(r['unit'])}</td><td>{_e(r['observed_date'])}</td><td>{_e(r['source'])}</td></tr>" for r in latest) or "<tr><td colspan='5'>Esperando el primer refresco oficial.</td></tr>"
     try:
         monthly=_rows("""SELECT substr(date(datetime(closed_at,'-3 hours')),1,7) month,
@@ -1978,7 +1968,7 @@ def financial_page():
     median_state=('green' if proxy['average'] is not None and proxy['median']>0 else
                   'red' if proxy['average'] is not None and proxy['median']<0 else
                   'gray')
-    body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria con datos observados y cálculos propios reproducibles.</p><div class='paper-grid'>{_card('Pulso Porota - líderes',proxy_value,proxy['breadth'],pulse_state,'negative' if pulse_state=='red' else 'positive' if pulse_state=='green' else 'neutral')}{_card('Mediana de líderes',median_value,proxy_asof,median_state,'negative' if median_state=='red' else 'positive' if median_state=='green' else 'neutral')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Componentes del pulso propio</h2><table class='paper-table'><tr><th>Instrumento</th><th>Variación entre muestras</th><th>Último negocio</th></tr>{proxy_rows}</table><p class='paper-muted'>Indicador interno equiponderado; sirve para amplitud y contexto. No representa un índice oficial ni reemplaza precios ejecutables.</p></div><div class='paper-card'><h2>Indicadores BCRA e INDEC</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación válida requiere rentabilidad porcentual del patrimonio PAPER y del pulso propio sobre períodos idénticos; se habilitará al completar el primer mes.</div>"
+    body=f"<h1>Información financiera</h1><p class='paper-muted'>Indicadores para preparar la operatoria diaria con datos observados y cálculos propios reproducibles.</p><div class='paper-grid'>{_card('Pulso Porota - líderes',proxy_value,proxy['breadth'],pulse_state,'negative' if pulse_state=='red' else 'positive' if pulse_state=='green' else 'neutral')}{_card('Mediana de líderes',median_value,proxy_asof,median_state,'negative' if median_state=='red' else 'positive' if median_state=='green' else 'neutral')}{_card('Actualización macro','12 horas','Caché local; la página no llama APIs','green')}</div><div class='paper-card'><h2>Componentes del pulso propio</h2><table class='paper-table'><tr><th>Instrumento</th><th>Variación entre muestras</th><th>Último negocio</th></tr>{proxy_rows}</table><p class='paper-muted'>Indicador interno equiponderado; sirve para amplitud y contexto. No representa un índice oficial ni reemplaza precios ejecutables.</p></div><div class='paper-card'><h2>Indicadores INDEC / datos.gob.ar</h2><table class='paper-table'><tr><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Fecha</th><th>Fuente</th></tr>{values}</table></div><div class='paper-card'><h2>Inflación vs performance del bot</h2><table class='paper-table'><tr><th>Mes</th><th>Inflación mensual</th><th>PnL paper</th><th>Lectura</th></tr>{compare}</table></div><div class='paper-notice'>La comparación válida requiere rentabilidad porcentual del patrimonio PAPER y del pulso propio sobre períodos idénticos; se habilitará al completar el primer mes.</div>"
     return _document("Información financiera",_spot_warning(spot_state)+body,refresh=300)
 
 
@@ -2523,27 +2513,7 @@ def _trading_motor_summary():
         f"<b>Actualizado:</b> {_e(gdelt.get('refreshed_at', 'sin caché'))}</p>"
         "<p class='paper-muted'>Sin corrida registrada significa que no hay un run persistido; por sí solo no confirma si el scheduler está activo. El feed general permanece OFF intencionalmente. La evidencia estructurada es sólo contexto SHADOW/OBSERVE_ONLY: no bloquea, no cambia el tamaño y no autoriza órdenes.</p></div>"
     )
-    try:
-        import rc6_macro_risk_shadow
-        macro = rc6_macro_risk_shadow.collect()
-    except Exception as exc:
-        macro = {"state": "UNAVAILABLE", "reason": type(exc).__name__,
-                 "decision_effect": "OBSERVE_ONLY", "indicators": {}}
-    macro_indicators = macro.get("indicators") if isinstance(macro.get("indicators"), dict) else {}
-    macro_rows = "".join(
-        f"<li><b>{_e(name)}</b>: {_e(item.get('ultimo'))} · {_e(item.get('tendencia'))} · "
-        f"{_e(item.get('fecha_ultimo'))}</li>"
-        for name, item in sorted(macro_indicators.items())[:8]
-        if isinstance(item, dict)
-    ) or "<li>Sin series macro disponibles en caché local.</li>"
-    macro_html = (
-        "<div class='paper-card'><h3>Riesgo macro BCRA — SHADOW</h3>"
-        f"<p><b>Estado:</b> {_e(macro.get('state', 'UNAVAILABLE'))} · "
-        f"<b>Indicadores:</b> {_e(len(macro_indicators))}</p>"
-        f"<ul>{macro_rows}</ul>"
-        "<p class='paper-muted'>Lee la caché local sólo en modo lectura. Es contexto explicable: "
-        "no bloquea, no cambia tamaño y no habilita órdenes.</p></div>"
-    )
+    macro_html = ""
     return (
         "<div class='paper-card'><h2>Motor de trading — actividad de hoy</h2>"
         f"<p><b>{open_count}</b> abiertas · <b>{closed_count}</b> cerradas hoy, en todas las familias con actividad PAPER persistida.</p>"
@@ -2659,7 +2629,7 @@ def trading_page(section=''):
           "<p><b>Velas e históricos:</b> se calculan con protección anti-lookahead "
           "(barra conocida y cerrada antes de la decisión). Su delta y decisión contrafactual "
           "quedan en SHADOW: hoy no cambian BUY/HOLD ni tamaño.</p>"
-          "<p><b>Contexto BCRA y GDELT:</b> se lee exclusivamente de caché local para candidatos "
+          "<p><b>Contexto externo histórico:</b> sólo se conserva evidencia persistida para candidatos "
           "base BUY. Es OBSERVE_ONLY: no bloquea, no cambia tamaño y no consulta red durante rueda.</p>"
           "<p><b>Salida simulada:</b> el supervisor compara libro fresco con Stop y Take Profit; "
           "también aplica End of Day y Max Hold según la política vigente. Cada salida exige "
