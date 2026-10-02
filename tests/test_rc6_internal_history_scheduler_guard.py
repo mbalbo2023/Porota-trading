@@ -30,8 +30,8 @@ def test_internal_scheduler_does_not_register_historical_write_jobs():
 
     for required_id in (
         "maintenance_news_scan",
-        "maintenance_gdelt_shadow",
         "maintenance_action4_audit",
         "maintenance_validation_projection",
     ):
         assert f'id="{required_id}"' in source
+    assert 'maintenance_gdelt_shadow' not in source
