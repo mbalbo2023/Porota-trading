@@ -1,0 +1,110 @@
+name: RC6 PAUSED_EXPLICIT Change Review Audit 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-paused-explicit-20261002]
+    paths: ['.github/workflows/rc6-paused-explicit-change-review-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Review-required correlation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/change_review_audit.json <<'PY'
+          import sqlite3,json,collections,datetime,statistics
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=8);c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on");c.execute("pragma busy_timeout=3000")
+          paused=[tuple(r) for r in c.execute("""SELECT r.ticker,r.instrument_type,r.market,r.currency,r.settlement
+            FROM candidate_identity_v2 r
+            JOIN financial_instrument_catalog f
+              ON f.ticker=r.ticker AND f.instrument_type=r.instrument_type AND f.market=r.market
+             AND f.currency=r.currency AND f.settlement=r.settlement
+            WHERE upper(r.status)='PAUSED_EXPLICIT'
+              AND f.capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED'""")]
+          keys=set(paused)
+          changes=[dict(r) for r in c.execute("""SELECT * FROM contract_evidence_v2_changes
+            WHERE status='CHANGED_REVIEW_REQUIRED'""")]
+          matched=[]
+          for r in changes:
+            k=tuple(str(r.get(x) or "").strip() for x in ("ticker","family","market","currency","settlement"))
+            if k in keys: matched.append(r)
+          by_key=collections.defaultdict(list)
+          for r in matched:
+            k=tuple(str(r.get(x) or "").strip() for x in ("ticker","family","market","currency","settlement"))
+            by_key[k].append(r)
+          missing=[k for k in keys if k not in by_key]
+          source=collections.Counter(str(r.get("source_class") or "UNKNOWN") for r in matched)
+          family=collections.Counter(str(r.get("family") or "UNKNOWN") for r in matched)
+          detail=collections.Counter(str(r.get("detail") or "") for r in matched)
+          per_identity=collections.Counter(len(v) for v in by_key.values())
+          latest=[]
+          now=datetime.datetime.now(datetime.timezone.utc)
+          samples=[]
+          for k,rows in by_key.items():
+            rows=sorted(rows,key=lambda r:str(r.get("detected_at") or ""))
+            r=rows[-1]
+            try:
+              at=datetime.datetime.fromisoformat(str(r["detected_at"]).replace("Z","+00:00"))
+              if at.tzinfo is None: at=at.replace(tzinfo=datetime.timezone.utc)
+              latest.append((now-at.astimezone(datetime.timezone.utc)).total_seconds()/3600)
+            except: pass
+            if len(samples)<20:
+              samples.append({"identity":k,"change_count":len(rows),"latest":r})
+          def st(v):
+            if not v:return None
+            return {"n":len(v),"min_h":round(min(v),2),"median_h":round(statistics.median(v),2),"max_h":round(max(v),2)}
+          out={
+            "schema":"POROTA_RC6_PAUSED_EXPLICIT_CHANGE_REVIEW_AUDIT_V1",
+            "read_only":True,
+            "paused_review_required_identities":len(keys),
+            "matched_change_rows":len(matched),
+            "matched_distinct_identities":len(by_key),
+            "missing_change_identity_count":len(missing),
+            "change_rows_per_identity_distribution":{str(k):v for k,v in sorted(per_identity.items())},
+            "source_class_counts":dict(source.most_common()),
+            "family_change_row_counts":dict(family.most_common()),
+            "detail_counts":dict(detail.most_common(50)),
+            "latest_change_age_hours":st(latest),
+            "samples":samples,
+          }
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          python3 - <<'PY' > evidence/change_review_summary.txt
+          import json
+          x=json.load(open("evidence/change_review_audit.json"))
+          for k,v in x.items():
+            if k!="samples": print(k.upper()+"="+json.dumps(v,ensure_ascii=False,sort_keys=True))
+          print("CHANGE_REVIEW_READONLY_AUDIT=GREEN")
+          PY
+          cat evidence/change_review_summary.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-paused-explicit-change-review-20261002
+          path: evidence/
+          retention-days: 30
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
