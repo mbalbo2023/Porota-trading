@@ -1,0 +1,263 @@
+name: RC6 Handoff RCA Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-handoff-rca-20261002]
+    paths:
+      - '.github/workflows/rc6-handoff-rca-readonly-20261002.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Contract evidence hash RCA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/contract_hash_rca.json <<'PY'
+          import sqlite3,json,hashlib,collections
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          PROV={
+            "provider_timestamp","capture_timestamp","freshness_basis",
+            "derivation_rule","confidence","evidence_class","source_job",
+            "source_route","evidence_scope","readiness_guard","semantic_guard",
+            "metadata_source","quantity_terms_source","provider_currency",
+            "fund_description","iol_operable_observed",
+          }
+          def norm(v): return str(v or "").strip().upper()
+          def canon(v):
+              return json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str)
+          def digest(v): return hashlib.sha256(canon(v).encode()).hexdigest()
+          def strip_prov(v):
+              if not isinstance(v,dict): return v
+              return {k:val for k,val in v.items() if k not in PROV}
+          def leaf_diffs(a,b,prefix=""):
+              if isinstance(a,dict) and isinstance(b,dict):
+                  out=[]
+                  for k in sorted(set(a)|set(b)):
+                      p=(prefix+"."+str(k)).strip(".")
+                      if k not in a or k not in b:
+                          out.append(p); continue
+                      out.extend(leaf_diffs(a[k],b[k],p))
+                  return out
+              if isinstance(a,list) and isinstance(b,list):
+                  if canon(a)==canon(b): return []
+                  return [prefix or "<root>"]
+              return [] if canon(a)==canon(b) else [prefix or "<root>"]
+
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=10)
+          c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on")
+          c.execute("pragma busy_timeout=5000")
+
+          paused=[tuple(norm(x) for x in r) for r in c.execute("""
+            SELECT r.ticker,r.instrument_type,r.market,r.currency,r.settlement
+            FROM candidate_identity_v2 r
+            JOIN financial_instrument_catalog f
+              ON f.ticker=r.ticker AND f.instrument_type=r.instrument_type
+             AND f.market=r.market AND f.currency=r.currency AND f.settlement=r.settlement
+            WHERE upper(r.status)='PAUSED_EXPLICIT'
+              AND f.capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED'
+          """)]
+          keys=set(paused)
+
+          groups=collections.defaultdict(list)
+          for r in c.execute("""
+            SELECT snapshot_id,family,ticker,market,currency,settlement,source_class,
+                   observed_at,evidence_hash,evidence_json
+            FROM contract_evidence_v2_snapshots
+            WHERE source_class='IOL_STRUCTURED_API'
+            ORDER BY family,ticker,market,currency,settlement,observed_at,snapshot_id
+          """):
+              k=(norm(r["ticker"]),norm(r["family"]),norm(r["market"]),
+                 norm(r["currency"]),norm(r["settlement"]))
+              if k not in keys: continue
+              try: payload=json.loads(r["evidence_json"] or "{}")
+              except Exception: payload={}
+              groups[k].append({
+                "snapshot_id":r["snapshot_id"],"observed_at":r["observed_at"],
+                "evidence_hash":r["evidence_hash"],"payload":payload,
+                "material_hash":digest(strip_prov(payload)),
+              })
+
+          changed_top=collections.Counter()
+          changed_leaf=collections.Counter()
+          transition_classes=collections.Counter()
+          full_hash_card=collections.Counter()
+          material_hash_card=collections.Counter()
+          prov_only_ids=[]
+          material_changed_ids=[]
+          stable_ids=[]
+          samples=[]
+
+          for k,rows in sorted(groups.items()):
+              full={x["evidence_hash"] for x in rows}
+              mat={x["material_hash"] for x in rows}
+              full_hash_card[len(full)]+=1
+              material_hash_card[len(mat)]+=1
+              saw_change=False; material_change=False; all_prov_only=True
+              for a,b in zip(rows,rows[1:]):
+                  if a["evidence_hash"]==b["evidence_hash"]: continue
+                  saw_change=True
+                  paths=leaf_diffs(a["payload"],b["payload"])
+                  tops={p.split(".",1)[0] for p in paths}
+                  for x in tops: changed_top[x]+=1
+                  for x in paths: changed_leaf[x]+=1
+                  prov_only=bool(tops) and tops.issubset(PROV)
+                  transition_classes["PROVENANCE_ONLY" if prov_only else "MATERIAL_OR_UNKNOWN"]+=1
+                  if not prov_only:
+                      all_prov_only=False; material_change=True
+                  if len(samples)<30:
+                      samples.append({
+                        "identity":k,
+                        "from_snapshot":a["snapshot_id"],"to_snapshot":b["snapshot_id"],
+                        "from_at":a["observed_at"],"to_at":b["observed_at"],
+                        "changed_top":sorted(tops),"changed_paths":paths[:50],
+                        "provenance_only":prov_only,
+                        "material_hash_changed":a["material_hash"]!=b["material_hash"],
+                      })
+              if saw_change and all_prov_only:
+                  prov_only_ids.append(k)
+              if material_change or len(mat)>1:
+                  material_changed_ids.append(k)
+              elif len(full)>1:
+                  stable_ids.append(k)
+
+          missing=sorted(keys-set(groups))
+          out={
+            "schema":"POROTA_RC6_CONTRACT_HASH_RCA_V1",
+            "read_only":True,
+            "paused_review_required_count":len(keys),
+            "iol_snapshot_identity_count":len(groups),
+            "missing_iol_snapshot_identity_count":len(missing),
+            "missing_iol_snapshot_identities":missing[:50],
+            "identities_with_only_provenance_hash_churn":len(set(prov_only_ids)),
+            "identities_with_material_hash_change":len(set(material_changed_ids)),
+            "identities_full_hash_changed_but_material_stable":len(set(stable_ids)),
+            "full_hash_cardinality_distribution":dict(sorted(full_hash_card.items())),
+            "material_hash_cardinality_distribution":dict(sorted(material_hash_card.items())),
+            "transition_classes":dict(transition_classes),
+            "top_changed_top_level_fields":changed_top.most_common(50),
+            "top_changed_leaf_paths":changed_leaf.most_common(80),
+            "samples":samples,
+          }
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+
+          python3 - <<'PY' > evidence/contract_hash_summary.txt
+          import json
+          x=json.load(open("evidence/contract_hash_rca.json"))
+          for k in (
+            "paused_review_required_count","iol_snapshot_identity_count",
+            "missing_iol_snapshot_identity_count",
+            "identities_with_only_provenance_hash_churn",
+            "identities_with_material_hash_change",
+            "identities_full_hash_changed_but_material_stable",
+            "full_hash_cardinality_distribution",
+            "material_hash_cardinality_distribution","transition_classes",
+            "top_changed_top_level_fields","top_changed_leaf_paths"
+          ):
+              print(k.upper()+"="+json.dumps(x.get(k),ensure_ascii=False,sort_keys=True))
+          print("CONTRACT_HASH_RCA_READONLY=GREEN")
+          PY
+          cat evidence/contract_hash_summary.txt
+
+      - name: Failed unit RCA and runtime provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime_rca.txt <<'REMOTE'
+          set -u
+          echo "NOW_UTC=$(date -u +%FT%TZ)"
+          echo "NOW_ART=$(TZ=America/Argentina/Buenos_Aires date +%FT%T%z)"
+          echo "HOST_HEAD=$(cd /opt/porota-trading && git rev-parse HEAD 2>/dev/null || true)"
+          echo "HOST_STATUS_COUNTS_BEGIN"
+          cd /opt/porota-trading || exit 1
+          git status --porcelain=v1 | awk '
+            BEGIN{m=0;u=0}
+            /^\?\?/{u++;next}
+            {m++}
+            END{print "modified_or_deleted="m;print "untracked="u;print "total="m+u}'
+          echo "HOST_STATUS_COUNTS_END"
+
+          echo "CONTAINER_PROVENANCE_BEGIN"
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            sudo -n docker inspect -f '{{.Name}}|image={{.Image}}|status={{.State.Status}}|health={{if .State.Health}}{{.State.Health.Status}}{{else}}NA{{end}}|mounts={{range .Mounts}}{{.Source}}:{{.Destination}};{{end}}' "$c" || true
+          done
+          echo "CONTAINER_PROVENANCE_END"
+
+          echo "FAILED_UNIT_RCA_BEGIN"
+          for u in porota-gdelt-event-risk-rc6.service porota-full-db-integrity-rc6.service porota-scheduler-export-hf6.service porota-contract-evidence-weekend-backfill-rc6.service; do
+            echo "===== UNIT=$u ====="
+            sudo -n systemctl show "$u" -p ActiveState -p SubState -p Result -p ExecMainCode -p ExecMainStatus -p TimeoutStartUSec -p ExecStart -p FragmentPath --no-pager || true
+            echo "--- UNIT_FILE ---"
+            sudo -n systemctl cat "$u" --no-pager || true
+            echo "--- JOURNAL_LAST_120 ---"
+            sudo -n journalctl -u "$u" -n 120 --no-pager -o short-iso || true
+          done
+          echo "FAILED_UNIT_RCA_END"
+
+          echo "SAFETY_BEGIN"
+          python3 - <<'PY2'
+          import sqlite3,json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on")
+          cols={r[1] for r in c.execute("pragma table_info(observer_state)")}
+          wanted=[x for x in ("mode","real_orders_sent","process_state","session_state","ppi_auth","heartbeat_at") if x in cols]
+          r=c.execute("select "+",".join(wanted)+" from observer_state where id=1").fetchone()
+          print("OBSERVER="+json.dumps(dict(r) if r else {},sort_keys=True,default=str))
+          for t in ("intraday_scalping_worker_state","paper_caucion_cash_sweep_state","paper_caucion_cash_sweep_attempts"):
+              try:
+                  rows=c.execute(f'select * from "{t}" order by rowid desc limit 5').fetchall()
+                  print("DETAIL|"+t+"|"+json.dumps([dict(x) for x in rows],sort_keys=True,default=str))
+              except Exception as e:
+                  print("DETAIL_ERR|"+t+"|"+type(e).__name__+":"+str(e))
+          c.close()
+          PY2
+          echo "PPI_WATCH_BEGIN"
+          sudo -n systemctl list-units --all --no-pager | grep -Ei 'ppi.*watch|watch.*ppi' || true
+          echo "PPI_WATCH_END"
+          echo "SAFETY_END"
+          REMOTE
+
+          grep -E 'NOW_|HOST_HEAD|modified_or_deleted|untracked|image=|===== UNIT=|ActiveState=|SubState=|Result=|ExecMainStatus=|TimeoutStartUSec=|ExecStart=|FragmentPath=|Traceback|ERROR|Error|Exception|timed out|timeout|No such file|usage:|OBSERVER=|DETAIL\||PPI_WATCH' evidence/runtime_rca.txt | tail -400 || true
+          echo "RUNTIME_RCA_READONLY=GREEN"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-handoff-rca-readonly-20261002
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
