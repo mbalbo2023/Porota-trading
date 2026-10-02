@@ -1,0 +1,70 @@
+name: RC6 deployment progress READ ONLY 20261002
+on:
+  push:
+    branches: [audit/rc6-unified-review-20261002]
+    paths: [.github/workflows/rc6-unified-progress-readonly-20261002.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-progress-readonly-20261002
+  cancel-in-progress: false
+jobs:
+  progress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Lightweight read-only progress, no final validation claim
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 90s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee evidence/progress-readonly.txt
+          set -Eeuo pipefail
+          echo "PROGRESS_ONLY=true;AT=$(date -u +%FT%TZ);FINAL_RUNTIME_VALIDATION=NOT_CLAIMED"
+          uptime
+          df -PB1 / | tail -1
+          free -m | head -3
+          for name in porota_production_dashboard porota_production_observer porota_critical_approval_rc6; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}}|STATE={{.State.Status}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}|STARTED={{.State.StartedAt}}|IMAGE={{.Image}}|COMMIT={{index .Config.Labels "porota.commit"}}' "$name"
+          done
+          systemctl list-jobs --no-legend --no-pager || true
+          sudo -n timeout 10 python3 - <<'PY'
+          import json,pathlib,sqlite3,time
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=2)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=1000')
+          deadline=time.monotonic()+3
+          c.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
+          rows=[dict(r) for r in c.execute('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1')]
+          c.close()
+          print('OBSERVER='+json.dumps(rows,sort_keys=True))
+          assert len(rows)==1 and rows[0]['mode']=='PRODUCTION_PAPER' and rows[0]['real_orders_sent']==0
+          p=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          if p.is_file():
+              data=json.loads(p.read_text())
+              keys=('candidate_sha','deploy_sha','image_id','validation_status','recorded_at')
+              print('LAST_FINALIZED_STATE='+json.dumps({k:data[k] for k in keys if k in data},sort_keys=True))
+          PY
+          echo 'PROGRESS_READ_ONLY_FINISHED=true;RUNTIME_MUTATIONS=NONE'
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-progress-readonly-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
