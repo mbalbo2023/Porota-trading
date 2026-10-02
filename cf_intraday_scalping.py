@@ -435,7 +435,7 @@ def run_worker(store, stop, *, clock_fn):
     interval = max(60, int(os.getenv(
         "PAPER_INTRADAY_SCAN_SECONDS", str(DEFAULT_INTRADAY_SCAN_SECONDS))))
     batch_limit = max(8, min(40, int(os.getenv(
-        "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT))))
+        "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT)))))
     # Each rotating batch gets a second, fresh DB-selected pass on the next
     # cycle before the cursor advances. This makes PENDING_LIVE_CONFIRMATION a
     # bounded warm-up state instead of waiting for a full-universe rotation.
