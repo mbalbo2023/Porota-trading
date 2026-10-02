@@ -1,0 +1,118 @@
+name: RC6 Exit Book Error Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-exit-book-errors-20261002]
+    paths: ['.github/workflows/rc6-exit-book-error-readonly-20261002.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Correlate exit reader errors
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 75s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/exit_book_correlation.json <<'PY'
+          import sqlite3,json,datetime,collections
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5)
+          c.row_factory=sqlite3.Row;c.execute("pragma query_only=on");c.execute("pragma busy_timeout=3000")
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def rows(sql,p=()):
+              try:return [dict(r) for r in c.execute(sql,p)]
+              except Exception as e:return [{"_error":type(e).__name__+":"+str(e)}]
+          events=[]
+          if "paper_events" in tabs:
+              events=rows("""select * from paper_events
+                where event_type in ('EXIT_BOOK_ERROR','EXIT_READER_LOGIN_ERROR','EXIT_READER_SESSION_INVALID')
+                   or detail like '%OperationalError%'
+                order by event_at desc limit 200""")
+          http=[]
+          if "http_audit" in tabs:
+              http=rows("""select * from http_audit where at >= datetime('now','-6 hours')
+                           order by at desc limit 400""")
+          runs=[]
+          if "contract_evidence_v2_runs" in tabs:
+              runs=rows("""select run_id,job_key,started_at,finished_at,state,records,changed,conflicts,detail
+                           from contract_evidence_v2_runs
+                           where started_at >= datetime('now','-6 hours')
+                           order by started_at desc limit 200""")
+          reader=rows("select * from paper_exit_reader_state where id=1") if "paper_exit_reader_state" in tabs else []
+          supervisor=rows("select * from paper_supervisor_state where id=1") if "paper_supervisor_state" in tabs else []
+          locks=rows("pragma busy_timeout")
+          journal=rows("pragma journal_mode")
+          print(json.dumps({"events":events,"http":http,"contract_runs":runs,
+                            "reader":reader,"supervisor":supervisor,
+                            "busy_timeout":locks,"journal_mode":journal},
+                           ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          python3 - <<'PY' | tee evidence/exit_book_summary.txt
+          import json,collections,datetime
+          x=json.load(open("evidence/exit_book_correlation.json"))
+          es=x.get("events",[])
+          print("EXIT_ERROR_COUNT="+str(len(es)))
+          print("EXIT_ERROR_TYPES="+json.dumps(collections.Counter((e.get("event_type"),e.get("detail")) for e in es).most_common(30),ensure_ascii=False))
+          print("READER="+json.dumps(x.get("reader"),ensure_ascii=False,sort_keys=True))
+          print("SUPERVISOR="+json.dumps(x.get("supervisor"),ensure_ascii=False,sort_keys=True))
+          print("JOURNAL="+json.dumps(x.get("journal_mode"),ensure_ascii=False))
+          print("BUSY_TIMEOUT="+json.dumps(x.get("busy_timeout"),ensure_ascii=False))
+          # Coarse temporal correlation only; no causal claim.
+          runs=x.get("contract_runs",[])
+          if es and runs:
+              def ts(v):
+                  try:return datetime.datetime.fromisoformat(str(v).replace("Z","+00:00"))
+                  except:return None
+              pairs=[]
+              for e in es[:80]:
+                  et=ts(e.get("event_at"))
+                  if not et: continue
+                  near=[]
+                  for r in runs:
+                      rt=ts(r.get("started_at"))
+                      if rt and abs((et-rt).total_seconds()) <= 120:
+                          near.append({"job":r.get("job_key"),"state":r.get("state"),"started_at":r.get("started_at")})
+                  if near:pairs.append({"event_at":e.get("event_at"),"detail":e.get("detail"),"near_runs":near})
+              print("NEAR_CONTRACT_RUNS="+json.dumps(pairs[:30],ensure_ascii=False,sort_keys=True))
+          print("EXIT_BOOK_CORRELATION_READONLY=GREEN")
+          PY
+      - name: Runtime read-only logs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 45s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime_logs.txt <<'REMOTE'
+          set -u
+          echo "CONTAINER"
+          sudo -n docker inspect -f '{{.State.Status}}|{{.RestartCount}}|{{.Image}}' porota_production_observer || true
+          echo "RECENT_EXIT_EVENTS_FROM_LOGS"
+          sudo -n docker logs --since 6h porota_production_observer 2>&1 | grep -Ei 'EXIT_BOOK|OperationalError|database is locked|database table is locked|SQLITE_BUSY|SQLITE_LOCKED|exit_reader' | tail -200 || true
+          REMOTE
+          cat evidence/runtime_logs.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-exit-book-error-readonly-20261002
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
