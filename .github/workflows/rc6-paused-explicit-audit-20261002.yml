@@ -1,0 +1,322 @@
+name: RC6 PAUSED_EXPLICIT Readonly Audit 2026-10-02
+
+on:
+  push:
+    branches:
+      - audit/rc6-paused-explicit-20261002
+    paths:
+      - '.github/workflows/rc6-paused-explicit-audit-20261002.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Source semantics scan
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          {
+            echo "SOURCE_SHA=$(git rev-parse HEAD)"
+            echo "BASE_PARENT=$(git rev-parse HEAD~1 2>/dev/null || true)"
+            echo "=== PAUSED_EXPLICIT HITS ==="
+            grep -RIn --exclude-dir=.git --exclude='*.db*' --exclude='*.json' \
+              -E 'PAUSED_EXPLICIT|OBSERVED_SHADOW|candidate_identity_v2' . || true
+            echo "=== PAPER/SHADOW READINESS SEMANTICS ==="
+            grep -RIn --exclude-dir=.git \
+              -E 'PAPER_SIMULATABLE_STATES|READY_PAPER|paper_auto_enabled|can_simulate|PAUSED' \
+              rc6_family_readiness.py rc6_paper_family_lifecycle.py scripts tests 2>/dev/null | head -500 || true
+          } > evidence/source_semantics.txt
+          cat evidence/source_semantics.txt
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Runtime PAUSED_EXPLICIT matrix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/paused_explicit_matrix.json <<'PY'
+          import sqlite3, json, os, sys, collections, datetime
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+
+          def cols(c, t):
+              return [r[1] for r in c.execute(f'PRAGMA table_info("{t}")')]
+
+          def table_exists(c,t):
+              return c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone() is not None
+
+          def pick(columns, names):
+              low={x.lower():x for x in columns}
+              for n in names:
+                  if n.lower() in low: return low[n.lower()]
+              return None
+
+          def norm(v):
+              return "" if v is None else str(v).strip()
+
+          def maybe_json(v):
+              if not isinstance(v,str): return v
+              s=v.strip()
+              if not s or s[0] not in "[{": return v
+              try: return json.loads(s)
+              except Exception: return v
+
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=8)
+          c.row_factory=sqlite3.Row
+          c.execute("PRAGMA query_only=ON")
+          c.execute("PRAGMA busy_timeout=3000")
+          tables={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          required=["candidate_identity_v2","financial_instrument_catalog"]
+          for t in required:
+              if t not in tables:
+                  raise SystemExit(f"MISSING_REQUIRED_TABLE:{t}")
+
+          cc=cols(c,"candidate_identity_v2")
+          fc=cols(c,"financial_instrument_catalog")
+          status_col=pick(cc,["status","readiness","state","paper_status"])
+          cand_symbol=pick(cc,["symbol","ticker","instrument","code"])
+          cand_family=pick(cc,["instrument_type","family","asset_type"])
+          cand_market=pick(cc,["market","market_code"])
+          cand_settle=pick(cc,["settlement","term","settlement_term"])
+          cat_symbol=pick(fc,["ticker","symbol","instrument","code"])
+          cat_family=pick(fc,["instrument_type","family","asset_type"])
+          cat_market=pick(fc,["market","market_code"])
+          cat_settle=pick(fc,["settlement","term","settlement_term"])
+          cat_capability=pick(fc,["capability","paper_capability","execution_capability"])
+          cat_status=pick(fc,["status","state"])
+          if not status_col:
+              raise SystemExit("NO_STATUS_COLUMN")
+          if not cand_symbol:
+              raise SystemExit("NO_CANDIDATE_SYMBOL_COLUMN")
+          if not cat_symbol:
+              raise SystemExit("NO_CATALOG_SYMBOL_COLUMN")
+
+          all_status=[list(r) for r in c.execute(
+              f'SELECT "{status_col}",COUNT(*) n FROM candidate_identity_v2 GROUP BY "{status_col}" ORDER BY n DESC'
+          )]
+          paused=[dict(r) for r in c.execute(
+              f'SELECT * FROM candidate_identity_v2 WHERE UPPER(COALESCE("{status_col}",""))="PAUSED_EXPLICIT"'
+          )]
+
+          # Catalog lookup by normalized symbol, preserving all matches to expose ambiguity.
+          cat_rows=[dict(r) for r in c.execute('SELECT * FROM financial_instrument_catalog')]
+          by_sym=collections.defaultdict(list)
+          for r in cat_rows:
+              by_sym[norm(r.get(cat_symbol)).upper()].append(r)
+
+          # Candidate fields likely to carry the actual pause cause.
+          reason_fields=[
+              x for x in cc if any(k in x.lower() for k in (
+                  "reason","code","pause","block","policy","capab","executor",
+                  "lifecycle","contract","evidence","source","detail","metadata",
+                  "ready","simulate","operat","authority","provenance"
+              ))
+          ]
+          identity_fields=[x for x in [cand_symbol,cand_family,cand_market,cand_settle] if x]
+          extra_fields=[]
+          for x in reason_fields:
+              if x not in identity_fields and x != status_col:
+                  extra_fields.append(x)
+
+          family_counts=collections.Counter()
+          reason_counts={field:collections.Counter() for field in extra_fields}
+          capability_counts=collections.Counter()
+          catalog_status_counts=collections.Counter()
+          ambiguous_catalog=0
+          no_catalog=0
+          family_reason=collections.defaultdict(collections.Counter)
+          matrix=[]
+
+          for r in paused:
+              sym=norm(r.get(cand_symbol)).upper()
+              matches=by_sym.get(sym,[])
+              if not matches:
+                  no_catalog+=1
+              if len(matches)>1:
+                  ambiguous_catalog+=1
+
+              # Prefer exact market/settlement match when candidate supplies them.
+              m=norm(r.get(cand_market)).upper() if cand_market else ""
+              s=norm(r.get(cand_settle)).upper() if cand_settle else ""
+              chosen=None
+              exact=[]
+              for cr in matches:
+                  cm=norm(cr.get(cat_market)).upper() if cat_market else ""
+                  cs=norm(cr.get(cat_settle)).upper() if cat_settle else ""
+                  if (not m or not cm or m==cm) and (not s or not cs or s==cs):
+                      exact.append(cr)
+              if len(exact)==1: chosen=exact[0]
+              elif len(matches)==1: chosen=matches[0]
+              elif exact: chosen=exact[0]
+
+              fam=norm(r.get(cand_family)).upper() if cand_family else ""
+              if not fam and chosen and cat_family:
+                  fam=norm(chosen.get(cat_family)).upper()
+              fam=fam or "UNKNOWN"
+              family_counts[fam]+=1
+
+              cap=norm(chosen.get(cat_capability)).upper() if chosen and cat_capability else ""
+              cst=norm(chosen.get(cat_status)).upper() if chosen and cat_status else ""
+              capability_counts[cap or "UNKNOWN"]+=1
+              catalog_status_counts[cst or "UNKNOWN"]+=1
+
+              reasons={}
+              for field in extra_fields:
+                  val=maybe_json(r.get(field))
+                  if val in (None,"",[],{}): continue
+                  reasons[field]=val
+                  key=json.dumps(val,sort_keys=True,ensure_ascii=False,default=str) if isinstance(val,(dict,list)) else str(val)
+                  reason_counts[field][key]+=1
+                  family_reason[fam][f"{field}={key}"]+=1
+
+              matrix.append({
+                  "symbol":sym,
+                  "family":fam,
+                  "market":m,
+                  "settlement":s,
+                  "candidate_status":"PAUSED_EXPLICIT",
+                  "candidate_reasons":reasons,
+                  "catalog_match_count":len(matches),
+                  "catalog_exact_match_count":len(exact),
+                  "catalog_capability":cap or None,
+                  "catalog_status":cst or None,
+                  "catalog_family":norm(chosen.get(cat_family)).upper() if chosen and cat_family else None,
+                  "catalog_id":chosen.get("id") if chosen and "id" in chosen else None,
+              })
+
+          # Related table schemas and selected status distributions.
+          related={}
+          for t in sorted(tables):
+              tl=t.lower()
+              if any(k in tl for k in ("contract","evidence","readiness","candidate","instrument_catalog","executor","lifecycle")):
+                  try:
+                      tc=cols(c,t)
+                      entry={"columns":tc}
+                      sc=pick(tc,["status","state","readiness","capability"])
+                      if sc:
+                          try:
+                              entry["status_counts"]=[list(x) for x in c.execute(
+                                  f'SELECT "{sc}",COUNT(*) n FROM "{t}" GROUP BY "{sc}" ORDER BY n DESC LIMIT 50'
+                              )]
+                          except Exception:
+                              pass
+                      related[t]=entry
+                  except Exception:
+                      pass
+
+          # Candidate schema non-null/value cardinality for reason-like fields.
+          field_profiles={}
+          for field in extra_fields:
+              try:
+                  vals=c.execute(
+                      f'SELECT "{field}",COUNT(*) n FROM candidate_identity_v2 '
+                      f'WHERE UPPER(COALESCE("{status_col}",""))="PAUSED_EXPLICIT" '
+                      f'GROUP BY "{field}" ORDER BY n DESC LIMIT 100'
+                  ).fetchall()
+                  field_profiles[field]=[list(x) for x in vals]
+              except Exception as e:
+                  field_profiles[field]={"error":type(e).__name__}
+
+          out={
+              "schema":"POROTA_RC6_PAUSED_EXPLICIT_AUDIT_V1",
+              "generated_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "read_only":True,
+              "db":DB,
+              "candidate_identity_v2":{
+                  "columns":cc,
+                  "status_column":status_col,
+                  "symbol_column":cand_symbol,
+                  "family_column":cand_family,
+                  "market_column":cand_market,
+                  "settlement_column":cand_settle,
+                  "all_status_counts":all_status,
+                  "paused_explicit_count":len(paused),
+                  "reason_like_fields":extra_fields,
+                  "field_profiles":field_profiles,
+              },
+              "financial_instrument_catalog":{
+                  "columns":fc,
+                  "symbol_column":cat_symbol,
+                  "family_column":cat_family,
+                  "market_column":cat_market,
+                  "settlement_column":cat_settle,
+                  "capability_column":cat_capability,
+                  "status_column":cat_status,
+                  "row_count":len(cat_rows),
+              },
+              "paused_summary":{
+                  "by_family":dict(family_counts.most_common()),
+                  "catalog_capability":dict(capability_counts.most_common()),
+                  "catalog_status":dict(catalog_status_counts.most_common()),
+                  "no_catalog_match":no_catalog,
+                  "ambiguous_catalog_symbol":ambiguous_catalog,
+                  "reason_counts":{k:dict(v.most_common(100)) for k,v in reason_counts.items()},
+                  "family_reason_top":{k:dict(v.most_common(30)) for k,v in family_reason.items()},
+              },
+              "related_table_schemas":related,
+              "matrix":matrix,
+          }
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+
+          python3 - <<'PY' > evidence/paused_explicit_summary.txt
+          import json
+          x=json.load(open("evidence/paused_explicit_matrix.json"))
+          c=x["candidate_identity_v2"]
+          s=x["paused_summary"]
+          print("PAUSED_EXPLICIT_COUNT="+str(c["paused_explicit_count"]))
+          print("STATUS_COUNTS="+json.dumps(c["all_status_counts"],ensure_ascii=False))
+          print("BY_FAMILY="+json.dumps(s["by_family"],ensure_ascii=False,sort_keys=True))
+          print("CATALOG_CAPABILITY="+json.dumps(s["catalog_capability"],ensure_ascii=False,sort_keys=True))
+          print("CATALOG_STATUS="+json.dumps(s["catalog_status"],ensure_ascii=False,sort_keys=True))
+          print("NO_CATALOG_MATCH="+str(s["no_catalog_match"]))
+          print("AMBIGUOUS_CATALOG_SYMBOL="+str(s["ambiguous_catalog_symbol"]))
+          print("REASON_FIELDS="+json.dumps(c["reason_like_fields"],ensure_ascii=False))
+          for k,v in s["reason_counts"].items():
+              print("REASON_COUNTS|"+k+"|"+json.dumps(v,ensure_ascii=False,sort_keys=True))
+          for k,v in s["family_reason_top"].items():
+              print("FAMILY_REASON_TOP|"+k+"|"+json.dumps(v,ensure_ascii=False,sort_keys=True))
+          print("RUNTIME_READONLY_AUDIT=GREEN")
+          PY
+          cat evidence/paused_explicit_summary.txt
+
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-paused-explicit-audit-20261002
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/key"
