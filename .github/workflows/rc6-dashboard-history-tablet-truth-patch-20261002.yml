@@ -274,7 +274,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q             tests/test_rc6_decision_evidence_view.py             tests/test_dashboard_decision_evidence_rc6.py             tests/test_ws_dash_07_history_truth.py             tests/test_dashboard_truth_projection_rc6.py
+          PYTHONPATH=. pytest -q             tests/test_rc6_decision_evidence_view.py             tests/test_dashboard_decision_evidence_rc6.py             tests/test_ws_dash_07_history_truth.py             tests/test_dashboard_truth_layer_rc6.py
           python - <<'PY'
           import bg_paper_dashboard as d
           html=d.TABLE_A11Y_SCRIPT
