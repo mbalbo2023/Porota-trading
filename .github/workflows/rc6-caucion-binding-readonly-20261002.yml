@@ -1,0 +1,62 @@
+name: RC6 Caucion Binding Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-caucion-binding-20261002]
+    paths: ['.github/workflows/rc6-caucion-binding-readonly-20261002.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Caucion identity/cache audit
+        shell: bash
+        run: |
+          timeout 60s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' <<'PY'
+          import sqlite3,json,os
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          cat=[]
+          for r in c.execute("""select ticker,instrument_type,market,currency,settlement,settlement_source,
+                                      description,last_seen_at,status,capability,metadata_json
+                               from financial_instrument_catalog
+                               where instrument_type='CAUCIONES'
+                               order by currency,ticker"""):
+              d=dict(r)
+              try:d["metadata"]=json.loads(d.pop("metadata_json") or "{}")
+              except:d["metadata"]={}
+              cat.append(d)
+          c.close()
+          candidates=[
+            "/opt/porota-trading/data/market/iol_family_reference_latest.json",
+            "/opt/porota-trading/data/iol_family_reference_latest.json",
+          ]
+          cache={}
+          for p in candidates:
+              if os.path.isfile(p):
+                  try:
+                      x=json.load(open(p))
+                      cache={"path":p,"schema":x.get("schema"),"refreshed_at":x.get("refreshed_at"),
+                             "cache_state":x.get("cache_state"),"section_states":x.get("section_states"),
+                             "section_observed_at":x.get("section_observed_at"),
+                             "cauciones":x.get("cauciones")}
+                      break
+                  except Exception as e: cache={"path":p,"error":type(e).__name__}
+          print(json.dumps({"catalog":cat,"iol_cache":cache},ensure_ascii=False,sort_keys=True,default=str))
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
