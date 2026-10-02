@@ -77,28 +77,28 @@ jobs:
           p=Path("rc6_contract_bridge.py")
           s=p.read_text(encoding="utf-8")
           old='''        "CAUCIONES": ("side", "start_date", "maturity_at", "quoted_at",
-                      "minimum_principal", "day_count_basis", "fee_payment",
-                      "annual_rate_fraction", "operable", "market_session_state"),'''
+                                "minimum_principal", "day_count_basis", "fee_payment",
+                                "annual_rate_fraction", "operable", "market_session_state"),'''
           new='''        "CAUCIONES": ("side", "term_days", "minimum_principal",
-                      "paper_principal_step", "day_count_basis", "fee_payment",
-                      "paper_fill_policy", "fee_authority"),'''
+                                "paper_principal_step", "day_count_basis", "fee_payment",
+                                "paper_fill_policy", "fee_authority"),'''
           if old in s: s=s.replace(old,new,1)
           elif new not in s: raise SystemExit("BRIDGE_CAUCION_REQUIRED_SOURCE_DRIFT")
           old='''    if family == "CAUCIONES":
-        published_depth = all(name in fields for name in ("available_principal", "principal_step"))
-        paper_fill = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
-                      and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
-        if not (published_depth or paper_fill):
-            errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_notional_cap",
-                           "MISSING:paper_principal_step"))'''
+                  published_depth = all(name in fields for name in ("available_principal", "principal_step"))
+                  paper_fill = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+                                and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
+                  if not (published_depth or paper_fill):
+                      errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_notional_cap",
+                                     "MISSING:paper_principal_step"))'''
           new='''    if family == "CAUCIONES":
-        published_depth = all(name in fields for name in ("available_principal", "principal_step"))
-        legacy_cap = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
-                      and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
-        live_book = (fields.get("paper_fill_policy") == "LIVE_PPI_BID_PARTICIPATION_CAP"
-                     and "paper_principal_step" in fields)
-        if not (published_depth or legacy_cap or live_book):
-            errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_principal_step"))'''
+                  published_depth = all(name in fields for name in ("available_principal", "principal_step"))
+                  legacy_cap = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+                                and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
+                  live_book = (fields.get("paper_fill_policy") == "LIVE_PPI_BID_PARTICIPATION_CAP"
+                               and "paper_principal_step" in fields)
+                  if not (published_depth or legacy_cap or live_book):
+                      errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_principal_step"))'''
           if old in s: s=s.replace(old,new,1)
           elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("BRIDGE_CAUCION_FILL_SOURCE_DRIFT")
           p.write_text(s,encoding="utf-8")
