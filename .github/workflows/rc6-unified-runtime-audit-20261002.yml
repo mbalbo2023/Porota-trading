@@ -1,0 +1,108 @@
+name: RC6 unified bounded runtime audit 20261002
+on:
+  push:
+    branches: [audit/rc6-unified-review-20261002]
+    paths: [.github/workflows/rc6-unified-runtime-audit-20261002.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-unified-readonly-audit-20261002
+  cancel-in-progress: false
+jobs:
+  readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Read-only runtime baseline
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=10s 240s ssh \
+            -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee evidence/runtime-readonly.txt
+          set -Eeuo pipefail
+          echo "AUDIT_PHASE=BASELINE;READ_ONLY=true;AT=$(date -u +%FT%TZ)"
+          df -PB1 / | tail -1
+          free -m | head -3
+          for name in porota_production_dashboard porota_production_observer porota_critical_approval_rc6; do
+            sudo -n docker inspect -f 'CONTAINER={{.Name}}|STATE={{.State.Status}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}|IMAGE={{.Image}}' "$name"
+          done
+          for unit in porota-gdelt-event-risk-rc6.timer porota-gdelt-event-risk-rc6.service porota-critical-approval-rc6.service porota-full-db-integrity-rc6.service scheduler-export-hf6.service contract-evidence-weekend-backfill-rc6.service; do
+            echo "UNIT=$unit"
+            systemctl show "$unit" --property=LoadState,ActiveState,SubState,Result,ExecMainStatus,UnitFileState --no-pager || true
+          done
+          echo 'PPI_WATCH_UNITS_BEGIN'
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo 'PPI_WATCH_UNITS_END'
+          sudo -n python3 - <<'PY'
+          import json, pathlib, sqlite3, time
+          from datetime import datetime,timezone
+          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
+          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=3)
+          c.row_factory=sqlite3.Row
+          c.execute('PRAGMA query_only=ON')
+          c.execute('PRAGMA busy_timeout=1500')
+          def query(sql):
+              deadline=time.monotonic()+5
+              c.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
+              try: return [dict(r) for r in c.execute(sql)]
+              finally: c.set_progress_handler(None,0)
+          tables={r['name'] for r in query("SELECT name FROM sqlite_master WHERE type='table'")}
+          state=query('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1')
+          print('OBSERVER='+json.dumps(state,sort_keys=True))
+          assert len(state)==1 and state[0]['mode']=='PRODUCTION_PAPER' and state[0]['real_orders_sent']==0
+          if 'candidate_identity_v2' in tables:
+              print('CANDIDATES='+json.dumps(query("SELECT upper(family) family,upper(status) status,can_simulate,COUNT(*) n FROM candidate_identity_v2 GROUP BY 1,2,3"),sort_keys=True))
+          print('CATALOG='+json.dumps(query('SELECT instrument_type,status,capability,COUNT(*) n FROM financial_instrument_catalog GROUP BY 1,2,3'),sort_keys=True))
+          for table in ('intraday_scalping_worker_state','paper_caucion_cash_sweep_state','paper_runtime_health','paper_exit_supervisor_state','paper_exit_reader_health'):
+              if table in tables:
+                  columns={r['name'] for r in query('PRAGMA table_info('+table+')')}
+                  safe=[x for x in ('id','heartbeat_at','state','code','reader_state','supervisor_state','successful','failed','real_orders_sent','routes_json') if x in columns]
+                  if safe: print(table.upper()+'='+json.dumps(query('SELECT '+','.join(safe)+' FROM '+table+' LIMIT 5'),sort_keys=True))
+          if 'paper_caucion_live_book' in tables:
+              print('CAUCION_BOOK='+json.dumps(query('SELECT source,state,COUNT(*) n,MAX(quoted_at) latest FROM paper_caucion_live_book GROUP BY 1,2'),sort_keys=True))
+          c.close()
+          path=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          if path.is_file():
+              data=json.loads(path.read_text())
+              keys=('candidate_sha','deploy_sha','deployed_sha','image_id','runtime_image_id','validation_status','mode','real_orders_sent','validated_at','updated_at')
+              print('CURRENT_STATE='+json.dumps({k:data[k] for k in keys if k in data},sort_keys=True))
+          PY
+          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
+          import hashlib,json,pathlib,urllib.request
+          files=('be_paper_engine.py','bf_production_paper_observer.py','bg_paper_dashboard.py','bv_paper_runtime.py','cf_intraday_scalping.py','cp_contract_evidence_v2_hf6.py','di_caucion_cash_sweep_runtime_hf6.py','dj_caucion_live_ppi_rc6.py','rc6_contract_bridge.py','rc6_macro_risk_shadow.py','rc6_gdelt_shadow.py','zz_wave8_dashboard_live_rc6.py')
+          hashes={p:hashlib.sha256(pathlib.Path('/app',p).read_bytes()).hexdigest() if pathlib.Path('/app',p).is_file() else 'MISSING' for p in files}
+          print('RUNTIME_SOURCE_HASHES='+json.dumps(hashes,sort_keys=True))
+          with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=10) as response:
+              print('DASHBOARD_HEALTH_HTTP='+str(response.status))
+              assert response.status==200
+          PY
+          echo 'READ_ONLY_AUDIT_FINISHED=true;RUNTIME_MUTATIONS=NONE;REAL_ORDER_CALLS=NONE'
+          REMOTE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-unified-runtime-readonly-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
