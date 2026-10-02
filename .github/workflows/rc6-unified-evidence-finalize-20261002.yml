@@ -1,0 +1,150 @@
+name: RC6 unified evidence finalization 20261002
+on:
+  push:
+    branches: [audit/rc6-unified-review-20261002]
+    paths: [.github/workflows/rc6-unified-evidence-finalize-20261002.yml]
+permissions:
+  contents: write
+  actions: read
+  issues: write
+concurrency:
+  group: rc6-unified-evidence-finalize-20261002
+  cancel-in-progress: false
+jobs:
+  finalize_evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bounded dependency barrier, no runtime access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          python - <<'PY'
+          import json,os,time,urllib.request
+          from pathlib import Path
+          root='https://api.github.com/repos/mbalbo2023/Porota-trading'
+          pins={37078173314:'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f',37078669217:'398b10eedbd7569fe4477782b2ee63e2153ce1f4'}
+          def get(path):
+              request=urllib.request.Request(root+path,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response:return json.load(response)
+          for attempt in range(70):
+              result={}
+              for run,sha in pins.items():
+                  data=get('/actions/runs/'+str(run))
+                  assert data['head_sha']==sha, ('RUN_IDENTITY_DRIFT',run)
+                  result[str(run)]={k:data[k] for k in ('id','head_sha','status','conclusion','run_attempt','html_url')}
+                  if data['status']=='completed':assert data['conclusion']=='success', ('DEPENDENCY_NOT_GREEN',run,data['conclusion'])
+              print('FINALIZATION_BARRIER='+json.dumps(result,sort_keys=True),flush=True)
+              if all(r['status']=='completed' and r['conclusion']=='success' for r in result.values()):
+                  assert get('/git/ref/heads/deploy/rc6-pr69-isolated-20260915')['object']['sha']==pins[37078173314], 'PRODUCT_DRIFT_NO_FINALIZATION'
+                  Path('evidence/dependencies.json').write_text(json.dumps(result,indent=2)+'\n')
+                  break
+              time.sleep(60)
+          else:raise SystemExit('BOUNDED_FINALIZATION_WAIT_EXHAUSTED_NO_WRITES')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc6-unified-postdeploy-evidence-37078669217
+          run-id: '37078669217'
+          github-token: ${{ github.token }}
+          path: /tmp/rc6-independent-evidence
+      - name: Preserve canonical evidence and pending scope on the audit branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json,pathlib,subprocess
+          from datetime import datetime,timezone
+          root=pathlib.Path('/tmp/rc6-independent-evidence')
+          proof=json.loads((root/'frozen-package-proof.json').read_text())
+          tests=json.loads((root/'porota-governed-tests.json').read_text())
+          assert proof['candidate_sha']=='b001ef1caf2f414a5022d2781016fa34f1611260'
+          assert proof['tree']=='f3440892a5b3c14b5013f696710016209dc5a689'
+          assert tests['status']=='GREEN' and tests['failures']==tests['errors']==0
+          snapshots=[]
+          for index in (1,2):
+              text=(root/f'runtime-snapshot-{index}.txt').read_text()
+              assert 'READ_ONLY_AUDIT_FINISHED=true;RUNTIME_MUTATIONS=NONE;REAL_ORDER_CALLS=NONE' in text
+              assert 'DASHBOARD_HEALTH_HTTP=200' in text and text.count('EXACT_SOURCE_GATES=GREEN')==2
+              def one(prefix):
+                  values=[line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)]
+                  assert len(values)==1, (index,prefix)
+                  return values[0]
+              state=json.loads(one('CURRENT_STATE='))
+              assert state['candidate_sha']==proof['candidate_sha'] and state['deploy_sha']=='e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f'
+              assert state['validation_status']=='VALIDATED_RUNTIME'
+              assert state['mode']=='PRODUCTION_PAPER' and state['real_orders_sent']==0 and state['ppi_watch_untouched'] is True
+              containers=[json.loads(line.split('=',1)[1]) for line in text.splitlines() if line.startswith('CONTAINER=')]
+              assert len(containers)==3 and all(c['status']=='running' and c['restarts']==0 and not c['oom'] and c['image']==state['image_id'] for c in containers)
+              assert json.loads(one('PPI_WATCH_UNITS='))==[]
+              candidates=json.loads(one('CANDIDATES='))
+              ready=int(one('READY_CANDIDATES='))
+              assert ready==sum(r['n'] for r in candidates if r['status']=='READY' and r['can_simulate']==1)
+              snapshots.append({'snapshot':index,'current_state':state,'containers':containers,'ready_candidates':ready,'candidates':candidates,'observer':json.loads(one('OBSERVER=')),'heartbeat_age_seconds':float(one('OBSERVER_HEARTBEAT_AGE_SECONDS=')),'ppi_watch_units':[],'dashboard_health_http':200})
+          assert snapshots[0]['current_state']['image_id']==snapshots[1]['current_state']['image_id']
+          pending=[
+            'Caucion: fresh live PPI book and a valid PAPER cash-sweep decision/placement during a real authorized market window remain NO_VERIFICADO; synthetic tests are not market evidence.',
+            'Scalping: confirmation throughput and simulated operation during a valid market session remain NO_VERIFICADO after this closed-market deployment.',
+            'Instrument readiness remains per identity and fail-closed; non-READY rows are not automatically promoted or erased.',
+            'Legacy failed-unit classification and broader backlog are not silently marked resolved by this release.',
+            'Administrative branch protections remain NO_VERIFICADAS through the current connector; no bypass or policy change was performed.'
+          ]
+          data={'workstream':'WS-INTEG-RC6-20261002','recorded_at':datetime.now(timezone.utc).isoformat(),'technical_release_status':'VALIDADO_RUNTIME','candidate_sha':proof['candidate_sha'],'candidate_tree':proof['tree'],'product_sha':'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f','pr':445,'source_prs_absorbed_and_closed':[435,436,437,438,439,440,442,443,444],'source_branches_preserved':True,'predeploy_run':37077028639,'predeploy_artifact_id':11256399584,'artifact_zip_sha256':'0abd35ce25816692dc26f6c4678d9ea846c8b6c747103d46cc896632ea5f9142','deploy_run':37078173314,'independent_audit_run':37078669217,'frozen_package_proof':proof,'tests':tests,'snapshots':snapshots,'pending':pending,'scope':'Technical runtime identity/safety/stability only; no assertion that every instrument is READY or that a real-market PAPER trade occurred.'}
+          output=pathlib.Path('docs/releases/RC6_UNIFIED_FINAL_STATE_2026-10-02.json')
+          output.write_text(json.dumps(data,indent=2,ensure_ascii=False)+'\n')
+          summary=f'''# RC6 — cierre técnico validado del candidato unificado
+
+Estado técnico: **VALIDADO_RUNTIME**. No equivale a todas las familias READY ni a actividad intradiaria demostrada.
+
+- PR #445; product SHA `{data['product_sha']}`.
+- Candidato `{data['candidate_sha']}`; tree `{data['candidate_tree']}`.
+- Predeploy V2 `{data['predeploy_run']}`; artifact `{data['predeploy_artifact_id']}`.
+- Deploy V2 único `{data['deploy_run']}` SUCCESS.
+- Auditoría independiente `{data['independent_audit_run']}` SUCCESS, dos snapshots separados por 120 s.
+- Suite gobernada: discovered={tests['discovered']}, executed={tests['executed']}, failures={tests['failures']}, errors={tests['errors']}, skipped={tests['skipped']}, xfail={tests['xfail']}.
+- Candidatos READY observados: {snapshots[0]['ready_candidates']} / {snapshots[1]['ready_candidates']}.
+- Tres contenedores con la misma imagen cargada `{snapshots[1]['current_state']['image_id']}`, running, sin OOM ni reinicios automáticos en ambas lecturas.
+- PRODUCTION_PAPER; real_orders_sent=0; rutas reales NOT_CALLED; PPI Watch intacto; dashboard HTTP 200.
+- Nueve PR fuente cerrados como absorbidos, sin merges individuales ni borrado de ramas.
+
+## Pendientes explícitos
+
+'''+ '\n\n'.join(pending)+'''
+
+## Evidencia y errores
+
+La evidencia estructurada completa y los contadores por instrumento/familia están en `RC6_UNIFIED_FINAL_STATE_2026-10-02.json`. Los errores y correcciones de los auditores auxiliares y de integración se conservan en el checkpoint de ejecución, sin presentarlos como incidentes del servidor. No se ejecutó un segundo deploy, rollback ni rebuild en el droplet.
+
+El primer auditor auxiliar con esquema incorrecto quedó superado; el cierre depende exclusivamente del validador canónico y del run corregido. Los estados transitorios durante la pausa del observer para reconciliación no se usaron como prueba final.
+'''
+          pathlib.Path('docs/releases/RC6_UNIFIED_CLOSURE_2026-10-02.md').write_text(summary)
+          checkpoint=pathlib.Path('docs/releases/RC6_UNIFIED_EXECUTION_2026-10-02.md')
+          old=checkpoint.read_text()
+          notice='> **ACTUALIZACIÓN FINAL:** cierre técnico VALIDADO_RUNTIME. Consultar `RC6_UNIFIED_CLOSURE_2026-10-02.md` y `RC6_UNIFIED_FINAL_STATE_2026-10-02.json`. El texto siguiente conserva el checkpoint histórico previo y no representa el estado final.\n\n'
+          assert not old.startswith(notice)
+          checkpoint.write_text(notice+old)
+          pathlib.Path('evidence/final-state.json').write_bytes(output.read_bytes())
+          pathlib.Path('evidence/closure.md').write_text(summary)
+          print('TECHNICAL_RUNTIME_CLOSURE=GREEN;MARKET_WINDOW_VALIDATION=NO_VERIFICADO')
+          PY
+          test "$(git ls-remote origin refs/heads/deploy/rc6-pr69-isolated-20260915 | cut -f1)" = e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/releases/RC6_UNIFIED_FINAL_STATE_2026-10-02.json docs/releases/RC6_UNIFIED_CLOSURE_2026-10-02.md docs/releases/RC6_UNIFIED_EXECUTION_2026-10-02.md
+          git commit -m 'docs(rc6): record verified unified runtime and explicit market-window residuals'
+          git push origin HEAD:refs/heads/audit/rc6-unified-review-20261002
+          git rev-parse HEAD > evidence/closure-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-unified-finalization-${{ github.run_id }}
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
