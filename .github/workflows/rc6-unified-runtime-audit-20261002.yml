@@ -1,24 +1,99 @@
-name: RC6 unified bounded runtime audit 20261002
+name: RC6 unified postdeploy evidence 20261002
 on:
   push:
     branches: [audit/rc6-unified-review-20261002]
     paths: [.github/workflows/rc6-unified-runtime-audit-20261002.yml]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: rc6-unified-readonly-audit-20261002
   cancel-in-progress: false
 jobs:
   readonly:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    env:
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    timeout-minutes: 35
     steps:
-      - name: Prepare strict SSH
+      - uses: actions/checkout@v4
+        with:
+          ref: b001ef1caf2f414a5022d2781016fa34f1611260
+          persist-credentials: false
+      - name: Wait boundedly for the single canonical deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          python - <<'PY'
+          import json, os, time, urllib.request
+          from pathlib import Path
+          url='https://api.github.com/repos/mbalbo2023/Porota-trading/actions/runs/37078173314'
+          for attempt in range(24):
+              request=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  data=json.load(response)
+              assert data['head_sha']=='e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f'
+              print('CANONICAL_DEPLOY_WAIT',attempt,data['status'],data['conclusion'],flush=True)
+              if data['status']=='completed':
+                  assert data['conclusion']=='success', 'CANONICAL_DEPLOY_NOT_GREEN'
+                  safe={k:data[k] for k in ('id','head_sha','status','conclusion','html_url','run_attempt')}
+                  Path('evidence/canonical-deploy.json').write_text(json.dumps(safe,indent=2)+'\n')
+                  break
+              time.sleep(60)
+          else:
+              raise SystemExit('BOUNDED_WAIT_EXHAUSTED_NO_RUNTIME_ACCESS')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '11256399584'
+          run-id: '37077028639'
+          github-token: ${{ github.token }}
+          path: /tmp/rc6-frozen
+      - name: Verify frozen package and derive source expectations without imports
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          files=list(Path('/tmp/rc6-frozen').rglob('frozen-candidate.json'))
+          assert len(files)==1, files
+          meta=files[0]
+          frozen=json.loads(meta.read_text())
+          assert frozen['candidate_sha']=='b001ef1caf2f414a5022d2781016fa34f1611260'
+          assert frozen['candidate_tree_sha']=='f3440892a5b3c14b5013f696710016209dc5a689'
+          assert str(frozen['build_run_id'])=='37077028639' and frozen['frozen_gates_ok'] is True
+          assert subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip()==frozen['candidate_tree_sha']
+          def digest(path):
+              h=hashlib.sha256()
+              with path.open('rb') as stream:
+                  for chunk in iter(lambda:stream.read(1024*1024),b''): h.update(chunk)
+              return h.hexdigest()
+          checked={}
+          for key in ('image_tar','deploy_bundle','manifest','host_control_plane_manifest','host_control_plane_policy'):
+              filename=frozen[key]
+              path=(meta.parent/filename).resolve()
+              assert path.is_relative_to(meta.parent.resolve()), (key,'UNSAFE_PATH')
+              value=digest(path)
+              assert value==frozen[key+'_sha256'], (key,'HASH_MISMATCH')
+              checked[key]=value
+          source_files=('be_paper_engine.py','bf_production_paper_observer.py','bg_paper_dashboard.py','bv_paper_runtime.py','cf_intraday_scalping.py','cp_contract_evidence_v2_hf6.py','di_caucion_cash_sweep_runtime_hf6.py','dj_caucion_live_ppi_rc6.py','rc6_contract_bridge.py','rc6_macro_risk_shadow.py','rc6_gdelt_shadow.py','zz_wave8_dashboard_live_rc6.py')
+          expected={'candidate_sha':frozen['candidate_sha'],'deployed_sha':'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f','image_id':frozen['image_id'],'source_hashes':{p:digest(Path(p)) for p in source_files}}
+          Path('/tmp/rc6-expect.json').write_text(json.dumps(expected))
+          Path('evidence/frozen-candidate.json').write_text(json.dumps(frozen,indent=2)+'\n')
+          Path('evidence/frozen-hashes-verified.json').write_text(json.dumps(checked,indent=2)+'\n')
+          Path('evidence/source-expectations.json').write_text(json.dumps(expected,indent=2)+'\n')
+          for summary in Path('/tmp/rc6-frozen').rglob('predeploy-summary.json'):
+              Path('evidence/predeploy-summary.json').write_bytes(summary.read_bytes())
+          print('FROZEN_PACKAGE_VERIFIED='+json.dumps({'candidate_sha':frozen['candidate_sha'],'image_id':frozen['image_id'],'verified_hashes':checked},sort_keys=True))
+          PY
+      - name: Strict read-only runtime checks, two independent snapshots
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -27,86 +102,112 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
-      - name: Read-only runtime baseline with explicit schema guard
-        shell: bash
-        run: |
+          EXPECTED_B64="$(base64 -w0 /tmp/rc6-expect.json)"
+          for snapshot in 1 2; do
+            if [ "$snapshot" = 2 ]; then sleep 120; fi
+            timeout --signal=TERM --kill-after=10s 240s ssh \
+              -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+              -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+              "$DO_USER@$DO_HOST" "env RC6_EXPECTED_B64=$EXPECTED_B64 bash -s" <<'REMOTE' | tee "evidence/runtime-snapshot-$snapshot.txt"
           set -Eeuo pipefail
-          mkdir -p evidence
-          timeout --signal=TERM --kill-after=10s 240s ssh \
-            -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ConnectionAttempts=2 \
-            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee evidence/runtime-readonly.txt
-          set -Eeuo pipefail
-          echo "AUDIT_PHASE=BASELINE;READ_ONLY=true;AT=$(date -u +%FT%TZ)"
+          echo "AUDIT_PHASE=POSTDEPLOY;READ_ONLY=true;AT=$(date -u +%FT%TZ)"
           df -PB1 / | tail -1
           free -m | head -3
-          for name in porota_production_dashboard porota_production_observer porota_critical_approval_rc6; do
-            sudo -n docker inspect -f 'CONTAINER={{.Name}}|STATE={{.State.Status}}|HEALTH={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|OOM={{.State.OOMKilled}}|RESTARTS={{.RestartCount}}|STARTED={{.State.StartedAt}}|IMAGE={{.Image}}' "$name"
-          done
-          LEGACY_UNITS="$(systemctl list-units --all --type=service --no-legend --no-pager | awk '/scheduler-export|weekend-backfill/ {for(i=1;i<=NF;i++) if($i ~ /\.service$/) print $i}')"
-          echo "LEGACY_UNIT_DISCOVERY=$LEGACY_UNITS"
-          for unit in porota-gdelt-event-risk-rc6.timer porota-gdelt-event-risk-rc6.service porota-critical-approval-rc6.service porota-full-db-integrity-rc6.service $LEGACY_UNITS; do
-            echo "UNIT=$unit"
-            systemctl show "$unit" --property=LoadState,ActiveState,SubState,Result,ExecMainStatus,UnitFileState --no-pager || true
-          done
-          echo 'PPI_WATCH_UNITS_BEGIN'
-          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
-            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
-          done
-          echo 'PPI_WATCH_UNITS_END'
-          sudo -n python3 - <<'PY'
-          import json, pathlib, sqlite3, time
-          db='/opt/porota-trading/data/paper_v17/observer_v17.db'
-          c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=3)
+          sudo -n env RC6_EXPECTED_B64="$RC6_EXPECTED_B64" python3 - <<'PY'
+          import base64,json,os,pathlib,sqlite3,subprocess,time
+          from datetime import datetime,timezone
+          expected=json.loads(base64.b64decode(os.environ['RC6_EXPECTED_B64']))
+          def cmd(*args):
+              return subprocess.check_output(args,text=True,timeout=20).strip()
+          for name in ('porota_production_dashboard','porota_production_observer','porota_critical_approval_rc6'):
+              value=json.loads(cmd('docker','inspect',name))[0]
+              state=value['State']
+              safe={'name':name,'image':value['Image'],'status':state['Status'],'oom':state['OOMKilled'],'restarts':value['RestartCount'],'started_at':state['StartedAt'],'health':state.get('Health',{}).get('Status','none')}
+              print('CONTAINER='+json.dumps(safe,sort_keys=True))
+              assert safe['image']==expected['image_id'] and safe['status']=='running'
+              assert safe['oom'] is False and safe['restarts']==0
+              assert safe['health'] in ('healthy','none')
+          units=cmd('systemctl','list-unit-files','--no-legend','--no-pager').splitlines()
+          watch=sorted(line.split()[0] for line in units if line.split() and 'ppi' in line.split()[0].lower() and 'watch' in line.split()[0].lower())
+          print('PPI_WATCH_UNITS='+json.dumps(watch))
+          assert watch==[], 'PPI_WATCH_CHANGED_FROM_EMPTY_BASELINE'
+          for unit in ('porota-gdelt-event-risk-rc6.timer','porota-gdelt-event-risk-rc6.service','porota-critical-approval-rc6.service','porota-full-db-integrity-rc6.service','porota-contract-evidence-weekend-backfill-rc6.service','porota-scheduler-export-hf6.service','porota-scheduler-export-rc6.service'):
+              fields=cmd('systemctl','show',unit,'--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,UnitFileState','--no-pager')
+              detail=dict(line.split('=',1) for line in fields.splitlines() if '=' in line)
+              print('UNIT='+json.dumps({'unit':unit,**detail},sort_keys=True))
+              if 'gdelt' in unit:
+                  assert detail.get('ActiveState') not in ('active','activating','reloading')
+                  assert detail.get('UnitFileState') not in ('enabled','enabled-runtime')
+          state_path=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
+          data=json.loads(state_path.read_text())
+          safe_keys=('candidate_sha','deploy_sha','deployed_sha','image_id','runtime_image_id','validation_status','mode','real_orders_sent','recorded_at','updated_at')
+          print('CURRENT_STATE='+json.dumps({k:data[k] for k in safe_keys if k in data},sort_keys=True))
+          assert data.get('candidate_sha')==expected['candidate_sha']
+          assert data.get('deployed_sha',data.get('deploy_sha'))==expected['deployed_sha']
+          c=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=3)
           c.row_factory=sqlite3.Row
           c.execute('PRAGMA query_only=ON')
           c.execute('PRAGMA busy_timeout=1500')
           def query(sql):
               deadline=time.monotonic()+5
               c.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
-              try: return [dict(r) for r in c.execute(sql)]
-              finally: c.set_progress_handler(None,0)
+              try:return [dict(r) for r in c.execute(sql)]
+              finally:c.set_progress_handler(None,0)
           tables={r['name'] for r in query("SELECT name FROM sqlite_master WHERE type='table'")}
           state=query('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at,ppi_auth FROM observer_state WHERE id=1')
           print('OBSERVER='+json.dumps(state,sort_keys=True))
           assert len(state)==1 and state[0]['mode']=='PRODUCTION_PAPER' and state[0]['real_orders_sent']==0
-          if 'candidate_identity_v2' in tables:
-              columns={r['name'] for r in query('PRAGMA table_info(candidate_identity_v2)')}
-              assert {'instrument_type','status','can_simulate'} <= columns, ('CANDIDATE_SCHEMA_MISMATCH', sorted(columns))
-              print('CANDIDATE_SCHEMA='+json.dumps(sorted(columns)))
-              print('CANDIDATES='+json.dumps(query("SELECT upper(instrument_type) family,upper(status) status,can_simulate,COUNT(*) n FROM candidate_identity_v2 GROUP BY 1,2,3"),sort_keys=True))
+          timestamp=datetime.fromisoformat(state[0]['heartbeat_at'].replace('Z','+00:00'))
+          assert timestamp.tzinfo is not None
+          age=(datetime.now(timezone.utc)-timestamp).total_seconds()
+          print('OBSERVER_HEARTBEAT_AGE_SECONDS='+str(round(age,3)))
+          assert -5<=age<=300, 'OBSERVER_HEARTBEAT_NOT_FRESH'
+          columns={r['name'] for r in query('PRAGMA table_info(candidate_identity_v2)')}
+          assert {'instrument_type','status','can_simulate'}<=columns
+          grouped=query('SELECT upper(instrument_type) family,upper(status) status,can_simulate,COUNT(*) n FROM candidate_identity_v2 GROUP BY 1,2,3')
+          print('CANDIDATES='+json.dumps(grouped,sort_keys=True))
+          ready=sum(r['n'] for r in grouped if r['status']=='READY' and r['can_simulate']==1)
+          print('READY_CANDIDATES='+str(ready))
+          assert ready>=5558, 'CANONICAL_READY_FLOOR'
           print('CATALOG='+json.dumps(query('SELECT instrument_type,status,capability,COUNT(*) n FROM financial_instrument_catalog GROUP BY 1,2,3'),sort_keys=True))
           for table in ('intraday_scalping_worker_state','paper_caucion_cash_sweep_state','paper_runtime_health','paper_exit_supervisor_state','paper_exit_reader_health'):
               if table in tables:
                   columns={r['name'] for r in query('PRAGMA table_info('+table+')')}
                   safe=[x for x in ('id','heartbeat_at','state','code','reader_state','supervisor_state','successful','failed','real_orders_sent','routes_json') if x in columns]
-                  if safe: print(table.upper()+'='+json.dumps(query('SELECT '+','.join(safe)+' FROM '+table+' LIMIT 5'),sort_keys=True))
+                  if safe:
+                      rows=query('SELECT '+','.join(safe)+' FROM '+table+' LIMIT 5')
+                      print(table.upper()+'='+json.dumps(rows,sort_keys=True))
+                      for row in rows:
+                          if 'real_orders_sent' in row: assert row['real_orders_sent']==0
           if 'paper_caucion_live_book' in tables:
               print('CAUCION_BOOK='+json.dumps(query('SELECT source,state,COUNT(*) n,MAX(quoted_at) latest FROM paper_caucion_live_book GROUP BY 1,2'),sort_keys=True))
+          else:
+              print('CAUCION_BOOK=NO_TABLE_YET_MARKET_WINDOW_VALIDATION_PENDING')
           c.close()
-          path=pathlib.Path('/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json')
-          if path.is_file():
-              data=json.loads(path.read_text())
-              keys=('candidate_sha','deploy_sha','deployed_sha','image_id','runtime_image_id','validation_status','mode','real_orders_sent','recorded_at','updated_at')
-              print('CURRENT_STATE='+json.dumps({k:data[k] for k in keys if k in data},sort_keys=True))
           PY
-          sudo -n docker exec -i porota_production_dashboard python - <<'PY'
-          import hashlib,json,pathlib,urllib.request
-          files=('be_paper_engine.py','bf_production_paper_observer.py','bg_paper_dashboard.py','bv_paper_runtime.py','cf_intraday_scalping.py','cp_contract_evidence_v2_hf6.py','di_caucion_cash_sweep_runtime_hf6.py','dj_caucion_live_ppi_rc6.py','rc6_contract_bridge.py','rc6_macro_risk_shadow.py','rc6_gdelt_shadow.py','zz_wave8_dashboard_live_rc6.py')
-          hashes={p:hashlib.sha256(pathlib.Path('/app',p).read_bytes()).hexdigest() if pathlib.Path('/app',p).is_file() else 'MISSING' for p in files}
+          sudo -n docker exec -e RC6_EXPECTED_B64="$RC6_EXPECTED_B64" -i porota_production_dashboard python - <<'PY'
+          import base64,hashlib,json,os,pathlib,urllib.request
+          expected=json.loads(base64.b64decode(os.environ['RC6_EXPECTED_B64']))
+          hashes={p:hashlib.sha256(pathlib.Path('/app',p).read_bytes()).hexdigest() for p in expected['source_hashes']}
           print('RUNTIME_SOURCE_HASHES='+json.dumps(hashes,sort_keys=True))
+          assert hashes==expected['source_hashes'], 'EXACT_SOURCE_HASH_MISMATCH'
+          page=pathlib.Path('/app/bg_paper_dashboard.py').read_text()
+          assert 'import rc6_gdelt_shadow' not in page
+          assert 'Noticias GDELT — SHADOW' not in page and 'Event Risk GDELT — SHADOW' not in page
           with urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=10) as response:
               print('DASHBOARD_HEALTH_HTTP='+str(response.status))
               assert response.status==200
+          print('SOURCE_AND_HEALTH_GATES=GREEN')
           PY
           echo 'READ_ONLY_AUDIT_FINISHED=true;RUNTIME_MUTATIONS=NONE;REAL_ORDER_CALLS=NONE'
           REMOTE
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-unified-runtime-readonly-${{ github.run_id }}
+          name: rc6-unified-postdeploy-evidence-${{ github.run_id }}
           path: evidence/
           retention-days: 14
           if-no-files-found: error
