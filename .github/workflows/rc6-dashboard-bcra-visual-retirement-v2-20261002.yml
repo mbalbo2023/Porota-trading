@@ -99,6 +99,29 @@ jobs:
               assert "upper(COALESCE(f.source,'')) <> 'BCRA'" in source
           """
           t.write_text(body,encoding="utf-8")
+
+          # The old regression required a BCRA card that this workstream
+          # deliberately retires from active dashboard surfaces. Keep the
+          # collector tests intact; update only the dashboard-surface assertion.
+          t2=Path("tests/test_rc6_macro_risk_shadow.py")
+          body2=t2.read_text(encoding="utf-8")
+          old_test=(
+              'def test_trading_dashboard_exposes_macro_shadow_without_trading_authority():\n'
+              '    source = open("bg_paper_dashboard.py", encoding="utf-8").read()\n\n'
+              '    assert "Riesgo macro BCRA — SHADOW" in source\n'
+              '    assert "no bloquea, no cambia tamaño y no habilita órdenes" in source\n'
+          )
+          new_test=(
+              'def test_trading_dashboard_does_not_expose_retired_bcra_shadow_as_active_surface():\n'
+              '    source = open("bg_paper_dashboard.py", encoding="utf-8").read()\n\n'
+              '    assert "Riesgo macro BCRA — SHADOW" not in source\n'
+              '    assert "import rc6_macro_risk_shadow" not in source\n'
+          )
+          if old_test in body2:
+              body2=body2.replace(old_test,new_test,1)
+          elif new_test not in body2:
+              raise SystemExit("STALE_BCRA_DASHBOARD_REGRESSION_SOURCE_DRIFT")
+          t2.write_text(body2,encoding="utf-8")
           PY
           python -m py_compile bg_paper_dashboard.py
           git diff --check
@@ -113,7 +136,8 @@ jobs:
             tests/test_dashboard_decision_evidence_rc6.py \
             tests/test_ws_dash_07_history_truth.py \
             tests/test_dashboard_truth_layer_rc6.py \
-            tests/test_rc6_dashboard_truthful_explanations.py
+            tests/test_rc6_dashboard_truthful_explanations.py \
+            tests/test_rc6_macro_risk_shadow.py
           python - <<'PY'
           import bg_paper_dashboard as d
           assert "overflow-x:hidden" in d.TABLE_A11Y_CSS
@@ -128,7 +152,7 @@ jobs:
           set -Eeuo pipefail
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
-          git add bg_paper_dashboard.py tests/test_rc6_dashboard_truthful_explanations.py
+          git add bg_paper_dashboard.py tests/test_rc6_dashboard_truthful_explanations.py tests/test_rc6_macro_risk_shadow.py
           if git diff --cached --quiet; then
             echo DASH_BCRA_NO_SOURCE_DELTA
           else
