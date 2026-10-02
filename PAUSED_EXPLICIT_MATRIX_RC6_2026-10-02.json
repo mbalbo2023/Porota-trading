@@ -1,0 +1,178 @@
+{
+  "schema": "POROTA_RC6_PAUSED_EXPLICIT_MATRIX_SUMMARY_V1",
+  "generated_date": "2026-10-02",
+  "mode": "READ_ONLY",
+  "product_base_sha": "136453dc5b6d4146057142bcdd76b2f6b8d474e0",
+  "authority": {
+    "readiness": "candidate_identity_v2",
+    "catalog": "financial_instrument_catalog",
+    "code": "GitHub product SHA",
+    "runtime": "observer_v17.db mode=ro/query_only"
+  },
+  "runtime_status_counts": {
+    "total": 13991,
+    "AVAILABLE": 8079,
+    "PAUSED_EXPLICIT": 4066,
+    "OBSERVED_SHADOW": 1838,
+    "STALE": 8
+  },
+  "paused_explicit": {
+    "count": 4066,
+    "percent_of_candidate_identity_v2": 29.0615,
+    "can_simulate_0": 4066,
+    "by_family": {
+      "OPCIONES": 2376,
+      "OBLIGACIONES": 1401,
+      "ON": 91,
+      "FUTUROS": 198
+    },
+    "by_catalog_status": {
+      "AVAILABLE": 1578,
+      "OBSERVED_SHADOW": 2243,
+      "STALE": 245
+    },
+    "by_catalog_capability": {
+      "MISSING_CURRENCY_OR_MARKET": 1186,
+      "CONTRACT_EVIDENCE_REVIEW_REQUIRED": 1114,
+      "NEEDS_NOMINAL_UNITS": 811,
+      "NEEDS_OPTION_CONTRACT": 757,
+      "NEEDS_FUTURES_MARGIN_AND_CONTRACT": 198
+    },
+    "exact_full_key_catalog_match": {
+      "matched": 4066,
+      "missing": 0
+    },
+    "symbol_only_ambiguity_diagnostic": 3027,
+    "cross_cutting_reason_tokens": {
+      "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 2261,
+      "IDENTITY_INCOMPLETE": 1186,
+      "PPI_FRESHNESS_STALE": 245,
+      "RETRY_IDENTITY_AMBIGUOUS": 182
+    },
+    "missing_identity_fields": {
+      "currency": 1186,
+      "market": 0,
+      "settlement": 0
+    },
+    "discovery_source_counts": {
+      "BYMA_PUBLIC_COMPLEMENTARY": 1790,
+      "PPI_PRIMARY": 1558,
+      "IOL_COMPLEMENTARY": 473,
+      "NONE": 245
+    },
+    "settlement_source_counts": {
+      "REQUEST_CANDIDATE": 1803,
+      "BYMA_PUBLIC_COMPLEMENTARY": 1790,
+      "IOL_COMPLEMENTARY": 473
+    }
+  },
+  "contract_bridge": {
+    "blocked_rows": 1469,
+    "gap_sets": [
+      {
+        "count": 1114,
+        "gaps": [
+          "CHANGE_REVIEW_REQUIRED"
+        ]
+      },
+      {
+        "count": 209,
+        "gaps": [
+          "MISSING:cash_multiplier",
+          "MISSING:expires_at",
+          "MISSING:minimum_quantity",
+          "MISSING:option_right",
+          "MISSING:quantity_step",
+          "MISSING:strike",
+          "MISSING:underlying"
+        ]
+      },
+      {
+        "count": 134,
+        "gaps": [
+          "MISSING:cash_multiplier",
+          "MISSING:expires_at",
+          "MISSING:underlying"
+        ]
+      },
+      {
+        "count": 12,
+        "gaps": [
+          "MISSING:cash_multiplier",
+          "MISSING:expires_at",
+          "MISSING:minimum_quantity",
+          "MISSING:paper_margin_policy",
+          "MISSING:quantity_step",
+          "MISSING:underlying"
+        ]
+      }
+    ]
+  },
+  "change_review": {
+    "paused_review_required_identities": 1114,
+    "matched_distinct_identities": 1112,
+    "missing_change_identity_count": 2,
+    "matched_change_rows": 5865,
+    "family_change_row_counts": {
+      "OPCIONES": 5865
+    },
+    "source_class_counts": {
+      "IOL_STRUCTURED_API": 5865
+    },
+    "change_rows_per_identity_distribution": {
+      "3": 2,
+      "5": 802,
+      "6": 307,
+      "7": 1
+    },
+    "latest_change_age_hours": {
+      "n": 1112,
+      "min_h": 0.12,
+      "median_h": 0.28,
+      "max_h": 20.04
+    },
+    "status": "NO_VERIFICADO_CAUSALITY",
+    "note": "The audit proves repeated contract-hash changes; it does not yet prove whether those are genuine contract changes or hash/input instability."
+  },
+  "stale_identity_policy": {
+    "threshold_seconds": 1209600,
+    "threshold_days": 14,
+    "stale_rows": 245,
+    "age_days": {
+      "min": 16.52,
+      "median": 16.52,
+      "max": 31.52
+    },
+    "by_family": {
+      "FUTUROS": 52,
+      "ON": 91,
+      "OPCIONES": 102
+    }
+  },
+  "evidence": [
+    {
+      "run_id": 37027360445,
+      "artifact_id": 11235234620,
+      "digest": "sha256:c378c521a7d7b14f758c7a411d478f6efbc2d065943a36966c389bf92065d79c",
+      "purpose": "full-key 4066-row matrix"
+    },
+    {
+      "run_id": 37027851630,
+      "artifact_id": 11236375466,
+      "digest": "sha256:78cb58d9154dc8a53ed4d4e4f5a53dfe1a9ea17136993eaadad656d9ba0e3934",
+      "purpose": "deep metadata/contract bridge analysis"
+    },
+    {
+      "run_id": 37028217039,
+      "purpose": "change-review correlation"
+    }
+  ],
+  "safety": {
+    "runtime_mutation": false,
+    "db_write": false,
+    "readiness_promotion": false,
+    "deploy": false,
+    "ppi_watch_touched": false,
+    "real_orders_sent_expected": 0
+  }
+}
