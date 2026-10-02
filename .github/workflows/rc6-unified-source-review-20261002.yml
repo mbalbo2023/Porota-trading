@@ -1,46 +1,82 @@
-name: RC6 unified integration builder 20261002
+name: RC6 unified candidate refinement 20261002
 on:
   push:
     branches: [audit/rc6-unified-review-20261002]
-    paths:
-      - .github/workflows/rc6-unified-source-review-20261002.yml
-      - scripts/rc6_unified_integration_builder_20261002.py
-      - scripts/rc6_unified_integration_fixes_20261002.py
-      - scripts/rc6_unified_regression_fixture_20261002.py
+    paths: [.github/workflows/rc6-unified-source-review-20261002.yml]
 permissions:
   contents: write
 concurrency:
   group: rc6-unified-source-review-20261002
   cancel-in-progress: false
 jobs:
-  integrate:
+  refine:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: 15cc194e56a914cb760cfb7c1b454feacbb0d485
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prepare isolated integration tools and locked test dependencies
+          cache: pip
+      - name: Locked dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+      - name: Refine only numeric-boundary guard on exact owned candidate
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p /tmp/rc6-integration-tools /tmp/rc6-integration-evidence
-          cp scripts/rc6_unified_integration_builder_20261002.py /tmp/rc6-integration-tools/
-          cp scripts/rc6_unified_integration_fixes_20261002.py /tmp/rc6-integration-tools/
-          cp scripts/rc6_unified_regression_fixture_20261002.py /tmp/rc6-integration-tools/
-          python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
-      - name: Reconcile exact source heads and validate cross-workstream regressions
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python /tmp/rc6-integration-tools/rc6_unified_integration_builder_20261002.py
+          TARGET=integrate/rc6-unified-20261002
+          EXPECTED=15cc194e56a914cb760cfb7c1b454feacbb0d485
+          BASE=136453dc5b6d4146057142bcdd76b2f6b8d474e0
+          test "$(git ls-remote origin refs/heads/$TARGET | cut -f1)" = "$EXPECTED"
+          test "$(git ls-remote origin refs/heads/deploy/rc6-pr69-isolated-20260915 | cut -f1)" = "$BASE"
+          mkdir -p /tmp/rc6-refinement
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('zz_wave8_dashboard_live_rc6.py')
+          text=path.read_text()
+          old=r'(?![\d.,])'
+          assert text.count(old)==1
+          path.write_text(text.replace(old,r'(?!\d|[.,]\d)'))
+          test=Path('tests/test_rc6_unified_20261002.py')
+          with test.open('a') as output:
+              output.write('''
+
+          def test_zero_excursions_followed_by_sentence_period_remain_unmeasured():
+              raw = "MFE=0,0000; MAE=0,0000. Cierre PAPER."
+              translated = dashboard._truthful_operator_terms(raw)
+              assert "MFE=NO_MEDIDO" in translated
+              assert "MAE=NO_MEDIDO" in translated
+              assert ". Cierre PAPER." in translated
+          ''')
+          PY
+          git diff --check
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_dashboard_truthful_explanations.py tests/test_rc6_unified_20261002.py \
+            --junitxml=/tmp/rc6-refinement/tests.xml
+          test "$(git ls-remote origin refs/heads/$TARGET | cut -f1)" = "$EXPECTED"
+          test "$(git ls-remote origin refs/heads/deploy/rc6-pr69-isolated-20260915 | cut -f1)" = "$BASE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add zz_wave8_dashboard_live_rc6.py tests/test_rc6_unified_20261002.py
+          git commit -m 'fix(dashboard): preserve zero excursion translation before sentence punctuation'
+          git push origin HEAD:refs/heads/$TARGET
+          git diff --binary "$BASE" HEAD > /tmp/rc6-refinement/candidate.patch
+          python - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          get=lambda ref:subprocess.check_output(['git','rev-parse',ref],text=True).strip()
+          data={'candidate_sha':get('HEAD'),'candidate_tree':get('HEAD^{tree}'),
+                'status':'FOCUSED_GREEN_AND_EN_GITHUB','runtime':'NO_VERIFICADO','full_predeploy':'PENDING'}
+          Path('/tmp/rc6-refinement/refinement.json').write_text(json.dumps(data,indent=2)+'\n')
+          print(json.dumps(data))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-unified-integration-evidence-${{ github.run_id }}
-          path: /tmp/rc6-integration-evidence/
+          name: rc6-unified-refinement-${{ github.run_id }}
+          path: /tmp/rc6-refinement/
           retention-days: 14
           if-no-files-found: warn
