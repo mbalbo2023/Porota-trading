@@ -115,17 +115,17 @@ jobs:
           new='''        if (self.paper_fill_policy is not None
                           and not (self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")
                                    or self.metadata_source.startswith("PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:"))):
-                      raise ValueError("Falta provenance verificable de la política PAPER de caución")'''
+                      raise ValueError("Falta provenance v2 o PPI live+policy verificable de la política PAPER de caución")'''
           if old in s: s=s.replace(old,new,1)
           elif "PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:" not in s: raise SystemExit("OFFER_PROVENANCE_SOURCE_DRIFT")
           old='''            if (self.currency != "ARS" or self.quoted_total_fees is not None
-                          or self.paper_fill_policy != "CONSERVATIVE_NOTIONAL_CAP"
-                          or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
+                              or self.paper_fill_policy != "CONSERVATIVE_NOTIONAL_CAP"
+                              or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
           new='''            if (self.currency != "ARS" or self.quoted_total_fees is not None
-                          or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-                          or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
+                              or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
+                              or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
           if old in s: s=s.replace(old,new,1)
-          elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("OFFER_FEE_POLICY_SOURCE_DRIFT")
+          elif new not in s: raise SystemExit("OFFER_FEE_POLICY_SOURCE_DRIFT")
           old='''    if offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP":
                   return offer.available_principal
               return offer.available_principal * participation'''
@@ -148,7 +148,7 @@ jobs:
                       and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
                       and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
           if old in s: s=s.replace(old,new,1)
-          elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("ALLOCATOR_FEE_SOURCE_DRIFT")
+          elif new not in s: raise SystemExit("ALLOCATOR_FEE_SOURCE_DRIFT")
           p.write_text(s,encoding="utf-8")
 
           # 4) Separate dynamic live PPI book store; no client construction/order API.
