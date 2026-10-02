@@ -1,0 +1,66 @@
+name: RC6 Exit Focus Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-exit-reasons-20261002]
+    paths: ['.github/workflows/rc6-exit-focus-20261002.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Focused DB forensics
+        shell: bash
+        run: |
+          timeout 60s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' <<'PY'
+          import sqlite3,json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          tabs={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def rows(sql,p=()):return [dict(r) for r in c.execute(sql,p)]
+          out={}
+          if "paper_positions" in tabs:
+              out["positions"]=rows("""select * from paper_positions where symbol in ('GGAL','CEPU','BBAR','PAMP')
+                order by opened_at desc limit 30""")
+          if "paper_fills" in tabs:
+              ids=[r["paper_id"] for r in out.get("positions",[]) if r.get("paper_id")]
+              if ids:
+                  q=",".join("?" for _ in ids)
+                  out["fills"]=rows(f"select * from paper_fills where paper_id in ({q}) order by filled_at desc",ids)
+          if "paper_exit_intents" in tabs:
+              ids=[r["paper_id"] for r in out.get("positions",[]) if r.get("paper_id")]
+              if ids:
+                  q=",".join("?" for _ in ids)
+                  out["exit_intents"]=rows(f"select * from paper_exit_intents where paper_id in ({q}) order by supervised_at desc",ids)
+          if "paper_position_marks" in tabs:
+              ids=[r["paper_id"] for r in out.get("positions",[]) if r.get("paper_id")]
+              if ids:
+                  q=",".join("?" for _ in ids)
+                  out["marks"]=rows(f"select * from paper_position_marks where paper_id in ({q}) order by rowid desc limit 100",ids)
+          if "paper_events" in tabs:
+              out["events"]=rows("""select * from paper_events where
+                detail like '%GGAL%' or detail like '%CEPU%' or detail like '%BBAR%' or detail like '%PAMP%'
+                order by event_at desc limit 80""")
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+      - name: Exit code excerpts
+        run: |
+          sed -n '110,220p' bm_exit_supervisor.py
+          sed -n '1248,1310p' bg_paper_dashboard.py
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
