@@ -1,0 +1,202 @@
+name: RC6 Handoff Provenance Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-handoff-rca-20261002]
+    paths:
+      - '.github/workflows/rc6-handoff-provenance-audit-20261002.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+
+      - name: Compare runtime code provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/remote_code_hashes.json <<'PY'
+          import subprocess,json,hashlib,os
+          def sha(path):
+              h=hashlib.sha256()
+              with open(path,"rb") as f:
+                  for b in iter(lambda:f.read(1024*1024),b""): h.update(b)
+              return h.hexdigest()
+          raw=subprocess.check_output(["sudo","-n","docker","inspect","porota_production_dashboard"],text=True)
+          item=json.loads(raw)[0]
+          mounts=[]
+          for m in item.get("Mounts",[]):
+              src=m.get("Source"); dst=m.get("Destination")
+              if isinstance(src,str) and isinstance(dst,str) and dst.startswith("/app/") and dst.endswith(".py"):
+                  mounts.append({"source":src,"destination":dst,"sha256":sha(src) if os.path.isfile(src) else None})
+          internal={}
+          for p in ("/app/rc6_gdelt_event_risk_job.py","/app/fk_gdelt_shadow_feed_rc6.py","/app/rc6_full_db_integrity.py"):
+              try:
+                  out=subprocess.check_output(["sudo","-n","docker","exec","porota_production_observer","sha256sum",p],text=True)
+                  internal[p]=out.split()[0]
+              except Exception as e:
+                  internal[p]="ERROR:"+type(e).__name__
+          print(json.dumps({"dashboard_mounts":mounts,"observer_internal":internal},sort_keys=True))
+          PY
+
+          python3 - <<'PY' | tee evidence/code_provenance_summary.txt
+          import json,hashlib,os
+          x=json.load(open("evidence/remote_code_hashes.json"))
+          mism=[]; missing=[]; same=[]
+          for m in x["dashboard_mounts"]:
+              rel=os.path.relpath(m["source"],"/opt/porota-trading")
+              if rel.startswith("..") or not os.path.isfile(rel):
+                  missing.append({"relative":rel,**m}); continue
+              h=hashlib.sha256(open(rel,"rb").read()).hexdigest()
+              item={"relative":rel,"destination":m["destination"],"remote_sha256":m["sha256"],"expected_sha256":h}
+              (same if h==m["sha256"] else mism).append(item)
+          internal=[]
+          for dst,rh in x["observer_internal"].items():
+              rel=dst.removeprefix("/app/")
+              if not os.path.isfile(rel):
+                  internal.append({"path":dst,"state":"EXPECTED_FILE_MISSING"}); continue
+              eh=hashlib.sha256(open(rel,"rb").read()).hexdigest()
+              internal.append({"path":dst,"state":"MATCH" if eh==rh else "MISMATCH","remote_sha256":rh,"expected_sha256":eh})
+          out={"dashboard_code_mount_count":len(x["dashboard_mounts"]),"dashboard_code_mount_matches":len(same),
+               "dashboard_code_mount_mismatches":mism,"dashboard_code_mount_expected_missing":missing,
+               "observer_internal":internal}
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True))
+          print("CODE_PROVENANCE_READONLY=GREEN")
+          open("evidence/code_provenance.json","w").write(json.dumps(out,ensure_ascii=False,sort_keys=True,indent=2))
+          PY
+
+      - name: Current integrity and stale failed-unit timestamps
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' | tee evidence/service_followup.txt <<'REMOTE'
+          set -u
+          echo "FULL_DB_CURRENT_PROBE_BEGIN"
+          sudo -n docker exec porota_production_observer python /app/rc6_full_db_integrity.py || true
+          echo "FULL_DB_CURRENT_PROBE_END"
+          for u in porota-full-db-integrity-rc6.service porota-scheduler-export-hf6.service porota-contract-evidence-weekend-backfill-rc6.service; do
+            echo "UNIT_TS=$u"
+            sudo -n systemctl show "$u" -p Result -p ActiveState -p SubState -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p TimeoutStartUSec --no-pager || true
+            echo "JOURNAL=$u"
+            sudo -n journalctl -u "$u" -n 30 --no-pager -o short-iso || true
+          done
+          REMOTE
+
+      - name: Identify true option change and caucion fee evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' | tee evidence/runtime_data_followup.json <<'PY'
+          import sqlite3,json,hashlib,collections
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          PROV={"provider_timestamp","capture_timestamp","freshness_basis","derivation_rule","confidence",
+                "evidence_class","source_job","source_route","evidence_scope","readiness_guard",
+                "semantic_guard","metadata_source","quantity_terms_source","provider_currency",
+                "fund_description","iol_operable_observed"}
+          def norm(v): return str(v or "").strip().upper()
+          def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":"),default=str)
+          def mat(v): return hashlib.sha256(canon({k:x for k,x in v.items() if k not in PROV}).encode()).hexdigest()
+          def diff(a,b):
+              return sorted(k for k in set(a)|set(b) if canon(a.get(k))!=canon(b.get(k)))
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=10); c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on"); c.execute("pragma busy_timeout=5000")
+          paused=[tuple(norm(x) for x in r) for r in c.execute("""
+            SELECT r.ticker,r.instrument_type,r.market,r.currency,r.settlement
+            FROM candidate_identity_v2 r JOIN financial_instrument_catalog f
+              ON f.ticker=r.ticker AND f.instrument_type=r.instrument_type AND f.market=r.market
+             AND f.currency=r.currency AND f.settlement=r.settlement
+            WHERE upper(r.status)='PAUSED_EXPLICIT'
+              AND f.capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED'""")]
+          keys=set(paused)
+          groups=collections.defaultdict(list)
+          for r in c.execute("""SELECT snapshot_id,family,ticker,market,currency,settlement,observed_at,
+                                      evidence_hash,evidence_json
+                               FROM contract_evidence_v2_snapshots
+                               WHERE source_class='IOL_STRUCTURED_API'
+                               ORDER BY observed_at,snapshot_id"""):
+              k=(norm(r["ticker"]),norm(r["family"]),norm(r["market"]),norm(r["currency"]),norm(r["settlement"]))
+              if k not in keys: continue
+              p=json.loads(r["evidence_json"] or "{}")
+              groups[k].append((r["snapshot_id"],r["observed_at"],r["evidence_hash"],mat(p),p))
+          material=[]
+          for k,rows in sorted(groups.items()):
+              if len({x[3] for x in rows})<=1: continue
+              changes=[]
+              for a,b in zip(rows,rows[1:]):
+                  if a[3]==b[3]: continue
+                  ks=diff(a[4],b[4])
+                  changes.append({"from_snapshot":a[0],"to_snapshot":b[0],"from_at":a[1],"to_at":b[1],
+                                  "fields":ks,
+                                  "old":{x:a[4].get(x) for x in ks},
+                                  "new":{x:b[4].get(x) for x in ks}})
+              material.append({"identity":k,"changes":changes})
+          missing=sorted(keys-set(groups))
+
+          cauc=[dict(r) for r in c.execute("""SELECT c.family,c.ticker,c.market,c.currency,c.settlement,
+                    c.source_class,c.observed_at,s.evidence_json
+             FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots s
+               ON s.snapshot_id=c.snapshot_id WHERE c.family='CAUCIONES'""")]
+          field_counts=collections.Counter(); fill=collections.Counter(); auth=collections.Counter()
+          source=collections.Counter()
+          for r in cauc:
+              e=json.loads(r.pop("evidence_json") or "{}")
+              source[r["source_class"]]+=1
+              for k,v in e.items():
+                  if v is not None: field_counts[k]+=1
+              fill[str(e.get("paper_fill_policy") or "NONE")]+=1
+              auth[str(e.get("fee_authority") or "NONE")]+=1
+          catalog=[list(r) for r in c.execute("""SELECT status,capability,COUNT(*)
+                         FROM financial_instrument_catalog WHERE instrument_type='CAUCIONES'
+                         GROUP BY status,capability ORDER BY COUNT(*) DESC""")]
+          pending=c.execute("""SELECT COUNT(*) FROM contract_evidence_v2_changes
+                              WHERE family='CAUCIONES' AND status='CHANGED_REVIEW_REQUIRED'""").fetchone()[0]
+          out={"material_option_changes":material,"paused_review_missing_iol_snapshots":missing,
+               "caucion_current_record_count":len(cauc),"caucion_sources":dict(source),
+               "caucion_field_presence":dict(field_counts),"caucion_paper_fill_policy":dict(fill),
+               "caucion_fee_authority":dict(auth),"caucion_catalog_status_capability":catalog,
+               "caucion_pending_change_review_count":pending}
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          echo "REPO_CAUCION_POLICY_REFERENCES_BEGIN"
+          git grep -n -E 'CAUCION_PAPER_FEE_AUTHORITY|paper_fill_policy|fee_authority' -- '*.py' | head -200 || true
+          echo "REPO_CAUCION_POLICY_REFERENCES_END"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-handoff-provenance-readonly-20261002
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
