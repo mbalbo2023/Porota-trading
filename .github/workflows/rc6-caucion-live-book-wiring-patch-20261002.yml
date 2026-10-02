@@ -288,16 +288,16 @@ jobs:
           anchor='''            operations.service_tick(store, phase)
                       if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
           insert='''            operations.service_tick(store, phase)
-                  if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
-                      try:
-                          import dj_caucion_live_ppi_rc6 as caucion_live
-                          if caucion_live.collection_window(datetime.now(TZ)):
-                              result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
-                              store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
-                              last_caucion_live_refresh=time.time()
-                      except Exception as exc:
-                          store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
-                  if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
+                      if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
+                          try:
+                              import dj_caucion_live_ppi_rc6 as caucion_live
+                              if caucion_live.collection_window(datetime.now(TZ)):
+                                  result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
+                                  store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
+                                  last_caucion_live_refresh=time.time()
+                          except Exception as exc:
+                              store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
+                      if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
           if anchor in s: s=s.replace(anchor,insert,1)
           elif "CAUCION_LIVE_BOOK_REFRESH" not in s: raise SystemExit("OBSERVER_CAUCION_INSERT_SOURCE_DRIFT")
           p.write_text(s,encoding="utf-8")
