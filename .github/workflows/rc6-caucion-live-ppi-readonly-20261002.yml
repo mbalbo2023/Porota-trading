@@ -40,10 +40,8 @@ jobs:
           from bd_ppi_readonly_guard import ProductionMarketReader, retry_read
           from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
 
-          key=os.environ.get("PPI_API_KEY","")
-          secret=os.environ.get("PPI_API_SECRET","")
-          if not key or not secret:
-              raise SystemExit("PPI_READONLY_CREDENTIALS_UNAVAILABLE")
+          from bf_production_paper_observer import _secret
+          key,secret=_secret()
           reader=ProductionMarketReader(key,secret)
           out={"paper_only":True,"real_routes":[],"ppi_watch_touched":False,"rows":[]}
           try:
