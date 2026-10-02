@@ -1,0 +1,302 @@
+name: RC6 Dashboard History Tablet Truth Patch 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-dashboard-history-tablet-truth-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply deterministic dashboard/history patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path("bg_paper_dashboard.py")
+          s=p.read_text(encoding="utf-8")
+          old="from dd_history_metrics_hf6 import observer_history_metrics, v2_store_metrics, effective_store_metrics"
+          new=("from dd_history_metrics_hf6 import (observer_history_metrics, v2_store_metrics, effective_store_metrics,\n"
+               "                                    target_store_coverage_metrics)")
+          if old in s:
+              s=s.replace(old,new,1)
+          elif "target_store_coverage_metrics" not in s:
+              raise SystemExit("HISTORY_IMPORT_SOURCE_DRIFT")
+
+          start=s.index("def _decision_evidence_panel():")
+          end=s.index("\ndef _current_source_health_panel():",start)
+          panel='''def _decision_evidence_panel():
+              """Tablet-safe read-only comparison of factual PAPER vs SHADOW profiles."""
+              evidence = decision_evidence_view.read()
+              counts = evidence["counts"]
+              cards = "".join((
+                  _card("Decisiones con evidencia", evidence["total_decisions"],
+                        "10 visibles por bloque; hasta 30 cargadas para Mostrar más",
+                        "green" if evidence["available"] else "gray"),
+                  _card("Verificadas", counts["VERIFIED"],
+                        "Inputs contemporáneos y resultado comparable", "green" if counts["VERIFIED"] else "gray"),
+                  _card("En espera", counts["PENDING"],
+                        "Esperar outcome no es un error ni autoriza completar datos", "yellow" if counts["PENDING"] else "gray"),
+                  _card("Evidencia insuficiente", counts["INSUFFICIENT_EVIDENCE"],
+                        "Se preserva el límite; nunca se reconstruye con hindsight",
+                        "yellow" if counts["INSUFFICIENT_EVIDENCE"] else "green"),
+              ))
+              labels={"BASELINE_CONSERVATIVE_V1":"Conservador",
+                      "SHADOW_BALANCED_V1":"Balanceado",
+                      "SHADOW_AGGRESSIVE_V1":"Agresivo"}
+              decision_rows=[]
+              for row in evidence["rows"]:
+                  profile_rows="".join(
+                      "<tr>"
+                      f"<td><b>{_e(labels.get(item.get('name'),item.get('name')))}</b><br>"
+                      f"<span class='paper-muted'>{_e(item.get('name'))}</span></td>"
+                      f"<td><b>{_e(item.get('decision'))}</b></td>"
+                      f"<td>{_decision_evidence_status(item.get('state'))}</td>"
+                      f"<td>{_e(item.get('reason') or 'Sin detalle publicado')}</td></tr>"
+                      for item in row["profiles"])
+                  profiles=(
+                      "<details class='paper-trade counterfactual-profile-detail'>"
+                      f"<summary>Ver {len(row['profiles'])} perfiles y qué habría hecho cada uno</summary>"
+                      "<div class='trade-body'><table class='paper-table'>"
+                      "<tr><th>Perfil</th><th>Qué habría hecho</th><th>Evidencia</th><th>Motivo</th></tr>"
+                      +profile_rows+"</table>"
+                      f"<p class='paper-muted'><b>Decisión:</b> <code>{_e(row['decision_key'])}</code><br>"
+                      f"<b>Fuentes:</b> {_e(row['sources'])}</p></div></details>")
+                  decision_rows.append(
+                      f"<tr><td><b>{_e(row['symbol'])}</b><br>{_decision_evidence_status(row['state'])}</td>"
+                      f"<td><b>{_e(row['factual_decision'])}</b><br><span class='paper-muted'>{_e(row['reason'])}</span></td>"
+                      f"<td>{profiles}</td><td>{_local_time(row['at'])}</td></tr>")
+              rows_html="".join(decision_rows) or (
+                  "<tr><td colspan='4'>Aún no hay evidencia por decisión publicada. Esto indica que el pipeline está en "
+                  "preparación o no registró decisiones; no equivale a una decisión negativa del motor.</td></tr>")
+              aggregate=evidence["aggregate"]
+              aggregate_rows="".join(
+                  f"<tr><td>{_e(key)}</td><td>{_e(value)}</td></tr>"
+                  for key,value in list(aggregate.items())[:12]
+              ) or "<tr><td colspan='2'>Sin evidencia acumulada publicada todavía.</td></tr>"
+              loaded=len(evidence["rows"]); total=int(evidence["total_decisions"] or 0)
+              range_text=("Mostrando 0 de 0" if not loaded else
+                          f"Mostrando 1-{min(10,loaded)} de {total}; usar «Mostrar 10 más» para avanzar.")
+              return (
+                  "<div class='paper-card'><h2>Evidencia por decisión y perfiles SHADOW — histórica</h2>"
+                  "<div class='paper-grid'>"+cards+"</div>"
+                  "<div class='paper-notice'><b>Perfiles evaluados en modo SHADOW, sólo para análisis.</b> "
+                  "Conservador = referencia factual congelada. Balanceado = umbral de score 90%, spread máximo 110% y una confirmación menos. "
+                  "Agresivo = umbral 80%, spread máximo 125% y una confirmación menos. "
+                  "Ninguno puede alterar ni autorizar órdenes; la decisión factual PAPER no se modifica.</div>"
+                  f"<p class='paper-muted'>{_e(range_text)}</p>"
+                  "<table class='paper-table counterfactual-main-table'><tr><th>Instrumento / evidencia</th>"
+                  "<th>Factual PAPER</th><th>Perfiles contrafácticos</th><th>Momento</th></tr>"
+                  +rows_html+"</table>"
+                  "<h3>Aprendizaje acumulado publicado</h3><table class='paper-table'><tr><th>Métrica</th><th>Valor</th></tr>"
+                  +aggregate_rows+"</table>"
+                  f"<p class='paper-muted'><b>Fuentes al momento de la decisión.</b> Fuente: {_e(evidence['source'])} · "
+                  f"publicado: {_local_time(evidence['generated_at'])} · política: {_e(evidence['policy'])}</p></div>")
+
+          '''
+          import textwrap
+          panel=textwrap.dedent(panel)
+          s=s[:start]+panel+s[end+1:]
+
+          old='''    last_attempt=max((str(r.get("last_attempt_at") or "") for r in sync),default="") or None
+              last_success=max((str(r.get("last_success_at") or "") for r in sync),default="") or None'''
+          new='''    history_sync=[r for r in sync if str(r.get("source") or "").upper() in {
+                  "PPI_PRODUCTION_HISTORY","PPI_BACKGROUND_INGEST"}]
+              last_attempt=max((str(r.get("last_attempt_at") or "") for r in history_sync),default="") or None
+              last_success=max((str(r.get("last_success_at") or "") for r in history_sync),default="") or None'''
+          old=textwrap.dedent(old); new=textwrap.dedent(new)
+          if old not in s: raise SystemExit("HISTORY_SYNC_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+
+          old='''    try:
+                  with closing(_conn()) as c:
+                      store_v2=effective_store_metrics(c,families=operational_families)
+              except Exception:
+                  store_v2=v2_store_metrics(families=operational_families)
+              try:'''
+          new='''    try:
+                  with closing(_conn()) as c:
+                      store_v2=effective_store_metrics(c,families=operational_families)
+              except Exception:
+                  store_v2=v2_store_metrics(families=operational_families)
+              try:
+                  with closing(_conn()) as c:
+                      target_coverage=target_store_coverage_metrics(c,families=operational_families)
+              except Exception as exc:
+                  target_coverage={"available":False,"reason":type(exc).__name__,"target_total":0,
+                                   "covered_target_total":0,"historical_identity_total":0,"by_family":{}}
+              try:'''
+          old=textwrap.dedent(old); new=textwrap.dedent(new)
+          if old not in s: raise SystemExit("HISTORY_STORE_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+
+          old='''    history_target=int(dynamic.get('target_total') or 0)
+              legacy_history_count=int(history.get('instruments') or 0)
+              history_count=int(store_v2.get('identities') or 0)
+              history_rows=int(store_v2.get('canonical_rows') or 0)'''
+          new='''    history_target=int(target_coverage.get('target_total') or dynamic.get('target_total') or 0)
+              legacy_history_count=int(history.get('instruments') or 0)
+              history_count=int(target_coverage.get('covered_target_total') or 0)
+              history_rows=int(store_v2.get('canonical_rows') or 0)'''
+          old=textwrap.dedent(old); new=textwrap.dedent(new)
+          if old not in s: raise SystemExit("HISTORY_COUNT_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+
+          old='''        _card("Última corrida PPI",_local_time(last_attempt),"La cadencia real es por fuente; ver Sistema → Scheduler","gray"),
+                  _card("Última ingesta PPI exitosa",_local_time(last_success),"Una fuente puede quedar parcial sin bloquear otras fuentes/familias","green" if last_success else "yellow")'''
+          new='''        _card("Último intento de historia PPI",_local_time(last_attempt),
+                        "Sólo PPI_PRODUCTION_HISTORY / PPI_BACKGROUND_INGEST; catálogo se informa por separado","gray"),
+                  _card("Último éxito de historia PPI",_local_time(last_success),
+                        "No se mezcla con la corrida de catálogo PPI","green" if last_success else "yellow")'''
+          old=textwrap.dedent(old); new=textwrap.dedent(new)
+          if old not in s: raise SystemExit("HISTORY_CARD_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+
+          a=s.index("    family_history_rows=[]",s.index("def history_page():"))
+          b=s.index("    freshness_notice=(",a)
+          block='''    family_history_rows=[]
+              targets=dynamic.get('target_by_family',{}) if isinstance(dynamic,dict) else {}
+              caps=dynamic.get('source_capabilities',{}) if isinstance(dynamic,dict) else {}
+              scoped=target_coverage.get('by_family',{}) if isinstance(target_coverage,dict) else {}
+              all_families=sorted(
+                  family for family in (set(targets)|set(scoped)|set(caps))
+                  if str(family or "").upper() in operational_families)
+              for family in all_families:
+                  current=(store_v2.get('by_family',{}) or {}).get(family,{})
+                  scope=scoped.get(family,{})
+                  target=int(scope.get('target') or targets.get(family) or 0)
+                  covered=int(scope.get('covered_target') or 0)
+                  historical=int(scope.get('historical_identities') or current.get('symbols') or 0)
+                  label=(f"{covered}/{target}" if target else "SIN OBJETIVO ACTUAL")
+                  family_history_rows.append(
+                      f"<tr><td><b>{_e(family)}</b></td>"
+                      f"<td><b>{_e(label)}</b><br><span class='paper-muted'>{historical} identidades históricas en store</span></td>"
+                      f"<td>{_e(current.get('rows',0))}</td><td>{_e(current.get('first_date'))}</td>"
+                      f"<td>{_e(current.get('last_date'))}</td><td>{_e(', '.join(caps.get(family,())) or 'PROBE_REQUIRED')}</td></tr>")
+              family_history=''.join(family_history_rows) or "<tr><td colspan='6'>Esperando métricas multi-familia.</td></tr>"
+          '''
+          s=s[:a]+textwrap.dedent(block)+s[b:]
+
+          old="Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th>"
+          new=("Cobertura History Store v2 por familia</h2><p class='paper-muted'>El numerador y el objetivo usan la misma identidad actual "
+               "(símbolo/familia/mercado/liquidación). Las identidades históricas fuera del universo actual se muestran aparte y nunca inflan la cobertura."
+               "</p><table class='paper-table'><tr><th>Familia</th><th>Cobertura objetivo actual</th>")
+          if old not in s: raise SystemExit("HISTORY_HEADER_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("tests/test_rc6_decision_evidence_view.py")
+          t=p.read_text(encoding="utf-8")
+          t=t.replace("for index in range(12)","for index in range(35)",1)
+          t=t.replace('assert result["total_decisions"] == 12','assert result["total_decisions"] == 35',1)
+          t=t.replace('assert len(result["rows"]) == 10','assert len(result["rows"]) == 30',1)
+          p.write_text(t,encoding="utf-8")
+
+          p=Path("tests/test_dashboard_decision_evidence_rc6.py")
+          t=p.read_text(encoding="utf-8")
+          t=t.replace("for index in range(10)","for index in range(12)",1)
+          t=t.replace('"available": True, "total_decisions": 12, "rows": rows,','"available": True, "total_decisions": 12, "rows": rows,',1)
+          t=t.replace('assert rendered.count("<code>d-") == 10','assert rendered.count("<code>d-") == 12',1)
+          insert='''    assert "Ver 3 perfiles y qué habría hecho cada uno" in rendered
+              assert "Conservador" in rendered and "Balanceado" in rendered and "Agresivo" in rendered
+              assert "Mostrando 1-10 de 12" in rendered
+              assert "<th>Decisión</th><th>Instrumento</th>" not in rendered
+              assert "<th>Instrumento / evidencia</th><th>Factual PAPER</th>" in rendered
+          '''
+          anchor='    assert "12" in rendered\n'
+          if anchor not in t: raise SystemExit("DECISION_DASH_TEST_SOURCE_DRIFT")
+          t=t.replace(anchor,anchor+textwrap.dedent(insert),1)
+          p.write_text(t,encoding="utf-8")
+
+          p=Path("tests/test_ws_dash_07_history_truth.py")
+          t=p.read_text(encoding="utf-8")
+          if "test_history_coverage_uses_same_current_target_scope" not in t:
+              t += r'''
+
+          def test_history_coverage_uses_same_current_target_scope(tmp_path):
+              import sqlite3
+              import dd_history_metrics_hf6 as metrics
+
+              observer=sqlite3.connect(":memory:")
+              observer.row_factory=sqlite3.Row
+              observer.execute("""CREATE TABLE candidate_universe(
+                ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,
+                can_simulate INTEGER,status TEXT,detail TEXT,last_checked_at TEXT)""")
+              observer.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",[
+                ("OPT-A","OPCIONES","INMEDIATA","BYMA",1,"AVAILABLE","", "2026-10-02"),
+                ("OPT-B","OPCIONES","INMEDIATA","BYMA",1,"AVAILABLE","", "2026-10-02"),
+              ])
+              db=tmp_path/"history.db"
+              h=sqlite3.connect(db)
+              h.execute("""CREATE TABLE history_canonical_v2(
+                symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,
+                trading_date TEXT,open TEXT,high TEXT,low TEXT,close TEXT,volume TEXT,
+                source_class TEXT,source_ref TEXT,observed_at TEXT,known_at TEXT,
+                quality_state TEXT,source_version_id INTEGER,PRIMARY KEY(
+                symbol,instrument_type,market,settlement,trading_date))""")
+              values=("2026-10-01","1","1","1","1","1","TEST","TEST","2026-10-02","2026-10-02","FULL_OHLC",1)
+              h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        ("OPT-A","OPCIONES","BYMA","INMEDIATA",*values))
+              h.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        ("OLD-ONLY","OPCIONES","BYMA","INMEDIATA",*values))
+              h.commit(); h.close()
+              result=metrics.target_store_coverage_metrics(observer,path=db,families=("OPCIONES",))
+              family=result["by_family"]["OPCIONES"]
+              assert family == {"target":2,"covered_target":1,"historical_identities":2}
+              assert result["covered_target_total"] <= result["target_total"]
+              observer.close()
+
+
+          def test_history_dashboard_labels_separate_catalog_from_history():
+              source=Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
+              assert "Último intento de historia PPI" in source
+              assert "Último éxito de historia PPI" in source
+              assert "SIN OBJETIVO ACTUAL" in source
+              assert "Cobertura objetivo actual" in source
+              assert "Identidades/objetivo" not in source
+          '''
+          p.write_text(t,encoding="utf-8")
+          PY
+          python -m py_compile bg_paper_dashboard.py dd_history_metrics_hf6.py rc6_decision_evidence_view.py
+          git diff --check
+      - name: Install tests
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+      - name: Focused regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH=. pytest -q             tests/test_rc6_decision_evidence_view.py             tests/test_dashboard_decision_evidence_rc6.py             tests/test_ws_dash_07_history_truth.py             tests/test_dashboard_truth_projection_rc6.py
+          python - <<'PY'
+          import bg_paper_dashboard as d
+          html=d.TABLE_A11Y_SCRIPT
+          assert "PAGE_SIZE=10" in html
+          assert "Mostrar '+Math.min(PAGE_SIZE,remaining)+' más" in html
+          assert "overflow-x:hidden" in d.TABLE_A11Y_CSS
+          print("TABLET_PROGRESSIVE_10=GREEN")
+          PY
+      - name: Commit validated patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bg_paper_dashboard.py dd_history_metrics_hf6.py rc6_decision_evidence_view.py             tests/test_rc6_decision_evidence_view.py tests/test_dashboard_decision_evidence_rc6.py             tests/test_ws_dash_07_history_truth.py
+          if git diff --cached --quiet; then
+            echo DASH_HISTORY_NO_SOURCE_DELTA
+          else
+            git commit -m 'fix(rc6): make dashboard history truth tablet-safe'
+            git push origin HEAD:fix/rc6-dashboard-history-tablet-truth-20261002
+          fi
