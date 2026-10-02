@@ -26,7 +26,6 @@ VALID_JOBS = {
     "monthly_autotune",
     "data_retention",
     "news_scan",
-    "gdelt_shadow_refresh",
     "learning_diagnostic",
     "model_guardian",
     "monthly_report",
@@ -75,14 +74,6 @@ def run(job_name: str) -> None:
     elif job_name == "news_scan":
         import r_news_engine_247
         r_news_engine_247.run_continuous_scan()
-    elif job_name == "gdelt_shadow_refresh":
-        # Única ingesta GDELT RC6: evidencia estructurada, acotada y SHADOW.
-        # No existe refresh genérico en paralelo; el dashboard sólo lee este store.
-        import rc6_gdelt_event_risk_job
-        payload = rc6_gdelt_event_risk_job.run_once(maxrecords=5)
-        logger.info("GDELT Event Risk estructurado: %s (%s/%s tipos).",
-                    payload["state"], payload["successful_event_types"],
-                    payload["requested_event_types"])
     elif job_name == "learning_diagnostic":
         from s_learning_engine import LearningEngine
         LearningEngine(_notifier()).analyze_and_diagnose()
