@@ -1,0 +1,160 @@
+name: RC6 Handoff Residuals Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-handoff-rca-20261002]
+    paths:
+      - '.github/workflows/rc6-handoff-residuals-readonly-20261002.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+
+      - name: Current full-integrity and failed unit chronology
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE' | tee evidence/service_residuals.txt
+          set -u
+          echo "FULL_DB_CURRENT_PROBE_BEGIN"
+          sudo -n docker exec porota_production_observer python /app/rc6_full_db_integrity.py || true
+          echo "FULL_DB_CURRENT_PROBE_END"
+          for u in porota-full-db-integrity-rc6.service porota-scheduler-export-hf6.service porota-contract-evidence-weekend-backfill-rc6.service; do
+            echo "UNIT_TS=$u"
+            sudo -n systemctl show "$u" -p Result -p ActiveState -p SubState -p ExecMainStartTimestamp -p ExecMainExitTimestamp -p ExecMainStatus -p TimeoutStartUSec -p NextElapseUSecRealtime --no-pager || true
+            echo "JOURNAL=$u"
+            sudo -n journalctl -u "$u" -n 40 --no-pager -o short-iso || true
+          done
+          echo "TIMERS"
+          sudo -n systemctl list-timers --all --no-pager | grep -E 'full-db-integrity|scheduler-export|contract-evidence-weekend' || true
+          REMOTE
+
+      - name: True option change and caucion evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' <<'PY' | tee evidence/runtime_data_residuals.json
+          import sqlite3,json,hashlib,collections
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          PROV={"provider_timestamp","capture_timestamp","freshness_basis","derivation_rule","confidence",
+                "evidence_class","source_job","source_route","evidence_scope","readiness_guard",
+                "semantic_guard","metadata_source","quantity_terms_source","provider_currency",
+                "fund_description","iol_operable_observed"}
+          def norm(v): return str(v or "").strip().upper()
+          def canon(v): return json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str)
+          def material_payload(v): return {k:x for k,x in v.items() if k not in PROV}
+          def mat(v): return hashlib.sha256(canon(material_payload(v)).encode()).hexdigest()
+          def diff(a,b): return sorted(k for k in set(a)|set(b) if canon(a.get(k))!=canon(b.get(k)))
+
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=10); c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on"); c.execute("pragma busy_timeout=5000")
+
+          keys=set(tuple(norm(x) for x in r) for r in c.execute("""
+            SELECT r.ticker,r.instrument_type,r.market,r.currency,r.settlement
+            FROM candidate_identity_v2 r JOIN financial_instrument_catalog f
+              ON f.ticker=r.ticker AND f.instrument_type=r.instrument_type
+             AND f.market=r.market AND f.currency=r.currency AND f.settlement=r.settlement
+            WHERE upper(r.status)='PAUSED_EXPLICIT'
+              AND f.capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED'"""))
+          groups=collections.defaultdict(list)
+          for r in c.execute("""SELECT snapshot_id,family,ticker,market,currency,settlement,observed_at,
+                                      evidence_hash,evidence_json
+                               FROM contract_evidence_v2_snapshots
+                               WHERE source_class='IOL_STRUCTURED_API'
+                               ORDER BY observed_at,snapshot_id"""):
+              k=(norm(r["ticker"]),norm(r["family"]),norm(r["market"]),norm(r["currency"]),norm(r["settlement"]))
+              if k not in keys: continue
+              p=json.loads(r["evidence_json"] or "{}")
+              groups[k].append((r["snapshot_id"],r["observed_at"],r["evidence_hash"],mat(p),p))
+          material=[]
+          for k,rows in sorted(groups.items()):
+              if len({x[3] for x in rows}) <= 1: continue
+              transitions=[]
+              for a,b in zip(rows,rows[1:]):
+                  if a[3] == b[3]: continue
+                  fields=diff(material_payload(a[4]),material_payload(b[4]))
+                  transitions.append({
+                    "from_snapshot":a[0],"to_snapshot":b[0],
+                    "from_at":a[1],"to_at":b[1],"fields":fields,
+                    "old":{x:a[4].get(x) for x in fields},
+                    "new":{x:b[4].get(x) for x in fields}
+                  })
+              material.append({"identity":k,"transitions":transitions})
+          missing=sorted(keys-set(groups))
+
+          cauc=[dict(r) for r in c.execute("""SELECT c.family,c.ticker,c.market,c.currency,c.settlement,
+                    c.source_class,c.observed_at,s.evidence_json
+             FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots s
+               ON s.snapshot_id=c.snapshot_id WHERE c.family='CAUCIONES'""")]
+          field_counts=collections.Counter(); fill=collections.Counter(); auth=collections.Counter(); source=collections.Counter()
+          samples=[]
+          for r in cauc:
+              e=json.loads(r.pop("evidence_json") or "{}")
+              source[r["source_class"]]+=1
+              for k,v in e.items():
+                  if v is not None: field_counts[k]+=1
+              fill[str(e.get("paper_fill_policy") or "NONE")]+=1
+              auth[str(e.get("fee_authority") or "NONE")]+=1
+              if len(samples)<10:
+                  samples.append({**r,"evidence_keys":sorted(e),
+                                  "paper_fill_policy":e.get("paper_fill_policy"),
+                                  "fee_authority":e.get("fee_authority"),
+                                  "paper_notional_cap":e.get("paper_notional_cap"),
+                                  "paper_principal_step":e.get("paper_principal_step"),
+                                  "quoted_total_fees":e.get("quoted_total_fees"),
+                                  "fee_quote_principal":e.get("fee_quote_principal")})
+          catalog=[list(r) for r in c.execute("""SELECT status,capability,COUNT(*)
+                         FROM financial_instrument_catalog WHERE instrument_type='CAUCIONES'
+                         GROUP BY status,capability ORDER BY COUNT(*) DESC""")]
+          cand=[list(r) for r in c.execute("""SELECT status,COUNT(*) FROM candidate_identity_v2
+                         WHERE instrument_type='CAUCIONES' GROUP BY status ORDER BY COUNT(*) DESC""")]
+          pending=c.execute("""SELECT COUNT(*) FROM contract_evidence_v2_changes
+                              WHERE family='CAUCIONES' AND status='CHANGED_REVIEW_REQUIRED'""").fetchone()[0]
+          out={"material_option_changes":material,
+               "paused_review_missing_iol_snapshots":missing,
+               "caucion_current_record_count":len(cauc),
+               "caucion_sources":dict(source),
+               "caucion_field_presence":dict(field_counts),
+               "caucion_paper_fill_policy":dict(fill),
+               "caucion_fee_authority":dict(auth),
+               "caucion_catalog_status_capability":catalog,
+               "caucion_candidate_status":cand,
+               "caucion_pending_change_review_count":pending,
+               "caucion_samples":samples}
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-handoff-residuals-readonly-20261002
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
