@@ -1,0 +1,74 @@
+name: RC6 BCRA Retirement Readonly Inventory 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-bcra-retired-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DO_HOST: ${{ secrets.DO_HOST }}
+  DO_USER: ${{ secrets.DO_USER }}
+  SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+  KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository active-reference inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          {
+            echo "=== BCRA/MACRO ACTIVE REFERENCES ==="
+            git grep -n -E 'ad_macro_history|rc6_macro_risk_shadow|FINANCIAL_REFRESH|BCRA / INDEC|macro_series|a_macro_config|TAMAR' -- '*.py' '*.json' 'systemd/*' ':!.github/workflows/*' || true
+            echo "=== IMPORT REFERENCES ==="
+            git grep -n -E '(^|[[:space:]])(import|from)[[:space:]]+(ad_macro_history|rc6_macro_risk_shadow)' -- '*.py' || true
+          } | tee evidence/repo.txt
+      - name: Runtime read-only inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime.txt <<'REMOTE'
+          set -Eeuo pipefail
+          echo "UNITS"
+          systemctl list-unit-files --no-pager | grep -Ei 'bcra|macro' || true
+          systemctl list-timers --all --no-pager | grep -Ei 'bcra|macro' || true
+          echo "PROCESSES"
+          sudo -n docker exec porota_production_observer sh -lc "ps -ef | grep -Ei 'bcra|macro|ad_macro_history|rc6_macro' | grep -v grep || true"
+          echo "DATA_FILES"
+          find /opt/porota-trading/data -maxdepth 2 -type f \( -iname '*macro*' -o -iname '*trading_system*.db' \) -printf '%p|%s|%TY-%Tm-%TdT%TH:%TM:%TS\n' 2>/dev/null | sort || true
+          echo "SAFETY"
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import sqlite3
+          from cg_paper_workspace import database_path
+          c=sqlite3.connect("file:"+str(database_path())+"?mode=ro",uri=True,timeout=5)
+          c.execute("PRAGMA query_only=ON")
+          row=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone()
+          print("MODE=%s|REAL_ORDERS_SENT=%s"%row)
+          assert row[0]=="PRODUCTION_PAPER" and int(row[1])==0
+          PY
+          echo "PPI_WATCH=READ_ONLY_NOT_TOUCHED"
+          REMOTE
+          cat evidence/runtime.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-bcra-retirement-inventory-20261002
+          path: evidence
+          if-no-files-found: error
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
