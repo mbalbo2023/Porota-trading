@@ -101,7 +101,7 @@ def fee_authorized_offers(offers) -> list[CaucionOffer]:
         exact = (offer.quoted_total_fees is not None
                  and offer.fee_quote_principal is not None)
         paper = (offer.currency == "ARS"
-                 and offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+                 and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
                  and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)
         if exact or paper:
             result.append(offer)
@@ -275,45 +275,85 @@ def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
         "PAPER_FAMILY_LIFECYCLE_LEDGER:v1", True, tuple(obligations))
 
 
-def offers_from_store(store, *, now):
-    """Bind current v2 evidence to exact PPI primary identities, read-only."""
-    from cp_contract_evidence_v2_hf6 import current_records
-    from rc6_contract_bridge import caucion_offer_from_evidence
-    records = current_records(store, family="CAUCIONES")
-    grouped = defaultdict(list)
-    for record in records:
-        key = tuple(record.get(name) for name in
-                    ("ticker", "family", "market", "currency", "settlement"))
-        grouped[key].append(record)
-    with store.connect() as connection:
-        tables = {row[0] for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'")}
-        pending = set()
-        if "contract_evidence_v2_changes" in tables:
-            pending = {tuple(row) for row in connection.execute("""
-              SELECT ticker,family,market,currency,settlement
-              FROM contract_evidence_v2_changes
-              WHERE status='CHANGED_REVIEW_REQUIRED'""")}
-        primaries = [dict(row) for row in connection.execute("""
-          SELECT * FROM financial_instrument_catalog
-          WHERE instrument_type='CAUCIONES' AND status='AVAILABLE'
-          ORDER BY ticker,market,currency,settlement""")]
-    offers, errors = [], []
-    for primary in primaries:
-        key = tuple(primary.get(name) for name in
-                    ("ticker", "instrument_type", "market", "currency", "settlement"))
-        record_key = (key[0], "CAUCIONES", key[2], key[3], key[4])
-        if record_key in pending:
-            errors.append(f"{key[0]}:CHANGE_REVIEW_REQUIRED")
-            continue
-        primary["raw"] = json.loads(primary.pop("metadata_json") or "{}")
-        try:
-            offers.append(caucion_offer_from_evidence(
-                grouped.get(record_key, ()), primary, now=aware_datetime(now)))
-        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
-            errors.append(f"{key[0]}:{str(exc)}")
-    return offers, errors
 
+def offers_from_store(store, *, now):
+    """Bind exact PPI identity/static PAPER policy to fresh local PPI book.
+
+    No network is reachable here. Missing/stale/no-bid dynamic evidence stays HOLD.
+    """
+    from datetime import datetime, time as dt_time
+    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from rc6_cauciones_contract import parse_ticker, theoretical_liquidity_date
+    from cp_contract_evidence_v2_hf6 import pending_material_changes
+    from dj_caucion_live_ppi_rc6 import SOURCE as PPI_BOOK_SOURCE
+
+    at=aware_datetime(now)
+    with store.connect() as connection:
+        tables={r[0] for r in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "paper_caucion_live_book" not in tables:
+            return [], ["CAUCION_LIVE_BOOK_MISSING"]
+        # The catalog can lag evidence ingestion. Recheck material changes
+        # from the append-only evidence log instead of trusting stale READY.
+        pending = pending_material_changes(connection)
+        rows=[dict(r) for r in connection.execute("""SELECT
+          f.ticker,f.market,f.currency,f.settlement,f.status,f.capability,f.metadata_json,
+          b.term_days,b.quoted_at,b.tna_fraction,b.available_principal,b.state,b.source,b.observed_at
+          FROM financial_instrument_catalog f
+          JOIN paper_caucion_live_book b
+            ON b.ticker=f.ticker AND b.market=f.market
+           AND b.currency=f.currency AND b.settlement=f.settlement
+          WHERE f.instrument_type='CAUCIONES' AND f.status='AVAILABLE'
+            AND f.currency='ARS' ORDER BY f.ticker""")]
+    offers=[]; errors=[]
+    for row in rows:
+        identity_key = ("CAUCIONES", row["ticker"], row["market"],
+                        row["currency"], row["settlement"])
+        if identity_key in pending:
+            errors.append(f"{row['ticker']}:CHANGED_REVIEW_REQUIRED")
+            continue
+        if row["source"] != PPI_BOOK_SOURCE:
+            errors.append(f"{row['ticker']}:CAUCION_LIVE_SOURCE_UNVERIFIED")
+            continue
+        if row["state"]!="BOOK_READY":
+            errors.append(f"{row['ticker']}:{row['state']}")
+            continue
+        try:
+            raw=json.loads(row["metadata_json"] or "{}")
+            policy=raw.get("paper_caucion_contract_v1") or {}
+            if row["capability"]!="READY_PAPER_CAUCION_PLACING":
+                raise ValueError("CAUCION_STATIC_POLICY_NOT_READY")
+            if policy.get("paper_fill_policy")!="LIVE_PPI_BID_PARTICIPATION_CAP":
+                raise ValueError("CAUCION_LIVE_FILL_POLICY_MISSING")
+            if policy.get("fee_authority")!=CAUCION_PAPER_FEE_AUTHORITY:
+                raise ValueError("CAUCION_PAPER_FEE_AUTHORITY_MISSING")
+            quoted=aware_datetime(row["quoted_at"],"cotización caución")
+            age=(at.astimezone(quoted.tzinfo)-quoted).total_seconds()
+            if not 0 <= age <= 90:
+                raise ValueError("CAUCION_LIVE_BOOK_STALE")
+            identity=parse_ticker(row["ticker"])
+            start=quoted.astimezone(TZ).date()
+            maturity=theoretical_liquidity_date(start,row["ticker"])
+            maturity_at=datetime.combine(maturity,dt_time(17,0),TZ).isoformat()
+            offer=CaucionOffer(
+                instrument_id=row["ticker"],currency="ARS",
+                annual_rate_fraction=Decimal(str(row["tna_fraction"])),
+                start_date=start.isoformat(),maturity_at=maturity_at,
+                quoted_at=quoted.isoformat(),
+                available_principal=Decimal(str(row["available_principal"])),
+                minimum_principal=Decimal(str(policy["minimum_principal"])),
+                principal_step=Decimal(str(policy["paper_principal_step"])),
+                day_count_basis=int(Decimal(str(policy["day_count_basis"]))),
+                fee_payment=str(policy["fee_payment"]),
+                metadata_source="PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1",
+                paper_fill_policy="LIVE_PPI_BID_PARTICIPATION_CAP",
+                fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
+            if identity.term_days != int(row["term_days"]):
+                raise ValueError("CAUCION_TERM_IDENTITY_MISMATCH")
+            offers.append(offer)
+        except (ValueError,TypeError,KeyError,ArithmeticError) as exc:
+            errors.append(f"{row['ticker']}:{str(exc)}")
+    return offers,errors
 
 def _persist_runtime(store, *, at, state, code, request_id=None, paper_id=None,
                      detail="", result=None):
@@ -388,7 +428,7 @@ def run_worker(store, stop, *, clock_fn):
                             broker, offers, obligation_snapshot=snapshot,
                             currency="ARS", as_of=at, request_id=request_id,
                             participation=broker.participation,
-                            max_quote_age_seconds=30, **schedule)
+                            max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
                     else:
                         offers, errors = (), ()
                     allocation = result.get("allocation") or {}

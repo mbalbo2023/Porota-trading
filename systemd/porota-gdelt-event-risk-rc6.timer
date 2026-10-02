@@ -1,9 +1,9 @@
 [Unit]
-Description=Porota RC6 structured GDELT event-risk hourly SHADOW refresh
+Description=Porota RC6 retired GDELT timer tombstone
+Documentation=GDELT_DEPRECATED_EXCLUDED
 
 [Timer]
-OnCalendar=*-*-* *:35:00
-RandomizedDelaySec=300
+OnCalendar=*-*-* 00:00:00
 Persistent=false
 Unit=porota-gdelt-event-risk-rc6.service
 

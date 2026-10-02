@@ -45,7 +45,7 @@ INTERNAL_JOBS = (
     InternalJob("HOST_GENERAL_BACKUP", "Backup general del host",
                 "Backup data/ + sre_vector_db sin secretos; SQLite usa backup online.", 24*3600),
     InternalJob("FINANCIAL_REFRESH", "Información financiera",
-                "Actualiza series públicas BCRA/INDEC usadas como contexto informativo.", 12*3600),
+                "Actualiza sólo INDEC/datos.gob.ar; BCRA activo retirado por decisión del operador.", 12*3600),
     InternalJob("NEWS_REFRESH", "Noticias",
                 "Actualiza RSS sólo si la política de noticias está habilitada; con OFF sólo controla estado.", _news_cadence_seconds(),
                 "45 min con ON; 12 h con OFF y NO_APLICA."),

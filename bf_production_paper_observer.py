@@ -56,6 +56,7 @@ READINESS_CHECK_SECONDS = max(
 COMPLEMENTARY_RECONCILE_SECONDS = max(
     60, int(os.getenv("PAPER_COMPLEMENTARY_RECONCILE_SECONDS", "300"))
 )
+CAUCION_LIVE_REFRESH_SECONDS = max(30, int(os.getenv("PAPER_CAUCION_LIVE_REFRESH_SECONDS", "60")))
 COMPLEMENTARY_CONTRACT_TTL_SECONDS = max(
     300, int(os.getenv("PAPER_COMPLEMENTARY_CONTRACT_TTL_SECONDS", "86400"))
 )
@@ -1647,6 +1648,7 @@ def run():
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
+    last_caucion_live_refresh = 0.0
     next_login_at = 0.0
     last_phase = None  # Publicar BOOT_* antes de resolver el calendario.
     startup_watchdog_armed = True
@@ -1725,6 +1727,15 @@ def run():
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             operations.service_tick(store, phase)
+            if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
+                try:
+                    import dj_caucion_live_ppi_rc6 as caucion_live
+                    if caucion_live.collection_window(datetime.now(TZ)):
+                        result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
+                        store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
+                        last_caucion_live_refresh=time.time()
+                except Exception as exc:
+                    store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
             if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
                 _public_probe(store)
                 last_public_check = time.time()

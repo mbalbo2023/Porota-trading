@@ -26,13 +26,13 @@ def test_normalises_profiles_and_bounds_dashboard_rows(tmp_path: Path):
             "decision": "HOLD", "sources": {"PPI": {"freshness": "FRESH"}},
             "profiles": {"SHADOW_BALANCED_V1": {"decision": "OPEN", "state": "PENDING"}},
         }
-        for index in range(12)
+        for index in range(35)
     ]
     _write(tmp_path, {"source": "rc6-postclose", "decisions": decisions})
     result = view.read(tmp_path)
     assert result["available"] is True
-    assert result["total_decisions"] == 12
-    assert len(result["rows"]) == 10
+    assert result["total_decisions"] == 35
+    assert len(result["rows"]) == 30
     assert result["rows"][0]["symbol"] == "GGAL"
     assert result["rows"][0]["state"] == "VERIFIED"
     assert "PPI: FRESH" in result["rows"][0]["sources"]

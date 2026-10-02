@@ -177,6 +177,78 @@ def effective_store_metrics(observer_connection,path=None,families=None):
     return {"available":False,"path":v2.get("path"),"canonical_rows":sum(x["rows"] for x in legacy.values()),"identities":sum(x["symbols"] for x in legacy.values()),"by_family":legacy,"reason":v2.get("reason") or "V2_UNAVAILABLE","layer":"LEGACY_FALLBACK","close_series":v2.get("close_series",{})}
 
 
+
+def target_store_coverage_metrics(observer_connection, path: Path | None = None, families=None) -> dict:
+    """Compare History Store v2 against the exact current AVAILABLE target scope.
+
+    The numerator and denominator use the same identity key
+    (symbol/family/market/settlement). Historical-only identities are reported
+    separately and can never make covered > target.
+    """
+    targets = target_universe(observer_connection, families=families)
+    target_keys = {
+        (str(row["symbol"] or "").upper(), str(row["family"] or "").upper(),
+         str(row["market"] or "").upper(), str(row["settlement"] or "").upper())
+        for row in targets
+    }
+    target_by = Counter(key[1] for key in target_keys)
+    db = (path or history_db_path()).resolve()
+    base = {
+        "available": False,
+        "path": str(db),
+        "target_total": len(target_keys),
+        "covered_target_total": 0,
+        "historical_identity_total": 0,
+        "by_family": {
+            family: {"target": int(count), "covered_target": 0, "historical_identities": 0}
+            for family, count in sorted(target_by.items())
+        },
+    }
+    if not db.exists() or not db.is_file():
+        return dict(base, reason="V2_STORE_NOT_PRESENT")
+    connection = sqlite3.connect("file:" + str(db) + "?mode=ro", uri=True, timeout=5)
+    try:
+        tables = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if "history_canonical_v2" not in tables:
+            return dict(base, reason="V2_SCHEMA_NOT_PRESENT")
+        scope = _family_scope(families)
+        where = "" if scope is None else (
+            " WHERE UPPER(instrument_type) IN (" + ",".join("?" for _ in scope) + ")"
+        )
+        params = tuple(sorted(scope or ()))
+        history_keys = {
+            (str(row[0] or "").upper(), str(row[1] or "").upper(),
+             str(row[2] or "").upper(), str(row[3] or "").upper())
+            for row in connection.execute(
+                "SELECT DISTINCT symbol,instrument_type,market,settlement "
+                "FROM history_canonical_v2" + where, params)
+        }
+    finally:
+        connection.close()
+    covered = target_keys & history_keys
+    historical_by = Counter(key[1] for key in history_keys)
+    covered_by = Counter(key[1] for key in covered)
+    all_families = sorted(set(target_by) | set(historical_by))
+    by_family = {
+        family: {
+            "target": int(target_by.get(family, 0)),
+            "covered_target": int(covered_by.get(family, 0)),
+            "historical_identities": int(historical_by.get(family, 0)),
+        }
+        for family in all_families
+    }
+    return {
+        "available": True,
+        "path": str(db),
+        "target_total": len(target_keys),
+        "covered_target_total": len(covered),
+        "historical_identity_total": len(history_keys),
+        "by_family": by_family,
+        "identity_key": "symbol/family/market/settlement",
+    }
+
+
 def assert_history_metric_invariants() -> None:
     if "PROBE_REQUIRED" not in source_capabilities("ON"):
         raise AssertionError("Unproven history family must not be marked supported")

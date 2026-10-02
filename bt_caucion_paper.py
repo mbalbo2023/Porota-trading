@@ -170,15 +170,16 @@ class CaucionOffer:
         if self.quoted_total_fees is not None:
             object.__setattr__(self, "quoted_total_fees", decimal_value(self.quoted_total_fees, "costos cotizados", nonnegative=True))
             object.__setattr__(self, "fee_quote_principal", decimal_value(self.fee_quote_principal, "capital del presupuesto", positive=True))
-        if self.paper_fill_policy not in {None, "CONSERVATIVE_NOTIONAL_CAP"}:
+        if self.paper_fill_policy not in {None, "CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}:
             raise ValueError("Política PAPER de caución no soportada")
         if (self.paper_fill_policy is not None
-                and not self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")):
-            raise ValueError("Falta provenance v2 de la política PAPER de caución")
+                and not (self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")
+                         or self.metadata_source.startswith("PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:"))):
+            raise ValueError("Falta provenance v2 o PPI live+policy verificable de la política PAPER de caución")
         if self.fee_authority is not None:
             from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
             if (self.currency != "ARS" or self.quoted_total_fees is not None
-                    or self.paper_fill_policy != "CONSERVATIVE_NOTIONAL_CAP"
+                    or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
                     or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):
                 raise ValueError("Autoridad de costos PAPER incompatible")
         if self.currency != "ARS" and self.quoted_total_fees is None:
@@ -227,6 +228,8 @@ def automatic_liquidity_cap(offer, participation):
         raise ValueError("Participación fuera de rango")
     if offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP":
         return offer.available_principal
+    # Exact live PPI depth stays provider evidence; PAPER participates
+    # only up to the configured conservative fraction.
     return offer.available_principal * participation
 
 

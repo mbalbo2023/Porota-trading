@@ -69,3 +69,25 @@ def test_prior_day_rejection_does_not_poison_new_session(tmp_path):
 
 def test_partial_shadow_capability_is_observable_only():
     assert "READY_SHADOW_PARTIAL" in scalping.SCALPING_PAPER_CAPABILITIES
+
+
+def test_default_scanner_capacity_can_confirm_large_universe_inside_regular_session():
+    # Worst practical priority budget = 8 focus + up to 8 additional open
+    # positions. Every rotation identity needs a BASELINE + RECHECK pair.
+    universe = 1200
+    priority = 16
+    rotation_slots = scalping.DEFAULT_INTRADAY_BATCH_LIMIT - priority
+    batches = ((universe - priority) + rotation_slots - 1) // rotation_slots
+    required_seconds = batches * 2 * scalping.DEFAULT_INTRADAY_SCAN_SECONDS
+    assert scalping.DEFAULT_INTRADAY_BATCH_LIMIT == 40
+    assert required_seconds <= 390 * 60
+
+
+def test_worker_source_pairs_recheck_before_advancing_rotation_cursor():
+    import inspect
+    source = inspect.getsource(scalping.run_worker)
+    assert "paired_recheck = False" in source
+    assert 'phase = "RECHECK" if paired_recheck else "BASELINE"' in source
+    assert "cursor = paired_next_cursor" in source
+    assert "paired_next_cursor = next_cursor" in source
+    assert "fase_confirmacion={phase}" in source

@@ -130,9 +130,9 @@ def normalize_group(records, *, now=None):
                      "expires_at", "underlying", "strike", "option_right"),
         "FUTUROS": ("cash_multiplier", "quantity_step", "minimum_quantity",
                     "expires_at", "underlying"),
-        "CAUCIONES": ("side", "start_date", "maturity_at", "quoted_at",
-                      "minimum_principal", "day_count_basis", "fee_payment",
-                      "annual_rate_fraction", "operable", "market_session_state"),
+        "CAUCIONES": ("side", "term_days", "minimum_principal",
+                      "paper_principal_step", "day_count_basis", "fee_payment",
+                      "paper_fill_policy", "fee_authority"),
     }
     required = required_by_family.get(
         family, ("cash_multiplier", "quantity_step", "minimum_quantity"))
@@ -152,11 +152,12 @@ def normalize_group(records, *, now=None):
             errors.append("MISSING:paper_margin_policy")
     if family == "CAUCIONES":
         published_depth = all(name in fields for name in ("available_principal", "principal_step"))
-        paper_fill = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+        legacy_cap = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
                       and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
-        if not (published_depth or paper_fill):
-            errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_notional_cap",
-                           "MISSING:paper_principal_step"))
+        live_book = (fields.get("paper_fill_policy") == "LIVE_PPI_BID_PARTICIPATION_CAP"
+                     and "paper_principal_step" in fields)
+        if not (published_depth or legacy_cap or live_book):
+            errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_principal_step"))
     for field in required:
         if field not in fields:
             errors.append("MISSING:" + field)
@@ -231,10 +232,8 @@ def complements_from_store(store, *, now=None):
         rows = c.execute("""SELECT c.*,s.source_ref,s.effective_at,s.evidence_json
             FROM contract_evidence_v2_current c JOIN contract_evidence_v2_snapshots s
             ON s.snapshot_id=c.snapshot_id""").fetchall()
-        pending = set()
-        if "contract_evidence_v2_changes" in tables:
-            pending = {tuple(r) for r in c.execute("""SELECT family,ticker,market,currency,settlement
-                FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED'""")}
+        from cp_contract_evidence_v2_hf6 import pending_material_changes
+        pending = pending_material_changes(c)
     grouped = defaultdict(list)
     for row in rows:
         r = dict(row)

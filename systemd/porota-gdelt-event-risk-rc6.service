@@ -1,14 +1,8 @@
 [Unit]
-Description=Porota RC6 structured GDELT event-risk SHADOW collector
-After=docker.service
-Requires=docker.service
+Description=Porota RC6 retired GDELT tombstone
+Documentation=GDELT_DEPRECATED_EXCLUDED
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/porota-trading
-Environment=POROTA_GDELT_INTER_QUERY_SECONDS=2
-ExecStart=/usr/bin/docker exec -e POROTA_GDELT_INTER_QUERY_SECONDS=2 porota_production_observer python /app/rc6_gdelt_event_risk_job.py
-TimeoutStartSec=4min
-Nice=10
-IOSchedulingClass=idle
+ExecStart=/usr/bin/true
 NoNewPrivileges=true

@@ -93,3 +93,35 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
     assert "REQUIRED_LOAD_FREE=$((RC6_DISK_REQUIRED_PRETRANSFER_FREE - IMAGE_TAR_BYTES - BUNDLE_BYTES))" in preinstall
     assert "post_cleanup_min_free_bytes" not in preinstall
     assert "REQUIRED_LOAD_FREE" in preinstall
+
+
+def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates() -> None:
+    text = CANONICAL.read_text(encoding="utf-8")
+    validated = text.index('"validation_status":"VALIDATED_RUNTIME"')
+    cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
+    tail = text[validated:cleanup + 400]
+
+    assert "CRITICAL_IMAGE_COMPATIBILITY=GREEN" in tail
+    assert "systemctl restart porota-critical-approval-rc6.service" in tail
+    assert "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN" in tail
+    assert "ISSUES_CAPABILITY_BROKER=GREEN" in tail
+
+    assert "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED" in tail
+    assert "OLD_IMAGE_USERS" in tail
+    assert "IMAGE_IN_USE" in tail
+    assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" in tail
+    assert "porota-trading-bot:17.0.0-rc6-candidate-*" in tail
+
+    # Keep the broad prune dangling-only. Tagged deletion is limited to
+    # proven-unreferenced RC6 candidate tags above.
+    assert "docker image prune -af" not in tail
+    assert "docker image prune -f" in tail
+
+
+def test_final_cleanup_revalidates_critical_approval_after_cleanup() -> None:
+    text = CANONICAL.read_text(encoding="utf-8")
+    final = text.index("FINAL_INODE_FREE_PERCENT")
+    tail = text[final:]
+    assert "{{.Image}}" in tail
+    assert '"$RUNTIME_IMAGE_ID"' in tail
+    assert "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" in tail
