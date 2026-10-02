@@ -22,6 +22,7 @@ JOB_KEY = "CONTRACT_EVIDENCE_V2_MASS_PPI_CATALOG"
 MAX_CATALOG_ROWS = 20_000
 SPOT_UNIT_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
 FIXED_INCOME_FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})
+CAUCION_PAPER_LIVE_BOOK_POLICY = "LIVE_PPI_BID_PARTICIPATION_CAP"
 UNKNOWN = frozenset({"", "*", "UNKNOWN", "NO_VERIFICADO"})
 
 
@@ -143,6 +144,38 @@ def planned_records(rows):
                         "readiness_guard": "PPI_EXACT_IDENTITY+NOMINAL_IN_PRICE_POSITIVE",
                     },
                 })
+        elif family == "CAUCIONES" and identity["market"] == "BYMA" and identity["currency"] == "ARS":
+            # Static simulator policy only. Rate/depth/timestamp remain dynamic
+            # and are collected separately from PPI book near EOD.
+            try:
+                from rc6_cauciones_contract import parse_ticker
+                caucion_identity = parse_ticker(identity["ticker"])
+            except ValueError:
+                skipped["CAUCION_TICKER_POLICY_UNSUPPORTED"] += 1
+            else:
+                if caucion_identity.currency_prefix != "PESOS":
+                    skipped["CAUCION_CURRENCY_POLICY_UNSUPPORTED"] += 1
+                else:
+                    from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+                    records.append({
+                        **identity,
+                        "source_class": "DERIVED_OFFICIAL_RULE",
+                        "source_ref": "PPI_CAUCION_TICKER+POROTA_PAPER_LIVE_BOOK_POLICY:v1",
+                        "observed_at": row.get("last_seen_at"),
+                        "evidence": {
+                            "side": "COLOCADORA",
+                            "term_days": str(caucion_identity.term_days),
+                            "minimum_principal": "100000",
+                            "paper_principal_step": "1",
+                            "day_count_basis": "365",
+                            "fee_payment": "UPFRONT",
+                            "paper_fill_policy": CAUCION_PAPER_LIVE_BOOK_POLICY,
+                            "fee_authority": CAUCION_PAPER_FEE_AUTHORITY,
+                            "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+                            "dynamic_execution_gate": "FRESH_PPI_PLACING_BID_REQUIRED",
+                            "readiness_guard": "PPI_EXACT_IDENTITY+SUPPORTED_TICKER+LIVE_BID_AT_EXECUTION",
+                        },
+                    })
         elif family == "FCI":
             records.append({
                 **identity,
