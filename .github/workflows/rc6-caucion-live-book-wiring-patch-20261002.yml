@@ -1,0 +1,517 @@
+name: RC6 Caucion Live Book Wiring Patch 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-caucion-policy-wiring-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Apply bounded caucion live-book wiring
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          # 1) Explicit static PAPER policy materialized from exact PPI caucion identity.
+          p=Path("cr_contract_evidence_v2_mass_hf6.py")
+          s=p.read_text(encoding="utf-8")
+          if 'CAUCION_PAPER_LIVE_BOOK_POLICY' not in s:
+              s=s.replace(
+                  'FIXED_INCOME_FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})',
+                  'FIXED_INCOME_FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})\n'
+                  'CAUCION_PAPER_LIVE_BOOK_POLICY = "LIVE_PPI_BID_PARTICIPATION_CAP"')
+              anchor='''        elif family == "FCI":
+                      records.append({'''
+              insert='''        elif family == "CAUCIONES" and identity["market"] == "BYMA" and identity["currency"] == "ARS":
+                      # Static simulator policy only. Rate/depth/timestamp remain dynamic
+                      # and are collected separately from PPI book near EOD.
+                      try:
+                          from rc6_cauciones_contract import parse_ticker
+                          caucion_identity = parse_ticker(identity["ticker"])
+                      except ValueError:
+                          skipped["CAUCION_TICKER_POLICY_UNSUPPORTED"] += 1
+                      else:
+                          if caucion_identity.currency_prefix != "PESOS":
+                              skipped["CAUCION_CURRENCY_POLICY_UNSUPPORTED"] += 1
+                          else:
+                              from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+                              records.append({
+                                  **identity,
+                                  "source_class": "DERIVED_OFFICIAL_RULE",
+                                  "source_ref": "PPI_CAUCION_TICKER+POROTA_PAPER_LIVE_BOOK_POLICY:v1",
+                                  "observed_at": row.get("last_seen_at"),
+                                  "evidence": {
+                                      "side": "COLOCADORA",
+                                      "term_days": str(caucion_identity.term_days),
+                                      "minimum_principal": "100000",
+                                      "paper_principal_step": "1",
+                                      "day_count_basis": "365",
+                                      "fee_payment": "UPFRONT",
+                                      "paper_fill_policy": CAUCION_PAPER_LIVE_BOOK_POLICY,
+                                      "fee_authority": CAUCION_PAPER_FEE_AUTHORITY,
+                                      "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+                                      "dynamic_execution_gate": "FRESH_PPI_PLACING_BID_REQUIRED",
+                                      "readiness_guard": "PPI_EXACT_IDENTITY+SUPPORTED_TICKER+LIVE_BID_AT_EXECUTION",
+                                  },
+                              })
+                  elif family == "FCI":
+                      records.append({'''
+              if anchor not in s: raise SystemExit("MASS_CAUCION_INSERT_SOURCE_DRIFT")
+              s=s.replace(anchor,insert,1)
+              p.write_text(s,encoding="utf-8")
+
+          # 2) Bridge: static caucion policy makes the specialized executor READY;
+          # dynamic book fields remain runtime gates, not contract readiness.
+          p=Path("rc6_contract_bridge.py")
+          s=p.read_text(encoding="utf-8")
+          old='''        "CAUCIONES": ("side", "start_date", "maturity_at", "quoted_at",
+                            "minimum_principal", "day_count_basis", "fee_payment",
+                            "annual_rate_fraction", "operable", "market_session_state"),'''
+          new='''        "CAUCIONES": ("side", "term_days", "minimum_principal",
+                            "paper_principal_step", "day_count_basis", "fee_payment",
+                            "paper_fill_policy", "fee_authority"),'''
+          if old in s: s=s.replace(old,new,1)
+          elif new not in s: raise SystemExit("BRIDGE_CAUCION_REQUIRED_SOURCE_DRIFT")
+          old='''    if family == "CAUCIONES":
+                  published_depth = all(name in fields for name in ("available_principal", "principal_step"))
+                  paper_fill = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+                                and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
+                  if not (published_depth or paper_fill):
+                      errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_notional_cap",
+                                     "MISSING:paper_principal_step"))'''
+          new='''    if family == "CAUCIONES":
+                  published_depth = all(name in fields for name in ("available_principal", "principal_step"))
+                  legacy_cap = (fields.get("paper_fill_policy") == "CONSERVATIVE_NOTIONAL_CAP"
+                                and all(name in fields for name in ("paper_notional_cap", "paper_principal_step")))
+                  live_book = (fields.get("paper_fill_policy") == "LIVE_PPI_BID_PARTICIPATION_CAP"
+                               and "paper_principal_step" in fields)
+                  if not (published_depth or legacy_cap or live_book):
+                      errors.extend(("MISSING:paper_fill_policy", "MISSING:paper_principal_step"))'''
+          if old in s: s=s.replace(old,new,1)
+          elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("BRIDGE_CAUCION_FILL_SOURCE_DRIFT")
+          p.write_text(s,encoding="utf-8")
+
+          # 3) Offer model understands live-book participation policy.
+          p=Path("bt_caucion_paper.py")
+          s=p.read_text(encoding="utf-8")
+          s=s.replace(
+              'if self.paper_fill_policy not in {None, "CONSERVATIVE_NOTIONAL_CAP"}:',
+              'if self.paper_fill_policy not in {None, "CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}:')
+          old='''        if (self.paper_fill_policy is not None
+                          and not self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")):
+                      raise ValueError("Falta provenance v2 de la política PAPER de caución")'''
+          new='''        if (self.paper_fill_policy is not None
+                          and not (self.metadata_source.startswith("CONTRACT_EVIDENCE_V2:")
+                                   or self.metadata_source.startswith("PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:"))):
+                      raise ValueError("Falta provenance verificable de la política PAPER de caución")'''
+          if old in s: s=s.replace(old,new,1)
+          elif "PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:" not in s: raise SystemExit("OFFER_PROVENANCE_SOURCE_DRIFT")
+          old='''            if (self.currency != "ARS" or self.quoted_total_fees is not None
+                          or self.paper_fill_policy != "CONSERVATIVE_NOTIONAL_CAP"
+                          or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
+          new='''            if (self.currency != "ARS" or self.quoted_total_fees is not None
+                          or self.paper_fill_policy not in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
+                          or self.fee_authority != CAUCION_PAPER_FEE_AUTHORITY):'''
+          if old in s: s=s.replace(old,new,1)
+          elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("OFFER_FEE_POLICY_SOURCE_DRIFT")
+          old='''    if offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP":
+                  return offer.available_principal
+              return offer.available_principal * participation'''
+          new='''    if offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP":
+                  return offer.available_principal
+              # Exact live PPI depth stays provider evidence; PAPER participates
+              # only up to the configured conservative fraction.
+              return offer.available_principal * participation'''
+          if old not in s and "Exact live PPI depth stays provider evidence" not in s:
+              raise SystemExit("LIQUIDITY_CAP_SOURCE_DRIFT")
+          if old in s: s=s.replace(old,new,1)
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("ca_caucion_allocator.py")
+          s=p.read_text(encoding="utf-8")
+          old='''    return (offer.currency == "ARS"
+                          and offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+                          and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
+          new='''    return (offer.currency == "ARS"
+                          and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
+                          and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
+          if old in s: s=s.replace(old,new,1)
+          elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("ALLOCATOR_FEE_SOURCE_DRIFT")
+          p.write_text(s,encoding="utf-8")
+
+          # 4) Separate dynamic live PPI book store; no client construction/order API.
+          Path("dj_caucion_live_ppi_rc6.py").write_text(textwrap.dedent(r'''
+          """Bounded dynamic PPI caucion book collector for PAPER EOD.
+
+          Uses an already-authenticated read-only ProductionMarketReader supplied by
+          the observer. Dynamic rate/depth are deliberately NOT written to Contract
+          Evidence v2: normal market movement must never become contract-change review.
+          """
+          from __future__ import annotations
+          import json
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+          from zoneinfo import ZoneInfo
+
+          from bd_ppi_readonly_guard import retry_read
+          from bs_instrument_contracts import aware_datetime
+          from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
+
+          TZ=ZoneInfo("America/Argentina/Buenos_Aires")
+          MAX_ROWS=2000
+          SOURCE="PPI_MARKETDATA_BOOK_READONLY"
+          POLICY="LIVE_PPI_BID_PARTICIPATION_CAP"
+
+          def init_schema(store):
+              with store.connect() as c:
+                  c.executescript("""
+                  CREATE TABLE IF NOT EXISTS paper_caucion_live_book(
+                    ticker TEXT NOT NULL, market TEXT NOT NULL, currency TEXT NOT NULL,
+                    settlement TEXT NOT NULL, term_days INTEGER NOT NULL,
+                    quoted_at TEXT, tna_fraction TEXT, available_principal TEXT,
+                    state TEXT NOT NULL, source TEXT NOT NULL, observed_at TEXT NOT NULL,
+                    PRIMARY KEY(ticker,market,currency,settlement));
+                  CREATE TABLE IF NOT EXISTS paper_caucion_live_book_history(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL,
+                    market TEXT NOT NULL, currency TEXT NOT NULL, settlement TEXT NOT NULL,
+                    term_days INTEGER NOT NULL, quoted_at TEXT, tna_fraction TEXT,
+                    available_principal TEXT, state TEXT NOT NULL, source TEXT NOT NULL,
+                    observed_at TEXT NOT NULL);
+                  """)
+
+          def collection_window(at):
+              from di_caucion_cash_sweep_runtime_hf6 import paper_schedule
+              local=aware_datetime(at).astimezone(TZ)
+              schedule=paper_schedule(local)
+              if not schedule:
+                  return False
+              warmup=schedule["sweep_start_at"]-timedelta(minutes=5)
+              return warmup <= local <= schedule["order_cutoff_at"]
+
+          def _catalog(store):
+              with store.connect() as c:
+                  rows=c.execute("""SELECT ticker,market,currency,settlement,status
+                    FROM financial_instrument_catalog
+                    WHERE instrument_type='CAUCIONES' AND status='AVAILABLE'
+                      AND currency='ARS' AND market='BYMA'
+                    ORDER BY ticker""").fetchall()
+              out=[]
+              for row in rows:
+                  item=dict(row)
+                  try: ident=parse_ticker(item["ticker"])
+                  except ValueError: continue
+                  if ident.currency_prefix!="PESOS" or ident.term_days not in {1,2,7,30,120}: continue
+                  item["term_days"]=ident.term_days
+                  out.append(item)
+              return out
+
+          def _book_row(reader,item,observed_at,now):
+              state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
+              try:
+                  book=retry_read(lambda: reader.book(item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+                  quoted_at=book.get("date") if isinstance(book,dict) else None
+                  levels=list(placed_side_book_levels(book if isinstance(book,dict) else {}))
+                  if levels:
+                      quote=quote_from_book_level(item["ticker"],levels[0])
+                      at=aware_datetime(quoted_at,"book caución")
+                      age=(aware_datetime(now).astimezone(at.tzinfo)-at).total_seconds()
+                      if age < 0: state="FUTURE_BOOK"
+                      elif age > 120: state="STALE_BOOK"
+                      elif quote.tna_percent <= 0 or quote.quantity <= 0: state="EMPTY_PLACED_BID"
+                      else:
+                          state="BOOK_READY"
+                          rate=str((quote.tna_percent/Decimal("100")).normalize())
+                          principal=str(quote.quantity.normalize())
+              except Exception as exc:
+                  state="READ_ERROR:"+type(exc).__name__
+              return {**item,"quoted_at":quoted_at,"tna_fraction":rate,
+                      "available_principal":principal,"state":state,
+                      "source":SOURCE,"observed_at":observed_at}
+
+          def refresh(reader,store,*,now):
+              if reader is None or not hasattr(reader,"book"):
+                  raise ValueError("CAUCION_LIVE_READER_REQUIRED")
+              if not collection_window(now):
+                  return {"state":"OUTSIDE_COLLECTION_WINDOW","records":0,"ready":0,
+                          "real_routes":[]}
+              init_schema(store)
+              observed_at=aware_datetime(now).isoformat()
+              rows=[_book_row(reader,item,observed_at,now) for item in _catalog(store)]
+              with store.connect() as c:
+                  c.execute("BEGIN IMMEDIATE")
+                  for row in rows:
+                      values=(row["ticker"],row["market"],row["currency"],row["settlement"],
+                              row["term_days"],row["quoted_at"],row["tna_fraction"],
+                              row["available_principal"],row["state"],row["source"],row["observed_at"])
+                      c.execute("""INSERT INTO paper_caucion_live_book VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(ticker,market,currency,settlement) DO UPDATE SET
+                        term_days=excluded.term_days,quoted_at=excluded.quoted_at,
+                        tna_fraction=excluded.tna_fraction,
+                        available_principal=excluded.available_principal,state=excluded.state,
+                        source=excluded.source,observed_at=excluded.observed_at""",values)
+                      c.execute("""INSERT INTO paper_caucion_live_book_history
+                        (ticker,market,currency,settlement,term_days,quoted_at,tna_fraction,
+                         available_principal,state,source,observed_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",values)
+                  c.execute("""DELETE FROM paper_caucion_live_book_history
+                    WHERE id NOT IN (SELECT id FROM paper_caucion_live_book_history
+                    ORDER BY id DESC LIMIT ?)""",(MAX_ROWS,))
+              return {"state":"OK","records":len(rows),
+                      "ready":sum(r["state"]=="BOOK_READY" for r in rows),
+                      "states":{r["ticker"]:r["state"] for r in rows},
+                      "real_routes":[]}
+          ''')+"
+",encoding="utf-8")
+
+          # 5) Observer owns network reads; cash-sweep remains local-only.
+          p=Path("bf_production_paper_observer.py")
+          s=p.read_text(encoding="utf-8")
+          if "CAUCION_LIVE_REFRESH_SECONDS" not in s:
+              s=s.replace(
+                  'COMPLEMENTARY_RECONCILE_SECONDS = max(\n    60, int(os.getenv("PAPER_COMPLEMENTARY_RECONCILE_SECONDS", "300"))\n)',
+                  'COMPLEMENTARY_RECONCILE_SECONDS = max(\n    60, int(os.getenv("PAPER_COMPLEMENTARY_RECONCILE_SECONDS", "300"))\n)\n'
+                  'CAUCION_LIVE_REFRESH_SECONDS = max(30, int(os.getenv("PAPER_CAUCION_LIVE_REFRESH_SECONDS", "60")))')
+          if "last_caucion_live_refresh = 0.0" not in s:
+              s=s.replace("    last_complementary_reconcile = 0.0\n",
+                          "    last_complementary_reconcile = 0.0\n    last_caucion_live_refresh = 0.0\n",1)
+          anchor='''            operations.service_tick(store, phase)
+                  if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
+          insert='''            operations.service_tick(store, phase)
+                  if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
+                      try:
+                          import dj_caucion_live_ppi_rc6 as caucion_live
+                          if caucion_live.collection_window(datetime.now(TZ)):
+                              result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
+                              store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
+                              last_caucion_live_refresh=time.time()
+                      except Exception as exc:
+                          store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
+                  if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:'''
+          if anchor in s: s=s.replace(anchor,insert,1)
+          elif "CAUCION_LIVE_BOOK_REFRESH" not in s: raise SystemExit("OBSERVER_CAUCION_INSERT_SOURCE_DRIFT")
+          p.write_text(s,encoding="utf-8")
+
+          # 6) Cash sweep builds offers strictly from static READY policy + fresh local PPI book.
+          p=Path("di_caucion_cash_sweep_runtime_hf6.py")
+          s=p.read_text(encoding="utf-8")
+          a=s.index("def offers_from_store(store, *, now):")
+          b=s.index("\ndef _persist_runtime",a)
+          new=textwrap.dedent(r'''
+          def offers_from_store(store, *, now):
+              """Bind exact PPI identity/static PAPER policy to fresh local PPI book.
+
+              No network is reachable here. Missing/stale/no-bid dynamic evidence stays HOLD.
+              """
+              from datetime import datetime, time as dt_time
+              from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+              from rc6_cauciones_contract import parse_ticker, theoretical_liquidity_date
+
+              at=aware_datetime(now)
+              with store.connect() as connection:
+                  tables={r[0] for r in connection.execute(
+                      "SELECT name FROM sqlite_master WHERE type='table'")}
+                  if "paper_caucion_live_book" not in tables:
+                      return [], ["CAUCION_LIVE_BOOK_MISSING"]
+                  rows=[dict(r) for r in connection.execute("""SELECT
+                    f.ticker,f.market,f.currency,f.settlement,f.status,f.capability,f.metadata_json,
+                    b.term_days,b.quoted_at,b.tna_fraction,b.available_principal,b.state,b.source,b.observed_at
+                    FROM financial_instrument_catalog f
+                    JOIN paper_caucion_live_book b
+                      ON b.ticker=f.ticker AND b.market=f.market
+                     AND b.currency=f.currency AND b.settlement=f.settlement
+                    WHERE f.instrument_type='CAUCIONES' AND f.status='AVAILABLE'
+                      AND f.currency='ARS' ORDER BY f.ticker""")]
+              offers=[]; errors=[]
+              for row in rows:
+                  if row["state"]!="BOOK_READY":
+                      errors.append(f"{row['ticker']}:{row['state']}")
+                      continue
+                  try:
+                      raw=json.loads(row["metadata_json"] or "{}")
+                      policy=raw.get("paper_caucion_contract_v1") or {}
+                      if row["capability"]!="READY_PAPER_CAUCION_PLACING":
+                          raise ValueError("CAUCION_STATIC_POLICY_NOT_READY")
+                      if policy.get("paper_fill_policy")!="LIVE_PPI_BID_PARTICIPATION_CAP":
+                          raise ValueError("CAUCION_LIVE_FILL_POLICY_MISSING")
+                      if policy.get("fee_authority")!=CAUCION_PAPER_FEE_AUTHORITY:
+                          raise ValueError("CAUCION_PAPER_FEE_AUTHORITY_MISSING")
+                      quoted=aware_datetime(row["quoted_at"],"cotización caución")
+                      age=(at.astimezone(quoted.tzinfo)-quoted).total_seconds()
+                      if not 0 <= age <= 90:
+                          raise ValueError("CAUCION_LIVE_BOOK_STALE")
+                      identity=parse_ticker(row["ticker"])
+                      start=quoted.astimezone(TZ).date()
+                      maturity=theoretical_liquidity_date(start,row["ticker"])
+                      maturity_at=datetime.combine(maturity,dt_time(17,0),TZ).isoformat()
+                      offer=CaucionOffer(
+                          instrument_id=row["ticker"],currency="ARS",
+                          annual_rate_fraction=Decimal(str(row["tna_fraction"])),
+                          start_date=start.isoformat(),maturity_at=maturity_at,
+                          quoted_at=quoted.isoformat(),
+                          available_principal=Decimal(str(row["available_principal"])),
+                          minimum_principal=Decimal(str(policy["minimum_principal"])),
+                          principal_step=Decimal(str(policy["paper_principal_step"])),
+                          day_count_basis=int(Decimal(str(policy["day_count_basis"]))),
+                          fee_payment=str(policy["fee_payment"]),
+                          metadata_source="PPI_PRIMARY_LIVE_BOOK+PAPER_POLICY:v1",
+                          paper_fill_policy="LIVE_PPI_BID_PARTICIPATION_CAP",
+                          fee_authority=CAUCION_PAPER_FEE_AUTHORITY)
+                      if identity.term_days != int(row["term_days"]):
+                          raise ValueError("CAUCION_TERM_IDENTITY_MISMATCH")
+                      offers.append(offer)
+                  except (ValueError,TypeError,KeyError,ArithmeticError) as exc:
+                      errors.append(f"{row['ticker']}:{str(exc)}")
+              return offers,errors
+
+          ''')
+          s=s[:a]+new+s[b+1:]
+          s=s.replace('max_quote_age_seconds=30, **schedule)',
+                      'max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)')
+          p.write_text(s,encoding="utf-8")
+
+          # 7) Regressions.
+          Path("tests/test_ws_caucion_12_live_ppi_wiring.py").write_text(textwrap.dedent(r'''
+          import json
+          from datetime import datetime
+          from decimal import Decimal
+          from zoneinfo import ZoneInfo
+
+          import bf_production_paper_observer as observer
+          import bu_instrument_catalog as catalog
+          import cr_contract_evidence_v2_mass_hf6 as mass
+          import dj_caucion_live_ppi_rc6 as live
+          import rc6_contract_bridge as bridge
+          from be_paper_engine import PaperStore
+          from bt_caucion_paper import automatic_liquidity_cap
+          from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
+
+          TZ=ZoneInfo("America/Argentina/Buenos_Aires")
+          NOW=datetime(2026,10,2,16,59,57,tzinfo=TZ)
+
+          def _store(tmp_path):
+              store=PaperStore(str(tmp_path/"observer.db"))
+              observer._support_schema(store)
+              raw={"ticker":"PESOS7","description":"PESOS 7","currency":"Pesos",
+                   "type":"CAUCIONES","market":"BYMA","nominalInPrice":1,
+                   "_provider_instrument_type":"CAUCIONES","_discovery_source":"PPI_PRIMARY"}
+              record=catalog.normalize_record(raw,"INMEDIATA",NOW.isoformat(),"test")
+              with store.connect() as c:
+                  catalog.persist(c,record)
+              return store
+
+          def test_mass_policy_marks_exact_ars_caucion_static_ready(tmp_path):
+              store=_store(tmp_path)
+              result=mass.collect(store,run_id="caucion-static")
+              assert result["real_routes_used"]==[]
+              complements=bridge.complements_from_store(store,now=NOW)
+              claim=next(x for x in complements if x["ticker"]=="PESOS7")
+              assert claim["paper_caucion_contract_v1"]["paper_fill_policy"]=="LIVE_PPI_BID_PARTICIPATION_CAP"
+              primary=None
+              with store.connect() as c:
+                  row=c.execute("select * from financial_instrument_catalog where ticker='PESOS7'").fetchone()
+                  primary=dict(row); primary["raw"]=json.loads(primary.pop("metadata_json"))
+              completed=catalog.complete_with_complement(primary,claim)
+              assert completed["capability"]=="READY_PAPER_CAUCION_PLACING"
+
+          def test_live_book_is_separate_dynamic_state_and_participation_is_conservative(tmp_path,monkeypatch):
+              store=_store(tmp_path)
+              mass.collect(store,run_id="caucion-static")
+              for claim in bridge.complements_from_store(store,now=NOW):
+                  with store.connect() as c:
+                      rows=[dict(r) for r in c.execute(
+                          "select * from financial_instrument_catalog where ticker=?",(claim["ticker"],))]
+                  for primary in rows:
+                      primary["raw"]=json.loads(primary.pop("metadata_json"))
+                      completed=catalog.complete_with_complement(primary,claim)
+                      with store.connect() as c: catalog.persist(c,completed)
+
+              class Reader:
+                  def book(self,ticker,kind,settlement):
+                      assert (ticker,kind,settlement)==("PESOS7","CAUCIONES","INMEDIATA")
+                      return {"date":NOW.isoformat(),
+                              "bids":[{"price":19.1,"quantity":30000000}],"offers":[]}
+              monkeypatch.setattr(live,"collection_window",lambda at:True)
+              result=live.refresh(Reader(),store,now=NOW)
+              assert result["ready"]==1 and result["real_routes"]==[]
+              with store.connect() as c:
+                  assert c.execute("select count(*) from paper_caucion_live_book").fetchone()[0]==1
+                  # Dynamic quote must never enter static Contract Evidence v2.
+                  payloads=[r[0] for r in c.execute(
+                      "select evidence_json from contract_evidence_v2_snapshots where family='CAUCIONES'")]
+                  assert all('"annual_rate_fraction"' not in p for p in payloads)
+              offers,errors=offers_from_store(store,now=NOW)
+              assert not errors and len(offers)==1
+              offer=offers[0]
+              assert offer.annual_rate_fraction==Decimal("0.191")
+              assert offer.available_principal==Decimal("30000000")
+              assert automatic_liquidity_cap(offer,Decimal("0.10"))==Decimal("3000000")
+              assert offer.fee_authority
+              assert offer.paper_fill_policy=="LIVE_PPI_BID_PARTICIPATION_CAP"
+
+          def test_no_placing_bid_never_fabricates_rate_or_depth(tmp_path,monkeypatch):
+              store=_store(tmp_path)
+              class Reader:
+                  def book(self,*_):
+                      return {"date":NOW.isoformat(),"bids":[],"offers":[{"price":20,"quantity":999999}]}
+              monkeypatch.setattr(live,"collection_window",lambda at:True)
+              result=live.refresh(Reader(),store,now=NOW)
+              assert result["ready"]==0
+              with store.connect() as c:
+                  row=c.execute("select state,tna_fraction,available_principal from paper_caucion_live_book").fetchone()
+              assert tuple(row)==("NO_PLACED_BID",None,None)
+
+          def test_live_collector_has_no_client_constructor_or_order_route():
+              from pathlib import Path
+              source=Path("dj_caucion_live_ppi_rc6.py").read_text(encoding="utf-8")
+              assert "ProductionMarketReader(" not in source
+              assert ".order" not in source.lower()
+              assert ".budget" not in source.lower()
+              assert "contract_evidence_v2" not in source
+          ''')+"
+",encoding="utf-8")
+          PY
+          python -m py_compile cr_contract_evidence_v2_mass_hf6.py rc6_contract_bridge.py             bt_caucion_paper.py ca_caucion_allocator.py dj_caucion_live_ppi_rc6.py             bf_production_paper_observer.py di_caucion_cash_sweep_runtime_hf6.py
+          git diff --check
+      - name: Install and run focused regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q             tests/test_ws_caucion_12_live_ppi_wiring.py             tests/test_ws_caucion_10_auto_recovery.py             tests/test_ws_motor_15_operative_closure.py             tests/test_ws_motor_14_paper_policy.py             tests/test_ws_motor_09_contract_bridge.py             tests/test_rc6_cauciones_contract.py             tests/test_rc6_cauciones_official_contract.py
+      - name: Static PAPER safety guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("dj_caucion_live_ppi_rc6.py").read_text()
+          assert "ProductionMarketReader(" not in s
+          assert "real_routes" in s
+          w=Path("di_caucion_cash_sweep_runtime_hf6.py").read_text()
+          assert "CASH_SWEEP_ORDER_ROUTING_ALLOWED = False" in w
+          print("CAUCION_PAPER_SAFETY=GREEN")
+          PY
+      - name: Commit validated source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cr_contract_evidence_v2_mass_hf6.py rc6_contract_bridge.py bt_caucion_paper.py             ca_caucion_allocator.py dj_caucion_live_ppi_rc6.py bf_production_paper_observer.py             di_caucion_cash_sweep_runtime_hf6.py tests/test_ws_caucion_12_live_ppi_wiring.py
+          if git diff --cached --quiet; then echo CAUCION_PATCH_NO_SOURCE_DELTA; else
+            git commit -m 'fix(rc6): wire fresh PPI caucion book into PAPER sweep'
+            git push origin HEAD:fix/rc6-caucion-policy-wiring-20261002
+          fi
