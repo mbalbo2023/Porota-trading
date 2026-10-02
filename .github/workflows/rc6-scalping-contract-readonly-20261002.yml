@@ -1,0 +1,111 @@
+name: RC6 Scalping Contract Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-scalping-contract-20261002]
+    paths: ['.github/workflows/rc6-scalping-contract-readonly-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Runtime DB audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 90s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/scalping_runtime.json <<'PY'
+          import sqlite3,json,collections
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5)
+          c.row_factory=sqlite3.Row;c.execute("pragma query_only=on");c.execute("pragma busy_timeout=3000")
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def cols(t): return [r[1] for r in c.execute(f'pragma table_info("{t}")')]
+          def recent(t,n=30):
+              cc=cols(t)
+              order="rowid"
+              for k in ("decided_at","created_at","updated_at","observed_at","heartbeat_at","ts","timestamp"):
+                  if k in cc: order=f'"{k}"';break
+              try:return [dict(r) for r in c.execute(f'select * from "{t}" order by {order} desc limit ?', (n,))]
+              except:return []
+          interesting={}
+          for t in sorted(tables):
+              if any(x in t.lower() for x in ("scalp","intraday")):
+                  interesting[t]={"columns":cols(t),"recent":recent(t,50)}
+          tickers=["MRSHC","MRNAC","MRKC","MPC","MOC","MMMC","MGL3C","METAC","MELIC","MDTC"]
+          catalog=[]
+          for t in tickers:
+              for r in c.execute("""select * from financial_instrument_catalog
+                    where upper(ticker)=? order by instrument_type,market,currency,settlement""",(t,)):
+                  d=dict(r)
+                  try:d["metadata_json"]=json.loads(d.get("metadata_json") or "{}")
+                  except:pass
+                  catalog.append(d)
+          identities=[]
+          for t in tickers:
+              identities += [dict(r) for r in c.execute("""select * from candidate_identity_v2
+                    where upper(ticker)=? order by instrument_type,market,currency,settlement""",(t,))]
+          out={
+            "observer":dict(c.execute("select * from observer_state where id=1").fetchone() or {}),
+            "scalping_tables":interesting,
+            "screen_tickers_catalog":catalog,
+            "screen_tickers_identity":identities,
+          }
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          python3 - <<'PY' | tee evidence/scalping_summary.txt
+          import json,collections
+          x=json.load(open("evidence/scalping_runtime.json"))
+          print("OBSERVER="+json.dumps({k:x["observer"].get(k) for k in ("mode","real_orders_sent","session_state","process_state","heartbeat_at")},sort_keys=True))
+          for t,v in x["scalping_tables"].items():
+              print("TABLE="+t+" COLUMNS="+json.dumps(v["columns"]))
+              rs=v["recent"]
+              reasons=collections.Counter()
+              states=collections.Counter()
+              for r in rs:
+                  for k in ("reason","detail","explanation","motivo"):
+                      if r.get(k): reasons[str(r[k])]+=1
+                  for k in ("action","decision","state","status"):
+                      if r.get(k): states[str(r[k])]+=1
+              print("TABLE_RECENT="+t+" ROWS="+str(len(rs))+" STATES="+json.dumps(states.most_common(20),ensure_ascii=False)+" REASONS="+json.dumps(reasons.most_common(30),ensure_ascii=False))
+          print("SCREEN_CATALOG="+json.dumps(x["screen_tickers_catalog"],ensure_ascii=False,sort_keys=True))
+          print("SCREEN_IDENTITY="+json.dumps(x["screen_tickers_identity"],ensure_ascii=False,sort_keys=True))
+          print("SCALPING_RUNTIME_READONLY=GREEN")
+          PY
+      - name: Code trace
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "STRING_TRACE"
+            git grep -n -i -E 'Contrato intradía|PENDING_LIVE_CONFIRMATION|INTRADAY.*CONTRACT|contract.*intraday|live.confirmation' -- '*.py' 'tests/*.py' || true
+            echo "SCALPING_ENTRYPOINTS"
+            git grep -n -E 'scalping_candidates|intraday_scalping|ACTIVE_PAPER' -- '*.py' 'tests/*.py' | head -500 || true
+          } | tee evidence/code_trace.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-scalping-contract-readonly-20261002
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
