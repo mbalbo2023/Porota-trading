@@ -142,11 +142,11 @@ jobs:
           p=Path("ca_caucion_allocator.py")
           s=p.read_text(encoding="utf-8")
           old='''    return (offer.currency == "ARS"
-                          and offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
-                          and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
+                      and offer.paper_fill_policy == "CONSERVATIVE_NOTIONAL_CAP"
+                      and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
           new='''    return (offer.currency == "ARS"
-                          and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
-                          and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
+                      and offer.paper_fill_policy in {"CONSERVATIVE_NOTIONAL_CAP", "LIVE_PPI_BID_PARTICIPATION_CAP"}
+                      and offer.fee_authority == CAUCION_PAPER_FEE_AUTHORITY)'''
           if old in s: s=s.replace(old,new,1)
           elif "LIVE_PPI_BID_PARTICIPATION_CAP" not in s: raise SystemExit("ALLOCATOR_FEE_SOURCE_DRIFT")
           p.write_text(s,encoding="utf-8")
