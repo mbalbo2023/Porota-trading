@@ -115,7 +115,6 @@ jobs:
                   "PPI_PRODUCTION_HISTORY","PPI_BACKGROUND_INGEST"}]
               last_attempt=max((str(r.get("last_attempt_at") or "") for r in history_sync),default="") or None
               last_success=max((str(r.get("last_success_at") or "") for r in history_sync),default="") or None'''
-          old=textwrap.dedent(old); new=textwrap.dedent(new)
           if old not in s: raise SystemExit("HISTORY_SYNC_SOURCE_DRIFT")
           s=s.replace(old,new,1)
 
@@ -137,7 +136,6 @@ jobs:
                   target_coverage={"available":False,"reason":type(exc).__name__,"target_total":0,
                                    "covered_target_total":0,"historical_identity_total":0,"by_family":{}}
               try:'''
-          old=textwrap.dedent(old); new=textwrap.dedent(new)
           if old not in s: raise SystemExit("HISTORY_STORE_SOURCE_DRIFT")
           s=s.replace(old,new,1)
 
@@ -149,7 +147,6 @@ jobs:
               legacy_history_count=int(history.get('instruments') or 0)
               history_count=int(target_coverage.get('covered_target_total') or 0)
               history_rows=int(store_v2.get('canonical_rows') or 0)'''
-          old=textwrap.dedent(old); new=textwrap.dedent(new)
           if old not in s: raise SystemExit("HISTORY_COUNT_SOURCE_DRIFT")
           s=s.replace(old,new,1)
 
@@ -159,7 +156,6 @@ jobs:
                         "Sólo PPI_PRODUCTION_HISTORY / PPI_BACKGROUND_INGEST; catálogo se informa por separado","gray"),
                   _card("Último éxito de historia PPI",_local_time(last_success),
                         "No se mezcla con la corrida de catálogo PPI","green" if last_success else "yellow")'''
-          old=textwrap.dedent(old); new=textwrap.dedent(new)
           if old not in s: raise SystemExit("HISTORY_CARD_SOURCE_DRIFT")
           s=s.replace(old,new,1)
 
@@ -186,7 +182,7 @@ jobs:
                       f"<td>{_e(current.get('last_date'))}</td><td>{_e(', '.join(caps.get(family,())) or 'PROBE_REQUIRED')}</td></tr>")
               family_history=''.join(family_history_rows) or "<tr><td colspan='6'>Esperando métricas multi-familia.</td></tr>"
           '''
-          s=s[:a]+textwrap.dedent(block)+s[b:]
+          s=s[:a]+block+s[b:]
 
           old="Cobertura History Store v2 por familia</h2><table class='paper-table'><tr><th>Familia</th><th>Identidades/objetivo</th>"
           new=("Cobertura History Store v2 por familia</h2><p class='paper-muted'>El numerador y el objetivo usan la misma identidad actual "
@@ -216,7 +212,7 @@ jobs:
           '''
           anchor='    assert "12" in rendered\n'
           if anchor not in t: raise SystemExit("DECISION_DASH_TEST_SOURCE_DRIFT")
-          t=t.replace(anchor,anchor+textwrap.dedent(insert),1)
+          t=t.replace(anchor,anchor+insert,1)
           p.write_text(t,encoding="utf-8")
 
           p=Path("tests/test_ws_dash_07_history_truth.py")
