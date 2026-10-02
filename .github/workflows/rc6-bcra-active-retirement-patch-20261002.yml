@@ -1,0 +1,188 @@
+name: RC6 BCRA Active Retirement Patch 2026-10-02
+
+on:
+  push:
+    branches:
+      - fix/rc6-bcra-retired-20261002
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Retire BCRA from active RC6 paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path("bi_operational_services.py")
+          s=p.read_text(encoding="utf-8")
+          s=s.replace('OFFICIAL_BCRA = "https://api.bcra.gob.ar"',
+                      'OFFICIAL_BCRA = None  # RETIRED_OPERATOR_DECISION_2026_10_02')
+          s=re.sub(r'BCRA_VARIABLES = \{.*?\n\}\n', 'BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator\n',
+                   s, count=1, flags=re.S)
+          a=s.index("def refresh_financial(store, timeout=10):")
+          b=s.index("\ndef _clean(",a)
+          block=s[a:b]
+          loop_start=block.index("    for name, variable_id in BCRA_VARIABLES.items():")
+          loop_end=block.index("    for name, series_id in DATOS_AR_SERIES.items():",loop_start)
+          block=block[:loop_start]+block[loop_end:]
+          block=block.replace('"""BCRA v4 + series oficiales INDEC/Economía; una vez cada 12 horas."""',
+                              '"""Series oficiales INDEC/datos.gob.ar; BCRA activo fue retirado por decisión del operador."""')
+          s=s[:a]+block+s[b:]
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("de_scheduler_catalog_hf6.py")
+          s=p.read_text(encoding="utf-8")
+          s=s.replace('InternalJob("FINANCIAL_REFRESH", "Información financiera",\n'
+                      '                "Actualiza series públicas BCRA/INDEC usadas como contexto informativo.", 12*3600),',
+                      'InternalJob("FINANCIAL_REFRESH", "Información financiera",\n'
+                      '                "Actualiza sólo INDEC/datos.gob.ar; BCRA activo retirado por decisión del operador.", 12*3600),')
+          p.write_text(s,encoding="utf-8")
+
+          Path("rc6_macro_risk_shadow.py").write_text('''"""Compatibility tombstone for the retired RC6 BCRA macro shadow feed.
+
+          Operator decision 2026-10-02: BCRA macro context is not an active POROTA
+          input.  Historical cache files are preserved as audit evidence, but this
+          module performs no network access, no SQLite reads and has no decision effect.
+          """
+          from __future__ import annotations
+
+          BCRA_ACTIVE = False
+          RETIREMENT_REASON = "RETIRED_OPERATOR_DECISION_2026-10-02"
+
+          def collect(*_args, **_kwargs):
+              return {
+                  "mode": "RETIRED",
+                  "state": RETIREMENT_REASON,
+                  "decision_effect": "NONE",
+                  "source": "NONE",
+                  "indicators": {},
+                  "feature_version": "rc6-bcra-retired-v1",
+              }
+          ''',encoding="utf-8")
+
+          p=Path("be_paper_engine.py")
+          s=p.read_text(encoding="utf-8")
+          a=s.index("        # Contexto BCRA/macro:")
+          b=s.index("        # Noticias GDELT:",a)
+          retired='''        # BCRA macro context retired by operator decision 2026-10-02.
+                  # Preserve a provenance marker only; no cache/network read and no decision effect.
+                  features["macro_risk_shadow"] = {
+                      "mode": "RETIRED",
+                      "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+                      "decision_effect": "NONE",
+                      "source": "NONE",
+                  }
+          '''
+          s=s[:a]+retired+s[b:]
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("as_greeks_engine.py")
+          s=p.read_text(encoding="utf-8")
+          a=s.index("def _tasa_desde_macro()")
+          b=s.index("\ndef lote_por_subyacente",a)
+          replacement='''def _tasa_desde_macro() -> Optional[float]:
+              """BCRA/TAMAR cache retired; caller must use its explicit fallback.
+
+              This function intentionally performs no network or cache read.
+              """
+              return None
+
+          '''
+          s=s[:a]+replacement+s[b+1:]
+          p.write_text(s,encoding="utf-8")
+
+          p=Path("tests/test_rc6_macro_risk_shadow.py")
+          p.write_text('''import rc6_macro_risk_shadow as shadow
+
+          def test_bcra_macro_shadow_is_retired_without_io(tmp_path):
+              result=shadow.collect(tmp_path/"missing.db")
+              assert shadow.BCRA_ACTIVE is False
+              assert result["state"]=="RETIRED_OPERATOR_DECISION_2026-10-02"
+              assert result["decision_effect"]=="NONE"
+              assert result["indicators"]=={}
+              assert not (tmp_path/"missing.db").exists()
+          ''',encoding="utf-8")
+
+          p=Path("tests/test_macro_bcra_v4.py")
+          s=p.read_text(encoding="utf-8")
+          old='''def test_greeks_lee_tamar_desde_contexto_macro(monkeypatch):
+              macro_falso = SimpleNamespace(
+                  get_macro_context=lambda dias: {
+                      "indicadores": {
+                          "tasa_tamar_privados_tna": {"ultimo": 29.5},
+                      }
+                  }
+              )
+              monkeypatch.setitem(sys.modules, "ad_macro_history", macro_falso)
+
+              assert greeks._tasa_desde_macro() == pytest.approx(0.295)
+          '''
+          new='''def test_greeks_no_usa_bcra_tamar_retirada(monkeypatch):
+              macro_falso = SimpleNamespace(
+                  get_macro_context=lambda dias: (_ for _ in ()).throw(
+                      AssertionError("BCRA cache must not be read"))
+              )
+              monkeypatch.setitem(sys.modules, "ad_macro_history", macro_falso)
+              assert greeks._tasa_desde_macro() is None
+          '''
+          if old not in s: raise SystemExit("GREEKS_BCRA_TEST_SOURCE_DRIFT")
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding="utf-8")
+
+          Path("tests/test_rc6_bcra_active_retirement_20261002.py").write_text('''from pathlib import Path
+          import inspect
+          import as_greeks_engine as greeks
+          import bi_operational_services as ops
+          import rc6_macro_risk_shadow as macro_shadow
+
+          def test_active_financial_refresh_has_no_bcra_network_loop():
+              source=inspect.getsource(ops.refresh_financial)
+              assert "OFFICIAL_BCRA" not in source
+              assert "BCRA_VARIABLES" not in source
+              assert ops.BCRA_VARIABLES == {}
+              assert "INDEC/datos.gob.ar" in source
+
+          def test_bcra_shadow_is_inert_and_greeks_do_not_read_macro_cache():
+              result=macro_shadow.collect()
+              assert result["decision_effect"]=="NONE"
+              assert result["indicators"]=={}
+              assert greeks._tasa_desde_macro() is None
+
+          def test_paper_engine_has_only_retirement_marker():
+              source=Path("be_paper_engine.py").read_text(encoding="utf-8")
+              start=source.index("# BCRA macro context retired")
+              end=source.index("# Noticias GDELT:",start)
+              block=source[start:end]
+              assert "rc6_macro_risk_shadow" not in block
+              assert "RETIRED_OPERATOR_DECISION_2026-10-02" in block
+          ''',encoding="utf-8")
+          PY
+          python -m py_compile bi_operational_services.py de_scheduler_catalog_hf6.py             rc6_macro_risk_shadow.py be_paper_engine.py as_greeks_engine.py
+          git diff --check
+      - name: Install and test
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q pytest
+          PYTHONPATH=. pytest -q             tests/test_rc6_bcra_active_retirement_20261002.py             tests/test_rc6_macro_risk_shadow.py             tests/test_macro_bcra_v4.py             tests/test_maintenance_scheduler.py
+      - name: Commit validated retirement
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bi_operational_services.py de_scheduler_catalog_hf6.py rc6_macro_risk_shadow.py             be_paper_engine.py as_greeks_engine.py tests/test_rc6_macro_risk_shadow.py             tests/test_macro_bcra_v4.py tests/test_rc6_bcra_active_retirement_20261002.py
+          if git diff --cached --quiet; then echo BCRA_RETIRE_NO_SOURCE_DELTA; else
+            git commit -m 'fix(rc6): retire BCRA from active decision paths'
+            git push origin HEAD:fix/rc6-bcra-retired-20261002
+          fi
