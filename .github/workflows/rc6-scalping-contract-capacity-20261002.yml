@@ -1,0 +1,66 @@
+name: RC6 Scalping Contract Capacity 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-scalping-contract-20261002]
+    paths: ['.github/workflows/rc6-scalping-contract-capacity-20261002.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Capacity evidence
+        shell: bash
+        run: |
+          timeout 60s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' <<'PY'
+          import sqlite3,json,collections,math
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          states=[list(r) for r in c.execute("""select state,count(*) from ppi_intraday_contract_state group by state order by count(*) desc""")]
+          obs=[list(r) for r in c.execute("""select observations,count(*) from ppi_intraday_contract_state group by observations order by observations""")]
+          byfam=[list(r) for r in c.execute("""select asset_class,state,count(*) from ppi_intraday_contract_state group by asset_class,state order by asset_class,state""")]
+          total=c.execute("select count(*) from ppi_intraday_contract_state").fetchone()[0]
+          confirmed=c.execute("select count(*) from ppi_intraday_contract_state where state='CONFIRMED_INTERVAL_VOLUME'").fetchone()[0]
+          eligible=c.execute("""select count(*) from financial_instrument_catalog c join candidate_identity_v2 r
+            on r.ticker=c.ticker and r.instrument_type=c.instrument_type and r.market=c.market and r.currency=c.currency and r.settlement=c.settlement
+            where c.status='AVAILABLE' and r.status='AVAILABLE' and r.can_simulate=1
+              and upper(c.instrument_type) in ('ACCIONES','CEDEARS','ETFS')
+              and c.capability like 'READY_PAPER_%' and c.currency<>'UNKNOWN' and c.market<>'UNKNOWN'""").fetchone()[0]
+          tickers=["MRSHC","MRNAC","MRKC","MPC","MOC","MMMC","MGL3C","METAC","MELIC","MDTC"]
+          focus=[]
+          for t in tickers:
+              focus += [dict(r) for r in c.execute("select * from ppi_intraday_contract_state where upper(symbol)=?",(t,))]
+          latest=dict(c.execute("select * from intraday_scalping_worker_state where id=1").fetchone() or {})
+          print(json.dumps({"total_contract_states":total,"eligible_full_keys":eligible,"confirmed":confirmed,
+            "state_counts":states,"observation_counts":obs,"by_family":byfam,"screen_tickers":focus,
+            "worker":latest},ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+      - name: Static capacity model
+        run: |
+          python3 - <<'PY'
+          import math
+          universe=1195; focus=8; session_minutes=390
+          for batch in (24,40):
+              rotation=max(1,batch-focus)
+              cycles=session_minutes//3
+              reads=rotation*cycles
+              full_two_pass=math.ceil(2*(universe-focus)/rotation)*3
+              print(f"BATCH={batch}|ROTATION={rotation}|SESSION_ROTATION_READS={reads}|MINUTES_FOR_TWO_PASSES={full_two_pass}")
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
