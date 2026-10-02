@@ -272,8 +272,7 @@ jobs:
                       "ready":sum(r["state"]=="BOOK_READY" for r in rows),
                       "states":{r["ticker"]:r["state"] for r in rows},
                       "real_routes":[]}
-          ''')+"
-",encoding="utf-8")
+          '''),encoding="utf-8")
 
           # 5) Observer owns network reads; cash-sweep remains local-only.
           p=Path("bf_production_paper_observer.py")
@@ -479,8 +478,7 @@ jobs:
               assert ".order" not in source.lower()
               assert ".budget" not in source.lower()
               assert "contract_evidence_v2" not in source
-          ''')+"
-",encoding="utf-8")
+          '''),encoding="utf-8")
           PY
           python -m py_compile cr_contract_evidence_v2_mass_hf6.py rc6_contract_bridge.py             bt_caucion_paper.py ca_caucion_allocator.py dj_caucion_live_ppi_rc6.py             bf_production_paper_observer.py di_caucion_cash_sweep_runtime_hf6.py
           git diff --check
