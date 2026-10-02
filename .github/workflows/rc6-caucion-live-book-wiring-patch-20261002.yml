@@ -1,9 +1,6 @@
-name: RC6 Caucion Live Book Wiring Patch 2026-10-02
+name: Archived RC6 Caucion Live Book Wiring Patch 2026-10-02
 
 on:
-  push:
-    branches:
-      - fix/rc6-caucion-policy-wiring-20261002
   workflow_dispatch:
 
 permissions:
