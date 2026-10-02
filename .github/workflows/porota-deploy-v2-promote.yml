@@ -233,12 +233,6 @@ jobs:
           test "$STATE" = "PRODUCTION_PAPER|0"
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
-          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
-            test "$(sudo -n docker inspect -f '{{.State.Status}}' "$CRIT_CONTAINER")" = running
-            test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")" = "$RUNTIME_IMAGE_ID"
-            test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT_CONTAINER")" = healthy
-          fi
-
           PPI_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
@@ -1043,6 +1037,11 @@ jobs:
           PY
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer)" = running
           test "$(sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard)" = running
+          if sudo -n docker inspect "$CRIT_CONTAINER" >/dev/null 2>&1; then
+            test "$(sudo -n docker inspect -f '{{.State.Status}}' "$CRIT_CONTAINER")" = running
+            test "$(sudo -n docker inspect -f '{{.Image}}' "$CRIT_CONTAINER")" = "$RUNTIME_IMAGE_ID"
+            test "$(sudo -n docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CRIT_CONTAINER")" = healthy
+          fi
           PPI_WATCH_FINAL="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
