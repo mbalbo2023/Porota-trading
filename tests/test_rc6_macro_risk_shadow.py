@@ -39,8 +39,8 @@ def test_collect_does_not_create_missing_cache(tmp_path):
     assert not database.exists()
 
 
-def test_trading_dashboard_exposes_macro_shadow_without_trading_authority():
+def test_trading_dashboard_does_not_expose_retired_bcra_shadow_as_active_surface():
     source = open("bg_paper_dashboard.py", encoding="utf-8").read()
 
-    assert "Riesgo macro BCRA — SHADOW" in source
-    assert "no bloquea, no cambia tamaño y no habilita órdenes" in source
+    assert "Riesgo macro BCRA — SHADOW" not in source
+    assert "import rc6_macro_risk_shadow" not in source
