@@ -1,0 +1,77 @@
+name: RC6 Dashboard Consistency Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-dashboard-consistency-20261002]
+    paths: ['.github/workflows/rc6-dashboard-consistency-readonly-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Route and truth audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 120s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > evidence/dashboard_runtime.txt <<'REMOTE'
+          set -u
+          echo "NOW=$(TZ=America/Argentina/Buenos_Aires date +%FT%T%z)"
+          for p in / /en-vivo /trading /scalping /instrumentos /universo-operativo /validacion /analisis /riesgo /salud /sistema; do
+            f="/tmp/rc6-dash-$(echo "$p" | tr '/-' '__').html"
+            code=$(curl --max-time 20 -sS -o "$f" -w '%{http_code}' "http://127.0.0.1:8000$p" || true)
+            bytes=$(wc -c < "$f" 2>/dev/null || echo 0)
+            echo "ROUTE|$p|HTTP=$code|BYTES=$bytes"
+            if [ -f "$f" ]; then
+              printf 'TOKENS|%s|' "$p"
+              grep -Eio 'RED_NO_SOURCE_DATA|GDELT|INSUFFICIENT_DATA|PENDING_LIVE_CONFIRMATION|Contrato intradía[^<]{0,120}|STOP_PAPER|MAXHOLD|TAKE.?PROFIT|OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT|MFE=[^< ]+|MAE=[^< ]+' "$f" | head -80 | tr '\n' ';' || true
+              echo
+            fi
+          done
+          python3 - <<'PY'
+          import sqlite3,json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          print("OBSERVER="+json.dumps(dict(c.execute("select * from observer_state where id=1").fetchone() or {}),sort_keys=True,default=str))
+          print("READINESS="+json.dumps([list(r) for r in c.execute("select status,count(*) from candidate_identity_v2 group by status order by count(*) desc")]))
+          for t in ("intraday_scalping_worker_state","paper_caucion_cash_sweep_state"):
+              try: print(t.upper()+"="+json.dumps([dict(r) for r in c.execute(f'select * from "{t}"')],sort_keys=True,default=str))
+              except Exception as e: print(t.upper()+"_ERR="+str(e))
+          c.close()
+          PY
+          REMOTE
+          cat evidence/dashboard_runtime.txt
+      - name: Static consistency trace
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "LEGACY_AND_VISIBLE_TOKENS"
+            git grep -n -i -E 'GDELT|RED_NO_SOURCE_DATA|INSUFFICIENT_DATA|PENDING_LIVE_CONFIRMATION|Contrato intradía|STOP_PAPER|OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT|MFE|MAE' -- '*.py' 'templates/*' 'tests/*.py' || true
+          } | tee evidence/static_trace.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-dashboard-consistency-readonly-20261002
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
