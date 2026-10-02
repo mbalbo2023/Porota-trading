@@ -103,10 +103,12 @@ jobs:
           cand_symbol=pick(cc,["symbol","ticker","instrument","code"])
           cand_family=pick(cc,["instrument_type","family","asset_type"])
           cand_market=pick(cc,["market","market_code"])
+          cand_currency=pick(cc,["currency","currency_code"])
           cand_settle=pick(cc,["settlement","term","settlement_term"])
           cat_symbol=pick(fc,["ticker","symbol","instrument","code"])
           cat_family=pick(fc,["instrument_type","family","asset_type"])
           cat_market=pick(fc,["market","market_code"])
+          cat_currency=pick(fc,["currency","currency_code"])
           cat_settle=pick(fc,["settlement","term","settlement_term"])
           cat_capability=pick(fc,["capability","paper_capability","execution_capability"])
           cat_status=pick(fc,["status","state"])
@@ -124,11 +126,19 @@ jobs:
               f'SELECT * FROM candidate_identity_v2 WHERE UPPER(COALESCE("{status_col}",""))="PAUSED_EXPLICIT"'
           )]
 
-          # Catalog lookup by normalized symbol, preserving all matches to expose ambiguity.
+          # Full-key catalog lookup is authoritative. Symbol-only multiplicity is
+          # kept only as a diagnostic and must never choose a capability.
           cat_rows=[dict(r) for r in c.execute('SELECT * FROM financial_instrument_catalog')]
           by_sym=collections.defaultdict(list)
+          by_full={}
           for r in cat_rows:
-              by_sym[norm(r.get(cat_symbol)).upper()].append(r)
+              sym=norm(r.get(cat_symbol)).upper()
+              fam=norm(r.get(cat_family)).upper() if cat_family else ""
+              mar=norm(r.get(cat_market)).upper() if cat_market else ""
+              cur=norm(r.get(cat_currency)).upper() if cat_currency else ""
+              sett=norm(r.get(cat_settle)).upper() if cat_settle else ""
+              by_sym[sym].append(r)
+              by_full[(sym,fam,mar,cur,sett)]=r
 
           # Candidate fields likely to carry the actual pause cause.
           reason_fields=[
@@ -138,7 +148,7 @@ jobs:
                   "ready","simulate","operat","authority","provenance"
               ))
           ]
-          identity_fields=[x for x in [cand_symbol,cand_family,cand_market,cand_settle] if x]
+          identity_fields=[x for x in [cand_symbol,cand_family,cand_market,cand_currency,cand_settle] if x]
           extra_fields=[]
           for x in reason_fields:
               if x not in identity_fields and x != status_col:
@@ -148,37 +158,27 @@ jobs:
           reason_counts={field:collections.Counter() for field in extra_fields}
           capability_counts=collections.Counter()
           catalog_status_counts=collections.Counter()
-          ambiguous_catalog=0
-          no_catalog=0
+          ambiguous_catalog_symbol=0
+          no_catalog_symbol=0
+          no_catalog_full_key=0
           family_reason=collections.defaultdict(collections.Counter)
           matrix=[]
 
           for r in paused:
               sym=norm(r.get(cand_symbol)).upper()
+              fam=norm(r.get(cand_family)).upper() if cand_family else ""
+              m=norm(r.get(cand_market)).upper() if cand_market else ""
+              cur=norm(r.get(cand_currency)).upper() if cand_currency else ""
+              s=norm(r.get(cand_settle)).upper() if cand_settle else ""
               matches=by_sym.get(sym,[])
               if not matches:
-                  no_catalog+=1
+                  no_catalog_symbol+=1
               if len(matches)>1:
-                  ambiguous_catalog+=1
-
-              # Prefer exact market/settlement match when candidate supplies them.
-              m=norm(r.get(cand_market)).upper() if cand_market else ""
-              s=norm(r.get(cand_settle)).upper() if cand_settle else ""
-              chosen=None
-              exact=[]
-              for cr in matches:
-                  cm=norm(cr.get(cat_market)).upper() if cat_market else ""
-                  cs=norm(cr.get(cat_settle)).upper() if cat_settle else ""
-                  if (not m or not cm or m==cm) and (not s or not cs or s==cs):
-                      exact.append(cr)
-              if len(exact)==1: chosen=exact[0]
-              elif len(matches)==1: chosen=matches[0]
-              elif exact: chosen=exact[0]
-
-              fam=norm(r.get(cand_family)).upper() if cand_family else ""
-              if not fam and chosen and cat_family:
-                  fam=norm(chosen.get(cat_family)).upper()
-              fam=fam or "UNKNOWN"
+                  ambiguous_catalog_symbol+=1
+              chosen=by_full.get((sym,fam,m,cur,s))
+              if chosen is None:
+                  no_catalog_full_key+=1
+              fam=fam or (norm(chosen.get(cat_family)).upper() if chosen and cat_family else "UNKNOWN")
               family_counts[fam]+=1
 
               cap=norm(chosen.get(cat_capability)).upper() if chosen and cat_capability else ""
@@ -199,11 +199,12 @@ jobs:
                   "symbol":sym,
                   "family":fam,
                   "market":m,
+                  "currency":cur,
                   "settlement":s,
                   "candidate_status":"PAUSED_EXPLICIT",
                   "candidate_reasons":reasons,
-                  "catalog_match_count":len(matches),
-                  "catalog_exact_match_count":len(exact),
+                  "catalog_symbol_match_count":len(matches),
+                  "catalog_full_key_match":bool(chosen),
                   "catalog_capability":cap or None,
                   "catalog_status":cst or None,
                   "catalog_family":norm(chosen.get(cat_family)).upper() if chosen and cat_family else None,
@@ -254,6 +255,7 @@ jobs:
                   "symbol_column":cand_symbol,
                   "family_column":cand_family,
                   "market_column":cand_market,
+                  "currency_column":cand_currency,
                   "settlement_column":cand_settle,
                   "all_status_counts":all_status,
                   "paused_explicit_count":len(paused),
@@ -265,6 +267,7 @@ jobs:
                   "symbol_column":cat_symbol,
                   "family_column":cat_family,
                   "market_column":cat_market,
+                  "currency_column":cat_currency,
                   "settlement_column":cat_settle,
                   "capability_column":cat_capability,
                   "status_column":cat_status,
@@ -274,8 +277,9 @@ jobs:
                   "by_family":dict(family_counts.most_common()),
                   "catalog_capability":dict(capability_counts.most_common()),
                   "catalog_status":dict(catalog_status_counts.most_common()),
-                  "no_catalog_match":no_catalog,
-                  "ambiguous_catalog_symbol":ambiguous_catalog,
+                  "no_catalog_symbol_match":no_catalog_symbol,
+                  "no_catalog_full_key_match":no_catalog_full_key,
+                  "ambiguous_catalog_symbol":ambiguous_catalog_symbol,
                   "reason_counts":{k:dict(v.most_common(100)) for k,v in reason_counts.items()},
                   "family_reason_top":{k:dict(v.most_common(30)) for k,v in family_reason.items()},
               },
@@ -296,7 +300,8 @@ jobs:
           print("BY_FAMILY="+json.dumps(s["by_family"],ensure_ascii=False,sort_keys=True))
           print("CATALOG_CAPABILITY="+json.dumps(s["catalog_capability"],ensure_ascii=False,sort_keys=True))
           print("CATALOG_STATUS="+json.dumps(s["catalog_status"],ensure_ascii=False,sort_keys=True))
-          print("NO_CATALOG_MATCH="+str(s["no_catalog_match"]))
+          print("NO_CATALOG_SYMBOL_MATCH="+str(s["no_catalog_symbol_match"]))
+          print("NO_CATALOG_FULL_KEY_MATCH="+str(s["no_catalog_full_key_match"]))
           print("AMBIGUOUS_CATALOG_SYMBOL="+str(s["ambiguous_catalog_symbol"]))
           print("REASON_FIELDS="+json.dumps(c["reason_like_fields"],ensure_ascii=False))
           for k,v in s["reason_counts"].items():
