@@ -1,0 +1,92 @@
+name: RC6 Exit Reasons Readonly 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-exit-reasons-20261002]
+    paths: ['.github/workflows/rc6-exit-reasons-readonly-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+      - name: Runtime exit audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          timeout 90s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/exit_runtime.json <<'PY'
+          import sqlite3,json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=5);c.row_factory=sqlite3.Row
+          c.execute("pragma query_only=on");c.execute("pragma busy_timeout=3000")
+          tables={r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+          def cols(t):return [r[1] for r in c.execute(f'pragma table_info("{t}")')]
+          def grab(t,where="",params=(),limit=100):
+              try:
+                  sql=f'select * from "{t}" '+where+f' order by rowid desc limit {int(limit)}'
+                  return [dict(r) for r in c.execute(sql,params)]
+              except:return []
+          relevant={}
+          for t in sorted(tables):
+              if any(x in t.lower() for x in ("position","exit","paper_event","trade","decision","mark","pnl","learning")):
+                  relevant[t]={"columns":cols(t),"recent":grab(t,limit=80)}
+          focus={}
+          for ticker in ("GGAL","CEPU","BBAR","PAMP"):
+              rows={}
+              for t in relevant:
+                  cc=relevant[t]["columns"]
+                  sym=next((k for k in ("ticker","symbol","instrument","instrument_id") if k in cc),None)
+                  if sym:
+                      rows[t]=grab(t,f'where upper("{sym}")=?',(ticker,),80)
+              focus[ticker]=rows
+          print(json.dumps({"tables":relevant,"focus":focus},ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          python3 - <<'PY' | tee evidence/exit_summary.txt
+          import json,collections
+          x=json.load(open("evidence/exit_runtime.json"))
+          for ticker,by in x["focus"].items():
+              print("FOCUS="+ticker)
+              for t,rows in by.items():
+                  if rows: print(t+"="+json.dumps(rows,ensure_ascii=False,sort_keys=True))
+          for t,v in x["tables"].items():
+              reasons=collections.Counter()
+              for r in v["recent"]:
+                  for k in ("reason","close_reason","exit_reason","detail","explanation","event_type","action","decision"):
+                      if r.get(k): reasons[str(r[k])]+=1
+              if reasons: print("RECENT_REASON_COUNTS|"+t+"|"+json.dumps(reasons.most_common(40),ensure_ascii=False))
+          print("EXIT_RUNTIME_READONLY=GREEN")
+          PY
+      - name: Code trace
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            git grep -n -E 'STOP_PAPER|TAKE.?PROFIT|MAX.?HOLD|MFE|MAE|OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT|PÉRDIDA|Lección aprendida' -- '*.py' 'tests/*.py' || true
+          } | tee evidence/code_trace.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-exit-reasons-readonly-20261002
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
