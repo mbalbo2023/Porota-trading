@@ -1,0 +1,69 @@
+name: RC6 GDELT Retirement Inventory 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-gdelt-retirement-inventory-20261002]
+    paths: ['.github/workflows/rc6-gdelt-retirement-inventory-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repo inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          {
+            echo "TRACKED_FILES"
+            git ls-files | grep -i gdelt || true
+            echo "REFERENCES"
+            git grep -n -i gdelt -- ':!docs/handoffs/*' ':!*.md' || true
+          } | tee evidence/repo_gdelt_inventory.txt
+      - name: Runtime inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          timeout 60s ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' > evidence/runtime_gdelt_inventory.txt <<'REMOTE'
+          set -u
+          echo "UNITS"
+          sudo -n systemctl list-unit-files --no-pager | grep -i gdelt || true
+          sudo -n systemctl list-units --all --no-pager | grep -i gdelt || true
+          echo "TIMERS"
+          sudo -n systemctl list-timers --all --no-pager | grep -i gdelt || true
+          echo "FILES"
+          find /opt/porota-trading -maxdepth 3 -type f -iname '*gdelt*' -print 2>/dev/null | sort
+          echo "SAFETY"
+          python3 - <<'PY'
+          import sqlite3,json
+          db="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{db}?mode=ro",uri=True,timeout=3);c.row_factory=sqlite3.Row;c.execute("pragma query_only=on")
+          r=c.execute("select mode,real_orders_sent from observer_state where id=1").fetchone()
+          print(json.dumps(dict(r) if r else {},sort_keys=True))
+          c.close()
+          PY
+          REMOTE
+          cat evidence/runtime_gdelt_inventory.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-gdelt-retirement-inventory-20261002
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
