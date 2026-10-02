@@ -164,6 +164,8 @@
     },
     {
       "run_id": 37028217039,
+      "artifact_id": 11236685991,
+      "digest": "sha256:aeebafe587df6dd5ae43a28e86ced30610648bdf536d95d5ab675423be132003",
       "purpose": "change-review correlation"
     }
   ],
