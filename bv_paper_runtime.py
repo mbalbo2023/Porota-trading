@@ -14,6 +14,8 @@ faulthandler.enable(all_threads=True)
 import fcntl
 import os
 import signal
+import sqlite3
+import logging
 import subprocess
 import sys
 import threading
@@ -26,6 +28,46 @@ from bq_exit_policy import PaperSessionPolicy
 from cg_paper_workspace import DB_ENV, database_path, runtime_store
 
 ROOT = Path(__file__).resolve().parent
+LOG = logging.getLogger("paper_runtime")
+
+
+def _sqlite_contention(exc):
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    code = str(getattr(exc, "sqlite_errorname", "") or "").upper()
+    msg = str(exc).lower()
+    return code in {"SQLITE_BUSY", "SQLITE_LOCKED"} or "database is locked" in msg or "database table is locked" in msg
+
+
+def _reader_status_write(store, state, detail=""):
+    """Bounded health write; transient SQLite contention cannot kill exit-reader."""
+    try:
+        with sqlite3.connect(store.path, timeout=0.35) as connection:
+            connection.execute("PRAGMA busy_timeout=350")
+            connection.execute(
+                "INSERT OR REPLACE INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                (now_iso(), str(state), str(detail)[:500]),
+            )
+        return True
+    except sqlite3.OperationalError as exc:
+        if _sqlite_contention(exc):
+            LOG.warning("EXIT_READER_STATUS_SQLITE_CONTENTION:%s",
+                        getattr(exc, "sqlite_errorname", "SQLITE_LOCKED"))
+            return False
+        raise
+
+
+def _best_effort_runtime_event(store, event_type, detail, paper_id=None):
+    """Diagnostic persistence must not turn a lock into an exit-reader crash."""
+    try:
+        store.event(event_type, detail, paper_id)
+        return True
+    except sqlite3.OperationalError as exc:
+        if _sqlite_contention(exc):
+            LOG.warning("%s_DB_EVENT_DROPPED_SQLITE_CONTENTION:%s", event_type, detail)
+            return False
+        raise
+
 
 
 def broker_from_environment(store, **overrides):
@@ -131,14 +173,20 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
         if should_stop():
             break
         beat()
+        stage = "EXECUTION_POLICY"
         try:
             if policy.execution_error(p, at):
                 continue
+            stage = "BROKER_BOOK"
             book = retry_read(lambda: reader.book(
                 p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+            stage = "CATALOG_LOOKUP"
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
+            stage = "NORMALIZE_QUOTE"
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
+            stage = "PERSIST_QUOTE"
             store.add_quote(q)
+            stage = "VALIDATE_QUOTE"
             if q.time_error(q.observed_at):
                 failures += 1
             q.monetary_identity()
@@ -146,7 +194,12 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             if session_invalid(exc):
                 raise
             failures += 1
-            store.event("EXIT_BOOK_ERROR", f"{p['symbol']}: {type(exc).__name__}", p["paper_id"])
+            sqlite_code = str(getattr(exc, "sqlite_errorname", "") or "")
+            suffix = (";sqlite=" + sqlite_code) if sqlite_code else ""
+            _best_effort_runtime_event(
+                store, "EXIT_BOOK_ERROR",
+                f"{p['symbol']}: {type(exc).__name__};stage={stage}{suffix}",
+                p["paper_id"])
         pause()
     return failures
 
@@ -161,9 +214,7 @@ def run_reader(store, stop):
     policy = PaperSessionPolicy()
     reader, next_login = None, 0.0
     def status(state,detail=""):
-        with store.connect() as c:
-            c.execute("INSERT OR REPLACE INTO paper_exit_reader_state VALUES(1,?,?,?)",
-                      (now_iso(),state,detail))
+        return _reader_status_write(store, state, detail)
     try:
         while not stop.is_set():
             if _market_phase() != "OPEN":
@@ -193,10 +244,18 @@ def run_reader(store, stop):
                     reader, store, policy, now_iso(), should_stop=stop.is_set,
                     pause=lambda: stop.wait(1),
                     beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+            except sqlite3.OperationalError as exc:
+                if not _sqlite_contention(exc):
+                    raise
+                status("DEGRADED", "SQLite contention; reintento acotado, sin fill ni orden")
+                LOG.warning("EXIT_READER_SQLITE_CONTENTION:%s",
+                            getattr(exc, "sqlite_errorname", "SQLITE_LOCKED"))
+                stop.wait(1)
+                continue
             except Exception as exc:
                 if not session_invalid(exc):
                     raise
-                store.event("EXIT_READER_SESSION_INVALID", type(exc).__name__)
+                _best_effort_runtime_event(store, "EXIT_READER_SESSION_INVALID", type(exc).__name__)
                 status("ERROR", "Sesión PPI expirada; nuevas aperturas bloqueadas hasta reautenticar")
                 reader.close()
                 reader = None
