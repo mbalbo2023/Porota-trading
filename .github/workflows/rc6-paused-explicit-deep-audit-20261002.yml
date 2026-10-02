@@ -1,0 +1,163 @@
+name: RC6 PAUSED_EXPLICIT Deep Readonly Audit 2026-10-02
+on:
+  push:
+    branches: [audit/rc6-paused-explicit-20261002]
+    paths: ['.github/workflows/rc6-paused-explicit-deep-audit-20261002.yml']
+permissions:
+  contents: read
+jobs:
+  deep-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+      - name: Deep contract and identity analysis
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'python3 -' > evidence/deep_paused_explicit.json <<'PY'
+          import sqlite3,json,collections,datetime,statistics
+          DB="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{DB}?mode=ro",uri=True,timeout=8)
+          c.row_factory=sqlite3.Row;c.execute("pragma query_only=on");c.execute("pragma busy_timeout=3000")
+          paused=[dict(r) for r in c.execute("""SELECT * FROM candidate_identity_v2
+            WHERE upper(status)='PAUSED_EXPLICIT'""")]
+          catalog={}
+          for r in c.execute("SELECT * FROM financial_instrument_catalog"):
+            d=dict(r)
+            k=tuple(str(d.get(x) or "").strip().upper() for x in
+                    ("ticker","instrument_type","market","currency","settlement"))
+            catalog[k]=d
+          capability=collections.Counter()
+          bridge_status=collections.Counter()
+          bridge_gaps=collections.Counter()
+          bridge_gap_sets=collections.Counter()
+          discovery=collections.Counter()
+          availability=collections.Counter()
+          settlement_source=collections.Counter()
+          missing_identity=collections.Counter()
+          raw_key_by_cap=collections.defaultdict(collections.Counter)
+          special_field_by_cap=collections.defaultdict(collections.Counter)
+          stale_days=[]
+          stale_by_family=collections.defaultdict(list)
+          samples=collections.defaultdict(list)
+          now=datetime.datetime.now(datetime.timezone.utc)
+          interesting=("units_per_lot","nominal","lot","multiplier","margin","expiry","expiration",
+                       "strike","right","option","maturity","settlement","currency","market",
+                       "financial_contract_v17","_contract_bridge","paper_family_contract_v1")
+
+          for p in paused:
+            k=tuple(str(p.get(x) or "").strip().upper() for x in
+                    ("ticker","instrument_type","market","currency","settlement"))
+            r=catalog.get(k)
+            if not r:
+              continue
+            cap=str(r.get("capability") or "UNKNOWN")
+            fam=str(r.get("instrument_type") or "UNKNOWN")
+            capability[cap]+=1
+            settlement_source[str(r.get("settlement_source") or "UNKNOWN").upper()]+=1
+            if str(r.get("status") or "").upper()=="STALE":
+              try:
+                at=datetime.datetime.fromisoformat(str(r.get("last_seen_at")).replace("Z","+00:00"))
+                if at.tzinfo is None: at=at.replace(tzinfo=datetime.timezone.utc)
+                days=(now-at.astimezone(datetime.timezone.utc)).total_seconds()/86400
+                stale_days.append(days);stale_by_family[fam].append(days)
+              except Exception: pass
+            if str(r.get("currency") or "").upper() in ("","UNKNOWN","NO_VERIFICADO"):
+              missing_identity["currency"]+=1
+            if str(r.get("market") or "").upper() in ("","UNKNOWN","NO_VERIFICADO"):
+              missing_identity["market"]+=1
+            if str(r.get("settlement") or "").upper() in ("","UNKNOWN","NO_VERIFICADO"):
+              missing_identity["settlement"]+=1
+            try: raw=json.loads(str(r.get("metadata_json") or "{}"))
+            except Exception: raw={}
+            raw=raw if isinstance(raw,dict) else {}
+            discovery[str(raw.get("_discovery_source") or "NONE").upper()]+=1
+            availability[str(raw.get("_availability_source") or "NONE").upper()]+=1
+            for key,val in raw.items():
+              if val not in (None,"",{},[]):
+                raw_key_by_cap[cap][key]+=1
+                low=key.lower()
+                if any(tok in low for tok in interesting):
+                  special_field_by_cap[cap][key]+=1
+            bridge=raw.get("_contract_bridge")
+            if isinstance(bridge,dict):
+              bridge_status[str(bridge.get("status") or "UNKNOWN").upper()]+=1
+              gaps=tuple(sorted(str(g) for g in (bridge.get("gaps") or [])))
+              if gaps:
+                bridge_gap_sets[gaps]+=1
+                for gap in gaps: bridge_gaps[gap]+=1
+            if len(samples[cap])<12:
+              samples[cap].append({
+                "ticker":r.get("ticker"),"family":fam,"market":r.get("market"),
+                "currency":r.get("currency"),"settlement":r.get("settlement"),
+                "status":r.get("status"),"last_seen_at":r.get("last_seen_at"),
+                "settlement_source":r.get("settlement_source"),
+                "candidate_detail":p.get("detail"),
+                "discovery_source":raw.get("_discovery_source"),
+                "availability_source":raw.get("_availability_source"),
+                "bridge":bridge,
+                "special_fields":{kk:raw.get(kk) for kk in raw if any(tok in kk.lower() for tok in interesting)}
+              })
+
+          def stats(v):
+            if not v:return None
+            return {"n":len(v),"min":round(min(v),2),"median":round(statistics.median(v),2),
+                    "max":round(max(v),2)}
+          out={
+            "schema":"POROTA_RC6_PAUSED_EXPLICIT_DEEP_AUDIT_V1",
+            "read_only":True,
+            "generated_at_utc":now.isoformat(),
+            "paused_count":len(paused),
+            "capability_counts":dict(capability.most_common()),
+            "settlement_source_counts":dict(settlement_source.most_common()),
+            "discovery_source_counts":dict(discovery.most_common()),
+            "availability_source_counts":dict(availability.most_common()),
+            "missing_identity_fields":dict(missing_identity),
+            "contract_bridge_status":dict(bridge_status.most_common()),
+            "contract_bridge_gap_counts":dict(bridge_gaps.most_common()),
+            "contract_bridge_gap_sets":[{"gaps":list(k),"count":v} for k,v in bridge_gap_sets.most_common(100)],
+            "stale_age_days":stats(stale_days),
+            "stale_age_days_by_family":{k:stats(v) for k,v in stale_by_family.items()},
+            "metadata_keys_by_capability":{k:dict(v.most_common(80)) for k,v in raw_key_by_cap.items()},
+            "special_metadata_fields_by_capability":{k:dict(v.most_common(80)) for k,v in special_field_by_cap.items()},
+            "samples":dict(samples),
+          }
+          print(json.dumps(out,ensure_ascii=False,sort_keys=True,default=str))
+          c.close()
+          PY
+          python3 - <<'PY' > evidence/deep_summary.txt
+          import json
+          x=json.load(open("evidence/deep_paused_explicit.json"))
+          for k in ("paused_count","capability_counts","missing_identity_fields","contract_bridge_status",
+                    "contract_bridge_gap_counts","stale_age_days","stale_age_days_by_family",
+                    "discovery_source_counts","availability_source_counts","settlement_source_counts"):
+              print(k.upper()+"="+json.dumps(x.get(k),ensure_ascii=False,sort_keys=True))
+          print("DEEP_READONLY_AUDIT=GREEN")
+          PY
+          cat evidence/deep_summary.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-paused-explicit-deep-audit-20261002
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Cleanup
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
