@@ -66,3 +66,29 @@ Any future promotion proposal must prove:
 - no real-order route;
 - pause reason is unnecessary or already satisfied;
 - family executor/lifecycle exists when financially required.
+
+
+## Cierre de auditoría — 2026-10-02
+
+Estado: **VALIDADO_RUNTIME / READ_ONLY / COMPLETADO**
+
+### Entregables
+- `AUDITORIA_PAUSED_EXPLICIT_RC6_2026-10-02.md`
+- `PAUSED_EXPLICIT_MATRIX_RC6_2026-10-02.json`
+- `HANDOFF_WS_READINESS_PAUSED_EXPLICIT_2026-10-02.md`
+
+### Evidencia
+- full-key matrix: run `37027360445`, artifact `11235234620`, digest `sha256:c378c521a7d7b14f758c7a411d478f6efbc2d065943a36966c389bf92065d79c`
+- deep metadata: run `37027851630`, artifact `11236375466`, digest `sha256:78cb58d9154dc8a53ed4d4e4f5a53dfe1a9ea17136993eaadad656d9ba0e3934`
+- change review: run `37028217039`, artifact `11236685991`, digest `sha256:aeebafe587df6dd5ae43a28e86ced30610648bdf536d95d5ab675423be132003`
+
+### Safety
+- deploy: 0
+- runtime mutation: 0
+- DB writes: 0
+- readiness promotions: 0
+- PPI Watch mutations: 0
+- real-order routes: 0
+
+### Handoff
+Workstream READ_ONLY liberado. El siguiente chat debe comenzar por el HANDOFF y, si continúa, abrir un nuevo scope específico en lugar de modificar esta evidencia.
