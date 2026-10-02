@@ -176,11 +176,50 @@ def _strip_live_low_value_sections(text):
     """
     return text
 
+def _truthful_operator_terms(text):
+    """Replace misleading machine wording without changing underlying state.
+
+    These are presentation-only translations. They do not reinterpret DB
+    decisions, readiness or exit causes.
+    """
+    text=str(text or "")
+    text=text.replace(
+        "Contrato intradía aún no confirmado",
+        "Confirmación intradía pendiente: requiere una segunda lectura estable del feed PPI"
+    )
+    text=text.replace(
+        "Pendiente de confirmación intradía para esta identidad",
+        "Confirmación intradía pendiente para esta identidad; el gate valida estabilidad del feed, no el contrato financiero"
+    )
+    text=text.replace(
+        "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT",
+        "Posición PAPER abierta pendiente de supervisión/estado de salida; no se habilita otra apertura hasta reconciliarla"
+    )
+    # paper_positions.max_favorable/max_adverse are legacy defaults and are not
+    # updated by the live marker. A literal zero must not masquerade as a
+    # measured excursion. Provenance-aware measurement is a separate offline
+    # contract (fc_mfe_mae_provenance_rc6).
+    text=re.sub(
+        r"MFE\s*=\s*0(?:[\.,]0{1,8})?\s*[·;|,]?\s*MAE\s*=\s*0(?:[\.,]0{1,8})?",
+        "MFE=NO_MEDIDO · MAE=NO_MEDIDO (sin trayectoria ejecutable persistida)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text=re.sub(
+        r"causa\s+STOP_PAPER",
+        "causa STOP_PAPER (el bid fresco alcanzó/cruzó el stop PAPER definido)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
+
+
 def _normalize_live_html(text,path=None):
     """Apply RC6 presentation to the HTML actually served by every route."""
     path=str(path or '')
     if path in ('/vivo','/en-vivo'):
         text=_strip_live_low_value_sections(text)
+    text=_truthful_operator_terms(text)
     text=text.replace(_BAD_WRAP,'overflow-wrap:normal')
     text=_TABLE_TAG.sub(_classicize_table_tag,text)
     text=_decorate_sections(text)
