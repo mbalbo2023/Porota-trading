@@ -1,0 +1,83 @@
+name: RC6 residual unit provenance read-only
+
+on:
+  push:
+    branches:
+      - audit/rc6-residual-ops-closure-20261003
+    paths:
+      - '.github/workflows/rc6-residual-unit-provenance-20261003.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Collect sanitized unit provenance
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY' > /tmp/names.txt
+          import json
+          from pathlib import Path
+          p=json.loads(Path('ops/policy/host-control-plane-reconciliation-v2.json').read_text())
+          names=set(p.get('external_host_units',{}))
+          names.update(p.get('residual_host_units',{}))
+          names.update(p.get('legacy_retire_units',[]))
+          for n in sorted(names):
+              print(n)
+          PY
+          scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes /tmp/names.txt "$USER@$HOST:/tmp/porota-unit-provenance-names.txt"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/provenance.txt
+          set -Eeuo pipefail
+          while IFS= read -r unit; do
+            [ -n "$unit" ] || continue
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            fragment="$(sudo -n systemctl show "$unit" -p FragmentPath --value 2>/dev/null || true)"
+            description="$(sudo -n systemctl show "$unit" -p Description --value 2>/dev/null || true)"
+            trigger_unit="$(sudo -n systemctl show "$unit" -p Unit --value 2>/dev/null || true)"
+            triggered_by="$(sudo -n systemctl show "$unit" -p TriggeredBy --value 2>/dev/null || true)"
+            sha=""
+            mtime=""
+            if [ -n "$fragment" ] && [ -f "$fragment" ]; then
+              sha="$(sha256sum "$fragment" | awk '{print $1}')"
+              mtime="$(stat -c '%y' "$fragment" | cut -d. -f1)"
+            fi
+            execraw="$(sudo -n systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)"
+            execpath="$(printf '%s' "$execraw" | sed -n 's/.*path=\([^ ;]*\).*/\1/p' | head -n1)"
+            refs="$(printf '%s' "$execraw" | grep -oE '/opt/porota[^ ;}\"]+' | sort -u | paste -sd, - || true)"
+            printf 'PROVENANCE|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+              "$unit" "$enabled" "$active" "$description" "$fragment" "$sha" "$mtime" \
+              "$trigger_unit" "$triggered_by" "$execpath:$refs"
+          done < /tmp/porota-unit-provenance-names.txt
+          rm -f /tmp/porota-unit-provenance-names.txt
+          echo 'READ_ONLY=YES'
+          echo 'MUTATION=NONE'
+          REMOTE
+
+      - name: Publish sanitized provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-residual-unit-provenance-${{ github.sha }}
+          path: /tmp/provenance.txt
+          retention-days: 14
