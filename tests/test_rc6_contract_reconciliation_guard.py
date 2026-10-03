@@ -2,6 +2,8 @@
 
 The observer function is extracted from its actual AST; application startup,
 broker clients, timers and production paths are never imported or executed.
+Avoid unittest.subTest here: pytest 9 JUnit aggregate counts subtest reports
+without matching testcase nodes, which breaks the governed discovered/executed gate.
 """
 from __future__ import annotations
 import ast
@@ -64,9 +66,8 @@ class GuardTests(unittest.TestCase):
 
     def test_real_provider_negatives_and_conflicts_stay_blocked(self):
         for code in guard.HARD_PRIMARY_BLOCKS:
-            with self.subTest(code=code):
-                p,c=fixture();p['capability']=code
-                self.assertFalse(guard.reconciliation_allowed(p,c,checked_at=NOW))
+            p,c=fixture();p['capability']=code
+            self.assertFalse(guard.reconciliation_allowed(p,c,checked_at=NOW))
 
     def test_material_change_remains_pending(self):
         p,c=fixture();c['contract_bridge'].update(status='BLOCKED',gaps=['CHANGE_REVIEW_REQUIRED'])
@@ -74,15 +75,14 @@ class GuardTests(unittest.TestCase):
 
     def test_generic_iol_or_false_normalized_proof_cannot_clear_review(self):
         for change in ('source','missing_contract','empty_proof','hash','gaps','identity_proof'):
-            with self.subTest(change=change):
-                p,c=fixture()
-                if change=='source':c['source']='IOL_COMPLEMENTARY'
-                elif change=='missing_contract':c['financial_contract_v17']=None
-                elif change=='empty_proof':c['financial_contract_v17']['field_provenance']={}
-                elif change=='hash':next(iter(c['financial_contract_v17']['field_provenance'].values()))['evidence_hash']='not-a-hash'
-                elif change=='gaps':c['contract_bridge']['gaps']=['MISSING:strike']
-                else:c['identity_evidence']['settlement_explicit']=False
-                self.assertFalse(guard.reconciliation_allowed(p,c,checked_at=NOW))
+            p,c=fixture()
+            if change=='source':c['source']='IOL_COMPLEMENTARY'
+            elif change=='missing_contract':c['financial_contract_v17']=None
+            elif change=='empty_proof':c['financial_contract_v17']['field_provenance']={}
+            elif change=='hash':next(iter(c['financial_contract_v17']['field_provenance'].values()))['evidence_hash']='not-a-hash'
+            elif change=='gaps':c['contract_bridge']['gaps']=['MISSING:strike']
+            else:c['identity_evidence']['settlement_explicit']=False
+            self.assertFalse(guard.reconciliation_allowed(p,c,checked_at=NOW))
 
     def test_identity_mismatch_never_clears_review(self):
         for key in guard.IDENTITY_FIELDS:
