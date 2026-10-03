@@ -1,0 +1,443 @@
+{
+  "workstream": "WS-INTEG-RC6-20261002",
+  "recorded_at": "2026-10-03T00:50:46.085582+00:00",
+  "technical_release_status": "VALIDADO_RUNTIME",
+  "candidate_sha": "b001ef1caf2f414a5022d2781016fa34f1611260",
+  "candidate_tree": "f3440892a5b3c14b5013f696710016209dc5a689",
+  "product_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+  "pr": 445,
+  "source_prs_absorbed_and_closed": [
+    435,
+    436,
+    437,
+    438,
+    439,
+    440,
+    442,
+    443,
+    444
+  ],
+  "source_branches_preserved": true,
+  "predeploy_run": 37077028639,
+  "predeploy_artifact_id": 11256399584,
+  "artifact_zip_sha256": "0abd35ce25816692dc26f6c4678d9ea846c8b6c747103d46cc896632ea5f9142",
+  "deploy_run": 37078173314,
+  "independent_audit_run": 37083378849,
+  "frozen_package_proof": {
+    "candidate_sha": "b001ef1caf2f414a5022d2781016fa34f1611260",
+    "tree": "f3440892a5b3c14b5013f696710016209dc5a689",
+    "image_tar_sha256": "ad89a326304b55c9ac7135666ac32768e8996b305a758ce8daf12a438a73dbe1",
+    "bundle_sha256": "718c5a05445568112b4ad1c7112a8f64873fa31c1bf27905f413eb7589af9f52",
+    "verified_bundle_files": 421,
+    "schema_version": 1
+  },
+  "tests": {
+    "discovered": 2459,
+    "errors": 0,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "executed": 2459,
+    "failures": 0,
+    "pytest_exit_code": 0,
+    "schema_version": 1,
+    "scope": "repository-root automatic pytest discovery",
+    "skipped": 0,
+    "status": "GREEN",
+    "xfail": 0
+  },
+  "snapshots": [
+    {
+      "snapshot": 1,
+      "current_state": {
+        "build_once": true,
+        "candidate_sha": "b001ef1caf2f414a5022d2781016fa34f1611260",
+        "deploy_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+        "image_id": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+        "mode": "PRODUCTION_PAPER",
+        "ppi_watch_untouched": true,
+        "real_order_routes": "NOT_CALLED",
+        "real_orders_sent": 0,
+        "recorded_at": "2026-10-03T00:31:02.885004+00:00",
+        "validation_status": "VALIDATED_RUNTIME"
+      },
+      "containers": [
+        {
+          "health": "healthy",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_production_dashboard",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-02T23:36:53.447865459Z",
+          "status": "running"
+        },
+        {
+          "health": "none",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_production_observer",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-03T00:16:26.908640768Z",
+          "status": "running"
+        },
+        {
+          "health": "healthy",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_critical_approval_rc6",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-03T00:31:18.503902697Z",
+          "status": "running"
+        }
+      ],
+      "ready_candidates": 8082,
+      "candidates": [
+        {
+          "can_simulate": 1,
+          "family": "ACCIONES",
+          "n": 162,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "ACCIONES",
+          "n": 35,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 31,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "BONOS",
+          "n": 2242,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 558,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 4,
+          "status": "STALE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "CAUCIONES",
+          "n": 5,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "CAUCIONES",
+          "n": 5,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "CEDEARS",
+          "n": 1224,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "CEDEARS",
+          "n": 1191,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "FCI",
+          "n": 22,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "FCI",
+          "n": 1013,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "FUTUROS",
+          "n": 198,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 0,
+          "family": "INDICES",
+          "n": 1,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 1,
+          "family": "LETRAS",
+          "n": 37,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "LETRAS",
+          "n": 7,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "LETRAS",
+          "n": 4,
+          "status": "STALE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "OBLIGACIONES",
+          "n": 3393,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "OBLIGACIONES",
+          "n": 1401,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 0,
+          "family": "ON",
+          "n": 91,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 1,
+          "family": "OPCIONES",
+          "n": 6,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "OPCIONES",
+          "n": 2376,
+          "status": "PAUSED_EXPLICIT"
+        }
+      ],
+      "observer": [
+        {
+          "heartbeat_at": "2026-10-03T00:45:44.982318+00:00",
+          "mode": "PRODUCTION_PAPER",
+          "ppi_auth": "OK",
+          "process_state": "WAITING_MARKET",
+          "real_orders_sent": 0,
+          "session_state": "MARKET_CLOSED"
+        }
+      ],
+      "heartbeat_age_seconds": 3.739,
+      "ppi_watch_units": [],
+      "dashboard_health_http": 200
+    },
+    {
+      "snapshot": 2,
+      "current_state": {
+        "build_once": true,
+        "candidate_sha": "b001ef1caf2f414a5022d2781016fa34f1611260",
+        "deploy_sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f",
+        "image_id": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+        "mode": "PRODUCTION_PAPER",
+        "ppi_watch_untouched": true,
+        "real_order_routes": "NOT_CALLED",
+        "real_orders_sent": 0,
+        "recorded_at": "2026-10-03T00:31:02.885004+00:00",
+        "validation_status": "VALIDATED_RUNTIME"
+      },
+      "containers": [
+        {
+          "health": "healthy",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_production_dashboard",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-02T23:36:53.447865459Z",
+          "status": "running"
+        },
+        {
+          "health": "none",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_production_observer",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-03T00:16:26.908640768Z",
+          "status": "running"
+        },
+        {
+          "health": "healthy",
+          "image": "sha256:076310512caa512d8934157985364a3aa7d9cdb58d14c490d9196d55c766a398",
+          "name": "porota_critical_approval_rc6",
+          "oom": false,
+          "restarts": 0,
+          "started_at": "2026-10-03T00:31:18.503902697Z",
+          "status": "running"
+        }
+      ],
+      "ready_candidates": 8082,
+      "candidates": [
+        {
+          "can_simulate": 1,
+          "family": "ACCIONES",
+          "n": 162,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "ACCIONES",
+          "n": 35,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 31,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "BONOS",
+          "n": 2242,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 558,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "BONOS",
+          "n": 4,
+          "status": "STALE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "CAUCIONES",
+          "n": 5,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "CAUCIONES",
+          "n": 5,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "CEDEARS",
+          "n": 1224,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "CEDEARS",
+          "n": 1191,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "FCI",
+          "n": 22,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "FCI",
+          "n": 1013,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "FUTUROS",
+          "n": 198,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 0,
+          "family": "INDICES",
+          "n": 1,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 1,
+          "family": "LETRAS",
+          "n": 37,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "LETRAS",
+          "n": 7,
+          "status": "OBSERVED_SHADOW"
+        },
+        {
+          "can_simulate": 0,
+          "family": "LETRAS",
+          "n": 4,
+          "status": "STALE"
+        },
+        {
+          "can_simulate": 1,
+          "family": "OBLIGACIONES",
+          "n": 3393,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "OBLIGACIONES",
+          "n": 1401,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 0,
+          "family": "ON",
+          "n": 91,
+          "status": "PAUSED_EXPLICIT"
+        },
+        {
+          "can_simulate": 1,
+          "family": "OPCIONES",
+          "n": 6,
+          "status": "AVAILABLE"
+        },
+        {
+          "can_simulate": 0,
+          "family": "OPCIONES",
+          "n": 2376,
+          "status": "PAUSED_EXPLICIT"
+        }
+      ],
+      "observer": [
+        {
+          "heartbeat_at": "2026-10-03T00:47:50.537841+00:00",
+          "mode": "PRODUCTION_PAPER",
+          "ppi_auth": "OK",
+          "process_state": "WAITING_MARKET",
+          "real_orders_sent": 0,
+          "session_state": "MARKET_CLOSED"
+        }
+      ],
+      "heartbeat_age_seconds": 4.787,
+      "ppi_watch_units": [],
+      "dashboard_health_http": 200
+    }
+  ],
+  "pending": [
+    "Caución: book PPI fresco y decisión/colocación del cash-sweep PAPER en ventana válida siguen NO_VERIFICADO. Las pruebas sintéticas no son evidencia de rueda.",
+    "Scalping: capacidad de confirmación y operación simulada durante rueda válida siguen NO_VERIFICADO después de este deploy con mercado cerrado.",
+    "Readiness es por identidad y fail-closed; filas no READY no se promueven ni borran automáticamente.",
+    "La clasificación de units legacy fallidas y el backlog más amplio no se cierran silenciosamente por este release.",
+    "Protecciones administrativas de rama: NO_VERIFICADAS por el conector; no se eludieron ni modificaron."
+  ],
+  "ownership": "PENDING_EXPLICIT_RELEASE_IN_ISSUE_441"
+}

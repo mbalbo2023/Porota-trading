@@ -1,3 +1,5 @@
+> **ACTUALIZACIÓN FINAL:** cierre técnico VALIDADO_RUNTIME. Consultar `RC6_UNIFIED_CLOSURE_2026-10-02.md` y `RC6_UNIFIED_FINAL_STATE_2026-10-02.json`. Lo siguiente conserva el checkpoint histórico previo.
+
 # POROTA RC6 — Ejecución unificada del 2 de octubre de 2026
 
 ## Estado de este checkpoint
