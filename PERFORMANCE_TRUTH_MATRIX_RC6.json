@@ -3,10 +3,10 @@
   "workstream_id": "WS_PERF_01_RC6_20261003_T2",
   "branch": "perf/ws-perf-02-lineage-scanner-20261003",
   "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
-  "evidence_cut": "2026-10-03 T2; publication / exact CI recorded in issue #452 and the next PR",
-  "implementation_status": "DESARROLLADO",
+  "evidence_cut": "2026-10-03T19:27:34Z",
+  "implementation_status": "ARTEFACTO_VALIDADO",
   "runtime_of_this_change": "NO_VERIFICADO",
-  "mode": "PAPER_SHADOW_ONLY",
+  "mode": "READ_ONLY",
   "real_order_routes": [],
   "deploy_owner": "NOT_ACQUIRED",
   "findings": [
@@ -25,7 +25,7 @@
         "scripts/rc6_performance_audit.py"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Canonical currency-separated audit with explicit sessions, zero-close days, quantities and money guards.",
       "guard": "PAPER read-only input, exact identity/quantity, money tolerance 0.01, complete cutoff, duplicate IDs rejected.",
       "test": [
@@ -71,7 +71,7 @@
         "be_paper_engine.py:_cost/_leg_rate/_economic_diagnostics/_close"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Spot _cost, _leg_rate, economic price sensitivity and partial-fill rebates now use canonical costs functions. Existing family tariff, per-fill cent rounding and full/low rate semantics preserved.",
       "guard": "Reject double-counted friction, invalid rates, mismatched fills, missing non-equity multiplier.",
       "test": [
@@ -94,7 +94,7 @@
         "bf_production_paper_observer.py:_cycle_plan/_runtime_readiness/run"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Factual observer now keeps a feasible warm basket for a complete signal window, reserves at most one existing cycle slot for cold discovery and gates new openings on active budget and membership. Full catalog retained with separately reported INFEASIBLE bound.",
       "guard": "INFEASIBLE and require_feasible raise; success fraction and full integer round-robin model; no readiness-to-edge conversion.",
       "test": [
@@ -161,7 +161,7 @@
         "rc6_performance/metrics.py:decision_funnel"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Incremental hash-verified capture, atomic cursor/event commit, no historical backfill or snapshot mutation.",
       "guard": "Invalid immutable hash blocks cursor; source DB mode=ro; quota and oversized-payload gaps explicit.",
       "test": [
@@ -185,7 +185,7 @@
         "rc6_performance/metrics.py:decision_funnel"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Native spot evaluation end, decision boundary, intent creation and committed entry fill clocks in immutable evidence; exact identity, strategy ID, resolved configuration digest and canonical frozen-candidate Python closure SHA verification. No historical rewriting.",
       "guard": "No receipt-to-decision substitution; environment allowlist; incomplete configuration fingerprint NO_VERIFICADO.",
       "test": [
@@ -208,7 +208,7 @@
         "rc6_performance/report.py:evidence_report"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Immutable pre-signal cold/sampling/data rejections and native warmup/score/spread/economics/AI/patrimonial stage codes, with legacy raw reasons and explicit heuristic source. Candidate counts exclude cold observations.",
       "guard": "Evaluations are not independent profitable opportunities; unmapped reason remains unmapped; no fictional HOLD gains.",
       "test": [
@@ -231,7 +231,7 @@
         "rc6_performance/shadow.py:forward_labels"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Multi-horizon gross forward returns, hit rate, AUC, observed MFE/MAE and tails; explicit prediction-contract requirement for precision/recall and net labels.",
       "guard": "No 0.70-to-70% interpretation; unavailable horizon NO_VERIFICADO; overlapping observations not called independent.",
       "test": [
@@ -252,7 +252,7 @@
         "rc6_performance/shadow.py:economics_gate"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Frozen family/currency/horizon mean movement model with label provenance; subtract expected explicit costs and execution friction on defined anchors.",
       "guard": "Model training cutoff precedes evaluation; source/depth/freshness/participation/EOD guards; no BUY authority.",
       "test": [
@@ -275,7 +275,7 @@
         "rc6_performance/shadow.py:economics_gate"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Time-aware SHADOW gate and mandatory factual EOD in replay; no overnight fills and no deadline extension.",
       "guard": "EOD precedence, MaxHold with no quote, source book available at evaluation, session close.",
       "test": [
@@ -298,7 +298,7 @@
         "rc6_performance/counterfactuals.py"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Causal same-entry baseline/TP/stop/trailing/MaxHold/break-even policies; reconcile source extraction separately from tick replay.",
       "guard": "No changed factual ledger, sticky intent, same-book depth budget, lot/partial fills, costs, no promotion.",
       "test": [
@@ -323,7 +323,7 @@
         "rc6_performance/replay.py"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Separate future outcome labels from decision input; reject future model, reversed time, duplicated training label and pre-decision source book used as future label.",
       "guard": "Explicit clocks, matching identity, immutable snapshot isolation; only observed highs drive trailing.",
       "test": [
@@ -346,7 +346,7 @@
         "rc6_performance/capture.py"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Isolated copy per evaluator, identical canonical input hash, explicit as_of and serializable decision envelopes for caller artifacts.",
       "guard": "SHADOW-only result envelopes; no additional provider/broker ingestion; no mutable shared candidate input.",
       "test": [
@@ -368,7 +368,7 @@
         "rc6_performance/metrics.py:exit_latencies"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Separate condition-to-intent, intent-to-first-fill, first-to-final, condition-to-final p50/p95/p99/max with missing/invalid-clock counters.",
       "guard": "Probe failures do not veto exit; independent DB busy timeout 5 ms; first probe immutable; ledger status required before final marker.",
       "test": [
@@ -393,7 +393,7 @@
         "bv_paper_runtime.py"
       ],
       "reconciliation_status": "SIGUE_ABIERTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Separate writer lock, nice 10 worker, 100 rows/table, 150 ms statement budget, 64 KiB payload, 1 MiB batch, 128 MiB quota and five-minute atomic report.",
       "guard": "Source query_only and PAPER/0; rejects source as evidence DB; atomic checkpoints; capacity/oversize/drop diagnostics.",
       "test": [
@@ -416,7 +416,7 @@
         "scripts/rc6_performance_report.py"
       ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "DESARROLLADO",
+      "status": "ARTEFACTO_VALIDADO",
       "fix": "Currency-separated day/week/strategy/version/strategy-ID/symbol/family/entry-hour/exit-reason cohorts, net expectancy/PF/costs/tails/turnover/exit frequencies, honest missing opportunities.",
       "guard": "Reject incomplete or tampered financial evidence; no combined ARS/USD result; output cannot overwrite evidence/source.",
       "test": [
@@ -482,5 +482,64 @@
     "offline_merge_conflicts": 0,
     "futures_binding_admission_cash_lifecycle_unchanged": true,
     "integration_published": false
-  }
+  },
+  "head_sha": "b8c95c10459cb8ede2925da491730f5988b29561",
+  "head_tree_sha": "f580e451d83eadc43575684378cb8f009d02366f",
+  "write_owner": "RELEASED",
+  "validated_ci": {
+    "schema": "rc6.performance-delivery-ci.v2",
+    "candidate_sha": "b8c95c10459cb8ede2925da491730f5988b29561",
+    "candidate_tree": "f580e451d83eadc43575684378cb8f009d02366f",
+    "predeploy_run": 37147635110,
+    "predeploy_job": 111274799441,
+    "status": "GREEN",
+    "url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37147635110",
+    "completed_at": "2026-10-03T19:27:34Z",
+    "tests": {
+      "exclusions": 1,
+      "discovered": 2564,
+      "executed": 2564,
+      "skipped": 0,
+      "xfail": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    "green_markers": {
+      "POROTA_DISK_POLICY_GATE": "GREEN",
+      "POROTA_POLICY_GATE": "GREEN",
+      "POROTA_COMPILE_GATE": "GREEN",
+      "POROTA_NEGATIVE_FIXTURES": "GREEN",
+      "POROTA_GOVERNED_TEST_STATUS": "GREEN",
+      "POROTA_GOVERNED_TESTS": "GREEN",
+      "POROTA_SECRET_SCAN": "GREEN",
+      "POROTA_HOST_CONTROL_PLANE_PROVENANCE": "GREEN",
+      "POROTA_DEPENDENCY_REPRO": "GREEN",
+      "POROTA_HOST_MANIFEST_V2": "GREEN",
+      "POROTA_HOST_POLICY_V2": "GREEN",
+      "POROTA_BUILD_ONCE": "GREEN|IMAGE=porota-predeploy-v2:b8c95c10459cb8ede2925da491730f5988b29561",
+      "POROTA_EXACT_ARTIFACT_EXTRACT": "GREEN",
+      "POROTA_ARTIFACT_INTEGRITY": "GREEN",
+      "POROTA_STATIC_RUNTIME_ASSET": "GREEN|POROTA_SECTOR_MAP_V1.csv|049b9de54e1bbcf955498ac379dc4a29220e8a3f0dcf2b646104ecd712517e8f",
+      "POROTA_EXACT_IMAGE_IMPORT_SMOKE": "GREEN",
+      "POROTA_PAPER_SAFETY_SOURCE_GATE": "GREEN",
+      "POROTA_DEPLOY_BUNDLE_V2": "GREEN|files=436|sha256=4a03b159908f6628011e00f71cd3704946f4a3d5553c350ad58f7fbdff468188",
+      "POROTA_FROZEN_CANDIDATE": "GREEN|b8c95c10459cb8ede2925da491730f5988b29561|f580e451d83eadc43575684378cb8f009d02366f|sha256:d4f63a24129e8c80a2fc0a28cdfbaf8e68ec8802906b454f3f33d617bf51fb5a",
+      "POROTA_FROZEN_CONTRACT": "GREEN",
+      "POROTA_PREDEPLOY_V2": "GREEN",
+      "POROTA_PREDEPLOY_LOCAL_CLEANUP": "GREEN"
+    },
+    "artifact": {
+      "id": 11282743179,
+      "name": "porota-predeploy-v2-b8c95c10459cb8ede2925da491730f5988b29561",
+      "size_in_bytes": 408774624,
+      "digest": "sha256:2729fb737831704e43820ae03c274187c0868cb946e1ae0651e6522a7c241bd4",
+      "expires_at": "2026-10-10T19:27:19Z"
+    },
+    "all_canonical_steps_passed": true,
+    "runtime_validation_of_this_change": "NO_VERIFICADO",
+    "deploy_performed": false
+  },
+  "continuation_of_pr": 454,
+  "current_pr": 456,
+  "coordination_issue": 452
 }

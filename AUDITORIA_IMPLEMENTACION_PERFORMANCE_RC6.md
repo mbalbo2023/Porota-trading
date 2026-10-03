@@ -200,3 +200,26 @@ HEAD propio congelado ee1b22996907f282f77d3c31956104bd52cba858 de #454, cuyo
 Predeploy 37140546207 fue GREEN con 2543 tests. #454 no se modifica.
 Esta tanda exige un nuevo Predeploy V2 GREEN sobre su propio HEAD; el cierre
 con run/artifact/hash se registra luego en #452 y el handoff final.
+
+## Cierre validado T2
+
+PR #456 queda congelado en b8c95c10459cb8ede2925da491730f5988b29561,
+árbol f580e451d83eadc43575684378cb8f009d02366f. Predeploy V2 37147635110
+completó GREEN el 2026-10-03T19:27:34Z: 2564 descubiertos y ejecutados,
+0 fallos/errores/skips/xfail, una exclusión gobernada previa de duplicado.
+Todos los gates canónicos pasan, incluida imagen exacta, closure, imports,
+contrato runtime de la imagen y restricciones PAPER. Build-once preservado.
+Artifact 11282743179, digest
+sha256:2729fb737831704e43820ae03c274187c0868cb946e1ae0651e6522a7c241bd4.
+Bundle: 436 archivos, SHA256
+4a03b159908f6628011e00f71cd3704946f4a3d5553c350ad58f7fbdff468188.
+
+Estado de implementación: ARTEFACTO_VALIDADO; runtime productivo de esta tanda:
+NO_VERIFICADO. WRITE_OWNER RELEASED. Sin DEPLOY_OWNER, merge ni deploy.
+La matriz/handoff finales están en una rama documental de evidencia; el SHA
+validado no cambia para incorporar su propio resultado posterior.
+La simulación offline con 7614 instrumentos, foco 8, abiertas 3, ciclo 140 s
+y límite 20 conserva 48 warm (8 slots) + 1 cold; warm tiene al menos 6 muestras
+válidas/distintas simuladas por ventana. Es una prueba del scheduler, no evidencia
+real de coverage o rentabilidad. La fixture del builder completo verifica 330
+Python de aplicación entre 436 archivos, no acredita el runtime productivo.
