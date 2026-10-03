@@ -1,0 +1,87 @@
+name: RC6 contract reconciliation progress READ ONLY
+on:
+  push:
+    branches: [audit/rc6-contract-progress-20261002]
+    paths: [.github/workflows/rc6-contract-progress-readonly-20261002.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rc6-contract-progress-readonly-20261002
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Inspect only selected processes and bounded DB tails
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+          mkdir -p evidence
+          timeout --signal=TERM --kill-after=5s 90s ssh -i "$HOME/.ssh/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
+            -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" 'sudo -n timeout 75 python3 -' <<'PY' | tee evidence/contract-progress.txt
+          import json,re,sqlite3,subprocess,time
+          from datetime import datetime,timezone
+          print('CONTRACT_PROGRESS_READ_ONLY_AT='+datetime.now(timezone.utc).isoformat())
+          def command(*args):
+              return subprocess.check_output(args,text=True,timeout=15).strip()
+          ids=command('docker','ps','-aq').splitlines()
+          containers=json.loads(command('docker','inspect',*ids)) if ids else []
+          selected=[]
+          for item in containers:
+              name=item['Name'].lstrip('/')
+              contract='ck_contract_evidence_runner_hf6.py' in item.get('Args',[])
+              if contract or name in ('porota_production_dashboard','porota_production_observer','porota_critical_approval_rc6'):
+                  state=item['State']
+                  value={'name':name,'contract_runner':contract,'status':state['Status'],'started_at':state['StartedAt'],'finished_at':state['FinishedAt'],'exit_code':state['ExitCode'],'oom':state['OOMKilled'],'restarts':item['RestartCount'],'image':item['Image'],'commit_label':(item['Config'].get('Labels') or {}).get('porota.commit')}
+                  selected.append(value)
+                  print('SELECTED_CONTAINER='+json.dumps(value,sort_keys=True))
+                  if contract and state['Running']:
+                      print('CONTRACT_PROCESS_NUMERIC='+command('docker','top',item['Id'],'-eo','pid,etimes,comm'))
+          print('ACTIVE_CONTRACT_RUNNERS='+str(sum(row['contract_runner'] and row['status']=='running' for row in selected)))
+          connection=sqlite3.connect('file:/opt/porota-trading/data/paper_v17/observer_v17.db?mode=ro',uri=True,timeout=2)
+          connection.row_factory=sqlite3.Row
+          connection.execute('PRAGMA query_only=ON')
+          connection.execute('PRAGMA busy_timeout=1000')
+          def query(sql):
+              deadline=time.monotonic()+2
+              connection.set_progress_handler(lambda:int(time.monotonic()>deadline),5000)
+              try:return [dict(row) for row in connection.execute(sql)]
+              finally:connection.set_progress_handler(None,0)
+          state=query('SELECT mode,real_orders_sent,process_state,session_state,heartbeat_at FROM observer_state WHERE id=1')
+          print('OBSERVER='+json.dumps(state,sort_keys=True))
+          assert len(state)==1 and state[0]['mode']=='PRODUCTION_PAPER' and state[0]['real_orders_sent']==0
+          tables=query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%contract_evidence%' ORDER BY name LIMIT 12")
+          for entry in tables:
+              table=entry['name']
+              assert re.fullmatch(r'[A-Za-z0-9_]+',table)
+              columns={row['name'] for row in query('PRAGMA table_info('+table+')')}
+              safe=[key for key in ('run_id','started_at','finished_at','status','observed_at','collected_at','created_at','updated_at') if key in columns]
+              if not safe:continue
+              try:
+                  rows=query('SELECT '+','.join(safe)+' FROM '+table+' ORDER BY rowid DESC LIMIT 3')
+                  print('EVIDENCE_TAIL='+json.dumps({'table':table,'rows':rows},sort_keys=True))
+              except sqlite3.OperationalError as error:
+                  print('EVIDENCE_TAIL_UNAVAILABLE='+table+'|'+type(error).__name__)
+          connection.close()
+          print('PROGRESS_PROBE_COMPLETE=true;RUNTIME_MUTATIONS=NONE;FINAL_VALIDATION=NOT_CLAIMED')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-contract-progress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/
+          retention-days: 14
+          if-no-files-found: error
