@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 import cp_contract_evidence_v2_hf6 as evidence_v2
 from bu_instrument_catalog import _candidate_has_ppi_primary
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
-import rc6_ppi_option_contract_policy as option_policy
+import rc6_ppi_option_contract_policy as option_policy\nimport rc6_ppi_future_contract_policy as future_policy
 
 
 SCHEMA = "rc6-contract-evidence-v2-mass-catalog-v1"
@@ -191,6 +191,18 @@ def planned_records(rows):
                 })
             elif str(row.get("capability") or "") == "NEEDS_OPTION_CONTRACT":
                 skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] += 1
+        elif family == "FUTUROS":
+            future_evidence = future_policy.standard_dlr_future_evidence(row)
+            if future_evidence:
+                records.append({
+                    **identity,
+                    "source_class": "DERIVED_OFFICIAL_RULE",
+                    "source_ref": future_policy.A3_DLR_SOURCE_REF,
+                    "observed_at": row.get("last_seen_at"),
+                    "evidence": future_evidence,
+                })
+            elif str(row.get("capability") or "") == "NEEDS_FUTURES_MARGIN_AND_CONTRACT":
+                skipped["FUTURE_STANDARD_DLR_POLICY_UNRESOLVED"] += 1
         elif family == "FCI":
             records.append({
                 **identity,
