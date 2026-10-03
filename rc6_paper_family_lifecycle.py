@@ -150,7 +150,7 @@ class FamilyPaperExecutor:
 
     def open_future(self, contract, *, lifecycle_id, event_id, entry_price,
                     quantity, entry_cost="0", occurred_at=None, side="LONG",
-                    detail=None, cash_guard=None):
+                    detail=None, cash_guard=None, admission_guard=None):
         """Reserve collateral and persist one simulated future atomically."""
         _validate_future_contract(contract)
         if str(side).upper() != "LONG":
@@ -188,6 +188,10 @@ class FamilyPaperExecutor:
                     cash_guard(connection), "caja futura disponible", nonnegative=True)
                 if available < reserve + cost:
                     raise ValueError("FUTURES_INSUFFICIENT_CASH")
+            if admission_guard is not None:
+                blocked = str(admission_guard(connection) or "")
+                if blocked:
+                    raise ValueError(blocked)
             base_detail = {
                 "mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
                 "side": "LONG", "quantity": str(qty),
