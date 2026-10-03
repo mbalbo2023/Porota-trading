@@ -390,43 +390,196 @@
       "preserve": true,
       "authority": "ops/rc6_deploy_critical_control_plane.sh",
       "reason": "Canonical issues-only GitHub capability proxy for the critical approval gateway."
+    },
+    "porota-live-decision-cockpit-rc6.service": {
+      "owner": "PR_107_ISOLATED_PRIVATE_COCKPIT",
+      "managed_by_host_control_plane_v2": false,
+      "preserve": true,
+      "authority": "PR #107 / deploy evidence run 35411100398",
+      "reason": "Open draft workstream deployed in isolation; preserve until that workstream is explicitly reconciled."
+    },
+    "porota-live-decision-cockpit-rc6.timer": {
+      "owner": "PR_107_ISOLATED_PRIVATE_COCKPIT",
+      "managed_by_host_control_plane_v2": false,
+      "preserve": true,
+      "authority": "PR #107 / deploy evidence run 35411100398",
+      "reason": "Open draft workstream deployed in isolation; observed active/enabled by its own deployment evidence."
+    },
+    "porota-private-snapshot.service": {
+      "owner": "PR_107_ISOLATED_PRIVATE_COCKPIT",
+      "managed_by_host_control_plane_v2": false,
+      "preserve": true,
+      "authority": "PR #107 comment 5738065413 / deploy run 35411100398",
+      "reason": "Private snapshot service explicitly reported active/enabled by PR #107 isolated deployment."
     }
   },
   "legacy_retire_units": [
-    "porota-1016-github-verify.service",
-    "porota-1016-github-verify.timer",
-    "porota-contract-evidence-dashboard-hf6.service",
-    "porota-contract-evidence-hf6.service",
-    "porota-contract-evidence-hf6.timer",
-    "porota-contract-evidence-rc6.service",
-    "porota-contract-evidence-rc6.timer",
     "porota-contract-evidence-weekend-backfill-rc6.service",
-    "porota-contract-evidence-weekend-backfill-rc6.timer",
-    "porota-introspeccion-hf4.service",
-    "porota-introspeccion-hf4.timer",
-    "porota-live-decision-cockpit-rc6.service",
-    "porota-live-decision-cockpit-rc6.timer",
-    "porota-log-export-hf6.service",
-    "porota-log-export-hf6.timer",
-    "porota-ppi-argentina-complete-now-rc6.service",
-    "porota-ppi-argentina-nightly-rc6.service",
-    "porota-ppi-argentina-nightly-rc6.timer",
-    "porota-ppi-fullfamily-history-rc6.service",
-    "porota-ppi-web-residual-rc6.service",
-    "porota-preopen.service",
-    "porota-preopen.timer",
-    "porota-private-snapshot.service",
-    "porota-scheduler-export-hf6.service",
-    "porota-scheduler-export-hf6.timer",
-    "porota-weekend-ingestion-audit-rc6.service",
-    "porota-weekend-ingestion-audit-rc6.timer"
+    "porota-scheduler-export-hf6.service"
   ],
   "legacy_retire_contract": {
-    "schema_version": 1,
-    "source": "runtime read-only census 37141540864 on product da697c6e6c2274579f9e4a112fabc4327475dd35",
-    "semantics": "Exact-name allowlist only. These units are host residue outside current canonical lifecycle authority and must be disabled/stopped, unlinked and reset-failed on the next authorized Deploy V2. No discovery-based deletion.",
+    "schema_version": 2,
+    "source": "WS-OPS-RESIDUALS-01 evidence in issue #441 plus runtime read-only census 37141540864",
+    "semantics": "Only explicitly proven stale legacy-orphan services may be retired. Absence from the canonical map alone is never deletion authority.",
     "ppi_watch_forbidden": true,
     "unknown_units": "FAIL_CLOSED",
+    "residual_review_units": "PRESERVE_REVIEW_REQUIRED",
     "external_host_units": "PRESERVE"
+  },
+  "residual_host_units": {
+    "porota-1016-github-verify.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-1016-github-verify.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-dashboard-hf6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-hf6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-hf6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-rc6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-contract-evidence-weekend-backfill-rc6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-introspeccion-hf4.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-introspeccion-hf4.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-log-export-hf6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-log-export-hf6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-ppi-argentina-complete-now-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-ppi-argentina-nightly-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-ppi-argentina-nightly-rc6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-ppi-fullfamily-history-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-ppi-web-residual-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-preopen.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-preopen.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-scheduler-export-hf6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-weekend-ingestion-audit-rc6.service": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    },
+    "porota-weekend-ingestion-audit-rc6.timer": {
+      "status": "NO_VERIFICADO_PRESERVE_REVIEW_REQUIRED",
+      "managed_by_host_control_plane_v2": false,
+      "mutation_allowed": false,
+      "source": "runtime read-only census 37141540864",
+      "reason": "Host residue is classified but destructive retirement is not authorized without provenance proving legacy ownership."
+    }
   }
 }
