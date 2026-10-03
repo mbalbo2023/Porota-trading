@@ -34,6 +34,21 @@ Estos estados son saludables fuera de rueda según sus contratos actuales, pero 
 constituyen validación en rueda**. La operación simulada de Scalping/caución durante
 una ventana de mercado válida continúa `NO_VERIFICADO` al ser sábado 2026-10-03.
 
+## Validación residual final
+
+Action read-only `37141978168`: **SUCCESS**.
+
+Resultado:
+- `HOST_UNIT_CLASSIFICATION_COUNT=69`;
+- `UNKNOWN_HOST_UNIT_COUNT=0`;
+- `LEGACY_RETIREMENT_DECLARED_COUNT=27`;
+- `LEGACY_RETIREMENT_ACTIVE_PENDING=3`;
+- `LEGACY_RETIREMENT_FAILED_PENDING=2`;
+- `FAILED_POROTA_UNIT_COUNT=2` — ambos dentro del allowlist de retiro futuro;
+- `VIOLATION_COUNT=0`;
+- `POROTA_RC6_RESIDUAL_OPS_AUDIT=GREEN`;
+- runtime retirement permanece explícitamente `PENDING_NEXT_AUTHORIZED_DEPLOY`.
+
 ## IOL: verdad por source-path
 
 Snapshot observado:
