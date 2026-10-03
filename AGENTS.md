@@ -184,3 +184,8 @@ A new Codex task should normally need only:
 4. fresh GitHub state.
 
 The task-specific order is authoritative for scope. This bootstrap is authoritative for safety/governance. When they conflict, stop the conflicting action, preserve safety, and mark the issue `BLOQUEADO` or `NO_VERIFICADO` rather than inventing a resolution.
+
+
+## 11. Legacy main-branch PR attestation
+
+The default branch still has a legacy PR check that asks for September checkpoint-attestation fields. Supply truthful historical values when that check applies, but treat them only as compatibility metadata for the guard. They do **not** restore the old checkpoint as current RC6 truth; Sections 1 and 9 above still control continuity.
