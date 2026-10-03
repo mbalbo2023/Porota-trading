@@ -189,7 +189,9 @@ jobs:
           assert {'instrument_type','status','can_simulate'}<=columns
           grouped=query('SELECT upper(instrument_type) family,upper(status) status,can_simulate,COUNT(*) n FROM candidate_identity_v2 GROUP BY 1,2,3')
           print('CANDIDATES='+json.dumps(grouped,sort_keys=True))
-          ready=sum(r['n'] for r in grouped if r['status']=='READY' and r['can_simulate']==1)
+          # Canonical runtime readiness is AVAILABLE + can_simulate=1. The status
+          # column is discovery/state, not a literal READY enum (see production scanner).
+          ready=sum(r['n'] for r in grouped if r['status']=='AVAILABLE' and int(r['can_simulate'])==1)
           print('READY_CANDIDATES='+str(ready))
           assert ready>=5558, 'CANONICAL_READY_FLOOR'
           print('CATALOG='+json.dumps(query('SELECT instrument_type,status,capability,COUNT(*) n FROM financial_instrument_catalog GROUP BY 1,2,3'),sort_keys=True))
