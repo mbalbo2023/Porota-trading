@@ -269,6 +269,7 @@ jobs:
           echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
 
       - name: Transfer frozen artifact
+        id: transfer
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -280,6 +281,7 @@ jobs:
           "${SCP[@]}" /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
 
       - name: Promote exact frozen candidate and verify
+        id: promotion
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -287,6 +289,12 @@ jobs:
             "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
+          # A failed SSH channel may leave the remote promoter running. Keep
+          # cleanup serialized with it rather than deleting its staging files.
+          DEPLOY_LOCK=/tmp/porota-rc6-deploy-v2.lock
+          test ! -L "$DEPLOY_LOCK"
+          exec 9>"$DEPLOY_LOCK"
+          flock -n 9 || { echo 'RC6_REMOTE_PROMOTION_BUSY=RED'; exit 75; }
           REMOTE_DIR="/tmp/porota-deploy-v2-$CANDIDATE_SHA"
           STAGE="$REMOTE_DIR/stage"
           STABLE_IMAGE="porota-trading-bot:17.0.0-rc6"
@@ -802,10 +810,11 @@ jobs:
               echo "RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC"
               exit "$PREOPEN_RC"
             fi
-            grep -Fq '"status": "GREEN"' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"read_only": true' <<< "$PREOPEN_OUTPUT"
-            grep -Fq '"network_order_test_performed": false' <<< "$PREOPEN_OUTPUT"
-            echo "RC6_PREOPEN_${phase}=GREEN"
+            printf '%s\n' "$PREOPEN_OUTPUT" | \
+              PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO" python3 \
+                "$REPO/scripts/rc6_deploy_preopen_gate.py" \
+                --phase "$phase" --return-code "$PREOPEN_RC"
+            echo "RC6_PREOPEN_${phase}=RESULT_ACCEPTED"
           done
 
           # Observe several worker/dashboard refresh cycles before success.
@@ -1052,6 +1061,22 @@ jobs:
           echo "REAL_ORDERS_SENT=0 REAL_ORDER_ROUTES=NOT_CALLED"
           echo "RC6_DEPLOY_V2=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|image=$RUNTIME_IMAGE_ID|expected_image=$EXPECTED_IMAGE_ID"
           REMOTE
+
+      - name: Failure-safe host cleanup
+        if: ${{ always() && (steps.transfer.outcome == 'failure' || steps.transfer.outcome == 'cancelled' || steps.promotion.outcome == 'failure' || steps.promotion.outcome == 'cancelled') }}
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo 'POROTA_DEPLOY_FAILURE_CLEANUP=START|original_failure_preserved=true'
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then echo "POROTA_DEPLOY_FAILURE_CLEANUP=RED|candidate=$CANDIDATE_SHA|rc=$rc"; fi' EXIT
+          timeout 180 ssh -i "$HOME/.ssh/porota_rc6_deploy" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 \
+            -o ServerAliveCountMax=3 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "sudo -n timeout 150 python3 - --candidate-sha '$CANDIDATE_SHA'" \
+            < scripts/rc6_deploy_failure_cleanup.py
 
       - name: Deployment summary
         if: success()

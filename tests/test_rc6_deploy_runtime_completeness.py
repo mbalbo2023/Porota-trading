@@ -247,7 +247,13 @@ def test_preopen_failure_preserves_diagnostics_before_fail_closed_exit():
     assert 'RC6_PREOPEN_${phase}=RED|RC=$PREOPEN_RC' in block
     assert 'exit "$PREOPEN_RC"' in block
     assert block.index('echo "$PREOPEN_OUTPUT"') < block.index('exit "$PREOPEN_RC"')
-    assert 'grep -Fq \'"status": "GREEN"\'' in block
+    # The strict result parser replaces GREEN-only grep without weakening
+    # process diagnostics or calendar/readiness validation (see its 13 tests).
+    assert 'printf \'%s\\n\' "$PREOPEN_OUTPUT" |' in block
+    assert '"$REPO/scripts/rc6_deploy_preopen_gate.py"' in block
+    assert '--phase "$phase" --return-code "$PREOPEN_RC"' in block
+    assert 'grep -Fq \'"status": "GREEN"\'' not in block
+    assert 'RC6_PREOPEN_${phase}=RESULT_ACCEPTED' in block
 
 
 def test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate():
@@ -274,3 +280,4 @@ def test_deploy_refreshes_byma_authority_before_dry_preopen():
     assert 'BYMA_MORNING_RC=$?' in block
     assert 'RC6_BYMA_MORNING_REFRESH=RED|RC=$BYMA_MORNING_RC' in block
     assert 'exit "$BYMA_MORNING_RC"' in block
+
