@@ -1,8 +1,7 @@
-"""Exact contract evidence export and offline reconciliation replay.
+"""Bounded contract export and offline reconciliation replay, never deployment.
 
-Export imports only stdlib, uses mode=ro/query_only and never imports Porota.
-Replay imports the chosen source only on a GitHub-hosted runner with a fresh
-temporary SQLite fixture. No full production DB, account or trade export.
+Export: stdlib only, query_only/mode=ro. Replay: fresh temporary SQLite on the
+GitHub runner. No account, operation, quote-history or whole-database export.
 """
 from __future__ import annotations
 import argparse
@@ -34,8 +33,7 @@ def sanitized(value):
         except ValueError:return
     if isinstance(value,dict):
         for key,item in value.items():
-            if any(token in str(key).lower() for token in FORBIDDEN):
-                raise ValueError('SENSITIVE_FIELD_NOT_EXPORTED')
+            if any(token in str(key).lower() for token in FORBIDDEN):raise ValueError('SENSITIVE_FIELD_NOT_EXPORTED')
             sanitized(item)
     elif isinstance(value,list):
         for item in value:sanitized(item)
@@ -45,11 +43,9 @@ def export_contracts(db,state_path):
     state=json.loads(Path(state_path).read_text())
     if state.get('deploy_sha')!=PRODUCT or state.get('mode')!='PRODUCTION_PAPER' or state.get('real_orders_sent')!=0:
         raise ValueError('SOURCE_OR_PAPER_DRIFT')
-    path=Path(db).resolve(strict=True)
-    os.nice(15)
+    path=Path(db).resolve(strict=True);os.nice(15)
     started=time.monotonic();deadline=started+25
-    con=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.25)
-    con.row_factory=sqlite3.Row
+    con=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.25);con.row_factory=sqlite3.Row
     try:
         con.execute('PRAGMA query_only=ON');con.execute('PRAGMA busy_timeout=250');con.execute('PRAGMA cache_size=-4096')
         con.set_progress_handler(lambda:int(time.monotonic()>deadline),10000)
@@ -63,8 +59,6 @@ def export_contracts(db,state_path):
             if not info[table]:raise ValueError('REQUIRED_TABLE_MISSING:'+table)
         scalar=','.join('"'+r['name']+'"' for r in info['financial_instrument_catalog'] if r['name']!='metadata_json')
         meta='json_object('+','.join("'"+k+"',json_extract(metadata_json,'$."+k+"')" for k in META)+') AS metadata_json'
-        # Preserve all members of the diagnosed cohorts, including legacy ON
-        # siblings. Exclude complementary shadow catalogues unrelated to fixes.
         where="instrument_type='ON' OR (status='AVAILABLE' AND ((instrument_type='OPCIONES' AND capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED') OR (instrument_type='OBLIGACIONES' AND capability IN ('CONTRACT_EVIDENCE_REVIEW_REQUIRED','NEEDS_NOMINAL_UNITS')) OR instrument_type='FUTUROS'))"
         join=' AND '.join('s.'+k+'=ch.'+k for k in ('family','ticker','market','currency','settlement','source_class'))
         wanted=("SELECT snapshot_id FROM contract_evidence_v2_current WHERE family IN "+FAMILIES+
@@ -76,8 +70,8 @@ def export_contracts(db,state_path):
             'contract_evidence_v2_changes':"SELECT * FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED' AND family IN "+FAMILIES,
             'contract_evidence_v2_snapshots':'SELECT s.* FROM ('+wanted+') wanted JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=wanted.snapshot_id',
         }
-        result=dict(schema_version=1,product_sha=PRODUCT,captured_at=datetime.now(timezone.utc).isoformat(),
-            observer=safety,tables={},schemas=info,database_writes=0,broker_calls=0,full_database_export=False,
+        result=dict(schema_version=1,product_sha=PRODUCT,captured_at=datetime.now(timezone.utc).isoformat(),observer=safety,
+            tables={},schemas=info,database_writes=0,broker_calls=0,full_database_export=False,
             scope='CURRENT_AND_UNRESOLVED_EXACT_CONTRACT_SNAPSHOTS',catalog_metadata_fields=META)
         total=0
         for table,sql in queries.items():
@@ -91,8 +85,7 @@ def export_contracts(db,state_path):
                     value=dict(row);sanitized(value);rows.append(value)
                 if total+len(rows)>40000:raise ValueError('EXPORT_ROW_LIMIT')
             total+=len(rows);result['tables'][table]=rows
-        result['elapsed_seconds']=round(time.monotonic()-started,3)
-        result['complete']=True
+        result['elapsed_seconds']=round(time.monotonic()-started,3);result['complete']=True
         raw=json.dumps(result,ensure_ascii=False,separators=(',',':')).encode()
         if len(raw)>24000000:raise ValueError('EXPORT_BYTE_LIMIT')
         return raw
@@ -115,11 +108,12 @@ def seed_local(store,payload):
                 if re.fullmatch(r'[a-z0-9_]+',col['name']) is None or col['type'].upper() not in ('TEXT','INTEGER','REAL','BLOB','NUMERIC',''):
                     raise ValueError('UNSAFE_COLUMN')
                 definitions.append('"'+col['name']+'" '+col['type'])
+            primary=[c['name'] for c in sorted(columns,key=lambda c:int(c.get('pk') or 0)) if c.get('pk')]
+            if primary:definitions.append('PRIMARY KEY('+','.join('"'+name+'"' for name in primary)+')')
             con.execute('CREATE TABLE "'+table+'" ('+','.join(definitions)+')')
-            rows=payload['tables'][table]
             fields=[c['name'] for c in columns]
             con.executemany('INSERT INTO "'+table+'" VALUES('+','.join('?' for _ in fields)+')',
-                [tuple(row[k] for k in fields) for row in rows])
+                [tuple(row[k] for k in fields) for row in payload['tables'][table]])
         con.executescript('''
         CREATE TABLE instrument_catalog(instrument_type,ticker,description,market,settlement,downloaded_at,raw_json);
         CREATE TABLE candidate_universe(ticker,instrument_type,settlement,market,can_simulate,status,detail,last_checked_at);
@@ -149,8 +143,6 @@ def run_one(source,payload,root,tag):
         rows=[dict(r) for r in con.execute('SELECT * FROM candidate_identity_v2 ORDER BY instrument_type,ticker,market,currency,settlement')]
         after=[dict(r) for r in con.execute('SELECT * FROM financial_instrument_catalog')]
     original={tuple(r[k] for k in KEY):r for r in payload['tables']['financial_instrument_catalog']}
-    # V2 may present non-target current evidence: ignore out-of-scope inserted
-    # observational rows for delta accounting, but never count them as proof.
     targeted=[r for r in rows if tuple(r[k] for k in KEY) in original]
     if len(targeted)!=len(original):raise ValueError('REPLAY_TARGET_SCOPE_MISMATCH')
     for r in after:
@@ -165,13 +157,11 @@ def replay(args):
     payload=json.loads(Path(args.input).read_text())
     if not payload.get('complete') or payload.get('product_sha')!=PRODUCT or payload.get('database_writes')!=0:
         raise ValueError('INPUT_NOT_VERIFIED')
-    if payload['observer']['mode']!='PRODUCTION_PAPER' or payload['observer']['real_orders_sent']!=0:
-        raise ValueError('INPUT_SAFETY')
+    if payload['observer']['mode']!='PRODUCTION_PAPER' or payload['observer']['real_orders_sent']!=0:raise ValueError('INPUT_SAFETY')
     sys.path.insert(0,str(Path(args.candidate).resolve()))
     from cp_contract_evidence_v2_hf6 import evidence_hash
     for row in payload['tables']['contract_evidence_v2_snapshots']:
-        if evidence_hash(json.loads(row['evidence_json']))!=row['evidence_hash']:
-            raise ValueError('SNAPSHOT_HASH_MISMATCH')
+        if evidence_hash(json.loads(row['evidence_json']))!=row['evidence_hash']:raise ValueError('SNAPSHOT_HASH_MISMATCH')
     with tempfile.TemporaryDirectory() as folder:
         root=Path(folder)
         baseline=run_one(Path(args.baseline)/'bf_production_paper_observer.py',payload,root,'baseline')
@@ -185,8 +175,7 @@ def replay(args):
     pending={tuple(r) for r in candidate['material_pending_identities']}
     for row in gained:
         family='ON' if row['instrument_type']=='OBLIGACIONES' else row['instrument_type']
-        if (family,row['ticker'],row['market'],row['currency'],row['settlement']) in pending:
-            raise ValueError('MATERIAL_CHANGE_BYPASSED')
+        if (family,row['ticker'],row['market'],row['currency'],row['settlement']) in pending:raise ValueError('MATERIAL_CHANGE_BYPASSED')
     result=dict(schema_version=1,product_sha=PRODUCT,input_captured_at=payload['captured_at'],
         input_sha256=hashlib.sha256(Path(args.input).read_bytes()).hexdigest(),
         export_elapsed_seconds=payload['elapsed_seconds'],export_counts={k:len(v) for k,v in payload['tables'].items()},
