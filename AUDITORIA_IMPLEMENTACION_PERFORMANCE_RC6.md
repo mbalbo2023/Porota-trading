@@ -78,6 +78,9 @@ replay.py compara políticas sobre la misma entrada, con estado causal,
 precedencia EOD/MaxHold, depth/participation, lote, fills parciales y presupuesto
 por libro. No rellena un hueco con precios inventados ni ejecuta overnight.
 Stops/targets/trailing/break-even son variantes SHADOW, no parámetros promovidos.
+La protección break-even queda armada tras observar el umbral neto; un retroceso
+no la desarma. Un gap a través de ese nivel puede cerrar con pérdida neta, y el
+replay conserva ese resultado sin presentarlo como garantía de equilibrio.
 
 metrics.py y report.py exponen cohortes por moneda, día, semana, estrategia,
 símbolo, familia, hora ART y salida; P&L bruto/costos/neto, PF, expectancy,

@@ -56,6 +56,7 @@ class ExitReplay:
         self.reason, self.detected_at, self.fills = None, None, []
         self.used_depth = {}
         self.last_rejection = None
+        self.break_even_armed = False
 
     def advance(self, book, *, as_of):
         now = stamp(as_of)
@@ -97,9 +98,14 @@ class ExitReplay:
                                             self.factor, self.fees, intraday_eligible=self.ident[4] == "BYMA")
             net = (bid * (1-self.slip)-self.price)*self.total*self.factor-trial["explicit_fees"]
             if net / (self.price*self.total*self.factor) >= self.policy.minimum_net_lock:
-                # The break-even trigger is derived from the same cost model.
-                low, full = self.fees.low_rate, self.fees.full_rate
-                break_even_bid = self.price*(1+low)/(1-full)/(1-self.slip)
+                self.break_even_armed = True
+            if self.break_even_armed:
+                # Once armed, a subsequent pullback cannot remove protection.
+                # Above entry, the smaller-leg BYMA rebate leaves entry rights;
+                # a market without that rebate pays the full entry rate.
+                entry_rate = self.fees.low_rate if self.ident[4] == "BYMA" else self.fees.full_rate
+                denominator = number(1-self.fees.full_rate, positive=True)
+                break_even_bid = self.price*(1+entry_rate)/denominator/(1-self.slip)
                 stop = max(stop, break_even_bid)
         if not self.reason:
             if bid <= stop:

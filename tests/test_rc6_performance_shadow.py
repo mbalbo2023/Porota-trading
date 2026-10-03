@@ -154,6 +154,22 @@ def test_factual_and_candidate_are_deterministic_and_do_not_promote():
     assert factual["factual_entry"] == candidate["factual_entry"]
 
 
+def test_break_even_once_armed_survives_pullback_and_trailing_uses_only_observed_high():
+    state = replay(ExitPolicy("BE_SHADOW", D(".02"), D(".05"), 3600, minimum_net_lock=D(".001")))
+    q = book("2026-09-09T14:01:00Z", "102")
+    assert state.advance(q, as_of=q["observed_at"])["state"] == "OPEN"
+    q = book("2026-09-09T14:02:00Z", "100.5")
+    result = state.advance(q, as_of=q["observed_at"])
+    assert result["state"] == "CLOSED" and result["reason"] == "STOP_PAPER"
+    # A gap through modeled break-even is not a guaranteed nonnegative net fill.
+    assert result["net"] < 0 and not result["economic_edge_validated"]
+    trailing = replay(ExitPolicy("TRAIL_SHADOW", D(".02"), D(".05"), 3600, trailing_fraction=D(".01")))
+    q = book("2026-09-09T14:01:00Z", "102")
+    assert trailing.advance(q, as_of=q["observed_at"])["state"] == "OPEN"
+    q = book("2026-09-09T14:02:00Z", "100.9")
+    assert trailing.advance(q, as_of=q["observed_at"])["reason"] == "STOP_PAPER"
+
+
 def test_missing_lineage_is_exposed_without_quote_time_becoming_decision_time():
     snapshots = [{"decision_key": "a", "captured_at": book()["observed_at"], "quote_used": book(),
                   "decision": {"technical_gate": "APPROVE", "final_result": "BLOCKED", "reason": "risk_limit"},

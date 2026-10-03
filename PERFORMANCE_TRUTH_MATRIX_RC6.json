@@ -176,7 +176,7 @@
       "status": "DESARROLLADO",
       "fix": "Causal same-entry baseline/TP/stop/trailing/MaxHold/break-even policies; reconcile source extraction separately from tick replay.",
       "guard": "No changed factual ledger, sticky intent, same-book depth budget, lot/partial fills, costs, no promotion.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_factual_and_candidate_are_deterministic_and_do_not_promote", "tests/test_rc6_performance_shadow.py:test_same_entry_stop_partial_fills_and_repeated_book_budget", "tests/test_rc6_performance_costs.py:test_extracted_replays_use_same_ids_canonical_costs_and_expose_missing_coverage"],
+      "test": ["tests/test_rc6_performance_shadow.py:test_factual_and_candidate_are_deterministic_and_do_not_promote", "tests/test_rc6_performance_shadow.py:test_same_entry_stop_partial_fills_and_repeated_book_budget", "tests/test_rc6_performance_shadow.py:test_break_even_once_armed_survives_pullback_and_trailing_uses_only_observed_high", "tests/test_rc6_performance_costs.py:test_extracted_replays_use_same_ids_canonical_costs_and_expose_missing_coverage"],
       "remaining_uncertainty": "Full first-touch/depth market paths absent. Framework sensitivity differs from actual broker fee rounding and portfolio risk/capital feedback."
     },
     {
