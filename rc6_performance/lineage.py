@@ -58,7 +58,7 @@ def frozen_source(root=None, metadata=None):
         # Runtime caches, mounted data, tooling environments and tests are not
         # executable application source in this attestation scope.
         actual = set()
-        ignored = {".git", ".venv", "venv", "data", "tests", "docs", ".agents", "__pycache__", "model_cache", "sre_vector_db", ".cache"}
+        ignored = {".git", ".github", ".venv", "venv", "data", "tests", "docs", ".agents", "__pycache__", "model_cache", "sre_vector_db", ".cache"}
         for directory, folders, names in os.walk(root):
             folders[:] = [name for name in folders if name not in ignored]
             actual.update(str((Path(directory) / name).relative_to(root)) for name in names if name.endswith(".py"))

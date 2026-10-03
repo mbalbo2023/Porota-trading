@@ -194,7 +194,7 @@ la variante SHADOW. La promoción no forma parte de esta misión.
 ## Validación de la continuación T2
 
 285 pruebas locales pasan, incluyendo las regresiones existentes de costos,
-scanner y cierres parciales. 23 casos nuevos prueban clocks, manifiesto completo,
+scanner y cierres parciales. 21 casos nuevos prueban clocks, manifiesto completo,
 fingerprint efectivo, costos y canasta persistida. El candidato reutiliza el
 HEAD propio congelado ee1b22996907f282f77d3c31956104bd52cba858 de #454, cuyo
 Predeploy 37140546207 fue GREEN con 2543 tests. #454 no se modifica.

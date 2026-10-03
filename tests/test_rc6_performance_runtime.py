@@ -106,6 +106,8 @@ def test_frozen_source_rejects_stale_manifest_and_undeclared_source(tmp_path):
     manifest = {"status": "GREEN", "file_count": 1, "files": [{"path": code.name,
                 "bytes": code.stat().st_size, "sha256": hashlib.sha256(code.read_bytes()).hexdigest()}]}
     (meta/"porota-deploy-bundle-v2-manifest.json").write_text(json.dumps(manifest))
+    control = root/".github/workflows"; control.mkdir(parents=True)
+    (control/"control_plane.py").write_text("pass\n")
     assert lineage.frozen_source(root)["git_sha"] == "a"*40
     code.write_text("changed\n"); lineage._cache.clear()
     assert lineage.frozen_source(root)["git_sha"] is None

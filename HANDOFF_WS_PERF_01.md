@@ -28,7 +28,7 @@ La cota no reemplaza muestras distintas reales, freshness, profundidad y riesgo.
 Costos spot se delegan a funciones comunes conservando centavos/bonificaciones
 y todos los parámetros existentes. FUTUROS especializado queda excluido.
 
-285 pruebas locales pasan; 23 nuevos casos en test_rc6_performance_runtime.py.
+285 pruebas locales pasan; 21 nuevos casos en test_rc6_performance_runtime.py.
 Nuevo Predeploy V2 completo requerido sobre HEAD exacto. #454 queda congelado
 con su GREEN anterior; esta tanda lo incorpora como dependencia propia y es
 el candidato actualizado para una futura integración consolidada.
