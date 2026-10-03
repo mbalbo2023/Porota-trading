@@ -1,0 +1,142 @@
+name: RC6 Disk Housekeeping Schedule
+
+on:
+  schedule:
+    # Daily 20:30 ART (23:30 UTC): audit, auto-clean only below GREEN target.
+    - cron: '30 23 * * *'
+    # Sunday 11:00 ART (14:00 UTC): full authorized retention cleanup.
+    - cron: '0 14 * * 0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Housekeeping mode
+        required: true
+        default: auto
+        type: choice
+        options:
+          - audit
+          - auto
+          - cleanup
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  housekeeping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PRODUCT_REF: deploy/rc6-pr69-isolated-20260915
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Checkout canonical product control plane
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PRODUCT_REF }}
+          fetch-depth: 1
+
+      - name: Resolve housekeeping mode
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          MODE=auto
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "0 14 * * 0" ]; then
+            MODE=cleanup
+          fi
+          case "$MODE" in audit|auto|cleanup) ;; *) exit 31 ;; esac
+          echo "HOUSEKEEPING_MODE=$MODE" >> "$GITHUB_ENV"
+          echo "RC6_HOUSEKEEPING_MODE=$MODE"
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_housekeeping"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_housekeeping" "$HOME/.ssh/known_hosts"
+
+      - name: Verify deployed housekeeping identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_housekeeping"             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2             -o ServerAliveInterval=15 -o ServerAliveCountMax=4             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+
+          LOCAL_SCRIPT_SHA="$(sha256sum scripts/rc6_disk_housekeeping.py | awk '{print $1}')"
+          LOCAL_POLICY_SHA="$(sha256sum ops/policy/rc6-disk-housekeeping-v1.json | awk '{print $1}')"
+          REMOTE="$("${SSH[@]}" "$DO_USER@$DO_HOST"             "sha256sum /opt/porota-trading/scripts/rc6_disk_housekeeping.py /opt/porota-trading/ops/policy/rc6-disk-housekeeping-v1.json")"
+          REMOTE_SCRIPT_SHA="$(awk 'NR==1 {print $1}' <<< "$REMOTE")"
+          REMOTE_POLICY_SHA="$(awk 'NR==2 {print $1}' <<< "$REMOTE")"
+          echo "HOUSEKEEPING_SCRIPT_SHA=local:$LOCAL_SCRIPT_SHA|remote:$REMOTE_SCRIPT_SHA"
+          echo "HOUSEKEEPING_POLICY_SHA=local:$LOCAL_POLICY_SHA|remote:$REMOTE_POLICY_SHA"
+          test "$LOCAL_SCRIPT_SHA" = "$REMOTE_SCRIPT_SHA"
+          test "$LOCAL_POLICY_SHA" = "$REMOTE_POLICY_SHA"
+          echo "RC6_HOUSEKEEPING_IDENTITY=GREEN"
+
+      - name: Read-only disk and PAPER preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_housekeeping"             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2             -o ServerAliveInterval=15 -o ServerAliveCountMax=4             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          echo "DISK_PREFLIGHT=$(df -PB1 / | awk 'NR==2 {print $4}')"
+          sudo -n timeout 15 python3 - <<'PY'
+          import sqlite3
+          p="/opt/porota-trading/data/paper_v17/observer_v17.db"
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=2)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"STATE={mode}|{orders}")
+          if mode != "PRODUCTION_PAPER" or int(orders) != 0:
+              raise SystemExit(42)
+          PY
+          REMOTE
+          echo "RC6_HOUSEKEEPING_PREFLIGHT=GREEN"
+
+      - name: Execute guarded housekeeping
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE="$RUNNER_TEMP/rc6-disk-housekeeping.json"
+          SSH=(ssh -i "$HOME/.ssh/porota_rc6_housekeeping"             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2             -o ServerAliveInterval=15 -o ServerAliveCountMax=4             -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes             -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          REMOTE_JSON="/tmp/rc6-disk-housekeeping-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+
+          "${SSH[@]}" "$DO_USER@$DO_HOST"             "sudo -n python3 /opt/porota-trading/scripts/rc6_disk_housekeeping.py               --policy /opt/porota-trading/ops/policy/rc6-disk-housekeeping-v1.json               --mode '$HOUSEKEEPING_MODE'               --json-out '$REMOTE_JSON'"
+
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n cat '$REMOTE_JSON'" > "$EVIDENCE"
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "sudo -n rm -f '$REMOTE_JSON'"
+
+          python - "$EVIDENCE" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert p["status"] == "GREEN", p
+          before=p["before"]["free_bytes"]
+          after=p["after"]["free_bytes"]
+          print(f"RC6_HOUSEKEEPING_RESULT=GREEN|mode={p['effective_mode']}|before={before}|after={after}|recovered={p['space_recovered_bytes']}")
+          PY
+
+      - name: Upload housekeeping evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-disk-housekeeping-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-disk-housekeeping.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Runner cleanup
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_housekeeping"
