@@ -164,3 +164,40 @@ tails, PF, drawdown realizado, turnover/costos y concentración por símbolo,
 con sensibilidad preespecificada. No elegir ganador de grilla histórica.
 Si falta reloj, profundidad, modelo o muestra, conservar NO_VERIFICADO y mantener
 la variante SHADOW. La promoción no forma parte de esta misión.
+
+## Auditoría matemática de la señal canónica
+
+HECHO VERIFICADO por lectura de be_paper_engine.py@ee1b2299: signal_prices
+filtra identidad completa, TRADE, timestamp de fuente dentro de ventana y
+recepción <= as_of; ordena por trade_at y deduplica ese timestamp. No impone
+intervalos equiespaciados ni aporta volumen. decide usa SMA3 y SMA min(8,n):
+
+`momentum = SMA3 / SMAmin(8,n) - 1`
+
+`score = clip(0.5 + 40*momentum - 10*(ask/bid - 1), 0, 1)`
+
+El límite de lectura es max(20, signal_min_samples); la ventana es configurable.
+El mínimo de muestras permite construir la señal, pero no demuestra precisión
+ni que el horizonte de SMA coincida con MaxHold/TP/EOD. Ejemplo matemático
+hipotético: con umbral 0.70, sin spread se exige momentum 0.5%; con spread 1%
+se exige 0.75%. No se propone ese umbral ni se afirma que sea el activo.
+
+La microestructura cambia el alcance temporal de cada media y el spread modifica
+linealmente el score hasta clipping. NO_VERIFICADO: calibración, estabilidad por
+régimen/hora/símbolo y asociación causal con retorno futuro. AUC ejecutado ARS
+0.3885918003 es discriminación dentro del subconjunto operado y neto de cargos;
+no evalúa candidatos rechazados ni reemplaza forward labels fuera de muestra.
+Los 25 flags evidence_hash_valid=true son evidencia declarada por el extractor
+fuente; esta misión verifica los 26 hashes del paquete y los hashes completos
+de los nuevos snapshots capturados, sin fingir acceso a payloads históricos ausentes.
+
+## Cierre de validación de software
+
+ARTEFACTO_VALIDADO: ee1b22996907f282f77d3c31956104bd52cba858; PR #454; Predeploy 37140546207 success;
+2543 tests, cero fallos/errores/skips/xfail y 50 focales nuevos.
+Integridad/import closure y seguridad PAPER de imagen GREEN. Detalle/digest
+exacto en HANDOFF_WS_PERF_01.md de la rama docs/ws-perf-01-closure-20261003.
+WRITE_OWNER RELEASED. No deploy; observabilidad nativa completa/scanner factual
+BLOQUEADOS y edge/runtime nuevo NO_VERIFICADO. Los reportes detallados privados
+se entregan en el workspace; el artifact Predeploy no contiene las fuentes
+financieras adjuntas. La auditoría histórica permanece inalterada.
