@@ -60,14 +60,19 @@ def export_contracts(db,state_path):
         scalar=','.join('"'+r['name']+'"' for r in info['financial_instrument_catalog'] if r['name']!='metadata_json')
         meta='json_object('+','.join("'"+k+"',json_extract(metadata_json,'$."+k+"')" for k in META)+') AS metadata_json'
         where="instrument_type='ON' OR (status='AVAILABLE' AND ((instrument_type='OPCIONES' AND capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED') OR (instrument_type='OBLIGACIONES' AND capability IN ('CONTRACT_EVIDENCE_REVIEW_REQUIRED','NEEDS_NOMINAL_UNITS')) OR instrument_type='FUTUROS'))"
-        join=' AND '.join('s.'+k+'=ch.'+k for k in ('family','ticker','market','currency','settlement','source_class'))
-        wanted=("SELECT snapshot_id FROM contract_evidence_v2_current WHERE family IN "+FAMILIES+
-            " UNION SELECT s.snapshot_id FROM contract_evidence_v2_changes ch JOIN contract_evidence_v2_snapshots s ON "+join+
-            " AND s.evidence_hash IN (ch.previous_hash,ch.current_hash) WHERE ch.status='CHANGED_REVIEW_REQUIRED' AND ch.family IN "+FAMILIES)
+        target=("WITH target AS (SELECT DISTINCT CASE WHEN instrument_type='OBLIGACIONES' THEN 'ON' ELSE instrument_type END AS family,"
+            "ticker,market,currency,settlement FROM financial_instrument_catalog WHERE "+where+") ")
+        target_join=' AND '.join('t.'+k+'=c.'+k for k in ('family','ticker','market','currency','settlement'))
+        change_target_join=' AND '.join('t.'+k+'=ch.'+k for k in ('family','ticker','market','currency','settlement'))
+        snapshot_change_join=' AND '.join('s.'+k+'=ch.'+k for k in ('family','ticker','market','currency','settlement','source_class'))
+        wanted=(target+"SELECT c.snapshot_id FROM contract_evidence_v2_current c JOIN target t ON "+target_join+
+            " UNION SELECT s.snapshot_id FROM contract_evidence_v2_changes ch JOIN target t ON "+change_target_join+
+            " JOIN contract_evidence_v2_snapshots s ON "+snapshot_change_join+
+            " AND s.evidence_hash IN (ch.previous_hash,ch.current_hash) WHERE ch.status='CHANGED_REVIEW_REQUIRED'")
         queries={
             'financial_instrument_catalog':'SELECT '+scalar+','+meta+' FROM financial_instrument_catalog WHERE '+where,
-            'contract_evidence_v2_current':'SELECT * FROM contract_evidence_v2_current WHERE family IN '+FAMILIES,
-            'contract_evidence_v2_changes':"SELECT * FROM contract_evidence_v2_changes WHERE status='CHANGED_REVIEW_REQUIRED' AND family IN "+FAMILIES,
+            'contract_evidence_v2_current':target+'SELECT c.* FROM contract_evidence_v2_current c JOIN target t ON '+target_join,
+            'contract_evidence_v2_changes':target+"SELECT ch.* FROM contract_evidence_v2_changes ch JOIN target t ON "+change_target_join+" WHERE ch.status='CHANGED_REVIEW_REQUIRED'",
             'contract_evidence_v2_snapshots':'SELECT s.* FROM ('+wanted+') wanted JOIN contract_evidence_v2_snapshots s ON s.snapshot_id=wanted.snapshot_id',
         }
         result=dict(schema_version=1,product_sha=PRODUCT,captured_at=datetime.now(timezone.utc).isoformat(),observer=safety,
