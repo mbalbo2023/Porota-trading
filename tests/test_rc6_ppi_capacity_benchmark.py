@@ -393,4 +393,6 @@ def test_minimum_useful_distinct_samples_and_window_density_both_required(wire):
     report = measure(wire)
     assert capacity(report, clock, required_samples=21, window_seconds=3000)["safe_limit"] == 0
     assert capacity(report, clock, required_samples=15)["safe_limit"] == 0
-    assert capacity(report, clock, required_samples=15, window_seconds=3000)["safe_limit"] == 5
+    # A longer requested window cannot turn a stalled source clock into
+    # demonstrated ongoing sample production.
+    assert capacity(report, clock, required_samples=15, window_seconds=3000)["safe_limit"] == 0
