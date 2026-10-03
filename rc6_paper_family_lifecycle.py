@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,\n                                     decimal_value)
+from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,
+                                     decimal_value)
 
 
 PAPER_ONLY = True
