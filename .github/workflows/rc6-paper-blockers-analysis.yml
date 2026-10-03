@@ -1,0 +1,76 @@
+name: RC6 PAPER Blockers Offline Analysis
+
+on:
+  push:
+    branches: [audit/rc6-paper-residuals-20261003]
+    paths:
+      - scripts/rc6_paper_blockers_analysis.py
+      - tests/test_rc6_paper_blockers_analysis.py
+      - .github/workflows/rc6-paper-blockers-analysis.yml
+  workflow_dispatch:
+    inputs:
+      census_run_id:
+        required: true
+        type: string
+        default: '37133980328'
+      census_source_sha:
+        required: true
+        type: string
+        default: 7cd4a9e571471720bbfcefc53d665ea90f8a4430
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-paper-blockers-offline-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CENSUS_RUN: ${{ inputs.census_run_id || '37133980328' }}
+  CENSUS_SHA: ${{ inputs.census_source_sha || '7cd4a9e571471720bbfcefc53d665ea90f8a4430' }}
+
+jobs:
+  offline-analysis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate offline scripts and regression fixtures
+        run: |
+          python3 -m py_compile scripts/rc6_paper_blockers_analysis.py tests/test_rc6_paper_blockers_analysis.py
+          python3 -m unittest discover -s tests -p test_rc6_paper_blockers_analysis.py -v
+      - name: Require successful exact census source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$CENSUS_RUN" =~ ^[0-9]+$ ]]
+          [[ "$CENSUS_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh api "repos/mbalbo2023/Porota-trading/actions/runs/$CENSUS_RUN" > /tmp/rc6-census-run.json
+          python3 -c 'import json,os; x=json.load(open("/tmp/rc6-census-run.json")); assert x["conclusion"]=="success" and x["head_sha"]==os.environ["CENSUS_SHA"]; assert x["path"]==".github/workflows/rc6-paper-blockers-census.yml"; print("CENSUS_CHAIN=GREEN")'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc6-blockers-census-${{ env.CENSUS_RUN }}
+          run-id: ${{ env.CENSUS_RUN }}
+          github-token: ${{ github.token }}
+          path: input
+      - name: Verify artifact file hashes and analyze every identity
+        run: |
+          set -Eeuo pipefail
+          python3 -c 'import hashlib,pathlib; p=pathlib.Path("input"); pairs=[s.split(maxsplit=1) for s in (p/"SHA256SUMS").read_text().splitlines()]; assert len(pairs)==2; [(None if hashlib.sha256((p/pathlib.Path(n.strip()).name).read_bytes()).hexdigest()==h else (_ for _ in ()).throw(ValueError("CENSUS_HASH_MISMATCH"))) for h,n in pairs]; print("CENSUS_FILE_HASHES=GREEN")'
+          python3 scripts/rc6_paper_blockers_analysis.py --census input/census.json --output output
+          cp /tmp/rc6-census-run.json output/source-run.json
+          cp input/product-sha.txt output/product-sha.txt
+          git rev-parse HEAD > output/analysis-source-sha.txt
+          sha256sum output/analysis.json output/matrix.json output/matrix.csv > output/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-blockers-analysis-${{ github.run_id }}
+          path: output/
+          retention-days: 14
+          if-no-files-found: warn
