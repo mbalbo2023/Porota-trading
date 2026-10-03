@@ -1,0 +1,365 @@
+name: RC6 residual ops closure read-only
+
+on:
+  push:
+    branches:
+      - audit/rc6-residual-ops-closure-20261003
+    paths:
+      - '.github/workflows/rc6-residual-ops-closure-20261003.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@v4
+
+      - name: Prepare strict SSH
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Collect runtime and host truth read-only
+        shell: bash
+        env:
+          HOST: ${{ secrets.DO_HOST }}
+          USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$USER@$HOST" 'bash -s' <<'REMOTE' | tee /tmp/host.txt
+          set -Eeuo pipefail
+          cd /opt/porota-trading
+          echo "AUDIT_MARKER=POROTA_RC6_RESIDUAL_OPS_V1"
+          echo "HOST_BRANCH=$(git branch --show-current 2>/dev/null || true)"
+          echo "HOST_HEAD=$(git rev-parse HEAD 2>/dev/null || true)"
+          echo "DISK_FREE_BYTES=$(df -PB1 / | awk 'NR==2{print $4}')"
+
+          mapfile -t units < <(sudo -n systemctl list-unit-files --no-legend 2>/dev/null | awk '$1 ~ /^porota-/ {print $1}' | sort -u)
+          for unit in "${units[@]}"; do
+            enabled="$(sudo -n systemctl is-enabled "$unit" 2>/dev/null || true)"
+            active="$(sudo -n systemctl is-active "$unit" 2>/dev/null || true)"
+            fragment="$(sudo -n systemctl show "$unit" -p FragmentPath --value 2>/dev/null || true)"
+            printf 'UNIT|%s|%s|%s|%s\n' "$unit" "$enabled" "$active" "$fragment"
+          done
+
+          sudo -n systemctl --failed --no-legend --no-pager 2>/dev/null             | awk '$1 ~ /^porota-/ {print "FAILED_UNIT|"$1}' || true
+
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f 'CONTAINER|{{.Name}}|{{.State.Running}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' "$c"
+            else
+              echo "CONTAINER_MISSING=$c"
+            fi
+          done
+
+          sudo -n docker exec -i porota_production_observer python - <<'PY'
+          import json, sqlite3
+          from pathlib import Path
+
+          db_path = '/app/data/paper_v17/observer_v17.db'
+          con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=10)
+          con.row_factory = sqlite3.Row
+          con.execute('PRAGMA query_only=ON')
+          observer = dict(con.execute(
+              'SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at '
+              'FROM observer_state WHERE id=1'
+          ).fetchone() or {})
+
+          def row(table):
+              return dict(con.execute(f'SELECT * FROM {table} WHERE id=1').fetchone() or {})
+
+          scalping = row('intraday_scalping_worker_state')
+          sweep = row('paper_caucion_cash_sweep_state')
+          supervisor = row('paper_supervisor_state')
+          con.close()
+
+          p = Path('/app/data/market/iol_family_reference_latest.json')
+          iol = json.loads(p.read_text(encoding='utf-8'))
+          safe_iol = {
+              'cache_state': iol.get('cache_state'),
+              'last_known_good_at': iol.get('last_known_good_at'),
+              'refreshed_at': iol.get('refreshed_at'),
+              'continuation_state': iol.get('continuation_state'),
+              'fallback_order': iol.get('fallback_order'),
+              'section_states': iol.get('section_states'),
+          }
+          payload = {
+              'observer': observer,
+              'scalping': scalping,
+              'caucion_cash_sweep': sweep,
+              'exit_supervisor': supervisor,
+              'iol': safe_iol,
+          }
+          print('RUNTIME_JSON=' + json.dumps(payload, sort_keys=True, separators=(',', ':')))
+          PY
+
+          for key in PAPER_SCALPING_MODE PAPER_CAUCION_SWEEP_MODE; do
+            value="$(sudo -n docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' porota_production_observer               | awk -F= -v k="$key" '$1==k{print substr($0,length(k)+2); exit}')"
+            printf 'SAFE_ENV|%s|%s\n' "$key" "$value"
+          done
+
+          echo 'READ_ONLY_PROBE=YES'
+          echo 'DB_WRITES=0'
+          echo 'RUNTIME_RESTARTS=0'
+          echo 'REAL_ORDER_TEST=NOT_PERFORMED'
+          REMOTE
+
+      - name: Read administrative protection surfaces
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT_BRANCH: deploy/rc6-pr69-isolated-20260915
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          branch = os.environ['PRODUCT_BRANCH']
+          headers = {
+              'Authorization': 'Bearer ' + token,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          def get(url):
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as res:
+                      return {'http': res.status, 'body': json.loads(res.read().decode('utf-8'))}
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode('utf-8', 'replace')
+                  try: body = json.loads(raw)
+                  except Exception: body = {'message': raw[:500]}
+                  return {'http': exc.code, 'body': body}
+          enc = urllib.parse.quote(branch, safe='')
+          protection = get(f'https://api.github.com/repos/{repo}/branches/{enc}/protection')
+          rulesets = get(f'https://api.github.com/repos/{repo}/rulesets')
+          Path = __import__('pathlib').Path
+          Path('/tmp/admin.json').write_text(
+              json.dumps({'branch_protection': protection, 'rulesets': rulesets}, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8'
+          )
+          print('BRANCH_PROTECTION_HTTP=' + str(protection['http']))
+          print('RULESETS_HTTP=' + str(rulesets['http']))
+          if rulesets['http'] == 200:
+              print('RULESET_COUNT=' + str(len(rulesets['body'])))
+          PY
+
+      - name: Classify legacy units and residual runtime state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          lines = Path('/tmp/host.txt').read_text(encoding='utf-8', errors='replace').splitlines()
+          policy = json.loads(Path('ops/policy/host-control-plane-reconciliation-v2.json').read_text(encoding='utf-8'))
+          admin = json.loads(Path('/tmp/admin.json').read_text(encoding='utf-8'))
+
+          units = {}
+          failed = []
+          runtime = None
+          safe_env = {}
+          meta = {}
+          for line in lines:
+              if line.startswith('UNIT|'):
+                  _, name, enabled, active, fragment = line.split('|', 4)
+                  units[name] = {'enabled': enabled, 'active': active, 'fragment': fragment}
+              elif line.startswith('FAILED_UNIT|'):
+                  failed.append(line.split('|', 1)[1])
+              elif line.startswith('RUNTIME_JSON='):
+                  runtime = json.loads(line.split('=', 1)[1])
+              elif line.startswith('SAFE_ENV|'):
+                  _, key, value = line.split('|', 2)
+                  safe_env[key] = value
+              elif '=' in line and line.split('=', 1)[0] in {'HOST_BRANCH','HOST_HEAD','DISK_FREE_BYTES'}:
+                  k, v = line.split('=', 1)
+                  meta[k] = v
+
+          if runtime is None:
+              raise SystemExit('RUNTIME_JSON_MISSING')
+
+          expected = {}
+          for path, spec in policy['units'].items():
+              expected[Path(path).name] = dict(spec)
+
+          classifications = []
+          violations = []
+
+          for name, spec in sorted(expected.items()):
+              actual = units.get(name)
+              role = str(spec.get('role') or '')
+              if role.startswith('ACTIVE_'):
+                  if actual is None:
+                      violations.append(f'ACTIVE_UNIT_MISSING:{name}')
+                      classifications.append({'unit': name, 'classification': 'ACTIVE_EXPECTED_MISSING'})
+                      continue
+                  if name.endswith('.timer'):
+                      if spec.get('enabled') is True and actual['enabled'] != 'enabled':
+                          violations.append(f'ACTIVE_TIMER_NOT_ENABLED:{name}:{actual["enabled"]}')
+                      if spec.get('active') is True and actual['active'] != 'active':
+                          violations.append(f'ACTIVE_TIMER_NOT_ACTIVE:{name}:{actual["active"]}')
+                  classifications.append({'unit': name, 'classification': 'ACTIVE_CANONICAL', **actual})
+              elif role.startswith('RETIRED_'):
+                  if actual is not None:
+                      violations.append(f'RETIRED_UNIT_PRESENT:{name}:{actual["enabled"]}:{actual["active"]}')
+                      classifications.append({'unit': name, 'classification': 'RETIRED_BUT_PRESENT', **actual})
+                  else:
+                      classifications.append({'unit': name, 'classification': 'RETIRED_ABSENT'})
+              elif role.startswith('QUARANTINED_'):
+                  if actual is None:
+                      classifications.append({'unit': name, 'classification': 'QUARANTINED_ABSENT_SAFE'})
+                  else:
+                      if actual['active'] == 'active':
+                          violations.append(f'QUARANTINED_UNIT_ACTIVE:{name}')
+                      if name.endswith('.timer') and actual['enabled'] not in {'masked','disabled'}:
+                          violations.append(f'QUARANTINED_TIMER_ENABLEMENT:{name}:{actual["enabled"]}')
+                      classifications.append({'unit': name, 'classification': 'QUARANTINED_INERT', **actual})
+
+          expected_names = set(expected)
+          for name, actual in sorted(units.items()):
+              if name in expected_names:
+                  continue
+              lower = name.lower()
+              if 'ppi' in lower and 'watch' in lower:
+                  classifications.append({'unit': name, 'classification': 'PPI_WATCH_EXTERNAL_READ_ONLY', **actual})
+                  continue
+              active_or_enabled = actual['active'] == 'active' or actual['enabled'] == 'enabled'
+              cls = 'UNCLASSIFIED_ACTIVE_HOST_UNIT' if active_or_enabled else 'UNCLASSIFIED_INERT_HOST_UNIT'
+              classifications.append({'unit': name, 'classification': cls, **actual})
+              if active_or_enabled:
+                  violations.append(f'UNCLASSIFIED_ACTIVE_HOST_UNIT:{name}:{actual["enabled"]}:{actual["active"]}')
+
+          for name in failed:
+              if name in expected_names and str(expected[name].get('role','')).startswith('ACTIVE_'):
+                  violations.append(f'ACTIVE_POLICY_UNIT_FAILED:{name}')
+
+          observer = runtime['observer']
+          if observer.get('mode') != 'PRODUCTION_PAPER':
+              violations.append('OBSERVER_MODE_NOT_PRODUCTION_PAPER')
+          if int(observer.get('real_orders_sent') or 0) != 0:
+              violations.append('REAL_ORDERS_SENT_NONZERO')
+
+          if safe_env.get('PAPER_SCALPING_MODE','').upper() != 'ACTIVE_PAPER':
+              violations.append('PAPER_SCALPING_MODE_NOT_ACTIVE_PAPER')
+          if safe_env.get('PAPER_CAUCION_SWEEP_MODE','').upper() != 'ACTIVE_PAPER':
+              violations.append('PAPER_CAUCION_SWEEP_MODE_NOT_ACTIVE_PAPER')
+
+          scalping_state = str(runtime['scalping'].get('state') or '').upper()
+          if scalping_state not in {'RUNNING','WAITING_MARKET'}:
+              violations.append('SCALPING_STATE_UNHEALTHY:' + scalping_state)
+
+          sweep_state = str(runtime['caucion_cash_sweep'].get('state') or '').upper()
+          if sweep_state not in {'WAITING_WINDOW','WAITING_CALENDAR','HOLD','PLACED_SIMULATED'}:
+              violations.append('CAUCION_SWEEP_STATE_UNHEALTHY:' + sweep_state)
+          if int(runtime['caucion_cash_sweep'].get('real_orders_sent') or 0) != 0:
+              violations.append('CAUCION_REAL_ORDERS_SENT_NONZERO')
+          try:
+              routes = json.loads(runtime['caucion_cash_sweep'].get('routes_json') or '[]')
+          except Exception:
+              routes = ['INVALID_JSON']
+          if routes != []:
+              violations.append('CAUCION_REAL_ROUTES_NOT_EMPTY')
+
+          iol = runtime['iol']
+          allowed_iol = {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE','SOURCE_UNAVAILABLE'}
+          if str(iol.get('cache_state') or '').upper() not in allowed_iol:
+              violations.append('IOL_CACHE_STATE_INVALID')
+          if iol.get('continuation_state') != 'CONTINUE_WITH_PROVENANCE_NEVER_ZERO_FILL':
+              violations.append('IOL_CONTINUATION_INVALID')
+          required_fallback = ['IOL_LIVE_BOUNDED_RETRY','IOL_LAST_KNOWN_GOOD','PPI_PRIMARY','BYMA_PUBLIC_COMPLEMENTARY']
+          if iol.get('fallback_order') != required_fallback:
+              violations.append('IOL_FALLBACK_ORDER_INVALID')
+          if not isinstance(iol.get('section_states'), dict) or not iol.get('section_states'):
+              violations.append('IOL_SECTION_STATES_MISSING')
+
+          protection = admin['branch_protection']
+          rulesets = admin['rulesets']
+          if protection.get('http') == 200:
+              administrative_protection = 'VERIFIED_READABLE'
+              pbody = protection.get('body') or {}
+              protection_summary = {
+                  'required_status_checks': pbody.get('required_status_checks'),
+                  'enforce_admins': pbody.get('enforce_admins'),
+                  'required_pull_request_reviews': pbody.get('required_pull_request_reviews'),
+                  'restrictions': pbody.get('restrictions'),
+              }
+          else:
+              administrative_protection = 'NO_VERIFICADO'
+              protection_summary = {
+                  'http': protection.get('http'),
+                  'message': (protection.get('body') or {}).get('message'),
+              }
+
+          ruleset_summary = {
+              'http': rulesets.get('http'),
+              'count': len(rulesets.get('body') or []) if rulesets.get('http') == 200 else None,
+          }
+
+          result = {
+              'schema': 'porota-rc6-residual-ops-closure-v1',
+              'generated_at': datetime.now(timezone.utc).isoformat(),
+              'read_only': True,
+              'base_product_sha': 'da697c6e6c2274579f9e4a112fabc4327475dd35',
+              'host': meta,
+              'unit_classification': classifications,
+              'failed_porota_units': failed,
+              'runtime': {
+                  'observer': observer,
+                  'scalping': runtime['scalping'],
+                  'caucion_cash_sweep': runtime['caucion_cash_sweep'],
+                  'exit_supervisor': runtime['exit_supervisor'],
+                  'iol': iol,
+                  'safe_env': safe_env,
+              },
+              'administrative_protection': {
+                  'status': administrative_protection,
+                  'branch_protection': protection_summary,
+                  'rulesets': ruleset_summary,
+              },
+              'violations': violations,
+          }
+          Path('/tmp/residual-ops-audit.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False) + '\n',
+              encoding='utf-8'
+          )
+
+          print('LEGACY_UNIT_CLASSIFICATION_COUNT=' + str(len(classifications)))
+          print('UNCLASSIFIED_ACTIVE_COUNT=' + str(sum(x['classification']=='UNCLASSIFIED_ACTIVE_HOST_UNIT' for x in classifications)))
+          print('FAILED_POROTA_UNIT_COUNT=' + str(len(failed)))
+          print('SCALPING_STATE=' + scalping_state)
+          print('CAUCION_SWEEP_STATE=' + sweep_state)
+          print('IOL_CACHE_STATE=' + str(iol.get('cache_state')))
+          print('IOL_REFRESHED_AT=' + str(iol.get('refreshed_at')))
+          print('ADMIN_PROTECTION_STATUS=' + administrative_protection)
+          print('RULESET_COUNT=' + str(ruleset_summary['count']))
+          print('VIOLATION_COUNT=' + str(len(violations)))
+          if violations:
+              print('VIOLATIONS=' + json.dumps(violations, sort_keys=True))
+              raise SystemExit(3)
+          print('POROTA_RC6_RESIDUAL_OPS_AUDIT=GREEN')
+          PY
+
+      - name: Publish sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-residual-ops-closure-${{ github.sha }}
+          path: /tmp/residual-ops-audit.json
+          if-no-files-found: warn
+          retention-days: 14
