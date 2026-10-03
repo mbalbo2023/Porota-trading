@@ -2,7 +2,7 @@ name: RC6 Blockers Frozen Contract Replay
 on:
   push:
     branches: [audit/rc6-paper-blockers-20261002]
-    paths: [.github/workflows/rc6-blockers-replay.yml]
+    paths: [.github/workflows/rc6-blockers-replay.yml, scripts/rc6_blockers_replay.py]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +41,7 @@ jobs:
                   assert c.execute('SELECT value FROM fixture').fetchone()[0]=='after'
           code=pathlib.Path('scripts/rc6_blockers_replay.py').read_text().split('def export_contracts',1)[1].split('class LocalStore',1)[0]
           assert 'mode=ro' in code and 'query_only=ON' in code and 'deadline=started+25' in code
+          assert "WITH target AS" in code and "JOIN target t" in code
           assert 'INSERT ' not in code and 'UPDATE ' not in code and 'DELETE ' not in code
           print('EXPORT_READ_ONLY_AND_OFFLINE_KEYS=GREEN')
           PY
@@ -99,7 +100,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: 6d6fea8dffa790065fa3de3464d6525c73dc4f86
+          ref: 251fac4cf73981a4fd3feb123c97a37bf10ad02d
           path: candidate
           persist-credentials: false
       - uses: actions/download-artifact@v4
