@@ -1,0 +1,124 @@
+name: RC6 Blockers Frozen Contract Replay
+on:
+  push:
+    branches: [audit/rc6-paper-blockers-20261002]
+    paths: [.github/workflows/rc6-blockers-replay.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-blockers-frozen-contract-replay
+  cancel-in-progress: false
+
+jobs:
+  bounded-export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Compile and validate export isolation and fixture keys
+        run: |
+          python3 -m py_compile scripts/rc6_blockers_replay.py
+          python3 - <<'PY'
+          import importlib.util,pathlib,sqlite3,tempfile
+          spec=importlib.util.spec_from_file_location('r','scripts/rc6_blockers_replay.py')
+          r=importlib.util.module_from_spec(spec);spec.loader.exec_module(r)
+          try:r.sanitized({'nested':{'access_token':'synthetic'}})
+          except ValueError:pass
+          else:raise AssertionError('SENSITIVE_GUARD_FAILED')
+          with tempfile.TemporaryDirectory() as d:
+              p=pathlib.Path(d)/'x.db'
+              x={'schemas':{'fixture':[{'name':'id','type':'INTEGER','pk':1},{'name':'value','type':'TEXT','pk':0}]},'tables':{'fixture':[{'id':1,'value':'before'}]}}
+              r.seed_local(r.LocalStore(str(p)),x)
+              with sqlite3.connect(p) as c:
+                  c.execute("INSERT INTO fixture VALUES(1,'after') ON CONFLICT(id) DO UPDATE SET value=excluded.value")
+                  assert c.execute('SELECT value FROM fixture').fetchone()[0]=='after'
+          code=pathlib.Path('scripts/rc6_blockers_replay.py').read_text().split('def export_contracts',1)[1].split('class LocalStore',1)[0]
+          assert 'mode=ro' in code and 'query_only=ON' in code and 'deadline=started+25' in code
+          assert 'INSERT ' not in code and 'UPDATE ' not in code and 'DELETE ' not in code
+          print('EXPORT_READ_ONLY_AND_OFFLINE_KEYS=GREEN')
+          PY
+      - name: Require unchanged product HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api 'repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915' --jq .object.sha)" = e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/tooling-sha.txt
+      - name: Export only exact contract cohorts, bounded read-only
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6-contract-key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/rc6-contract-known"
+          chmod 600 "$HOME/.ssh/rc6-contract-key" "$HOME/.ssh/rc6-contract-known"
+          trap 'rm -f "$HOME/.ssh/rc6-contract-key" "$HOME/.ssh/rc6-contract-known"' EXIT
+          timeout --signal=TERM --kill-after=5s 40s ssh -i "$HOME/.ssh/rc6-contract-key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/rc6-contract-known" -o ConnectTimeout=8 \
+            -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'timeout --signal=TERM --kill-after=3s 30s sudo -n python3 -B - export --db /opt/porota-trading/data/paper_v17/observer_v17.db --state /opt/porota-trading/data/deploy/CURRENT_STATE_V2.json' \
+            < scripts/rc6_blockers_replay.py > evidence/contracts.json
+          python3 -c 'import json; x=json.load(open("evidence/contracts.json")); assert x["complete"] and x["database_writes"]==0 and x["broker_calls"]==0; print(json.dumps({"capture":x["captured_at"],"seconds":x["elapsed_seconds"],"counts":{k:len(v) for k,v in x["tables"].items()}},indent=2))'
+          (cd evidence && sha256sum contracts.json > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-blockers-exact-contracts-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
+
+  offline-replay:
+    needs: bounded-export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 6d6fea8dffa790065fa3de3464d6525c73dc4f86
+          path: candidate
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: rc6-blockers-exact-contracts-${{ github.run_id }}
+          path: input
+      - name: Validate payload and run actual reconciler offline
+        run: |
+          set -Eeuo pipefail
+          (cd input && sha256sum -c SHA256SUMS)
+          python3 candidate/tests/test_rc6_contract_reconciliation_guard.py -v
+          python3 tooling/scripts/rc6_blockers_replay.py replay --input input/contracts.json --baseline baseline --candidate candidate --output output
+          git -C candidate rev-parse HEAD > output/candidate-sha.txt
+          git -C baseline rev-parse HEAD > output/baseline-sha.txt
+          sha256sum output/*.json > output/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-blockers-real-data-replay-${{ github.run_id }}
+          path: output/
+          retention-days: 14
+          if-no-files-found: warn
