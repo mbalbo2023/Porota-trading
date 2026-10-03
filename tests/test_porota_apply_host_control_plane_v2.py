@@ -48,17 +48,19 @@ def test_legacy_retire_plan_is_exact_and_preserves_external_control_plane():
         "porota-live-decision-cockpit-rc6.timer",
     ]
 
-    for bad in (
-        ["ssh.service"],
-        ["../porota-preopen.timer"],
-        ["porota-ppi-watch-rc6.timer"],
-        ["porota-critical-approval-rc6.service"],
-        ["porota-preopen.timer","porota-preopen.timer"],
+    for bad, extra in (
+        (["ssh.service"], {}),
+        (["../porota-preopen.timer"], {}),
+        (["porota-ppi-watch-rc6.timer"], {}),
+        (["porota-critical-approval-rc6.service"], {}),
+        (["porota-preopen.timer","porota-preopen.timer"], {}),
+        (["porota-preopen.timer"], {"residual_host_units":{"porota-preopen.timer":{"status":"NO_VERIFICADO"}}}),
     ):
         with pytest.raises(ValueError):
             build_legacy_retire_plan({
                 "external_host_units":policy["external_host_units"],
                 "legacy_retire_units":bad,
+                **extra,
             })
 
 
@@ -68,12 +70,23 @@ def test_versioned_legacy_retirement_contract_is_complete_and_ppi_watch_safe():
 
     policy=json.loads(Path("ops/policy/host-control-plane-reconciliation-v2.json").read_text())
     retired=build_legacy_retire_plan(policy)
-    assert len(retired)==27
-    assert len(set(retired))==27
-    assert "porota-critical-approval-rc6.service" not in retired
-    assert "porota-critical-github-proxy-rc6.service" not in retired
+    assert retired==[
+        "porota-contract-evidence-weekend-backfill-rc6.service",
+        "porota-scheduler-export-hf6.service",
+    ]
+    external=set(policy["external_host_units"])
+    residual=set(policy["residual_host_units"])
+    assert len(external)==5
+    assert len(residual)==22
+    assert set(retired).isdisjoint(external)
+    assert set(retired).isdisjoint(residual)
+    assert external.isdisjoint(residual)
+    assert "porota-live-decision-cockpit-rc6.timer" in external
+    assert "porota-private-snapshot.service" in external
+    assert "porota-1016-github-verify.timer" in residual
     assert all(not ("ppi" in name.lower() and "watch" in name.lower()) for name in retired)
     assert policy["legacy_retire_contract"]["unknown_units"]=="FAIL_CLOSED"
+    assert policy["legacy_retire_contract"]["residual_review_units"]=="PRESERVE_REVIEW_REQUIRED"
     assert policy["legacy_retire_contract"]["external_host_units"]=="PRESERVE"
 
 
