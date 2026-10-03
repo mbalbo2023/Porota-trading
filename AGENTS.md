@@ -1,41 +1,186 @@
-# Política obligatoria de repositorio y continuidad entre chats
+# POROTA TRADING — CODEX / AGENT ENTRYPOINT
 
-Versión: `2026-09-14/2`
+Version: `2026-10-03/1`
 
-Aplica a toda persona, chat, agente o automatización que inspeccione o modifique este repositorio. Antes de trabajar, cada agente compatible debe cargar este archivo automáticamente; si no lo hace, debe leerlo manualmente como primer paso. También debe leer cualquier `AGENTS.md` más específico en el subdirectorio que vaya a tocar.
+This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
-## Puerta obligatoria de continuidad
+## 1. Mandatory RC6 handoff before any write
 
-Antes de dar el primer estatus, proponer cambios o ejecutar una acción, lee íntegramente este archivo, `/POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md`, `/POROTA_TRADING_CHAT_START_HERE.md` y el checkpoint canónico completo `/POROTA_TRADING_CHECKPOINT_CONTINUIDAD_CROSSCHAT_2026-09-14.md`. Si el usuario aporta o nombra un checkpoint con ID posterior, léelo también como delta y verifica sus runs/evidencias en GitHub. Después comprueba los cambios en GitHub posteriores al checkpoint. No reconstruyas desde memoria ni desde un extracto. Si no puedes leerlo, no afirmes continuidad completa: limita el trabajo a lo verificable y declara qué falta.
+For any RC6 analysis, development, audit, CI, deploy, dashboard, broker, market-data, strategy, or runtime task:
 
-En cada respuesta separa código, CI, runtime, evidencia/importación y READY end-to-end. Preserva errores, parciales, decisiones, restricciones, owners y tareas abiertas. Marca lo desconocido como `NOT_VERIFIED`; no borres evidencia única ni llames READY a una métrica parcial.
+1. Resolve the current canonical RC6 product branch from fresh GitHub/release evidence.
+2. Latest verified pointer at this documentation cut:
+   - product branch: `deploy/rc6-pr69-isolated-20260915`
+   - GitHub product HEAD: `da697c6e6c2274579f9e4a112fabc4327475dd35`
+   - this pointer is a bootstrap only; **revalidate before use**.
+3. Read the `AGENTS.md` from that product branch.
+4. Read that branch's `ops/policy/porota-policy.yaml`.
+5. Read the latest release/handoff and machine-generated runtime evidence available on that branch / GitHub Actions.
+6. Inspect current PRs/workstreams and ownership before choosing a writable scope.
+7. Branch from the verified current product SHA for RC6 work unless a newer canonical integration base is explicitly proven.
+8. Never continue from chat memory, an old checkpoint, or this file alone.
 
-## Preflight obligatorio
+If the current product branch or SHA differs from the pointer above, the fresh GitHub/runtime evidence wins. Do not "correct" current reality back to this document.
 
-1. Lee esta política completa y el checkpoint canónico completo indicado arriba. Verifica en él el tag y SHA exactos del baseline operativo RC6. No deduzcas el baseline desde `main`, una rama de integración ni una memoria de chat.
-2. Comprueba el estado de la rama objetivo, su SHA base, PRs abiertos y si otro chat/persona es responsable del mismo alcance. Anota el chat/alcance, rama, base y rutas previstas en el PR o checkpoint.
-3. Si la rama, ruta, workflow o recurso tiene dueño activo, o no puedes determinarlo, no escribas ni ejecutes nada allí. Mantén el trabajo en solo lectura y coordina con el responsable.
-4. La auditoría de solo lectura puede hacerse en paralelo. Las modificaciones paralelas deben usar ramas independientes y alcances/rutas sin conflicto. Nunca compartas una rama escribible entre chats.
+## 2. Non-negotiable safety
 
-## Aislamiento de la ingesta PPI
+- PAPER/SHADOW ONLY.
+- Required runtime mode: `PRODUCTION_PAPER / SIMULATION`.
+- `real_orders_sent=0`.
+- Real order routes must remain blocked / `NOT_CALLED`.
+- PPI Watch: **DO NOT TOUCH** unless the user gives explicit scoped authorization.
+- FIX-FORWARD ONLY. No runtime rollback.
+- GitHub + GitHub Actions are the normal control plane.
+- Interactive SSH/manual terminal is BREAK-GLASS only.
+- Never use Codespaces as the normal operating environment.
+- No direct development writes to `main` or the protected product branch. Use isolated branches + PRs.
+- A GREEN workflow is not, by itself, runtime validation.
 
-Cuando el workstream `pipeline ppi watch` tenga una ingesta activa, su responsable mantiene propiedad exclusiva. Otros chats no deben inspeccionar ni cambiar su host, DB, locks, timers, writer o configuración, y no deben usar su rama como base. Si el checkpoint no demuestra que la ejecución terminó, presume que sigue activa y no la inspecciones.
+## 3. Evidence contract
 
-El checkpoint PPI vigente registra cerrados e inactivos los pases históricos API y Web que identifica. No los reinicies ni repitas masivamente. Un checkpoint explícito del usuario puede autorizar una consulta GitHub de solo lectura a runs, código o evidencias nombrados para un alcance distinto; esa autorización no permite acceder o cambiar el host o la DB, iniciar/reiniciar servicios, importar evidencia ni habilitar POST. Si hay riesgo de afectar a un owner o writer activo, detente y coordina.
+Use these states when describing implementation/operation:
 
-## Ramas, PRs y operación
+- `PROPUESTO`
+- `DESARROLLADO`
+- `COMMITTEADO`
+- `EN_GITHUB`
+- `ARTEFACTO_VALIDADO`
+- `DESPLEGADO`
+- `VALIDADO_RUNTIME`
+- `NO_VERIFICADO`
+- `BLOQUEADO`
 
-- No hagas push directo a `main`, a la referencia RC6 ni a una rama de otro chat. No hagas force-push ni borres ramas sin autorización explícita y verificación de dependencias.
-- Crea una rama única por tarea, por ejemplo `docs/<alcance>-YYYYMMDD-<chat>`, `chore/<alcance>-YYYYMMDD-<chat>` o `fix/<alcance>-YYYYMMDD-<chat>`.
-- Un PR debe resolver un solo objetivo y declarar base SHA, rutas, dueño, impacto, checkpoint y validaciones. Usa la plantilla del repositorio y deja constancia explícita de que leíste esta política y el checkpoint vigente.
-- Un solo chat integrador coordina conflictos, revisa el diff final y es responsable de fusiones, releases y despliegues. No fusiones, despliegues ni ejecutes workflows manuales de producción sin autorización explícita del usuario.
-- Antes de integrar, comprueba PRs/rutas concurrentes, CI aplicable y posibles efectos operativos. Si faltan permisos para verificar protecciones o checks, decláralo y no los des por configurados.
-- Después de cada avance importante, actualiza el checkpoint con la rama, SHA, PR, archivos, checks y estado de integración. No sobrescribas el checkpoint que otro chat esté editando.
+Truth hierarchy:
 
-## Actualización obligatoria del checkpoint
+1. GitHub/SHA = code.
+2. GitHub Actions = executed pipeline.
+3. Artifact + manifest + digest/hash = tested package.
+4. Droplet/runtime = deployment.
+5. DB/logs/APIs = actual behavior.
+6. Chats are NOT operational truth.
 
-Todo cambio material —decisión, commit, run, prueba, despliegue autorizado, hallazgo, bloqueo o estado— debe actualizar el checkpoint en el mismo flujo, aunque sea un delta breve. Conserva todo lo no resuelto y la evidencia única. Si no hay datos suficientes, registra `NOT_VERIFIED` y el paso exacto para resolverlo. Después del commit, vuelve a leer el archivo desde GitHub y verifica contenido y SHA; no declares un checkpoint actualizado antes de hacerlo. Antes de un cambio de chat o límite de contexto, deja un handoff autocontenido para el siguiente chat.
+Separate explicitly when relevant:
+- HECHO VERIFICADO
+- HIPÓTESIS
+- INFERENCIA
+- RECOMENDACIÓN
 
-## Regla de parada
+If evidence is missing, use `NO_VERIFICADO`. Never fill operational gaps by inference.
 
-Si no puedes leer la política o el checkpoint, si hay discrepancia sobre RC6, si hay un dueño/alcance en conflicto o si no puedes demostrar que la acción queda aislada, limita el trabajo a análisis de solo lectura y deja constancia de qué falta.
+## 4. Concurrency / ownership
+
+Every RC6 task must operate as one of:
+
+- `READ_ONLY`
+- `WRITE_OWNER`
+- `DEPLOY_OWNER`
+
+`READ_ONLY` never blocks.
+
+A `WRITE_OWNER` must declare:
+- WORKSTREAM_ID
+- branch
+- base SHA
+- scope
+- paths/components
+- status
+
+Do not write into another active owner's overlapping scope.
+
+`DEPLOY_OWNER` is globally exclusive for the productive runtime. While it exists, other work may read/audit or develop on isolated non-overlapping branches, but must not deploy, restart runtime, mutate systemd/DB, clean shared Docker state, or otherwise interfere with production.
+
+Canonical deploy concurrency must remain:
+- `group: rc6-unified-paper-deploy`
+- `cancel-in-progress: false`
+
+Independent workstreams converge into one reconciled candidate and one coherent final deploy.
+
+## 5. Deploy discipline
+
+Canonical model:
+
+`source SHA → exact predeploy → build once → immutable artifact → manifest/digest → tests/gates → transfer → promotion → runtime validation → safe cleanup`
+
+Requirements:
+- build once;
+- no rebuild on the Droplet;
+- test and deploy the same immutable artifact;
+- manifest derived from checkout;
+- blocking preflight;
+- direct runtime validation;
+- cleanup safe and measured;
+- no blind merge of old/broad PRs;
+- no branch deletion by age/name;
+- preserve open PR heads and REVIEW/evidence branches.
+
+Significant failures follow:
+
+`ERROR → RCA → FIX → GUARD → TEST/CI/PREFLIGHT → EVIDENCIA`
+
+A repeatable error is not fully closed if it can recur silently and no permanent guard/regression is left when technically possible.
+
+## 6. Market-data / instruments
+
+- PPI is the primary identity/contract authority.
+- IOL is complementary.
+- BYMA/A3/ROFEX are complementary when supported by valid evidence.
+- Complementary sources must not overwrite PPI identity.
+- Never resolve ambiguous identities arbitrarily.
+- Readiness is per instrument and fail-closed.
+- `OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES` does not mean every instrument is READY.
+- Keep contractual readiness separate from strategy validation and demonstrated economic edge.
+- Unknown broker commercial terms remain `NO_VERIFICADO`; PAPER simulation policy is a separate concept.
+
+## 7. Financial/performance work
+
+Do not interpret:
+- more READY instruments,
+- more trades,
+- a higher score,
+- a GREEN CI run,
+- or a profitable in-sample replay
+
+as proof of economic edge.
+
+For strategy/performance changes:
+- preserve a factual BASELINE;
+- evaluate candidates in SHADOW first;
+- use point-in-time data only;
+- prevent look-ahead bias;
+- include transaction friction/costs;
+- distinguish currencies;
+- keep signal, decision, intent, fill, exit and P&L lineage auditable;
+- do not tune Stop/TP/EOD/MaxHold only to improve a retrospective sample;
+- do not relax risk/freshness/depth controls merely to increase activity.
+
+## 8. Accessibility invariant
+
+The user operates primarily by voice and must not be made to perform normal repository/runtime operations manually.
+
+- Normal operations must be executable through GitHub/GitHub Actions/connectors.
+- Do not require terminal/SSH/copy-paste for routine work.
+- If user-facing text must be copied, keep it within practical tablet clipboard limits.
+- For long reusable instructions, prefer a downloadable file over a huge copy block.
+- Group actions and minimize repetitive manual steps.
+
+## 9. Stale legacy context
+
+Older checkpoints/handoffs may remain in `main` for history. They are evidence of their own time only. They MUST NOT override:
+- current product branch HEAD,
+- current Actions,
+- current artifact identity,
+- current runtime,
+- current DB/log/API evidence,
+- or newer reconciled handoffs.
+
+In particular, do not treat the old September continuity checkpoint referenced by previous versions of this file as the current RC6 operational baseline.
+
+## 10. Starting a new Codex workstream
+
+A new Codex task should normally need only:
+1. this bootstrap;
+2. the current product branch `AGENTS.md` + policy/current evidence;
+3. the task-specific order/specification and attached evidence;
+4. fresh GitHub state.
+
+The task-specific order is authoritative for scope. This bootstrap is authoritative for safety/governance. When they conflict, stop the conflicting action, preserve safety, and mark the issue `BLOQUEADO` or `NO_VERIFICADO` rather than inventing a resolution.
