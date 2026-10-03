@@ -83,9 +83,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py
-          PYTHONPATH="$PWD/scripts:$PWD/tests" python3 -m unittest -v test_rc6_deploy_preopen_gate test_rc6_deploy_validation_resume test_rc6_deploy_resume_preparation
-          sha256sum scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py
+          python3 -m py_compile scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py scripts/rc6_deploy_resume_mounts.py
+          PYTHONPATH="$PWD/scripts:$PWD/tests" python3 -m unittest -v test_rc6_deploy_preopen_gate test_rc6_deploy_validation_resume test_rc6_deploy_resume_preparation test_rc6_deploy_resume_mounts
+          sha256sum scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py scripts/rc6_deploy_resume_mounts.py
       - name: Verify original failure and frozen artifact; stage tested fix without workflow write
         shell: bash
         run: |
@@ -158,7 +158,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER"
-          PYTHONPATH="$PWD/scripts" python3 -u -c 'import sys; import rc6_deploy_validation_resume as r; sys.excepthook=lambda t,e,b: (print(getattr(e,"stderr","") or "",file=sys.stderr),sys.__excepthook__(t,e,b)); r.main()' finalize
+          python3 -u scripts/rc6_deploy_resume_mounts.py finalize
       - name: Preserve direct runtime and cleanup evidence
         if: always()
         uses: actions/upload-artifact@v4
