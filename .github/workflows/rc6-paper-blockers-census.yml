@@ -38,6 +38,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/rc6_paper_blockers_census.py tests/test_rc6_paper_blockers_census.py
           python3 -m unittest discover -s tests -p test_rc6_paper_blockers_census.py -v
+          python3 -c 'from pathlib import Path; s=Path(".github/workflows/rc6-paper-blockers-census.yml").read_text(); remote=next(x for x in s.splitlines() if "--db /opt/porota-trading/" in x); assert "sudo -n python3 -B - --db" in remote; assert "chmod" not in remote and "chown" not in remote; print("PROTECTED_PROVENANCE_READ_CHANNEL=GREEN")'
 
   static-family-analysis:
     runs-on: ubuntu-24.04
@@ -108,7 +109,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/rc6-census-known-hosts" \
             -o ConnectTimeout=10 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "timeout --signal=TERM --kill-after=3s 40s python3 -B - --db /opt/porota-trading/data/paper_v17/observer_v17.db --state /opt/porota-trading/data/deploy/CURRENT_STATE_V2.json --expected-sha $EXPECTED_SHA" \
+            "timeout --signal=TERM --kill-after=3s 40s sudo -n python3 -B - --db /opt/porota-trading/data/paper_v17/observer_v17.db --state /opt/porota-trading/data/deploy/CURRENT_STATE_V2.json --expected-sha $EXPECTED_SHA" \
             < scripts/rc6_paper_blockers_census.py > evidence/census.json
           python3 -c 'import json,pathlib; p=pathlib.Path("evidence/census.json"); x=json.loads(p.read_text()); assert x["complete"] and x["database_writes"]==0 and x["broker_calls"]==0; s={"captured_at":x["captured_at"],"product_sha":x["product_sha"],"elapsed_seconds":x["elapsed_seconds"],"table_counts":{k:len(v) for k,v in x["tables"].items()},"summary":x["summary"],"schemas":x["schemas"],"related_table_names":x["related_table_names"]}; pathlib.Path("evidence/summary.json").write_text(json.dumps(s,indent=2,ensure_ascii=False)); print(json.dumps(s,indent=2,ensure_ascii=False))'
           sha256sum evidence/census.json evidence/source.tar.gz > evidence/SHA256SUMS
