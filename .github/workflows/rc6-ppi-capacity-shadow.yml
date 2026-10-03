@@ -1,0 +1,110 @@
+name: RC6 PPI factual capacity SHADOW
+
+# A reusable bounded market measurement is distinct from existing host/SSH
+# audit workflows. Deliberately manual, with no schedule or runtime access.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: 'Exact candidate SHA; if provided must equal the manually selected workflow ref SHA'
+        required: false
+        default: ''
+        type: string
+      candidates_json:
+        description: 'JSON array: ticker, instrument_type, market, currency, settlement (maximum 100 identities)'
+        required: false
+        default: '[]'
+        type: string
+      batches:
+        description: 'Ascending candidate batch lanes (subset of 20,40,60,80,100)'
+        required: true
+        default: '20,40,60,80,100'
+        type: string
+      endpoints:
+        description: 'Measured endpoints, separately (subset of current,book,intraday)'
+        required: true
+        default: 'current,book,intraday'
+        type: string
+      cadence_seconds:
+        description: 'Cycle cadence in seconds (1..600); evidence cannot authorize a faster cadence'
+        required: true
+        default: '30'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: rc6-ppi-capacity-shadow
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify exact manually selected candidate SHA before secrets
+        env:
+          REQUESTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          python - <<'PY'
+          import os, re, subprocess
+          requested = os.environ['REQUESTED_CANDIDATE_SHA']
+          actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if actual != os.environ['GITHUB_SHA']:
+              raise SystemExit('CANDIDATE_CHECKOUT_SHA_MISMATCH')
+          if requested and (not re.fullmatch('[0-9a-f]{40}', requested) or requested != actual):
+              raise SystemExit('REQUESTED_CANDIDATE_SHA_MISMATCH')
+          PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned PPI measurement dependencies
+        run: python -m pip install --disable-pip-version-check ppi-client==1.3.0 requests==2.34.2 pytest==9.1.1
+      - name: Verify measurement guards before credentials are available
+        run: python -m pytest -q tests/test_rc6_ppi_capacity_benchmark.py
+      - name: Measure actual OPEN session or produce NO_VERIFICADO
+        env:
+          CANDIDATES_JSON: ${{ inputs.candidates_json }}
+          BENCHMARK_BATCHES: ${{ inputs.batches }}
+          BENCHMARK_ENDPOINTS: ${{ inputs.endpoints }}
+          BENCHMARK_CADENCE: ${{ inputs.cadence_seconds }}
+          # Optional dedicated read-only runner credentials. No SSH/runtime
+          # secret retrieval. Missing credentials remain NO_VERIFICADO.
+          PPI_API_KEY: ${{ secrets.PPI_CAPACITY_READONLY_API_KEY }}
+          PPI_API_SECRET: ${{ secrets.PPI_CAPACITY_READONLY_API_SECRET }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          raw = os.environ['CANDIDATES_JSON']
+          if len(raw.encode()) > 100000:
+              raise SystemExit('CANDIDATE_MANIFEST_TOO_LARGE')
+          try:
+              values = json.loads(raw)
+          except ValueError:
+              raise SystemExit('CANDIDATE_MANIFEST_INVALID')
+          if not isinstance(values, list) or len(values) > 100:
+              raise SystemExit('CANDIDATE_MANIFEST_INVALID')
+          path = Path(os.environ['RUNNER_TEMP']) / 'ppi-capacity-candidates.json'
+          path.write_text(json.dumps(values), encoding='utf-8')
+          path.chmod(0o600)
+          PY
+          python scripts/rc6_ppi_capacity_benchmark.py \
+            --candidates "$RUNNER_TEMP/ppi-capacity-candidates.json" \
+            --output "$RUNNER_TEMP/ppi-capacity-report.json" \
+            --batches "$BENCHMARK_BATCHES" --endpoints "$BENCHMARK_ENDPOINTS" \
+            --cadence-seconds "$BENCHMARK_CADENCE" \
+            --cycles 3 --max-requests 2701 --max-runtime-seconds 1800
+      - name: Upload sanitized observation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-ppi-capacity-shadow-${{ github.sha }}
+          path: ${{ runner.temp }}/ppi-capacity-report.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove local candidate manifest
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ppi-capacity-candidates.json"

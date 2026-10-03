@@ -35,6 +35,27 @@ DEFAULT_INTRADAY_SCAN_SECONDS = 180
 DEFAULT_INTRADAY_BATCH_LIMIT = 40
 
 
+def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
+                         observations=(), events=(), opened=(), previous=None,
+                         phase="OPEN", policy=None):
+    """Separate dense SHADOW scheduler; no change to the productive 40 policy.
+
+    Uses the existing exact equity-family contract. Caller supplies empirical
+    capacity and a preopen hash, not an arbitrary replacement batch number.
+    This adapter never evaluates/promotes a PAPER candidate or writes its DB.
+    Confirmed interval-volume/freshness/economics/risk still belong to the
+    existing evaluator and broker; a SHADOW HOT state grants no BUY authority.
+    """
+    from rc6_dynamic_universe.orchestrator import UniverseOrchestrator, EnginePolicy
+    selected_policy = policy or EnginePolicy()
+    if selected_policy.engine != "SCALPING":
+        raise ValueError("SCALPING_STRATEGY_REQUIRED")
+    return UniverseOrchestrator(catalog, policy=selected_policy).plan(
+        at=at, session_open=session_open, frozen=frozen, capacity=capacity,
+        observations=observations, events=events, opened=opened,
+        previous=previous, phase=phase)
+
+
 def _stamp(value):
     return aware_datetime(value).astimezone(timezone.utc).isoformat(timespec="microseconds")
 
