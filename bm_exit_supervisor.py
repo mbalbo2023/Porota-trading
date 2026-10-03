@@ -61,13 +61,23 @@ class Verdict:
 
 class PositionExitSupervisor:
     def __init__(self, broker, *, clock_fn, session_policy=None, max_hold_minutes=180,
-                 close_fn=None):
+                 close_fn=None, telemetry=None):
         self.broker, self.store = broker, broker.store
         self.clock_fn, self.session_policy = clock_fn, session_policy
         if max_hold_minutes <= 0:
             raise ValueError("Permanencia máxima debe ser positiva")
         self.max_hold_minutes = max_hold_minutes
         self.close_fn = close_fn or broker._close
+        self.telemetry = telemetry
+
+    def _probe(self, paper_id, stage, at, cause):
+        if self.telemetry is not None:
+            try:
+                self.telemetry.record(paper_id, stage, at, cause)
+            except Exception:
+                # Diagnostics cannot veto an exit or become a simulated fill.
+                import logging
+                logging.getLogger(__name__).warning("EXIT_TELEMETRY_DROPPED:stage=%s", stage)
 
     def heartbeat(self, at, state="RUNNING", detail=""):
         with self.store.connect() as c:
@@ -98,6 +108,8 @@ class PositionExitSupervisor:
                 c.execute("INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)",
                           (at,"PRODUCTION_PAPER","PAPER_EXIT_STATE",p["paper_id"],
                            f"{verdict.state}; {cause or 'NONE'}; {verdict.reason}"))
+        if cause and not (previous and previous["cause"]):
+            self._probe(p["paper_id"], "INTENT_COMMITTED", self.clock_fn(), cause)
         return Verdict(p['paper_id'],verdict.state,cause,verdict.reason)
 
     def supervise(self, p, q, at):
@@ -105,6 +117,8 @@ class PositionExitSupervisor:
             previous = c.execute("SELECT * FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
         cause = previous["cause"] if previous else None
         def verdict(state, reason):
+            if cause and not (previous and previous["cause"]):
+                self._probe(p["paper_id"], "CONDITION", self.clock_fn(), cause)
             return self._persist(p, Verdict(p["paper_id"],state,cause,reason), at)
         try:
             age = (aware_datetime(at) - aware_datetime(p["opened_at"])).total_seconds() / 60
@@ -198,8 +212,9 @@ class PositionExitSupervisor:
             self.close_fn(p, q, cause, as_of=at)
             # La devolución del callback no sustituye la evidencia del ledger.
             with self.store.connect() as c:
-                actual = c.execute("SELECT status FROM paper_positions WHERE paper_id=?", (p["paper_id"],)).fetchone()
+                actual = c.execute("SELECT status,closed_at FROM paper_positions WHERE paper_id=?", (p["paper_id"],)).fetchone()
             if actual and actual[0] == "CLOSED":
+                self._probe(p["paper_id"], "FINAL_FILL", actual[1], cause)
                 return Verdict(p["paper_id"],"CLOSED",cause,"Venta simulada registrada")
             with self.store.connect() as c:
                 from cd_spot_ledger import partition

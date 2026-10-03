@@ -24,6 +24,7 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+from rc6_performance.lineage import trace_spot_signal, mark as mark_lineage, native_clock
 
 # PAPER/SHADOW scope covers every known family. Specialized families
 # still fail closed in decide/_open unless their own contract and simulator
@@ -196,10 +197,15 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
         }
     inputs_used = dict(detail) if isinstance(detail, dict) else {"detail": detail}
     inputs_used["iol"] = iol_input
+    lineage = inputs_used.get("performance_lineage") or {}
     return _evidence_safe({
         "schema": DECISION_EVIDENCE_SCHEMA,
         "decision_key": decision_key,
         "captured_at": q.observed_at,
+        "signal_at": lineage.get("signal_at"),
+        "decision_at": lineage.get("decision_at"),
+        "intent_at": lineage.get("intent_at"),
+        "entry_fill_committed_at": lineage.get("entry_fill_committed_at"),
         "decision": {
             "symbol": q.symbol,
             "action": action,
@@ -209,6 +215,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "patrimonial_gate": patrimonial,
             "final_result": final,
             "reason": str(reason),
+            "reason_code": inputs_used.get("reason_code"),
             "paper_id": paper_id,
         },
         "quote_used": {
@@ -234,6 +241,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "strategy_version": STRATEGY_VERSION,
             "execution_mode": "PRODUCTION_PAPER_SIMULATED",
             "real_money_authorized": False,
+            **lineage,
         },
         "inputs_used": inputs_used,
     })
@@ -599,6 +607,17 @@ class PaperStore:
             # Nunca reescribir el fill: conservar la anomalía de forma
             # explícita para que introspección bloquee el GO.
             reason = "INVARIANTE_DE_PORTONES_INCUMPLIDA: " + str(reason)
+        if isinstance(detail, dict) and "performance_lineage" in detail:
+            if final == "OPENED_SIMULATED":
+                detail["reason_code"] = "OPENED_SIMULATED"
+            elif economic_violation:
+                detail["reason_code"] = "ECONOMICS_MODEL_GATE"
+            elif ai in {"VETO", "REJECT", "ERROR"}:
+                detail["reason_code"] = "AI_GATE_VETO"
+            elif patrimonial == "BLOCKED":
+                detail["reason_code"] = "PATRIMONIAL_ADMISSION_REJECTED"
+            else:
+                detail["reason_code"] = "GATE_REJECTED_UNMAPPED"
         evidence = _decision_evidence_payload(
             q, decision_key, technical, ai, patrimonial, final, reason, paper_id, detail)
         with self.connect() as c:
@@ -729,29 +748,33 @@ class PaperBroker:
 
     def _cost(self, price, qty, asset_class="ACCIONES"):
         """Costo de una punta; el spread ya vive en bid/ask y no se duplica."""
-        import au_fee_schedule
+        from rc6_performance.costs import ledger_leg_cost
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
-        if rate < 0:
-            raise ValueError("tarifario no valido para el costo por tramo")
-        return (D(price) * D(qty) * rate).quantize(Decimal("0.01"))
+        return ledger_leg_cost(price, qty, family)
 
     def _leg_rate(self, asset_class, *, rebated=False):
         """Tasa de una punta; la reducida exige elegibilidad intradiaria."""
-        import au_fee_schedule
+        from rc6_performance.costs import ledger_leg_rate
         family = family_name(asset_class)
         if family not in PAPER_POSITION_FAMILIES:
             raise ValueError("La familia requiere un cálculo de costos específico")
-        if (rebated and self.intraday_fee_rebate
-                and family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA):
-            rate = D(au_fee_schedule.costo_por_tramo_bonificado(family), "-1")
-        else:
-            rate = D(au_fee_schedule.costo_por_tramo(family), "-1")
-        if rate < 0:
-            raise ValueError("tarifario no valido para el costo por tramo")
-        return rate
+        return ledger_leg_rate(family, rebated=rebated and self.intraday_fee_rebate)
+
+    def record_observation_rejection(self, q, reason_code):
+        """Persist a pre-signal rejection through the existing decision writer."""
+        if str(q.asset_class).upper() == "FUTUROS":
+            return
+        from rc6_performance.lineage import frozen_source, resolved_configuration
+        lineage = {**frozen_source(), **resolved_configuration(self),
+                   "strategy_id": "SPOT_MOMENTUM_BASELINE",
+                   "decision_at": native_clock(self), "signal_at": None,
+                   "clock_mode": "NATIVE" if self.clock_fn else "EVENT_TIME_SIMULATION_UNVERIFIED"}
+        features = {"performance_lineage": lineage, "pre_signal_rejection": True,
+                    "reason_code": reason_code}
+        key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{q.observed_at[:16]}:OBSERVATION_REJECTED:{reason_code}"
+        self.store.record_decision(key, q, "HOLD", ZERO, reason_code, features)
 
     @staticmethod
     def _quantity_in_budget(unit_amount, budget, extra_cost):
@@ -872,6 +895,7 @@ class PaperBroker:
                                  closed_before=as_of)
         return self.score_threshold
 
+    @trace_spot_signal
     def decide(self, q: Quote):
         try:
             currency, market = q.monetary_identity()
@@ -906,7 +930,7 @@ class PaperBroker:
             window_minutes=self.signal_window_minutes)
         if len(values) < self.signal_min_samples:
             return "HOLD", D("0"), (f"Aprendiendo serie: {len(values)}/"
-                                      f"{self.signal_min_samples} muestras"), {"samples": len(values)}
+                                      f"{self.signal_min_samples} muestras"), {"samples": len(values), "reason_code": "SIGNAL_WARMUP"}
         short = sum(values[-3:], ZERO) / D(3)
         long_span = min(8, len(values))
         long = sum(values[-long_span:], ZERO) / D(long_span)
@@ -955,8 +979,10 @@ class PaperBroker:
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
             return "HOLD", score, "Puntas o profundidad insuficientes", features
         if spread > D("0.02"):
+            features["reason_code"] = "SPREAD_LIMIT"
             return "HOLD", score, "Spread superior al 2%", features
         if score < threshold:
+            features["reason_code"] = "BASELINE_SCORE_THRESHOLD"
             return "HOLD", score, "Score paper debajo del umbral versionado", features
         # BCRA macro context retired by operator decision 2026-10-02.
         # Preserve a provenance marker only; no cache/network read and no decision effect.
@@ -986,8 +1012,9 @@ class PaperBroker:
         # La bonificacion corresponde a la operacion de menor valor. En una
         # ganancia es la compra; en una perdida, la venta. Si no es elegible,
         # low == full y se conserva el modelo previo.
-        net_reward = target_fill - entry - entry * low - target_fill * full
-        net_loss = entry - stop_fill + entry * full + stop_fill * low
+        from rc6_performance.costs import price_sensitivity_fees
+        net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
+        net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
         passed = net_reward > 0 and ratio >= self.min_net_reward_risk
@@ -1020,8 +1047,10 @@ class PaperBroker:
         if self.store.open_position(q.symbol):
             return
         if not allow_new_openings:
+            self.record_observation_rejection(q, opening_block_reason or "OPENING_NOT_AUTHORIZED")
             return
         action, score, reason, features = self.decide(q)
+        mark_lineage(features, "decision", self)
         bucket = q.observed_at[:16]
         key = f"{STRATEGY_VERSION}:{q.symbol}:{q.asset_class}:{q.settlement}:{q.currency}:{q.market}:{bucket}:{action}"
         if not self.store.record_decision(key, q, action, score, reason, features):
@@ -1325,6 +1354,7 @@ class PaperBroker:
                     or entry * qty * factor + cost > self._cash(as_of=at, currency=currency, connection=c, for_execution=True)
                     or exposure_now + entry * qty * factor > capital * self.max_total_exposure_pct):
                 return False, "Caja, identidad o exposición cambiaron antes de registrar la compra", None
+            mark_lineage(features, "intent", self)
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
                quantity,entry_price,entry_cost,stop_price,target_price,opened_at,features_json,currency,market,currency_source)
@@ -1345,6 +1375,7 @@ class PaperBroker:
                        f"Compra simulada {qty} {q.symbol} @ {entry}"))
             if self.daily_risk:
                 self.daily_risk.evaluate(at,connection=c,quotes={q.symbol:q})
+        mark_lineage(features, "entry_fill_committed", self)
         return True, "Todos los portones aprobaron; compra simulada registrada", paper_id
 
     def _risk_capital(self, currency):
@@ -1456,8 +1487,8 @@ class PaperBroker:
                     # Por fills parciales se acredita por la porcion
                     # emparejada. Es conservador frente a netear fills mixtos
                     # y nunca concede mas que la bonificacion oficial.
-                    rebate = (min(matched_buy, matched_sell) * (full-low)).quantize(
-                        Decimal('0.01'))
+                    from rc6_performance.costs import smaller_leg_rebate
+                    rebate = smaller_leg_rebate(matched_buy, matched_sell, full, low, rounded=True)
                     exit_cost = max(ZERO, exit_cost-rebate)
             gross = (exit_price-D(root['entry_price']))*qty*factor
             net = gross-entry_cost-exit_cost

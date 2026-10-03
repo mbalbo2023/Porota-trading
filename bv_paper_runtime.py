@@ -139,9 +139,15 @@ class ChildProcesses:
 
 def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
     broker = broker_from_environment(store, clock_fn=clock_fn)
+    telemetry = None
+    try:
+        from rc6_performance.capture import ExitTelemetry
+        telemetry = ExitTelemetry(str(store.path)+".performance.sqlite")
+    except (OSError, ValueError, sqlite3.Error):
+        LOG.warning("EXIT_TELEMETRY_INITIALIZATION_UNVERIFIED")
     supervisor = PositionExitSupervisor(broker, clock_fn=clock_fn,
         session_policy=broker.session_policy,
-        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")))
+        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")), telemetry=telemetry)
     last_valuation = 0.0
     try:
         while not stop.is_set():
@@ -274,12 +280,16 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'],
+    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--performance-worker'],
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    if argv == ['--performance-worker']:
+        from rc6_performance.capture import run_worker
+        run_worker(database_path(), stop)
+        return 0
     # Sólo el proceso padre prepara el esquema. Los hijos heredan la marca
     # y deben abrir SQLite sin ejecutar DDL ni reconstruir índices: al borrar
     # esa marca cada worker volvía a tomar el lock y el scanner nunca llegaba
@@ -321,6 +331,7 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         children = ChildProcesses({
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
+            "performance": [sys.executable, str(Path(__file__).resolve()), "--performance-worker"],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
