@@ -197,6 +197,8 @@ jobs:
           expected = {}
           for path, spec in policy['units'].items():
               expected[Path(path).name] = dict(spec)
+          external = dict(policy.get('external_host_units') or {})
+          legacy_retire = set(policy.get('legacy_retire_units') or [])
 
           classifications = []
           violations = []
@@ -232,6 +234,12 @@ jobs:
                       classifications.append({'unit': name, 'classification': 'QUARANTINED_INERT', **actual})
 
           expected_names = set(expected)
+          failed = sorted(set(failed) | {
+              name for name, actual in units.items() if actual.get('active') == 'failed'
+          })
+          pending_legacy_active = []
+          pending_legacy_failed = []
+
           for name, actual in sorted(units.items()):
               if name in expected_names:
                   continue
@@ -239,15 +247,39 @@ jobs:
               if 'ppi' in lower and 'watch' in lower:
                   classifications.append({'unit': name, 'classification': 'PPI_WATCH_EXTERNAL_READ_ONLY', **actual})
                   continue
-              active_or_enabled = actual['active'] == 'active' or actual['enabled'] == 'enabled'
-              cls = 'UNCLASSIFIED_ACTIVE_HOST_UNIT' if active_or_enabled else 'UNCLASSIFIED_INERT_HOST_UNIT'
-              classifications.append({'unit': name, 'classification': cls, **actual})
-              if active_or_enabled:
-                  violations.append(f'UNCLASSIFIED_ACTIVE_HOST_UNIT:{name}:{actual["enabled"]}:{actual["active"]}')
+              if name in external:
+                  classifications.append({'unit': name, 'classification': 'EXTERNAL_CANONICAL_PRESERVE', **actual})
+                  if actual['enabled'] != 'enabled' or actual['active'] != 'active':
+                      violations.append(
+                          f'EXTERNAL_CANONICAL_UNHEALTHY:{name}:{actual["enabled"]}:{actual["active"]}'
+                      )
+                  continue
+              if name in legacy_retire:
+                  classifications.append({
+                      'unit': name,
+                      'classification': 'LEGACY_RETIREMENT_DECLARED_PENDING_DEPLOY',
+                      **actual,
+                  })
+                  if actual['active'] == 'active' or actual['enabled'] == 'enabled':
+                      pending_legacy_active.append(name)
+                  if actual['active'] == 'failed':
+                      pending_legacy_failed.append(name)
+                  continue
+              classifications.append({'unit': name, 'classification': 'UNKNOWN_HOST_UNIT', **actual})
+              violations.append(f'UNKNOWN_HOST_UNIT:{name}:{actual["enabled"]}:{actual["active"]}')
+
+          missing_declared = sorted(legacy_retire - set(units))
+          for name in missing_declared:
+              classifications.append({
+                  'unit': name,
+                  'classification': 'LEGACY_RETIREMENT_ALREADY_ABSENT',
+              })
 
           for name in failed:
               if name in expected_names and str(expected[name].get('role','')).startswith('ACTIVE_'):
                   violations.append(f'ACTIVE_POLICY_UNIT_FAILED:{name}')
+              if name in external:
+                  violations.append(f'EXTERNAL_CANONICAL_FAILED:{name}')
 
           observer = runtime['observer']
           if observer.get('mode') != 'PRODUCTION_PAPER':
@@ -319,6 +351,13 @@ jobs:
               'host': meta,
               'unit_classification': classifications,
               'failed_porota_units': failed,
+              'legacy_retirement': {
+                  'declared_count': len(legacy_retire),
+                  'active_pending': pending_legacy_active,
+                  'failed_pending': pending_legacy_failed,
+                  'already_absent': missing_declared,
+                  'status': 'PREPARED_FOR_NEXT_AUTHORIZED_DEPLOY',
+              },
               'runtime': {
                   'observer': observer,
                   'scalping': runtime['scalping'],
@@ -339,8 +378,11 @@ jobs:
               encoding='utf-8'
           )
 
-          print('LEGACY_UNIT_CLASSIFICATION_COUNT=' + str(len(classifications)))
-          print('UNCLASSIFIED_ACTIVE_COUNT=' + str(sum(x['classification']=='UNCLASSIFIED_ACTIVE_HOST_UNIT' for x in classifications)))
+          print('HOST_UNIT_CLASSIFICATION_COUNT=' + str(len(classifications)))
+          print('UNKNOWN_HOST_UNIT_COUNT=' + str(sum(x['classification']=='UNKNOWN_HOST_UNIT' for x in classifications)))
+          print('LEGACY_RETIREMENT_DECLARED_COUNT=' + str(len(legacy_retire)))
+          print('LEGACY_RETIREMENT_ACTIVE_PENDING=' + str(len(pending_legacy_active)))
+          print('LEGACY_RETIREMENT_FAILED_PENDING=' + str(len(pending_legacy_failed)))
           print('FAILED_POROTA_UNIT_COUNT=' + str(len(failed)))
           print('SCALPING_STATE=' + scalping_state)
           print('CAUCION_SWEEP_STATE=' + sweep_state)
@@ -353,6 +395,7 @@ jobs:
               print('VIOLATIONS=' + json.dumps(violations, sort_keys=True))
               raise SystemExit(3)
           print('POROTA_RC6_RESIDUAL_OPS_AUDIT=GREEN')
+          print('LEGACY_RETIREMENT_RUNTIME_STATUS=PENDING_NEXT_AUTHORIZED_DEPLOY')
           PY
 
       - name: Publish sanitized evidence
