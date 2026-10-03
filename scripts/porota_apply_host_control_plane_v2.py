@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the complete RC6 systemd lifecycle policy on the deployment host.
-
-This tool is intentionally scoped to Git-tracked porota-*rc6 units declared in
-ops/policy/host-control-plane-reconciliation-v2.json.  It never discovers or
-touches PPI Watch, unrelated systemd units, data, databases, Docker volumes or
-secrets.
-"""
+"""Apply the complete RC6 systemd lifecycle policy on the deployment host.\n\nCanonical Git-tracked RC6 units are managed from the versioned units map.\nHistorical host residue may be retired only through the separate exact-name\nlegacy_retire_units allowlist. No discovery-based deletion is permitted.\n\nThe tool never touches PPI Watch, unknown host units, data, databases, Docker\nvolumes or secrets. Independently managed external control-plane units are\nexplicitly preserved by policy.\n"""
 from __future__ import annotations
 
 import argparse
