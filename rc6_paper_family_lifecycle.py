@@ -150,7 +150,7 @@ class FamilyPaperExecutor:
 
     def open_future(self, contract, *, lifecycle_id, event_id, entry_price,
                     quantity, entry_cost="0", occurred_at=None, side="LONG",
-                    detail=None):
+                    detail=None, cash_guard=None):
         """Reserve collateral and persist one simulated future atomically."""
         _validate_future_contract(contract)
         if str(side).upper() != "LONG":
@@ -183,6 +183,11 @@ class FamilyPaperExecutor:
                     raise ValueError("FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
                 return _future_result(row, idempotent=True)
 
+            if cash_guard is not None:
+                available = decimal_value(
+                    cash_guard(connection), "caja futura disponible", nonnegative=True)
+                if available < reserve + cost:
+                    raise ValueError("FUTURES_INSUFFICIENT_CASH")
             base_detail = {
                 "mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
                 "side": "LONG", "quantity": str(qty),
@@ -542,9 +547,9 @@ def _future_result(row, *, idempotent):
 
 def future_cash_effect(store, currency, at, *, connection=None):
     """Cash movement only: collateral reserve/release, variation and fees."""
-    init_schema(store)
     point = aware_datetime(at)
     if connection is None:
+        init_schema(store)
         with store.connect() as owned:
             return future_cash_effect(store, currency, point, connection=owned)
     rows = connection.execute("""SELECT amount FROM paper_family_lifecycle_events
@@ -558,8 +563,8 @@ def future_cash_effect(store, currency, at, *, connection=None):
 
 
 def future_positions(store, currency=None, *, connection=None, active_only=False):
-    init_schema(store)
     if connection is None:
+        init_schema(store)
         with store.connect() as owned:
             return future_positions(store, currency, connection=owned, active_only=active_only)
     where, params = [], []
@@ -576,9 +581,9 @@ def future_positions(store, currency=None, *, connection=None, active_only=False
 def future_risk_snapshot(store, currency, at, *, connection=None,
                          max_mark_age_seconds=120):
     """Current same-day futures PnL for DailyRisk; carry or stale mark blocks."""
-    init_schema(store)
     point = aware_datetime(at)
     if connection is None:
+        init_schema(store)
         with store.connect() as owned:
             return future_risk_snapshot(
                 store, currency, point, connection=owned,
