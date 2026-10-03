@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 
 UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]*rc6[A-Za-z0-9_.@-]*\.(?:service|timer)$")
+LEGACY_RETIRE_UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]+\\.(?:service|timer)$")
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
