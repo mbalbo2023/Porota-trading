@@ -83,14 +83,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py
-          PYTHONPATH="$PWD/scripts:$PWD/tests" python3 -m unittest -v test_rc6_deploy_preopen_gate test_rc6_deploy_validation_resume
-          sha256sum scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py
-      - name: Verify original failure and frozen artifact; prepare tested fix objects
+          python3 -m py_compile scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py
+          PYTHONPATH="$PWD/scripts:$PWD/tests" python3 -m unittest -v test_rc6_deploy_preopen_gate test_rc6_deploy_validation_resume test_rc6_deploy_resume_preparation
+          sha256sum scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py scripts/rc6_deploy_resume_preparation.py
+      - name: Verify original failure and frozen artifact; stage tested fix without workflow write
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -u scripts/rc6_deploy_validation_resume.py prepare \
+          python3 -u scripts/rc6_deploy_resume_preparation.py prepare \
             --product "$PRODUCT" --candidate "$CANDIDATE" --tree "$TREE" \
             --failed-run "$FAILED_RUN" --predeploy-run "$PREDEPLOY_RUN" \
             --artifact "$ARTIFACT" --digest "$DIGEST" \
