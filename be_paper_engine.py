@@ -11,7 +11,7 @@ import json
 import os
 import sqlite3
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
 from typing import Optional
@@ -1164,7 +1164,12 @@ class PaperBroker:
             return "EMERGENCY_POSITION_CAP"
         if any(row["symbol"] == q.symbol for row in future_open):
             return "FUTURES_POSITION_ALREADY_OPEN"
-        capital, _ = self._risk_capital(q.currency)
+        equity_row = connection.execute("""SELECT equity FROM paper_equity_by_currency
+          WHERE currency=? ORDER BY id DESC LIMIT 1""", (q.currency,)).fetchone()
+        capital = self.initial_balances[q.currency]
+        if equity_row:
+            capital = min(capital, max(ZERO, decimal_value(
+                equity_row[0], "equity", nonnegative=True)))
         spot_exposure = sum((
             D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
             for p in spot_open if p["currency"] == q.currency), ZERO)
@@ -1268,6 +1273,7 @@ class PaperBroker:
         event_id = lifecycle_id + ":OPEN"
         features.update({
             "future_execution": "SPECIALIZED_PAPER_LIFECYCLE",
+            "financial_contract": asdict(contract),
             "side": "LONG",
             "entry_price": str(entry),
             "stop_loss_price": str(stop),
@@ -1350,10 +1356,23 @@ class PaperBroker:
 
     def _on_future_quote(self, q: Quote, *, allow_new_openings=True,
                          opening_block_reason=""):
-        if q.contract is None or q.contract.family != "FUTUROS":
-            return
         at = self.execution_time(q)
         position = self.family_paper.active_future(q.symbol)
+        if position and (q.contract is None or q.contract.family != "FUTUROS"):
+            try:
+                from bs_instrument_contracts import contract_from_metadata
+                metadata = json.loads(position.get("metadata_json") or "{}")
+                original = metadata.get("financial_contract")
+                restored = contract_from_metadata(
+                    position["symbol"], "FUTUROS", original)
+                if (restored.market, restored.currency, restored.settlement) != (
+                        position["market"], position["currency"], position["settlement"]):
+                    return
+                q = replace(q, contract=restored)
+            except (TypeError, ValueError, KeyError):
+                return
+        if q.contract is None or q.contract.family != "FUTUROS":
+            return
         if position:
             if q.time_error(at, max_age_seconds=self.quote_max_age_seconds) or D(q.bid) <= 0:
                 return
@@ -1367,8 +1386,10 @@ class PaperBroker:
                 position = self.family_paper.active_future(q.symbol) or position
             except ValueError:
                 return
+            risk_row = None
             if self.daily_risk:
-                self.daily_risk.evaluate(at, quotes={q.symbol: q})
+                risk_row = self.daily_risk.evaluate(
+                    at, quotes={q.symbol: q}).get(q.currency)
             metadata = json.loads(position.get("metadata_json") or "{}")
             stop = D(metadata.get("stop_loss_price"), "-1")
             target = D(metadata.get("take_profit_price"), "-1")
@@ -1380,7 +1401,9 @@ class PaperBroker:
             local_opened = opened.astimezone(TZ).date()
             local_now = aware_datetime(at).astimezone(TZ).date()
             reason = ""
-            if local_opened < local_now:
+            if risk_row and risk_row.get("state") != "READY":
+                reason = "DAILY_RISK_" + str(risk_row.get("state") or "UNKNOWN")
+            elif local_opened < local_now:
                 reason = "OVERNIGHT_CARRY_EXIT"
             elif stop > 0 and D(q.bid) <= stop:
                 reason = "STOP_PAPER"
