@@ -333,8 +333,22 @@ def publish_fix(source, directory):
     require(set(output(['git','diff','--cached','--name-only'],cwd=target).splitlines())==set(paths),'FIX_SCOPE_DRIFT')
     run(['git','-c','user.name=Porota Actions','-c','user.email=151845499+mbalbo2023@users.noreply.github.com',
          'commit','-m','fix(deploy): validate NOT_DUE with calendar and fail-closed preopen contract'],cwd=target)
-    run(['git','push','origin','HEAD:'+branch_ref],cwd=target)
-    sha=output(['git','rev-parse','HEAD'],cwd=target)
+    # Publish Git objects, not refs: the MCP connector with workflow-write
+    # permission will attach this tested tree to the isolated fix branch.
+    # The Actions token is never used to bypass workflow/ref protection.
+    api=GitHubAPI(os.environ['GITHUB_REPOSITORY'])
+    def post(path,payload):
+        headers=dict(api.headers);headers['Content-Type']='application/json'
+        request=urllib.request.Request(api.base+path,data=json.dumps(payload).encode(),headers=headers,method='POST')
+        with api.opener.open(request,timeout=45) as response:
+            return json.load(response)
+    tree=post('/git/trees',{'base_tree':config['tree'],'tree':[
+        {'path':path,'mode':'100644','type':'blob','content':(target/path).read_text()} for path in paths]})
+    local_tree=output(['git','rev-parse','HEAD^{tree}'],cwd=target)
+    require(tree['sha']==local_tree,'PUBLISHED_TREE_MISMATCH')
+    commit=post('/git/commits',{'message':'fix(deploy): validate NOT_DUE with calendar and fail-closed preopen contract',
+                             'tree':tree['sha'],'parents':[config['product']]})
+    sha=commit['sha']
     (directory/'permanent-fix.json').write_text(json.dumps({'branch':FIX_BRANCH,'sha':sha,'base':config['product'],'scope':paths},indent=2)+'\n')
     print('PERMANENT_FIX_COMMITTED='+sha,flush=True)
 
@@ -366,11 +380,20 @@ def prepare(args):
     run(['bash','-n',str(directory/'resume.sh')])
     (directory/'resume-config.json').write_text(json.dumps(config,indent=2)+'\n')
     publish_fix(source,directory)
+    hashes={name:hashlib.sha256((directory/name).read_bytes()).hexdigest() for name in
+            ('resume.sh','resume-config.json','porota-frozen-candidate.json','porota-deploy-bundle-v2-manifest.json','permanent-fix.json')}
+    hashes['guard_source_sha256']=hashlib.sha256((ROOT/'scripts/rc6_deploy_preopen_gate.py').read_bytes()).hexdigest()
+    (directory/'plan-hashes.json').write_text(json.dumps(hashes,indent=2)+'\n')
     print('RESUME_PREPARE=GREEN|no_host_mutation=true',flush=True)
 
 
 def finalize(args):
-    directory=Path(args.directory).resolve();config=json.loads((directory/'resume-config.json').read_text())
+    directory=Path(args.directory).resolve()
+    hashes=json.loads((directory/'plan-hashes.json').read_text())
+    for name,digest in hashes.items():
+        path=ROOT/'scripts/rc6_deploy_preopen_gate.py' if name=='guard_source_sha256' else directory/name
+        require(hashlib.sha256(path.read_bytes()).hexdigest()==digest,'PLAN_HASH_MISMATCH:'+name)
+    config=json.loads((directory/'resume-config.json').read_text())
     api=GitHubAPI(os.environ['GITHUB_REPOSITORY']);check_control(api,config)
     probe(config,directory)
     check_control(api,config)
