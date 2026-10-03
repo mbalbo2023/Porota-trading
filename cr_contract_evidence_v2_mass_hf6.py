@@ -15,7 +15,8 @@ from decimal import Decimal, InvalidOperation
 import cp_contract_evidence_v2_hf6 as evidence_v2
 from bu_instrument_catalog import _candidate_has_ppi_primary
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
-import rc6_ppi_option_contract_policy as option_policy\nimport rc6_ppi_future_contract_policy as future_policy
+import rc6_ppi_option_contract_policy as option_policy
+import rc6_ppi_future_contract_policy as future_policy
 
 
 SCHEMA = "rc6-contract-evidence-v2-mass-catalog-v1"
