@@ -557,6 +557,11 @@ def future_cash_effect(store, currency, at, *, connection=None):
         init_schema(store)
         with store.connect() as owned:
             return future_cash_effect(store, currency, point, connection=owned)
+    required = {"paper_family_lifecycle_events", "paper_family_lifecycle"}
+    tables = {row[0] for row in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if not required.issubset(tables):
+        return Decimal("0")
     rows = connection.execute("""SELECT amount FROM paper_family_lifecycle_events
       WHERE family='FUTUROS' AND EXISTS(
         SELECT 1 FROM paper_family_lifecycle l
@@ -572,6 +577,10 @@ def future_positions(store, currency=None, *, connection=None, active_only=False
         init_schema(store)
         with store.connect() as owned:
             return future_positions(store, currency, connection=owned, active_only=active_only)
+    if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_future_positions'"
+            ).fetchone():
+        return []
     where, params = [], []
     if currency is not None:
         where.append("currency=?"); params.append(cash_currency(currency))
