@@ -14,8 +14,8 @@ CANDIDATE = 'b001ef1caf2f414a5022d2781016fa34f1611260'
 PRODUCT = 'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f'
 TREE = 'f3440892a5b3c14b5013f696710016209dc5a689'
 DEPLOY_RUN = 37078173314
-AUDIT_RUN = 37078669217
-PINS = {DEPLOY_RUN: PRODUCT, AUDIT_RUN: '398b10eedbd7569fe4477782b2ee63e2153ce1f4'}
+AUDIT_RUN = 37083378849
+PINS = {DEPLOY_RUN: PRODUCT, AUDIT_RUN: 'e14bc069a9d1bf0fe1a92f0a54aeabd767cc19cb'}
 API = 'https://api.github.com/repos/mbalbo2023/Porota-trading'
 
 
@@ -61,13 +61,13 @@ def validate_snapshot(value: dict) -> None:
     assert -5 <= value['heartbeat_age_seconds'] <= 300
     assert len(value['observer']) == 1 and value['observer'][0]['mode'] == 'PRODUCTION_PAPER'
     assert value['observer'][0]['real_orders_sent'] == 0
-    assert value['ready_candidates'] == sum(r['n'] for r in value['candidates'] if r['status'] == 'READY' and r['can_simulate'] == 1)
+    assert value['ready_candidates'] == sum(r['n'] for r in value['candidates'] if r['status'] == 'AVAILABLE' and int(r['can_simulate']) == 1)
     assert value['ready_candidates'] >= 5558
 
 
 def selftest() -> None:
     state = {'candidate_sha': CANDIDATE, 'deploy_sha': PRODUCT, 'validation_status': 'VALIDATED_RUNTIME', 'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0, 'real_order_routes': 'NOT_CALLED', 'ppi_watch_untouched': True, 'image_id': 'SYNTHETIC_ONLY'}
-    baseline = {'current_state': state, 'containers': [{'name': name, 'status': 'running', 'restarts': 0, 'oom': False, 'image': 'SYNTHETIC_ONLY'} for name in ('porota_production_dashboard', 'porota_production_observer', 'porota_critical_approval_rc6')], 'ppi_watch_units': [], 'dashboard_health_http': 200, 'heartbeat_age_seconds': 1, 'observer': [{'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0}], 'ready_candidates': 5558, 'candidates': [{'status': 'READY', 'can_simulate': 1, 'n': 5558}]}
+    baseline = {'current_state': state, 'containers': [{'name': name, 'status': 'running', 'restarts': 0, 'oom': False, 'image': 'SYNTHETIC_ONLY'} for name in ('porota_production_dashboard', 'porota_production_observer', 'porota_critical_approval_rc6')], 'ppi_watch_units': [], 'dashboard_health_http': 200, 'heartbeat_age_seconds': 1, 'observer': [{'mode': 'PRODUCTION_PAPER', 'real_orders_sent': 0}], 'ready_candidates': 5558, 'candidates': [{'status': 'AVAILABLE', 'can_simulate': 1, 'n': 5558}]}
     validate_snapshot(baseline)
     fixtures = {
         'wrong_candidate': lambda x: x['current_state'].update(candidate_sha='0' * 40),
