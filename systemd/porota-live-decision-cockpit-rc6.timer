@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Porota RC6 live Decision Cockpit every minute during BYMA market hours
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 10:30..59:00 America/Argentina/Buenos_Aires
+OnCalendar=Mon..Fri *-*-* 11..16:*:00 America/Argentina/Buenos_Aires
+AccuracySec=5s
+Persistent=false
+Unit=porota-live-decision-cockpit-rc6.service
+
+[Install]
+WantedBy=timers.target
