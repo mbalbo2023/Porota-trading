@@ -579,6 +579,9 @@ def _reconcile_complementary_catalog(store):
     are gap-fill sources: they may add missing contract/freshness evidence but
     never overwrite explicit higher-priority identity fields.
     """
+    from rc6_contract_reconciliation_guard import (
+        reconciliation_allowed, select_verified_primary)
+
     market_root = Path(os.getenv("POROTA_MARKET_DATA_ROOT", "/app/data/market"))
     try:
         iol_path = market_root / "iol_family_reference_latest.json"
@@ -632,6 +635,9 @@ def _reconcile_complementary_catalog(store):
                 dict(candidate) for candidate in candidates
                 if financial_catalog.complement_matches_primary(dict(candidate), raw)
             ]
+            # A stale alias does not overrule a unique current PPI identity
+            # when ISIN, quote basis and all other dimensions prove equality.
+            matches = select_verified_primary(matches, raw, checked_at=checked)
             if len(matches) > 1:
                 family = financial_catalog.canonical_family(
                     raw.get("instrument_type") or raw.get("asset_type") or raw.get("family"))
@@ -692,11 +698,10 @@ def _reconcile_complementary_catalog(store):
             # A policy complement may satisfy a missing PAPER term, but it
             # cannot overturn an explicit primary-provider rejection such as
             # TYPE_NOT_ENUMERATED or UNSUPPORTED_FAMILY.
-            primary_capability = str(primary.get("capability") or "")
-            if primary_capability in {
-                "TYPE_NOT_ENUMERATED", "MARKET_NOT_ENUMERATED", "UNSUPPORTED_FAMILY",
-                "CONTRACT_EVIDENCE_REVIEW_REQUIRED", "CONTRACT_SOURCE_CONFLICT",
-            }:
+            # A local review may be reconsidered only with complete, exact
+            # canonical V2 evidence. Genuine PPI vetoes and material conflicts
+            # cannot be cleared by this reconciliation path.
+            if not reconciliation_allowed(primary, raw, checked_at=checked):
                 continue
 
             before_ready = (
