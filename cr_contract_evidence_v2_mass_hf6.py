@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation
 import cp_contract_evidence_v2_hf6 as evidence_v2
 from bu_instrument_catalog import _candidate_has_ppi_primary
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
+import rc6_ppi_option_contract_policy as option_policy
 
 
 SCHEMA = "rc6-contract-evidence-v2-mass-catalog-v1"
@@ -29,7 +30,7 @@ UNKNOWN = frozenset({"", "*", "UNKNOWN", "NO_VERIFICADO"})
 def _catalog_rows(store):
     with store.connect() as connection:
         rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
-          settlement,settlement_source,status,last_seen_at,metadata_json
+          settlement,settlement_source,status,capability,last_seen_at,description,metadata_json
           FROM financial_instrument_catalog
           WHERE UPPER(COALESCE(status,''))='AVAILABLE'
           ORDER BY instrument_type,ticker,market,currency,settlement""").fetchall()
@@ -62,6 +63,7 @@ def planned_records(rows):
     records = []
     skipped = Counter()
     identities = Counter()
+    option_underlyings = option_policy.underlying_family_index(rows)
     for row in rows:
         raw = _raw(row)
         if not _candidate_has_ppi_primary(row.get("settlement_source"),
@@ -176,6 +178,19 @@ def planned_records(rows):
                             "readiness_guard": "PPI_EXACT_IDENTITY+SUPPORTED_TICKER+LIVE_BID_AT_EXECUTION",
                         },
                     })
+        elif family == "OPCIONES":
+            option_evidence = option_policy.standard_long_option_evidence(
+                row, option_underlyings)
+            if option_evidence:
+                records.append({
+                    **identity,
+                    "source_class": "DERIVED_OFFICIAL_RULE",
+                    "source_ref": option_policy.OPTION_DERIVED_SOURCE_REF,
+                    "observed_at": row.get("last_seen_at"),
+                    "evidence": option_evidence,
+                })
+            elif str(row.get("capability") or "") == "NEEDS_OPTION_CONTRACT":
+                skipped["OPTION_STANDARD_CONTRACT_POLICY_UNRESOLVED"] += 1
         elif family == "FCI":
             records.append({
                 **identity,
