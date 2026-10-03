@@ -1,0 +1,177 @@
+name: RC6 Deploy V2 validation-only resume
+
+on:
+  push:
+    branches:
+      - ops/rc6-deploy-validation-recovery-20261003
+    paths:
+      - '.github/workflows/porota-deploy-v2-validation-resume.yml'
+  workflow_dispatch:
+    inputs:
+      product:
+        description: Exact already-promoted product merge SHA
+        required: true
+        type: string
+      candidate:
+        description: Exact frozen second-parent candidate SHA
+        required: true
+        type: string
+      tree:
+        description: Exact common candidate and product tree
+        required: true
+        type: string
+      failed_run:
+        description: Completed canonical deploy with proven NOT_DUE wrapper failure
+        required: true
+        type: string
+      predeploy_run:
+        description: Successful frozen Predeploy V2 run
+        required: true
+        type: string
+      artifact:
+        description: Exact immutable predeploy artifact ID
+        required: true
+        type: string
+      digest:
+        description: Exact artifact ZIP sha256 digest
+        required: true
+        type: string
+      tracker:
+        description: Open ownership tracker issue
+        required: true
+        type: string
+      ownership_comment:
+        description: Operator-authorized continuation ownership comment ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      issues: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PRODUCT: ${{ inputs.product || 'da697c6e6c2274579f9e4a112fabc4327475dd35' }}
+      CANDIDATE: ${{ inputs.candidate || '9ca8cb13bfc6664597e313e5d1874710e3263ec4' }}
+      TREE: ${{ inputs.tree || '96a112a55ed779df3f7056b1e30d81aac8d0b791' }}
+      FAILED_RUN: ${{ inputs.failed_run || '37125515526' }}
+      PREDEPLOY_RUN: ${{ inputs.predeploy_run || '37125173991' }}
+      ARTIFACT: ${{ inputs.artifact || '11275685221' }}
+      DIGEST: ${{ inputs.digest || 'sha256:405cf74f6a21f06d32fa66993b21536786d851b6a49c83e8fc965be35115f9cc' }}
+      TRACKER: ${{ inputs.tracker || '446' }}
+      OWNERSHIP_COMMENT: ${{ inputs.ownership_comment || '5970135806' }}
+    steps:
+      - name: Checkout exact continuation source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Offline safety and negative regression gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py
+          PYTHONPATH="$PWD/scripts:$PWD/tests" python3 -m unittest -v test_rc6_deploy_preopen_gate test_rc6_deploy_validation_resume
+          sha256sum scripts/rc6_deploy_preopen_gate.py scripts/rc6_deploy_validation_resume.py
+      - name: Verify original failure and frozen artifact; prepare tested fix objects
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -u scripts/rc6_deploy_validation_resume.py prepare \
+            --product "$PRODUCT" --candidate "$CANDIDATE" --tree "$TREE" \
+            --failed-run "$FAILED_RUN" --predeploy-run "$PREDEPLOY_RUN" \
+            --artifact "$ARTIFACT" --digest "$DIGEST" \
+            --tracker "$TRACKER" --ownership-comment "$OWNERSHIP_COMMENT"
+      - name: Preserve immutable validation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-validation-resume-plan-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            /tmp/rc6-validation-resume/resume-config.json
+            /tmp/rc6-validation-resume/resume.sh
+            /tmp/rc6-validation-resume/plan-hashes.json
+            /tmp/rc6-validation-resume/permanent-fix.json
+            /tmp/rc6-validation-resume/porota-frozen-candidate.json
+            /tmp/rc6-validation-resume/porota-deploy-bundle-v2-manifest.json
+      - name: Preserve original failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-validation-resume-source-evidence-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: /tmp/rc6-validation-resume/original-job.log
+      - name: Runner archive cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/rc6-validation-resume/frozen.zip /tmp/rc6-validation-resume/porota-predeploy-image.tar.gz /tmp/rc6-validation-resume/porota-deploy-bundle-v2.tgz
+
+  finalize:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact tested continuation source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Download same-run immutable validation plan
+        uses: actions/download-artifact@v4
+        with:
+          name: rc6-validation-resume-plan-${{ github.run_id }}
+          path: /tmp/rc6-validation-resume
+      - name: Configure pinned noninteractive transport
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_resume"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/porota_rc6_resume" "$HOME/.ssh/known_hosts"
+      - name: Revalidate runtime and complete only canonical pending validations
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          PYTHONPATH="$PWD/scripts" python3 -u -c 'import sys; import rc6_deploy_validation_resume as r; sys.excepthook=lambda t,e,b: (print(getattr(e,"stderr","") or "",file=sys.stderr),sys.__excepthook__(t,e,b)); r.main()' finalize
+      - name: Preserve direct runtime and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-validation-resume-runtime-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            /tmp/rc6-validation-resume/preflight-runtime.json
+            /tmp/rc6-validation-resume/final-runtime.json
+            /tmp/rc6-validation-resume/resume-runtime.log
+            /tmp/rc6-validation-resume/resume-config.json
+      - name: Remove runner SSH key
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/porota_rc6_resume"
