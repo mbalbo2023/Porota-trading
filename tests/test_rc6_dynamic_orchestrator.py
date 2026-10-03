@@ -220,6 +220,9 @@ def test_generic_paper_decide_cannot_inherit_equity_momentum(tmp_path,family,mon
     if family == 'OPCIONES':
         assert 'contrato financiero explícito' in reason
         return
+    if family in {'FUTUROS','CAUCIONES','FCI'}:
+        assert 'ciclo financiero específico' in reason or 'FUTURES_EXACT_PAPER_CONTRACT_REQUIRED' in reason
+        return
     assert 'STRATEGY_NOT_VALIDATED' in reason
     assert features['reason_codes']==['SPECIALIZED_LIFECYCLE','STRATEGY_NOT_VALIDATED']
 

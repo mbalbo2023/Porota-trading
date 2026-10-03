@@ -878,28 +878,6 @@ class PaperBroker:
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
-        # Preserve the more specific native contract gaps before the routing
-        # guard; contract readiness itself still grants no signal authority.
-        if family == "OPCIONES":
-            if q.contract is None or q.contract.family != "OPCIONES":
-                return "HOLD", ZERO, "Opción sin contrato financiero explícito", {"samples": 0, "family": family}
-            if q.contract.option_right not in {"CALL","PUT"} or not q.contract.underlying:
-                return "HOLD", ZERO, "Opción sin subyacente/derecho confirmado", {"samples": 0, "family": family}
-        # Contract readiness is not a validated directional strategy. Existing
-        # specialized lifecycle handlers run before this generic equity path;
-        # fixed income/options must never inherit its momentum BUY authority.
-        from rc6_dynamic_universe.routing import strategy_route
-        route = strategy_route(family)
-        # #453 explicitly owns its FUTUROS signal allowlist and dedicated
-        # on_quote handler. Preserve that binding when reconciled; this change
-        # cannot add FUTUROS to the allowlist or create its lifecycle handler.
-        futures_owned_signal = (family == "FUTUROS" and
-            "FUTUROS" in globals().get("PAPER_SIGNAL_FAMILIES", ()) and
-            callable(getattr(self, "_on_future_quote", None)))
-        if not route["generic_equity"] and not futures_owned_signal:
-            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: " + route["engine"],
-                    {"samples": 0, "family": family, "strategy_route": route,
-                     "reason_codes": route["reason_codes"], "signal_ready": False})
         if family not in PAPER_POSITION_FAMILIES:
             return ("HOLD", ZERO,
                     f"{family}: requiere su ciclo financiero específico",
@@ -908,12 +886,31 @@ class PaperBroker:
             return ("HOLD", ZERO,
                     f"{family}: fuera del alcance PAPER/SHADOW RC6",
                     {"samples": 0, "family": family, "operational_scope": "DISABLED_BY_SCOPE"})
+        if family == "OPCIONES":
+            if q.contract is None or q.contract.family != "OPCIONES":
+                return "HOLD", ZERO, "Opción sin contrato financiero explícito", {"samples": 0, "family": family}
+            if q.contract.option_right not in {"CALL","PUT"} or not q.contract.underlying:
+                return "HOLD", ZERO, "Opción sin subyacente/derecho confirmado", {"samples": 0, "family": family}
         if q.opening_block_reason:
             return "HOLD", ZERO, q.opening_block_reason, {"samples": 0}
         at = self.execution_time(q)
         error = self.admission_error(q, at)
         if error:
             return "HOLD", ZERO, error, {"samples": 0}
+        # Contract readiness is not a validated directional strategy. Existing
+        # specialized lifecycle and native contract/admission gaps take priority;
+        # fixed income/options must never inherit equity momentum BUY authority.
+        from rc6_dynamic_universe.routing import strategy_route
+        route = strategy_route(family)
+        # Preserve #453's explicit signal allowlist + dedicated binding when
+        # reconciled, without adding that authority or modifying its lifecycle.
+        futures_owned_signal = (family == "FUTUROS" and
+            "FUTUROS" in globals().get("PAPER_SIGNAL_FAMILIES", ()) and
+            callable(getattr(self, "_on_future_quote", None)))
+        if not route["generic_equity"] and not futures_owned_signal:
+            return ("HOLD", ZERO, "STRATEGY_NOT_VALIDATED: " + route["engine"],
+                    {"samples": 0, "family": family, "strategy_route": route,
+                     "reason_codes": route["reason_codes"], "signal_ready": False})
         if self.initial_balances[currency] <= 0:
             return "HOLD", ZERO, f"Sin capital asignado en {currency}; no se usa otra moneda/plaza", {"samples": 0}
         if D(q.bid) <= 0 or D(q.ask) < D(q.bid) or D(q.ask_size) <= 0:
