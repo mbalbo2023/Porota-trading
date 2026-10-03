@@ -1,53 +1,40 @@
-# HANDOFF WS_PERF_01
+# HANDOFF WS_PERF_01 — continuación T2
 
-WORKSTREAM_ID: WS_PERF_01_RC6_20261003.
-BRANCH: perf/ws-perf-01-rc6-20261003.
+WORKSTREAM_ID: WS_PERF_01_RC6_20261003_T2.
+BRANCH: perf/ws-perf-02-lineage-scanner-20261003.
 BASE_SHA: da697c6e6c2274579f9e4a112fabc4327475dd35.
+DEPENDENCY_OWN_FROZEN_HEAD: ee1b22996907f282f77d3c31956104bd52cba858 (#454).
 MODE: WRITE_OWNER. DEPLOY_OWNER: NOT_ACQUIRED.
-Estado de este corte: DESARROLLADO; publicación y Predeploy exacto pendientes.
-HEAD_SHA y PR: el registro de cierre en issue #452/PR contiene la identidad
-exacta posterior a publicar; este archivo no pretende conocer su propio SHA.
+Estado al publicar: DESARROLLADO; Predeploy exacto pendiente.
+La identidad HEAD/PR/run/artifact posterior está en el cierre de #452.
 
-## Archivos
+Se retoma el trabajo bloqueado por una reserva anterior del archivo completo.
+Ahora se limita a componentes spot de evidencia/costos, planner de scanner y
+rc6_performance/tests/docs propios. #453 conserva FUTUROS binding/admisión,
+caja/lifecycle y DailyRisk. Prueba offline contra su HEAD d738db79a452c699b50aed00ac539e57e1cc3b04:
+sin conflictos, AST de seis métodos FUTUROS y admission_error/_cash/mark_equity
+idéntico. No se publica esa integración ni se altera su PR.
 
-- rc6_performance/: cantidades/relojes/provenance, costos, scanner, SHADOW,
-  replay, métricas, captura incremental y reportes.
-- scripts/rc6_performance_audit.py y scripts/rc6_performance_report.py.
-- tests/test_rc6_performance_*.py.
-- bm_exit_supervisor.py: probes opcionales sin autoridad de ejecución.
-- bv_paper_runtime.py: worker aislado y wiring de probes.
-- AUDITORIA_IMPLEMENTACION_PERFORMANCE_RC6.md y PERFORMANCE_TRUTH_MATRIX_RC6.json.
+Los cambios agregan clocks nativos SIGNAL/DECISION/INTENT/entry fill confirmado,
+strategy_id, fingerprint efectivo y SHA verificado contra attestations
+canónicas completas de fuentes Python. Valores ausentes siguen desconocidos.
+El funnel incluye rechazos previos a la señal, códigos de gate nativos y raw
+reason heredado; las observaciones cold no son oportunidades BUY.
 
-No cambios en engine/observer/DailyRisk, PPI Watch, tarifas, parámetros,
-dashboard, contratos, DB productiva, systemd o workflows de deploy.
+La canasta warm dura una ventana, persiste en metrics existentes y tiene
+capacidad matemática compatible. Cold usa hasta un slot del mismo límite y no
+autoriza entradas. Catálogo íntegro, abiertas primero, cierres antes del gate.
+La cota no reemplaza muestras distintas reales, freshness, profundidad y riesgo.
+Costos spot se delegan a funciones comunes conservando centavos/bonificaciones
+y todos los parámetros existentes. FUTUROS especializado queda excluido.
 
-## Validación
+285 pruebas locales pasan; 23 nuevos casos en test_rc6_performance_runtime.py.
+Nuevo Predeploy V2 completo requerido sobre HEAD exacto. #454 queda congelado
+con su GREEN anterior; esta tanda lo incorpora como dependencia propia y es
+el candidato actualizado para una futura integración consolidada.
 
-Auditores adjuntos ejecutados offline; 26 hashes válidos; 20/68/151 reproducidos
-con conciliación exacta de cantidades y tolerancia monetaria de un centavo.
-El auditor canónico nuevo reproduce monedas, bruto/costos/neto, PF, acierto,
-expectancy, MFE/MAE y cohortes. Dos cadencias de drawdown se distinguen.
-Tests focales y full Predeploy V2: ver evidencia final de #452/PR; no se usa
-un run de otro SHA como validación de este HEAD.
-
-## Riesgos y pendientes
-
-Cuota de evidencia 128 MiB; capture corta y expone gaps, no limpia silenciosamente.
-Reporte runtime usa ventana acotada de 1000 eventos, no toda la vida del bot.
-Dos probes de inicio añaden writes independientes de hasta 5 ms de espera cada
-uno. Su pérdida se registra; nunca acredita salida o intención inexistente.
-El worker usa baja prioridad y no crea llamadas externas. Costos esperados y
-replays son modelos de sensibilidad; los fills reconciliados son el factual.
-
-Faltan relojes exactos SIGNAL/DECISION y SHA/config completos en campos heredados;
-no se sustituyen con timestamps de recepción. Integración factual del scanner
-y unificación total de costos están BLOQUEADAS por ownership/reconciliación.
-Rentabilidad, calibración fuera de muestra y latencia real posterior de este
-código permanecen NO_VERIFICADO porque no se hace deploy en esta misión.
-
-Siguiente trabajo independiente: revisar artifacts/reportes y preparar protocolo
-fuera de muestra. Siguiente trabajo compartido: reconciliar hooks/gates con
-WS-MOTOR-16 y observer, después de liberar sus scopes. No promover parámetros
-retrospectivos. No merge/deploy desde este handoff.
-
-Liberación final de WRITE_OWNER: registrar tras Predeploy GREEN en #452.
+No merge/deploy, SSH, modificaciones productivas, nuevas rutas ni cambios en
+PPI Watch. Rentabilidad, modelo empírico fuera de muestra, latencias efectivas
+y validación runtime de T2: NO_VERIFICADO. Calibración/alpha no se infieren de
+20 ruedas ni de tests GREEN. Guardar informes detallados en artifacts privados.
+Liberar WRITE_OWNER tras GREEN y cierre durable en #452 / #446.

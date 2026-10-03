@@ -9,6 +9,37 @@ from decimal import Decimal
 from .common import number, identity
 
 ZERO = Decimal(0)
+SPOT_LEDGER_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
+
+
+def ledger_leg_rate(family, *, rebated=False):
+    """Existing eight-decimal PAPER tariff, including the option premium charge."""
+    import au_fee_schedule as schedule
+    if family not in SPOT_LEDGER_FAMILIES:
+        raise ValueError("FAMILY_ECONOMICS_NOT_VALIDATED")
+    if rebated and family in schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
+        return number(schedule.costo_por_tramo_bonificado(family), nonnegative=True)
+    return number(schedule.costo_por_tramo(family), nonnegative=True)
+
+
+def ledger_leg_cost(price, quantity, family):
+    # Preserve the factual ledger's per-fill cent rounding, distinct from the
+    # unrounded unit-price sensitivity used before execution.
+    return (number(price, positive=True) * number(quantity, positive=True)
+            * ledger_leg_rate(family)).quantize(Decimal("0.01"))
+
+
+def smaller_leg_rebate(buy_notional, sell_notional, full_rate, low_rate, *, rounded=False):
+    discount = number(full_rate, nonnegative=True) - number(low_rate, nonnegative=True)
+    if discount < 0:
+        raise ValueError("INVALID_INTRADAY_REBATE")
+    value = min(number(buy_notional, positive=True), number(sell_notional, positive=True)) * discount
+    return value.quantize(Decimal("0.01")) if rounded else value
+
+
+def price_sensitivity_fees(buy_notional, sell_notional, full_rate, low_rate):
+    buy, sell = number(buy_notional, positive=True), number(sell_notional, positive=True)
+    return (buy + sell) * number(full_rate, nonnegative=True) - smaller_leg_rebate(buy, sell, full_rate, low_rate)
 
 
 @dataclass(frozen=True)

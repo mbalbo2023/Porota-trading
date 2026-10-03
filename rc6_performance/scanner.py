@@ -1,6 +1,9 @@
 """Capacity is distinct from contract readiness and from economic edge."""
 import math
 from dataclasses import dataclass
+from datetime import timedelta
+
+from .common import digest, stamp
 
 
 @dataclass(frozen=True)
@@ -60,3 +63,70 @@ def plan_active_universe(ranked_identities, budget):
             "status": ScanBudget(budget.catalog_ready, len(active), budget.slots, budget.cycle_seconds,
                                  budget.required_samples, budget.window_seconds,
                                  budget.success_fraction).report()["status"]}
+
+
+def sampling_plan(catalog, opened, focus, *, limit, cycle_seconds, required_samples,
+                  window_seconds, now, cursor=0, previous=None):
+    """Keep a warm basket for a whole window and reserve bounded cold discovery.
+
+    Catalog order is the existing point-in-time family-balanced order. No return
+    data or future quotes rank this basket. Open positions are always selected.
+    All cursor/basket state fits in the existing cycle-metrics checkpoint.
+    """
+    catalog = list(dict.fromkeys(map(tuple, catalog)))
+    opened = list(dict.fromkeys(map(tuple, opened)))
+    available = set(catalog)
+    configured_focus = [x for x in dict.fromkeys(map(tuple, focus)) if x in available]
+    focus = [x for x in configured_focus if x not in opened]
+    focus = focus[:min(len(focus), max(1, limit // 2), max(0, limit - len(opened)))]
+    pinned = opened + focus
+    pool = [x for x in catalog if x not in set(pinned)]
+    free = max(0, limit - len(pinned))
+    cold_slots = 1 if len(pool) > free and free >= 2 else 0
+    warm_slots = free - cold_slots
+    budget = ScanBudget(len(pool), len(pool), warm_slots, cycle_seconds,
+                        required_samples, window_seconds).report()
+    cap = min(len(pool), budget["conservative_active_limit"])
+    config = digest({"limit": limit, "slots": warm_slots, "cycle": cycle_seconds,
+                     "samples": required_samples, "window": window_seconds,
+                     "pinned": pinned})
+    old = previous or {}
+    at = stamp(now)
+    warm = [tuple(x) for x in old.get("warm", [])]
+    try:
+        started = stamp(old["started_at"])
+        keep = (old.get("configuration_fingerprint") == config and
+                started <= at < started + timedelta(seconds=window_seconds) and
+                len(warm) == cap and len(set(warm)) == len(warm) and
+                set(warm) <= set(pool))
+    except (KeyError, ValueError, TypeError):
+        keep = False
+    start = int(old.get("basket_cursor", 0)) % max(1, len(pool))
+    if not keep:
+        warm = [pool[(start + i) % len(pool)] for i in range(cap)]
+        started = at
+        start = (start + cap) % max(1, len(pool))
+    warm_cursor = int(old.get("warm_cursor", 0) if keep else cursor) % max(1, len(warm))
+    hot = [warm[(warm_cursor + i) % len(warm)] for i in range(min(warm_slots, len(warm)))]
+    warm_cursor = (warm_cursor + len(hot)) % max(1, len(warm))
+    # Cold observations never gain opening authority until promoted to warm.
+    cold, visited = [], 0
+    cursor = int(cursor) % max(1, len(catalog))
+    while len(cold) < cold_slots and visited < len(catalog):
+        item = catalog[(cursor + visited) % len(catalog)]
+        visited += 1
+        if item not in set(pinned) | set(warm):
+            cold.append(item)
+    active = ScanBudget(len(pool), len(warm), warm_slots, cycle_seconds,
+                        required_samples, window_seconds).report()
+    focus_feasible = bool(set(configured_focus) & set(pinned)) and math.floor(window_seconds / cycle_seconds) >= required_samples
+    plan = {"schema": "rc6.active-sampling.v1", "warm": warm, "cold": cold,
+            "pinned": pinned, "started_at": started.isoformat(), "basket_cursor": start,
+            "warm_cursor": warm_cursor, "configuration_fingerprint": config,
+            "active_budget": active, "full_catalog_budget": budget,
+            "warm_slots": warm_slots, "cold_slots": cold_slots,
+            "focus_feasible": focus_feasible, "feasible": focus_feasible and active["status"] == "FEASIBLE",
+            "catalog_effect": "NONE", "basket_reused": keep,
+            "opening_identities": pinned + warm if focus_feasible and active["status"] == "FEASIBLE" else []}
+    advance = visited if cold else len(hot)
+    return tuple(pinned + hot + cold), cursor, (cursor + advance) % max(1, len(catalog)), plan

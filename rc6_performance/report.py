@@ -55,6 +55,7 @@ def evidence_report(path, *, event_limit=10000):
         p["quantity"] = final["position_quantity"]
         p["contract_cash_multiplier"] = features.get("contract_cash_multiplier", 1 if p["asset_class"] in {"ACCIONES", "CEDEARS", "ETFS"} else None)
         p["strategy_version"] = final.get("strategy_version", "NO_VERIFICADO")
+        p["strategy_id"] = features.get("performance_lineage", {}).get("strategy_id", "NO_VERIFICADO")
         buys = [f for f in legs if f["side"] == "BUY_SIMULATED"]
         p["opened_at"] = min((f["filled_at"] for f in buys), default=None)
         try:
@@ -65,12 +66,24 @@ def evidence_report(path, *, event_limit=10000):
             unverified.append({"paper_id": paper_id, "status": "NO_VERIFICADO", "reason": str(exc)})
             continue
         trades.append(p)
+    reconciled = {p["paper_id"]: p for p in trades}
+    for row in funnel["lineage"]:
+        paper_id = row.get("paper_id")
+        legs = by_position.get(paper_id, [])
+        buys = [f for f in legs if f["side"] == "BUY_SIMULATED"]
+        sells = [f for f in legs if f["side"] == "SELL_SIMULATED"]
+        row["entry_ledger_at"] = min((f["filled_at"] for f in buys), default=None)
+        row["first_exit_fill_at"] = min((f["filled_at"] for f in sells), default=None)
+        p = reconciled.get(paper_id)
+        row["closed_at"] = p["closed_at"] if p else None
+        row["realized_pnl"] = {k: p[k] for k in ("currency", "gross_pnl", "net_pnl")} if p else None
+        row["exit_pnl_status"] = "LEDGER_RECONCILED" if p else "NO_VERIFICADO"
     cohorts = defaultdict(list)
     for p in trades:
         day = stamp(p["closed_at"]).astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
         for dimension, key in (("day", day.date().isoformat()), ("week", str(day.date().isocalendar()[:2])),
                                ("strategy", p["strategy_version"]), ("symbol", p["symbol"]), ("family", p["asset_class"]),
-                               ("version", p["strategy_version"]), ("strategy_id", "NO_VERIFICADO"),
+                               ("version", p["strategy_version"]), ("strategy_id", p["strategy_id"]),
                                ("entry_hour", str(stamp(p["opened_at"]).astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).hour)), ("exit_reason", p["close_reason"])):
             cohorts[(dimension, key, p["currency"])].append(p)
     scanner = {"status": "NO_VERIFICADO"}
@@ -85,7 +98,14 @@ def evidence_report(path, *, event_limit=10000):
                                      int(budget["rotation_slots"]), float(budget["estimated_cycle_seconds"]),
                                      int(budget["required_samples"]), float(budget["window_minutes"])*60).report()
                 scanner["scope"] = "ROTATION_ONLY"
-                scanner["factual_scanner_authority"] = "UNCHANGED; separate owner reconciliation required"
+                scanner["factual_scanner_authority"] = "LEGACY_NO_ACTIVE_PLAN"
+                if budget.get("active_plan"):
+                    scanner = {"status": "FEASIBLE" if budget["feasible"] else "INFEASIBLE",
+                               "scope": "ACTIVE_BASKET_OPENING_GATE",
+                               "active_budget": budget["active_plan"]["active_budget"],
+                               "full_catalog_budget": budget["active_plan"]["full_catalog_budget"],
+                               "catalog_effect": "NONE", "signal_ready": "NO_VERIFICADO",
+                               "economically_actionable": "NO_VERIFICADO"}
             except (ValueError, KeyError, TypeError):
                 scanner = {"status": "NO_VERIFICADO", "reason": "scanner_budget_unparseable"}
     return {"schema": "rc6.performance-report.v1", "mode": "SHADOW", "decision_effect": "NONE",

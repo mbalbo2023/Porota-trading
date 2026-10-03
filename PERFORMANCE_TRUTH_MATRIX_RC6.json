@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "workstream_id": "WS_PERF_01_RC6_20261003",
-  "branch": "perf/ws-perf-01-rc6-20261003",
+  "workstream_id": "WS_PERF_01_RC6_20261003_T2",
+  "branch": "perf/ws-perf-02-lineage-scanner-20261003",
   "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
-  "evidence_cut": "2026-10-03; exact publication and CI identity recorded in issue #452 / PR handoff",
+  "evidence_cut": "2026-10-03 T2; publication / exact CI recorded in issue #452 and the next PR",
   "implementation_status": "DESARROLLADO",
   "runtime_of_this_change": "NO_VERIFICADO",
   "mode": "PAPER_SHADOW_ONLY",
@@ -14,261 +14,473 @@
       "id": "FINANCIAL_REPRODUCTION",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "26 manifest hashes match; 20 sessions, 68 positions, 151 fills, 10 partial-sale positions reconcile. ARS gross -10954.5809, charges 23445.66, net -34400.2409; USD_MEP net -4.0839.",
-      "source": ["attached XLSX all ten sheets", "attached ZIP master/fills/cohorts/reconciliation", "original auditors rerun offline"],
-      "code_path": ["rc6_performance/metrics.py:audit_master", "rc6_performance/costs.py:realized_round_trip_cost", "scripts/rc6_performance_audit.py"],
+      "source": [
+        "attached XLSX all ten sheets",
+        "attached ZIP master/fills/cohorts/reconciliation",
+        "original auditors rerun offline"
+      ],
+      "code_path": [
+        "rc6_performance/metrics.py:audit_master",
+        "rc6_performance/costs.py:realized_round_trip_cost",
+        "scripts/rc6_performance_audit.py"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
       "fix": "Canonical currency-separated audit with explicit sessions, zero-close days, quantities and money guards.",
       "guard": "PAPER read-only input, exact identity/quantity, money tolerance 0.01, complete cutoff, duplicate IDs rejected.",
-      "test": ["tests/test_rc6_performance_costs.py:test_partial_fills_reconcile_as_one_trade", "tests/test_rc6_performance_costs.py:test_bad_ledger_evidence_fails_closed", "tests/test_rc6_performance_costs.py:test_audit_keeps_zero_days_and_currencies_separate"],
+      "test": [
+        "tests/test_rc6_performance_costs.py:test_partial_fills_reconcile_as_one_trade",
+        "tests/test_rc6_performance_costs.py:test_bad_ledger_evidence_fails_closed",
+        "tests/test_rc6_performance_costs.py:test_audit_keeps_zero_days_and_currencies_separate"
+      ],
       "remaining_uncertainty": "Realized spot P&L does not reconstruct full account equity or marked-to-market risk. New code not deployed."
     },
     {
       "id": "NEGATIVE_EDGE",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "ARS 11 winners / 62 closes; PF 0.1003815553; expectancy -554.842595 ARS. Positive gross frequently becomes negative net. Historical diagnostic only.",
-      "source": ["attached resumen.json", "reproduced canonical report"],
-      "code_path": ["rc6_performance/metrics.py:trade_metrics", "rc6_performance/shadow.py:economics_gate"],
+      "source": [
+        "attached resumen.json",
+        "reproduced canonical report"
+      ],
+      "code_path": [
+        "rc6_performance/metrics.py:trade_metrics",
+        "rc6_performance/shadow.py:economics_gate"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "NO_VERIFICADO",
       "fix": "Measure net edge in SHADOW with frozen data-backed movement model; no parameter promotion.",
       "guard": "Missing model gives NO_VERIFICADO; economic_edge_validated remains false; real routes empty.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_missing_expected_move_is_not_an_invented_profit_forecast", "tests/test_rc6_performance_shadow.py:test_shadow_economics_is_out_of_sample_and_not_binding"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_missing_expected_move_is_not_an_invented_profit_forecast",
+        "tests/test_rc6_performance_shadow.py:test_shadow_economics_is_out_of_sample_and_not_binding"
+      ],
       "remaining_uncertainty": "No out-of-sample dataset with complete clocks proves alpha, improvement or postdeploy performance."
     },
     {
       "id": "EXPECTED_AND_REALIZED_COSTS",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "ARS charges 23445.66 exceed captured gross edge. Execution prices already embed spread/slippage. Intraday smaller-leg commission discount preserves rights/VAT.",
-      "source": ["attached fill ledger and methodology", "au_fee_schedule.py", "be_paper_engine.py read-only"],
-      "code_path": ["rc6_performance/costs.py", "rc6_performance/counterfactuals.py"],
+      "source": [
+        "attached fill ledger and methodology",
+        "au_fee_schedule.py",
+        "be_paper_engine.py"
+      ],
+      "code_path": [
+        "rc6_performance/costs.py",
+        "be_paper_engine.py:_cost/_leg_rate/_economic_diagnostics/_close"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
-      "fix": "Shared Decimal functions for expected fees and realized cash flow; explicit price anchors and account-term uncertainty.",
+      "fix": "Spot _cost, _leg_rate, economic price sensitivity and partial-fill rebates now use canonical costs functions. Existing family tariff, per-fill cent rounding and full/low rate semantics preserved.",
       "guard": "Reject double-counted friction, invalid rates, mismatched fills, missing non-equity multiplier.",
-      "test": ["tests/test_rc6_performance_costs.py:test_intraday_discount_bonifies_only_smaller_leg_and_keeps_rights_vat", "tests/test_rc6_performance_costs.py:test_execution_prices_do_not_pay_spread_twice", "tests/test_rc6_performance_costs.py:test_non_equity_cash_flow_requires_contract_multiplier"],
-      "remaining_uncertainty": "Full replacement of legacy engine formulas requires reconciliation with active WS-MOTOR-16 owner; account-specific tariff NO_VERIFICADO."
+      "test": [
+        "tests/test_rc6_performance_runtime.py:test_factual_cost_rounding_matches_existing_authority",
+        "tests/test_rc6_performance_runtime.py:test_expected_smaller_leg_cost_matches_ledger_rate_sensitivity",
+        "tests/test_hotfix_rc3_hf4.py"
+      ],
+      "remaining_uncertainty": "Account tariff remains NO_VERIFICADO. FUTUROS specialized costs are owned by #453 and excluded; no runtime validation of T2."
     },
     {
       "id": "GENERAL_SCANNER_CAPACITY",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Historical 7603 active / 9 slots / 140 s cycle / 6 samples in 5400 s => 845 turns, 118300 s revisit, zero samples/window. Ideal upper bound 57; conservative integer limit 54.",
-      "source": ["attached evidencia_operativa_sanitizada.json", "bf_production_paper_observer.py read-only"],
-      "code_path": ["rc6_performance/scanner.py", "rc6_performance/report.py"],
-      "reconciliation_status": "SIGUE_ABIERTO",
+      "source": [
+        "attached evidencia_operativa_sanitizada.json",
+        "bf_production_paper_observer.py"
+      ],
+      "code_path": [
+        "rc6_performance/scanner.py:sampling_plan",
+        "bf_production_paper_observer.py:_cycle_plan/_runtime_readiness/run"
+      ],
+      "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
-      "fix": "Explicit feasibility invariant and active-universe planner consuming caller point-in-time ranking, retaining catalog.",
+      "fix": "Factual observer now keeps a feasible warm basket for a complete signal window, reserves at most one existing cycle slot for cold discovery and gates new openings on active budget and membership. Full catalog retained with separately reported INFEASIBLE bound.",
       "guard": "INFEASIBLE and require_feasible raise; success fraction and full integer round-robin model; no readiness-to-edge conversion.",
-      "test": ["tests/test_rc6_performance_costs.py:test_scanner_historical_rotation_is_infeasible_and_catalog_is_preserved", "tests/test_rc6_performance_costs.py:test_zero_slots_and_degraded_scanner_never_claim_observability"],
-      "remaining_uncertainty": "Factual scanner enforcement remains BLOQUEADO by observer ownership reconciliation. Capacity is a bound; distinct valid observations, freshness and liquidity must be measured."
+      "test": [
+        "tests/test_rc6_performance_runtime.py:test_historical_scanner_becomes_feasible_without_deleting_catalog",
+        "tests/test_rc6_performance_runtime.py:test_active_basket_survives_json_checkpoint_restart_and_rotates_samples",
+        "tests/test_rc6_performance_runtime.py:test_sampling_gate_cannot_block_existing_exit"
+      ],
+      "remaining_uncertainty": "Configured cycle bound assumes distinct valid trades; existing native sample/freshness/depth gates remain mandatory. Actual cycle latency, observed coverage and net edge need future runtime data."
     },
     {
       "id": "SCALPING_WARMUP",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "#437 baseline/recheck, batch 40, heartbeat/reset already absorbed before this workstream.",
-      "source": ["canonical product HEAD", "RC6_BLOCKERS_VALIDATION_CLOSURE_2026-10-03.md", "final runtime artifact 11277627152"],
-      "code_path": ["cf_intraday_scalping.py (existing authority)"],
+      "source": [
+        "canonical product HEAD",
+        "RC6_BLOCKERS_VALIDATION_CLOSURE_2026-10-03.md",
+        "final runtime artifact 11277627152"
+      ],
+      "code_path": [
+        "cf_intraday_scalping.py (existing authority)"
+      ],
       "reconciliation_status": "RESUELTO_PREVIO_AL_WS_PERF",
       "status": "VALIDADO_RUNTIME",
       "fix": "Reuse existing implementation; no duplicate warmup redesign.",
       "guard": "Existing regression suite and deployment evidence.",
-      "test": ["canonical Predeploy 37125173991", "validation-only runtime 37131712187"],
+      "test": [
+        "canonical Predeploy 37125173991",
+        "validation-only runtime 37131712187"
+      ],
       "remaining_uncertainty": "Runtime observation at 2026-10-03T15:16:36Z validates release health, not Monday warmup throughput or profitable Scalping."
     },
     {
       "id": "SQLITE_BUSY_LOCKED_BASELINE",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "#440 bounded retry for BUSY/LOCKED, heartbeat and diagnostics already deployed; audit logs alone do not quantify monetary damage.",
-      "source": ["attached errores_sqlite_extracto.txt", "canonical #440 / product HEAD", "final runtime artifact"],
-      "code_path": ["bf_production_paper_observer.py read-only", "rc6_performance/capture.py"],
+      "source": [
+        "attached errores_sqlite_extracto.txt",
+        "canonical #440 / product HEAD",
+        "final runtime artifact"
+      ],
+      "code_path": [
+        "bf_production_paper_observer.py read-only",
+        "rc6_performance/capture.py"
+      ],
       "reconciliation_status": "RESUELTO_PREVIO_AL_WS_PERF",
       "status": "VALIDADO_RUNTIME",
       "fix": "Do not reimplement retries. New collector uses source query_only, WAL, statement deadline and separate evidence writer.",
       "guard": "150 ms query budget, 5 ms busy timeout, bounded rows/bytes, rollback before evidence write.",
-      "test": ["tests/test_rc6_performance_capture.py:test_read_only_capture_survives_real_wal_writer_without_waiting_twenty_seconds"],
+      "test": [
+        "tests/test_rc6_performance_capture.py:test_read_only_capture_survives_real_wal_writer_without_waiting_twenty_seconds"
+      ],
       "remaining_uncertainty": "Which writer/query caused each historical lock, precise retry duration and monetary attribution remain NO_VERIFICADO."
     },
     {
       "id": "IMMUTABLE_DECISION_CAPTURE",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "25 historical positions have immutable hash evidence; current snapshots contain HOLD/BLOCKED as well as opened decisions.",
-      "source": ["attached master evidence_hash_valid", "be_paper_engine.py:record_decision read-only"],
-      "code_path": ["rc6_performance/capture.py", "rc6_performance/metrics.py:decision_funnel"],
+      "source": [
+        "attached master evidence_hash_valid",
+        "be_paper_engine.py:record_decision read-only"
+      ],
+      "code_path": [
+        "rc6_performance/capture.py",
+        "rc6_performance/metrics.py:decision_funnel"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
       "fix": "Incremental hash-verified capture, atomic cursor/event commit, no historical backfill or snapshot mutation.",
       "guard": "Invalid immutable hash blocks cursor; source DB mode=ro; quota and oversized-payload gaps explicit.",
-      "test": ["tests/test_rc6_performance_capture.py:test_capture_is_read_only_incremental_atomic_and_does_not_backfill", "tests/test_rc6_performance_capture.py:test_tampered_immutable_snapshot_does_not_advance_checkpoint"],
+      "test": [
+        "tests/test_rc6_performance_capture.py:test_capture_is_read_only_incremental_atomic_and_does_not_backfill",
+        "tests/test_rc6_performance_capture.py:test_tampered_immutable_snapshot_does_not_advance_checkpoint"
+      ],
       "remaining_uncertainty": "Starting at tail leaves earlier positions incomplete; report never reconstructs missing BUY or presents truncated sample as lifetime metrics."
     },
     {
       "id": "COMPLETE_TRADE_LINEAGE",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Legacy captured_at is quote receipt, not exact signal/decision clock. Native Git SHA, full configuration fingerprint and strategy ID are incomplete.",
-      "source": ["attached quote/decision evidence", "be_paper_engine.py immutable payload read-only", "active ownership #453"],
-      "code_path": ["rc6_performance/metrics.py:decision_funnel", "rc6_performance/capture.py:capture_context"],
+      "source": [
+        "attached quote/decision evidence",
+        "be_paper_engine.py immutable payload",
+        "active ownership #453"
+      ],
+      "code_path": [
+        "rc6_performance/lineage.py",
+        "be_paper_engine.py:spot decision evidence and tracing",
+        "rc6_performance/metrics.py:decision_funnel"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
-      "status": "BLOQUEADO",
-      "fix": "Expose missing fields explicitly. Collector provenance does not overwrite historical decision provenance.",
+      "status": "DESARROLLADO",
+      "fix": "Native spot evaluation end, decision boundary, intent creation and committed entry fill clocks in immutable evidence; exact identity, strategy ID, resolved configuration digest and canonical frozen-candidate Python closure SHA verification. No historical rewriting.",
       "guard": "No receipt-to-decision substitution; environment allowlist; incomplete configuration fingerprint NO_VERIFICADO.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_missing_lineage_is_exposed_without_quote_time_becoming_decision_time"],
-      "remaining_uncertainty": "Exact SIGNAL/DECISION and complete native provenance need engine/observer owner release and reconciliation."
+      "test": [
+        "tests/test_rc6_performance_runtime.py:test_native_decision_precedes_intent_and_committed_fill",
+        "tests/test_rc6_performance_runtime.py:test_frozen_source_rejects_stale_manifest_and_undeclared_source",
+        "tests/test_rc6_performance_runtime.py:test_event_time_simulation_never_fabricates_native_clock"
+      ],
+      "remaining_uncertainty": "Historical native fields remain unavailable. Runtime SHA is null until the existing mounted canonical attestations match the full Python closure; callback / AI internals explicitly opaque. T2 not deployed."
     },
     {
       "id": "DECISION_FUNNEL",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Executed trades alone cannot count opportunities. Decision snapshots expose observed/feature/candidate/accepted/rejected stages; raw reasons are heterogeneous.",
-      "source": ["current immutable snapshots", "historical evidence gaps"],
-      "code_path": ["rc6_performance/metrics.py:decision_funnel", "rc6_performance/report.py:evidence_report"],
+      "source": [
+        "current immutable snapshots",
+        "historical evidence gaps"
+      ],
+      "code_path": [
+        "rc6_performance/metrics.py:decision_funnel",
+        "rc6_performance/report.py:evidence_report"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
-      "fix": "Deduplicate decision keys, count candidate stages, preserve raw reasons alongside classified reason, report missing universe/signal data.",
+      "fix": "Immutable pre-signal cold/sampling/data rejections and native warmup/score/spread/economics/AI/patrimonial stage codes, with legacy raw reasons and explicit heuristic source. Candidate counts exclude cold observations.",
       "guard": "Evaluations are not independent profitable opportunities; unmapped reason remains unmapped; no fictional HOLD gains.",
-      "test": ["tests/test_rc6_performance_report.py", "tests/test_rc6_performance_shadow.py:test_missing_lineage_is_exposed_without_quote_time_becoming_decision_time"],
-      "remaining_uncertainty": "Native structured rejection codes and exact full UNIVERSE/SIGNAL/EXITED lineage need owner reconciliation. Good rejected opportunities require future labels unavailable now."
+      "test": [
+        "tests/test_rc6_performance_runtime.py:test_pre_signal_rejection_preserves_missing_signal_and_native_reason",
+        "tests/test_rc6_performance_report.py"
+      ],
+      "remaining_uncertainty": "Unmapped subreasons and pre-signal missing clocks remain explicit. Historical full universe and good rejected opportunities are not reconstructed without forward observations."
     },
     {
       "id": "SCORE_CALIBRATION",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Historical executed ARS score AUC 0.3885918003; selected sample and cost outcome do not establish directional predictive quality. Score is not calibrated probability.",
-      "source": ["attached score/cohorts", "be_paper_engine.py score implementation read-only"],
-      "code_path": ["rc6_performance/metrics.py:auc", "rc6_performance/metrics.py:signal_evaluation", "rc6_performance/shadow.py:forward_labels"],
+      "source": [
+        "attached score/cohorts",
+        "be_paper_engine.py score implementation read-only"
+      ],
+      "code_path": [
+        "rc6_performance/metrics.py:auc",
+        "rc6_performance/metrics.py:signal_evaluation",
+        "rc6_performance/shadow.py:forward_labels"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Multi-horizon gross forward returns, hit rate, AUC, observed MFE/MAE and tails; explicit prediction-contract requirement for precision/recall and net labels.",
       "guard": "No 0.70-to-70% interpretation; unavailable horizon NO_VERIFICADO; overlapping observations not called independent.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_labels_require_real_horizon_and_do_not_fill_unobserved_time"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_labels_require_real_horizon_and_do_not_fill_unobserved_time"
+      ],
       "remaining_uncertainty": "Temporal/asset/regime stability, calibration and future net expectancy require complete OOS labels and independent sampling design."
     },
     {
       "id": "ECONOMIC_VIABILITY_SHADOW",
       "evidence_type": "RECOMENDACIÓN",
       "evidence": "Observed costs and negative expectancy justify measuring economic viability before promoting a candidate; no invented expected movement.",
-      "source": ["financial reproduction", "V2 order economic gate"],
-      "code_path": ["rc6_performance/shadow.py:fit_movement", "rc6_performance/shadow.py:economics_gate"],
+      "source": [
+        "financial reproduction",
+        "V2 order economic gate"
+      ],
+      "code_path": [
+        "rc6_performance/shadow.py:fit_movement",
+        "rc6_performance/shadow.py:economics_gate"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Frozen family/currency/horizon mean movement model with label provenance; subtract expected explicit costs and execution friction on defined anchors.",
       "guard": "Model training cutoff precedes evaluation; source/depth/freshness/participation/EOD guards; no BUY authority.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_shadow_economics_is_out_of_sample_and_not_binding", "tests/test_rc6_performance_shadow.py:test_economic_gate_preserves_freshness_and_depth"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_shadow_economics_is_out_of_sample_and_not_binding",
+        "tests/test_rc6_performance_shadow.py:test_economic_gate_preserves_freshness_and_depth"
+      ],
       "remaining_uncertainty": "Initial unconditional mean is a diagnostic model, not validated conditional alpha. Runtime native-clock integration and OOS model are unavailable."
     },
     {
       "id": "EOD_HORIZON",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "ARS 45 EOD, 14 STOP, 3 MaxHold exits and zero targets. EOD deadline constrains available horizon; historical 17:00 grilla changes horizon too.",
-      "source": ["attached exit cohorts", "bm_exit_supervisor.py existing precedence", "extracted grilla"],
-      "code_path": ["rc6_performance/replay.py", "rc6_performance/shadow.py:economics_gate"],
+      "source": [
+        "attached exit cohorts",
+        "bm_exit_supervisor.py existing precedence",
+        "extracted grilla"
+      ],
+      "code_path": [
+        "rc6_performance/replay.py",
+        "rc6_performance/shadow.py:economics_gate"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Time-aware SHADOW gate and mandatory factual EOD in replay; no overnight fills and no deadline extension.",
       "guard": "EOD precedence, MaxHold with no quote, source book available at evaluation, session close.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_eod_precedes_stop_and_target_and_never_executes_overnight", "tests/test_rc6_performance_shadow.py:test_time_to_eod_does_not_extend_horizon_to_make_trade_fit"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_eod_precedes_stop_and_target_and_never_executes_overnight",
+        "tests/test_rc6_performance_shadow.py:test_time_to_eod_does_not_extend_horizon_to_make_trade_fit"
+      ],
       "remaining_uncertainty": "Late-entry conditional MFE/MAE/target-hit and net horizon expectancy not proven by this historical sample."
     },
     {
       "id": "EXIT_POLICY_FRAMEWORK",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "14 target scenarios and 30 grid profiles all negative; 14 post-stop observations none modeled net break even. No empirical authorization to expand production stops.",
-      "source": ["attached targets/grilla/post-stop", "original contrafactual auditor", "canonical extracted replay reconciliation"],
-      "code_path": ["rc6_performance/replay.py", "rc6_performance/counterfactuals.py"],
+      "source": [
+        "attached targets/grilla/post-stop",
+        "original contrafactual auditor",
+        "canonical extracted replay reconciliation"
+      ],
+      "code_path": [
+        "rc6_performance/replay.py",
+        "rc6_performance/counterfactuals.py"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Causal same-entry baseline/TP/stop/trailing/MaxHold/break-even policies; reconcile source extraction separately from tick replay.",
       "guard": "No changed factual ledger, sticky intent, same-book depth budget, lot/partial fills, costs, no promotion.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_factual_and_candidate_are_deterministic_and_do_not_promote", "tests/test_rc6_performance_shadow.py:test_same_entry_stop_partial_fills_and_repeated_book_budget", "tests/test_rc6_performance_shadow.py:test_break_even_once_armed_survives_pullback_and_trailing_uses_only_observed_high", "tests/test_rc6_performance_costs.py:test_extracted_replays_use_same_ids_canonical_costs_and_expose_missing_coverage"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_factual_and_candidate_are_deterministic_and_do_not_promote",
+        "tests/test_rc6_performance_shadow.py:test_same_entry_stop_partial_fills_and_repeated_book_budget",
+        "tests/test_rc6_performance_shadow.py:test_break_even_once_armed_survives_pullback_and_trailing_uses_only_observed_high",
+        "tests/test_rc6_performance_costs.py:test_extracted_replays_use_same_ids_canonical_costs_and_expose_missing_coverage"
+      ],
       "remaining_uncertainty": "Full first-touch/depth market paths absent. Framework sensitivity differs from actual broker fee rounding and portfolio risk/capital feedback."
     },
     {
       "id": "NO_LOOKAHEAD",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Evaluator APIs require aware as_of, source/receipt clocks, label availability and frozen training cutoff.",
-      "source": ["V2 order", "new deterministic tests"],
-      "code_path": ["rc6_performance/common.py:stamp", "rc6_performance/shadow.py", "rc6_performance/replay.py"],
+      "source": [
+        "V2 order",
+        "new deterministic tests"
+      ],
+      "code_path": [
+        "rc6_performance/common.py:stamp",
+        "rc6_performance/shadow.py",
+        "rc6_performance/replay.py"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Separate future outcome labels from decision input; reject future model, reversed time, duplicated training label and pre-decision source book used as future label.",
       "guard": "Explicit clocks, matching identity, immutable snapshot isolation; only observed highs drive trailing.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_no_future_labels_or_naive_clocks_in_training", "tests/test_rc6_performance_shadow.py:test_old_book_receipt_does_not_become_forward_label_and_duplicates_cannot_train", "tests/test_rc6_performance_shadow.py:test_max_hold_detects_without_quote_and_future_book_cannot_execute"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_no_future_labels_or_naive_clocks_in_training",
+        "tests/test_rc6_performance_shadow.py:test_old_book_receipt_does_not_become_forward_label_and_duplicates_cannot_train",
+        "tests/test_rc6_performance_shadow.py:test_max_hold_detects_without_quote_and_future_book_cannot_execute"
+      ],
       "remaining_uncertainty": "No claim that absent historical clocks or upstream provider timestamp accuracy have been repaired."
     },
     {
       "id": "SAME_SNAPSHOT_EXPERIMENTS",
       "evidence_type": "RECOMENDACIÓN",
       "evidence": "Comparable strategies require identical point-in-time input and separated state; ingestion already supplies shared snapshots.",
-      "source": ["V2 order experimental architecture", "existing market_snapshots"],
-      "code_path": ["rc6_performance/shadow.py:evaluate_same_snapshot", "rc6_performance/capture.py"],
+      "source": [
+        "V2 order experimental architecture",
+        "existing market_snapshots"
+      ],
+      "code_path": [
+        "rc6_performance/shadow.py:evaluate_same_snapshot",
+        "rc6_performance/capture.py"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Isolated copy per evaluator, identical canonical input hash, explicit as_of and serializable decision envelopes for caller artifacts.",
       "guard": "SHADOW-only result envelopes; no additional provider/broker ingestion; no mutable shared candidate input.",
-      "test": ["tests/test_rc6_performance_shadow.py:test_every_shadow_variant_gets_same_immutable_snapshot"],
+      "test": [
+        "tests/test_rc6_performance_shadow.py:test_every_shadow_variant_gets_same_immutable_snapshot"
+      ],
       "remaining_uncertainty": "Runtime candidate evaluations are blocked until exact decision clocks and preregistered OOS model are available; no fabricated historical strategy decisions."
     },
     {
       "id": "EXIT_LATENCY_PHASES",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Ledger has fills and intents; legacy condition-detection/persistence clocks insufficient to assign delays. New optional probes stamp condition and commit; final fill uses ledger.",
-      "source": ["attached fills/exit intents", "bm_exit_supervisor.py"],
-      "code_path": ["bm_exit_supervisor.py:PositionExitSupervisor", "rc6_performance/capture.py:ExitTelemetry", "rc6_performance/metrics.py:exit_latencies"],
+      "source": [
+        "attached fills/exit intents",
+        "bm_exit_supervisor.py"
+      ],
+      "code_path": [
+        "bm_exit_supervisor.py:PositionExitSupervisor",
+        "rc6_performance/capture.py:ExitTelemetry",
+        "rc6_performance/metrics.py:exit_latencies"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Separate condition-to-intent, intent-to-first-fill, first-to-final, condition-to-final p50/p95/p99/max with missing/invalid-clock counters.",
       "guard": "Probe failures do not veto exit; independent DB busy timeout 5 ms; first probe immutable; ledger status required before final marker.",
-      "test": ["tests/test_rc6_performance_capture.py:test_exit_probe_tracks_commit_and_final_fill_and_does_not_rewrite", "tests/test_rc6_performance_capture.py:test_diagnostic_failure_cannot_block_exit_or_fake_fill", "tests/test_rc6_performance_shadow.py:test_exit_latencies_separate_phases_and_unknown_final_fill"],
+      "test": [
+        "tests/test_rc6_performance_capture.py:test_exit_probe_tracks_commit_and_final_fill_and_does_not_rewrite",
+        "tests/test_rc6_performance_capture.py:test_diagnostic_failure_cannot_block_exit_or_fake_fill",
+        "tests/test_rc6_performance_shadow.py:test_exit_latencies_separate_phases_and_unknown_final_fill"
+      ],
       "remaining_uncertainty": "Book-availability/retry causality and production percentiles require future authorized runtime observation. SQLite monetary effect NO_VERIFICADO."
     },
     {
       "id": "BOUNDED_OBSERVABILITY",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Current source uses WAL; adding source writers/history rebuild would create competing locks. Collector starts at tail with bounded asynchronous reads.",
-      "source": ["current PaperStore/schema", "existing runtime child supervisor", "new WAL contention test"],
-      "code_path": ["rc6_performance/capture.py:BoundedCapture", "rc6_performance/capture.py:run_worker", "bv_paper_runtime.py"],
+      "source": [
+        "current PaperStore/schema",
+        "existing runtime child supervisor",
+        "new WAL contention test"
+      ],
+      "code_path": [
+        "rc6_performance/capture.py:BoundedCapture",
+        "rc6_performance/capture.py:run_worker",
+        "bv_paper_runtime.py"
+      ],
       "reconciliation_status": "SIGUE_ABIERTO",
       "status": "DESARROLLADO",
       "fix": "Separate writer lock, nice 10 worker, 100 rows/table, 150 ms statement budget, 64 KiB payload, 1 MiB batch, 128 MiB quota and five-minute atomic report.",
       "guard": "Source query_only and PAPER/0; rejects source as evidence DB; atomic checkpoints; capacity/oversize/drop diagnostics.",
-      "test": ["tests/test_rc6_performance_capture.py", "tests/test_rc6_performance_report.py"],
+      "test": [
+        "tests/test_rc6_performance_capture.py",
+        "tests/test_rc6_performance_report.py"
+      ],
       "remaining_uncertainty": "Report window is 1000 events, not complete lifetime; quota stops rather than silently deleting. Actual capture lag and extra IO are not runtime-validated."
     },
     {
       "id": "CANONICAL_REPORTS",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Daily realized drawdown -35833.4232 differs from individual-close drawdown -36367.7944; both reproducible cadences, neither full equity.",
-      "source": ["curvas_realizadas.json", "reconciled complete trade ledger"],
-      "code_path": ["rc6_performance/metrics.py", "rc6_performance/report.py", "scripts/rc6_performance_report.py"],
+      "source": [
+        "curvas_realizadas.json",
+        "reconciled complete trade ledger"
+      ],
+      "code_path": [
+        "rc6_performance/metrics.py",
+        "rc6_performance/report.py",
+        "scripts/rc6_performance_report.py"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "DESARROLLADO",
       "fix": "Currency-separated day/week/strategy/version/strategy-ID/symbol/family/entry-hour/exit-reason cohorts, net expectancy/PF/costs/tails/turnover/exit frequencies, honest missing opportunities.",
       "guard": "Reject incomplete or tampered financial evidence; no combined ARS/USD result; output cannot overwrite evidence/source.",
-      "test": ["tests/test_rc6_performance_costs.py:test_audit_keeps_zero_days_and_currencies_separate", "tests/test_rc6_performance_report.py"],
+      "test": [
+        "tests/test_rc6_performance_costs.py:test_audit_keeps_zero_days_and_currencies_separate",
+        "tests/test_rc6_performance_report.py"
+      ],
       "remaining_uncertainty": "Strategy ID, independent opportunity counts, complete MFE/MAE, target probabilities and equity require additional native evidence."
     },
     {
       "id": "FAMILY_READINESS_AND_DASHBOARD",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "#449 contract evidence closure READY=9710 is deployed; #437/#440 and caucion sweep already present. Dashboard explanation improved but complete economic lineage remains pending.",
-      "source": ["final runtime artifact 11277627152", "current canonical product branch", "active ownership trackers"],
-      "code_path": ["cr_contract_evidence_v2_mass_hf6.py read-only", "di_caucion_cash_sweep_runtime_hf6.py read-only", "dashboard read-only", "rc6_performance/costs.py:paper_fee_model"],
+      "source": [
+        "final runtime artifact 11277627152",
+        "current canonical product branch",
+        "active ownership trackers"
+      ],
+      "code_path": [
+        "cr_contract_evidence_v2_mass_hf6.py read-only",
+        "di_caucion_cash_sweep_runtime_hf6.py read-only",
+        "dashboard read-only",
+        "rc6_performance/costs.py:paper_fee_model"
+      ],
       "reconciliation_status": "PARCIALMENTE_RESUELTO",
       "status": "VALIDADO_RUNTIME",
       "fix": "Keep CONTRACT_READY, STRATEGY_VALIDATED and ECONOMIC_EDGE_VALIDATED distinct. Reuse existing family fixes; equity fee adapter rejects other families.",
       "guard": "No catalog deletion, family strategy substitution, dashboard rewrite or caucion redesign.",
-      "test": ["tests/test_rc6_performance_costs.py:test_no_generic_equity_fee_for_other_families", "existing canonical family suite"],
+      "test": [
+        "tests/test_rc6_performance_costs.py:test_no_generic_equity_fee_for_other_families",
+        "existing canonical family suite"
+      ],
       "remaining_uncertainty": "Readiness does not validate family economics; this workstream neither deploys nor certifies OOS family strategies. #450 remains unintegrated."
     },
     {
       "id": "PAPER_AND_DEPLOY_BOUNDARY",
       "evidence_type": "HECHO VERIFICADO",
       "evidence": "Last runtime artifact observed 2026-10-03T15:16:36Z: PRODUCTION_PAPER, real_orders_sent=0, routes NOT_CALLED, PPI Watch untouched. WS_PERF creates isolated branch/PR only.",
-      "source": ["final-runtime.json artifact sha256 a4bf46ea04860448e349483d8fe96f870efacb10cf376725dd42e63af032c99d", "issue #452 ownership declaration"],
-      "code_path": ["rc6_performance/__init__.py", "rc6_performance/capture.py", "bm_exit_supervisor.py", "bv_paper_runtime.py"],
+      "source": [
+        "final-runtime.json artifact sha256 a4bf46ea04860448e349483d8fe96f870efacb10cf376725dd42e63af032c99d",
+        "issue #452 ownership declaration"
+      ],
+      "code_path": [
+        "rc6_performance/__init__.py",
+        "rc6_performance/capture.py",
+        "bm_exit_supervisor.py",
+        "bv_paper_runtime.py"
+      ],
       "reconciliation_status": "RESUELTO_PREVIO_AL_WS_PERF",
       "status": "VALIDADO_RUNTIME",
       "fix": "Preserve existing risk, freshness, depth, stops, EOD, real route blocks, deployment and PPI Watch boundaries.",
       "guard": "Collector refuses non-PAPER/0 source; no broker route in new modules; no productive-branch writes, merge, SSH or deployment.",
-      "test": ["tests/test_rc6_performance_capture.py:test_source_paper_state_and_separate_database_are_required", "canonical Predeploy full governed suite for final exact HEAD"],
+      "test": [
+        "tests/test_rc6_performance_capture.py:test_source_paper_state_and_separate_database_are_required",
+        "canonical Predeploy full governed suite for final exact HEAD"
+      ],
       "remaining_uncertainty": "Prior runtime validation is not validation of this new code. Final exact HEAD/PR/CI and ownership release are recorded separately after publication."
     }
-  ]
+  ],
+  "dependency_own_frozen_head": "ee1b22996907f282f77d3c31956104bd52cba858",
+  "compatibility_proof": {
+    "futures_pr": 453,
+    "futures_head": "d738db79a452c699b50aed00ac539e57e1cc3b04",
+    "offline_merge_conflicts": 0,
+    "futures_binding_admission_cash_lifecycle_unchanged": true,
+    "integration_published": false
+  }
 }

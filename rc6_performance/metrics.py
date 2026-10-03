@@ -153,8 +153,12 @@ def decision_funnel(snapshots):
             continue
         seen.add(key)
         q, d = snapshot["quote_used"], snapshot["decision"]
-        ident = identity(q)
-        identities.add(ident)
+        try:
+            ident = identity(q)
+            identities.add(ident)
+        except ValueError:
+            ident = None
+            gaps["exact_identity"] += 1
         features = snapshot.get("inputs_used") or {}
         action = d.get("action") or features.get("candidate", {}).get("action")
         is_candidate = d.get("technical_gate") == "APPROVE" or action == "BUY" and d.get("technical_gate") != "NOT_CANDIDATE"
@@ -169,15 +173,19 @@ def decision_funnel(snapshots):
             stages["OPENED"] += 1
         elif is_candidate and final == "BLOCKED":
             stages["REJECTED"] += 1
-        reason = structured_reason(d.get("reason", ""), features)
+        reason = d.get("reason_code") or features.get("reason_code") or structured_reason(d.get("reason", ""), features)
         if final != "OPENED_SIMULATED":
             reasons[reason] += 1
         row = {"decision_key": key, "identity": ident, "paper_id": d.get("paper_id"),
                "strategy_version": snapshot.get("runtime", {}).get("strategy_version"),
+               "strategy_id": snapshot.get("runtime", {}).get("strategy_id"),
                "quote_received_at": q.get("observed_at"), "quote_source_at": q.get("book_at"),
                "signal_at": snapshot.get("signal_at"), "decision_at": snapshot.get("decision_at"),
-               "legacy_captured_at": snapshot.get("captured_at"), "score": d.get("score", features.get("candidate", {}).get("score")),
+               "intent_at": snapshot.get("intent_at"),
+               "entry_fill_committed_at": snapshot.get("entry_fill_committed_at"),
+               "legacy_captured_at": snapshot.get("captured_at"), "score": d.get("score") if d.get("score") is not None else features.get("candidate", {}).get("score"),
                "reason_code": reason, "raw_reason": d.get("reason"), "final_result": final,
+               "reason_code_source": "NATIVE_GATE" if d.get("reason_code") or features.get("reason_code") else "LEGACY_HEURISTIC",
                "git_sha": snapshot.get("runtime", {}).get("git_sha"),
                "configuration_fingerprint": snapshot.get("runtime", {}).get("configuration_fingerprint"),
                "snapshot_sha256": digest(snapshot)}

@@ -1,8 +1,8 @@
 # WS_PERF_01 — evidencia económica RC6
 
-WORKSTREAM_ID: WS_PERF_01_RC6_20261003. Fecha: 2026-10-03.
+WORKSTREAM_ID: WS_PERF_01_RC6_20261003_T2. Fecha: 2026-10-03.
 Base: deploy/rc6-pr69-isolated-20260915@da697c6e6c2274579f9e4a112fabc4327475dd35.
-Rama: perf/ws-perf-01-rc6-20261003. Ownership/evidencia: issue #452.
+Rama: perf/ws-perf-02-lineage-scanner-20261003. Ownership/evidencia: issue #452.
 PAPER/SHADOW ONLY; real_orders_sent=0; rutas reales vacías. Sin merge ni deploy.
 
 ## Hechos verificados
@@ -58,7 +58,7 @@ scanner.py separa catálogo, canasta activa y capacidad, con INFEASIBLE explíci
 Para el snapshot histórico: 845 turnos, revisita 118300 s, cero muestras por
 ventana, cota ideal 57 y límite conservador entero 54. No recomienda seleccionar
 54 instrumentos: el plan consume un ranking punto-en-tiempo suministrado.
-No recorta el catálogo ni cambia la estrategia factual.
+T2 aplica una canasta activa factual con portón de nuevas aperturas, sin recortar el catálogo ni cambiar score, stops, targets, riesgo o requisitos de datos.
 
 Reporte de factibilidad histórico (snapshot 01/10 durante EOD, no atómico):
 CATALOG/eligible=7614; pool de rotación=7603; foco=8. El foco estimaba 38
@@ -116,16 +116,42 @@ No se atribuye un retraso a SQLite sin causalidad adicional.
 
 ## Bloqueos y límites pendientes
 
-be_paper_engine.py y bw_daily_risk.py están poseídos por WS-MOTOR-16/#453 y
-permanecen READ_ONLY. bf_production_paper_observer.py y dashboard también quedan
-READ_ONLY frente a los scopes históricos todavía abiertos. Esta tranche no
-reimplementa esos cambios ni modifica admisión, riesgo o rutas.
+La revisión de ownership actual confirmó que #453 reserva el binding de
+FUTUROS, admisión/caja/lifecycle de esa familia y DailyRisk. La continuación T2
+posee componentes spot y el planner del observer. Se probó una combinación
+OFFLINE sin conflictos contra d738db79a452c699b50aed00ac539e57e1cc3b04; AST de
+los seis métodos FUTUROS, admission_error, _cash y mark_equity es idéntico al
+owner. Esa combinación no se publica ni certifica el Predeploy fallido de #453.
 
-La evidencia heredada llama captured_at a la recepción de quote; no se convierte
-en el reloj real de decisión. SIGNAL/DECISION exactos, SHA/fingerprint completos,
-gate factual del scanner y sustitución de todas las fórmulas heredadas de costos
-requieren reconciliación posterior de esos componentes. Se entregan APIs/tests
-y brechas explícitas, no una falsa declaración de trazabilidad total.
+T2 agrega relojes nativos de fin de evaluación, decisión, creación de intención
+y fill de entrada confirmado en la evidencia inmutable. Sin reloj inyectado,
+las llamadas históricas conservan campos nativos nulos. captured_at sigue siendo
+recepción. El fingerprint corresponde a los argumentos efectivos del motor,
+PAPER env, sesión, límites DailyRisk y tarifas resueltas; los valores privados
+no se publican. Internos de callbacks/IA quedan explícitamente opacos.
+El SHA de 40 caracteres se toma de las attestations canónicas ya instaladas
+por Deploy V2, solamente si todo su closure Python coincide con /app; no hay
+fallback a un SHA de entorno ni manifest parcial manual. Cache de 30 segundos
+presupone el contenedor inmutable; ausencia/mismatch devuelve NO_VERIFICADO.
+
+El observer mantiene abiertas y foco, una canasta warm durante 90 minutos y
+hasta un slot cold de descubrimiento dentro del mismo límite por ciclo. El
+checkpoint JSON usa universe_cycle_metrics existente, sin DDL ni otro writer
+sobre trading. Separa factibilidad del catálogo completo y de la canasta activa;
+INFEASIBLE y cold bloquean únicamente aperturas. Los quotes se ingieren y las
+salidas existentes corren antes de ese portón. Orden de selección: el catálogo
+canónico actual balanceado por familia, sin ranking por retornos futuros.
+La cota usa tiempo por ciclo configurado; no garantiza trades distintos ni
+latencia efectiva. signal_prices y los guards vigentes mantienen el requisito
+de muestras reales, freshness, profundidad, cash y riesgo antes de abrir.
+
+Los costos spot factual delegan tasa, centavos y bonificación parcial a
+costs.py, preservando los importes existentes; la sensibilidad de target/stop
+usa el mismo rebate de la pierna menor. No se presenta esa sensibilidad como
+pronóstico empírico ni se cambia autoridad del economics gate existente.
+Los costos especializados de FUTUROS y términos particulares de cuenta quedan
+fuera de esta sustitución. PPI Watch, dashboard, contratos, DailyRisk, políticas
+de deploy y rutas reales siguen fuera del scope de escritura.
 
 Los replays adjuntos resumen resultados del extractor: el paquete no contiene
 la DB íntegra de mercado para repetir de cero primer toque/profundidad. La grilla
@@ -164,3 +190,13 @@ tails, PF, drawdown realizado, turnover/costos y concentración por símbolo,
 con sensibilidad preespecificada. No elegir ganador de grilla histórica.
 Si falta reloj, profundidad, modelo o muestra, conservar NO_VERIFICADO y mantener
 la variante SHADOW. La promoción no forma parte de esta misión.
+
+## Validación de la continuación T2
+
+285 pruebas locales pasan, incluyendo las regresiones existentes de costos,
+scanner y cierres parciales. 23 casos nuevos prueban clocks, manifiesto completo,
+fingerprint efectivo, costos y canasta persistida. El candidato reutiliza el
+HEAD propio congelado ee1b22996907f282f77d3c31956104bd52cba858 de #454, cuyo
+Predeploy 37140546207 fue GREEN con 2543 tests. #454 no se modifica.
+Esta tanda exige un nuevo Predeploy V2 GREEN sobre su propio HEAD; el cierre
+con run/artifact/hash se registra luego en #452 y el handoff final.
