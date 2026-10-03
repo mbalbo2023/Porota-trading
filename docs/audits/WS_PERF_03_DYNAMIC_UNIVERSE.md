@@ -232,8 +232,9 @@ Reconciliation inputs are #456 `b8c95c10459cb8ede2925da491730f5988b29561`
 `84528216cd85060075b63be25e71876e1b742b0c`. None is merged by this workstream.
 #453's explicit FUTUROS signal allowlist and dedicated `_on_future_quote` binding
 take precedence when reconciled; WS-PERF-03 neither adds FUTUROS authority nor
-changes its `_open_future`, `_future_close_reason`, `_close_future`,
-`future_daily_adjustment`, contract policy or `bw_daily_risk.DailyRisk`.
+changes its `_future_cost`, `_future_exposure`, `_future_locked_admission`,
+`_open_future`, `_close_future`, `_on_future_quote`, family lifecycle, contract
+policy or `bw_daily_risk.DailyRisk`.
 #456's economic laboratory is an explicit dependency: standalone absence reports
 NO_VERIFICADO, while reconciliation exercises the actual APIs and costs.
 
@@ -245,3 +246,14 @@ Saturday CLOSED: the actual-clock benchmark emits MARKET_NOT_OPEN and
 NO_VERIFICADO, with zero provider requests and real orders. In-session PPI
 capacity, prospective discovery delay/coverage and future OOS outcomes remain
 pending. No merge, deployment or PPI Watch operation is part of this mission.
+
+Offline reconciliation is conflict-free across all four exact heads. The
+combined governed suite executed 2735 tests: 2731 passed, four FUTUROS failures.
+Those same four fail on untouched #453 alone (12 targeted, 8 passed/4 failed),
+including `no such table: paper_future_positions`; they are an existing external
+owner blocker, not new failures introduced by WS-PERF-03. All six FUTUROS broker
+methods are AST-identical to #453; DailyRisk, contract policy and family lifecycle
+are byte-identical. No external-owner implementation is corrected or copied in
+this PR. Future consolidated integration must revalidate a corrected #453 head.
+The new SHADOW exit adapter passed against the actual #456 APIs in that combined
+suite, including MFE/MAE, identical entry/path hashes and censored EOD coverage.
