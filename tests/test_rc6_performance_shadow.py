@@ -77,10 +77,12 @@ def test_shadow_economics_is_out_of_sample_and_not_binding():
 
 
 @pytest.mark.parametrize("mutate,reason", [("stale", "stale_book"), ("future", "future_quote"),
+                                           ("stale_receipt", "stale_quote"),
                                            ("depth", "insufficient_depth"), ("crossed", "crossed_book")])
 def test_economic_gate_preserves_freshness_and_depth(mutate, reason):
     q = book()
     if mutate == "stale": q["book_at"] = "2026-09-09T13:00:00Z"
+    if mutate == "stale_receipt": q["observed_at"] = q["book_at"] = "2026-09-09T13:00:00Z"
     if mutate == "future": q["book_at"] = "2026-09-09T14:01:00Z"
     if mutate == "depth": q["bid_size"] = "0"
     if mutate == "crossed": q["ask"] = "99"

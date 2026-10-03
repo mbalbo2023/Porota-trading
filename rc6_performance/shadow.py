@@ -17,7 +17,9 @@ def usable_book(book, at, *, max_age_seconds=120, minimum_depth=0):
         now, received, sourced = stamp(at), stamp(book["observed_at"]), stamp(book["book_at"])
         if not sourced <= received <= now:
             return "future_quote"
-        if (now - received).total_seconds() > max_age_seconds or (now - sourced).total_seconds() > max_age_seconds:
+        if (now - received).total_seconds() > max_age_seconds:
+            return "stale_quote"
+        if (now - sourced).total_seconds() > max_age_seconds:
             return "stale_book"
         bid, ask = number(book["bid"], positive=True), number(book["ask"], positive=True)
         if ask < bid:
