@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+from decimal import Decimal
 
 import bs_instrument_contracts as contracts
 import bu_instrument_catalog as catalog
@@ -150,7 +151,7 @@ def test_mass_evidence_normalizes_to_existing_long_option_contract_path():
         "YPFC40500O", "OPCIONES", claim["financial_contract_v17"])
     assert contract.option_right == "CALL"
     assert contract.underlying == "YPFD"
-    assert str(contract.cash_multiplier) == "100"
+    assert contract.cash_multiplier == Decimal("100")
     assert contract.option_max_loss("250", "1") == 25000
 
 
