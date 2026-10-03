@@ -957,38 +957,32 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_symbols(store, focus_candidates=None):
-    """Abiertas y foco primero; el resto del universo mantiene rotación."""
+def _cycle_plan(store, focus_candidates=None):
+    """Existing catalog/quote authority, with a durable feasible active basket."""
+    from rc6_performance.scanner import sampling_plan
     universe = list(_eligible_symbols(store))
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in store.open_positions()))
-    if not universe:
-        return tuple(opened), 0, 0, 0
     with store.connect() as c:
-        row = c.execute("SELECT cursor_after FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
-    cursor = int(row[0] if row else 0) % len(universe)
-    selected = list(opened)
-    seen = set(opened)
-    available = set(universe)
-    focus_budget = min(len(FOCUS_SYMBOLS), max(1, ACTIVE_SYMBOL_LIMIT // 2))
-    focus_added = 0
-    for candidate in tuple(FOCUS_SYMBOLS if focus_candidates is None else focus_candidates):
-        if len(selected) >= max(ACTIVE_SYMBOL_LIMIT, len(opened)):
-            break
-        if focus_added >= focus_budget:
-            break
-        if candidate in available and candidate not in seen:
-            selected.append(candidate)
-            seen.add(candidate)
-            focus_added += 1
-    visited = 0
-    while len(selected) < ACTIVE_SYMBOL_LIMIT and visited < len(universe):
-        candidate = universe[(cursor + visited) % len(universe)]
-        visited += 1
-        if candidate not in seen:
-            selected.append(candidate)
-            seen.add(candidate)
-    return tuple(selected), len(universe), cursor, (cursor + visited) % len(universe)
+        row = c.execute("SELECT cursor_after,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
+    previous = None
+    if row:
+        try:
+            text = row[1] or ""
+            previous = json.loads(text[text.index("{"):]).get("active_plan")
+        except (ValueError, TypeError):
+            pass
+    cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * 2 * PPI_CALL_BUDGET_SECONDS
+    symbols, before, after, plan = sampling_plan(
+        universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
+        limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
+        required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
+        now=now_iso(), cursor=row[0] if row else 0, previous=previous)
+    return symbols, len(universe), before, after, plan
+
+
+def _cycle_symbols(store, focus_candidates=None):
+    return _cycle_plan(store, focus_candidates)[:4]
 
 
 def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=None,
@@ -1006,7 +1000,8 @@ def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=No
     rotation_capacity = (int(window_seconds / max(cycle_seconds * rotation_turns, 1))
                          if rotation_turns else 0)
     return {
-        "feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
+        "feasible": (bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES and
+                     (rotation_pool == 0 or rotation_capacity >= SIGNAL_MIN_SAMPLES)),
         "focus_feasible": bool(focus_count) and capacity >= SIGNAL_MIN_SAMPLES,
         "rotation_feasible": (rotation_pool == 0 or
                               (rotation_slots > 0 and rotation_capacity >= SIGNAL_MIN_SAMPLES)),
@@ -1083,7 +1078,7 @@ def _runtime_readiness(store, *, record_event=False):
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
     open_count = len(store.open_positions())
-    symbols, eligible_total, cursor_before, cursor_after = _cycle_symbols(
+    symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
         store, focus_candidates=focus["matched"]
     )
     matched_set = set(focus["matched"])
@@ -1092,15 +1087,20 @@ def _runtime_readiness(store, *, record_event=False):
         len(symbols), eligible_total=eligible_total,
         focus_count=selected_focus, open_count=open_count
     )
-    if not feasibility["focus_feasible"]:
+    feasibility["full_catalog_feasible"] = feasibility["rotation_feasible"]
+    feasibility["active_plan"] = active_plan
+    feasibility["feasible"] = active_plan["feasible"]
+    feasibility["focus_feasible"] = active_plan["focus_feasible"]
+    feasibility["rotation_feasible"] = active_plan["active_budget"]["status"] == "FEASIBLE"
+    if not feasibility["feasible"]:
         if record_event:
             store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
         _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
-                "El foco no puede reunir la ventana mínima: " +
+                "La canasta activa no puede reunir la ventana mínima: " +
                 json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
     else:
         _health(store, "PAPER_SIGNAL_SAMPLING", "VERDE",
-                "Foco con capacidad teórica suficiente: " +
+                "Canasta activa con capacidad teórica suficiente; catálogo completo separado: " +
                 json.dumps(feasibility, sort_keys=True), "Runtime PAPER", success=True)
     rotation_state = "VERDE" if feasibility["rotation_feasible"] else "AMARILLO"
     _health(store, "PAPER_SIGNAL_ROTATION", rotation_state,
@@ -1803,12 +1803,19 @@ def run():
                         max_trade_age_seconds=broker.trade_max_age_seconds)
                     if data_error:
                         store.event("DATA_REJECTED", f"{symbol}: {data_error}")
+                        broker.record_observation_rejection(q, data_error)
                         continue
-                    allow_openings = bool(focus["allow_new_openings"])
+                    active_plan = feasibility["active_plan"]
+                    sampling_allowed = (feasibility["feasible"] and
+                        (symbol, asset_class, settlement) in map(tuple, active_plan["opening_identities"]))
+                    allow_openings = bool(focus["allow_new_openings"]) and sampling_allowed
                     opening_reason = (
                         f"Cobertura prioritaria insuficiente: "
                         f"{focus['matched_count']}/{focus['configured_count']}"
                     )
+                    if not sampling_allowed:
+                        opening_reason = ("SCANNER_INFEASIBLE" if not feasibility["feasible"]
+                                          else "COLD_DISCOVERY_NO_SIGNAL_BUDGET")
                     # Para CEDEARs se conserva la observación BYMA, pero la
                     # apertura requiere también rueda regular del subyacente US.
                     cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))

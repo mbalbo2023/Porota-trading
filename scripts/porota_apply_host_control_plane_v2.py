@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Apply the complete RC6 systemd lifecycle policy on the deployment host.
 
-This tool is intentionally scoped to Git-tracked porota-*rc6 units declared in
-ops/policy/host-control-plane-reconciliation-v2.json.  It never discovers or
-touches PPI Watch, unrelated systemd units, data, databases, Docker volumes or
-secrets.
+Canonical Git-tracked RC6 units are managed from the versioned units map.
+Historical host residue may be retired only through the separate exact-name
+legacy_retire_units allowlist. No discovery-based deletion is permitted.
+
+The tool never touches PPI Watch, unknown host units, data, databases, Docker
+volumes or secrets. Independently managed external control-plane units are
+explicitly preserved by policy.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ import subprocess
 from pathlib import Path
 
 UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]*rc6[A-Za-z0-9_.@-]*\.(?:service|timer)$")
+LEGACY_RETIRE_UNIT_RE = re.compile(r"^porota-[A-Za-z0-9_.@-]+\.(?:service|timer)$")
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -61,8 +65,37 @@ def build_plan(policy: dict) -> list[dict]:
     return result
 
 
+def build_legacy_retire_plan(policy: dict) -> list[str]:
+    """Return the exact legacy host-unit retirement allowlist.
+
+    This deliberately does not discover units.  Only names explicitly versioned
+    in policy may be touched, PPI Watch is always forbidden, and independently
+    managed external control-plane units cannot be included.
+    """
+    external=set((policy.get("external_host_units") or {}).keys())
+    residual_review=set((policy.get("residual_host_units") or {}).keys())
+    result=[]
+    seen=set()
+    for raw in policy.get("legacy_retire_units") or []:
+        name=str(raw or "").strip()
+        if not LEGACY_RETIRE_UNIT_RE.fullmatch(name):
+            raise ValueError(f"UNSAFE_LEGACY_RETIRE_UNIT:{name}")
+        if "ppi" in name.lower() and "watch" in name.lower():
+            raise ValueError("PPI_WATCH_FORBIDDEN")
+        if name in external:
+            raise ValueError(f"EXTERNAL_HOST_UNIT_FORBIDDEN:{name}")
+        if name in residual_review:
+            raise ValueError(f"RESIDUAL_REVIEW_UNIT_FORBIDDEN:{name}")
+        if name in seen:
+            raise ValueError(f"DUPLICATE_LEGACY_RETIRE_UNIT:{name}")
+        seen.add(name)
+        result.append(name)
+    return result
+
+
 def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
     plan=build_plan(policy)
+    legacy_retire=build_legacy_retire_plan(policy)
     changed=[]
     for item in plan:
         src=(root / item["source_path"]).resolve()
@@ -86,6 +119,14 @@ def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
             if target.exists() or target.is_symlink():
                 target.unlink()
             changed.append({"unit":item["unit_name"],"action":"QUARANTINE"})
+
+    for name in legacy_retire:
+        target=systemd_root / name
+        _run("systemctl","disable","--now",name,check=False)
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        _run("systemctl","reset-failed",name,check=False)
+        changed.append({"unit":name,"action":"RETIRE_EXACT_LEGACY"})
 
     _run("systemctl","daemon-reload")
 
@@ -127,7 +168,23 @@ def apply(root: Path, policy: dict, systemd_root: Path) -> dict:
             if not target.is_file():
                 raise RuntimeError(f"SERVICE_INSTALL_VERIFY_FAILED:{name}")
             verification.append({"unit":name,"state":"installed"})
-    return {"status":"GREEN","changed":changed,"verification":verification,"count":len(plan)}
+
+    for name in legacy_retire:
+        active=_run("systemctl","is-active",name,check=False).stdout.strip()
+        target=systemd_root / name
+        if active=="active":
+            raise RuntimeError(f"LEGACY_RETIRED_UNIT_ACTIVE:{name}")
+        if target.exists() or target.is_symlink():
+            raise RuntimeError(f"LEGACY_RETIRED_UNIT_FILE_PRESENT:{name}")
+        verification.append({"unit":name,"state":"legacy-retired|inactive|absent"})
+
+    return {
+        "status":"GREEN",
+        "changed":changed,
+        "verification":verification,
+        "count":len(plan),
+        "legacy_retired_count":len(legacy_retire),
+    }
 
 
 def main() -> int:
@@ -145,6 +202,7 @@ def main() -> int:
     if args.json_out:
         Path(args.json_out).write_text(payload+"\n",encoding="utf-8")
     print(f"POROTA_HOST_CONTROL_PLANE_APPLY=GREEN|units={result['count']}")
+    print(f"POROTA_HOST_LEGACY_RETIREMENT=GREEN|units={result['legacy_retired_count']}")
     return 0
 
 

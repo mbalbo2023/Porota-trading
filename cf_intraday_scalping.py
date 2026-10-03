@@ -33,6 +33,32 @@ SCALPING_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING", "WAITING_MARKET"})
 # upper bound and leaves enough capacity even with the focus/open-position set.
 DEFAULT_INTRADAY_SCAN_SECONDS = 180
 DEFAULT_INTRADAY_BATCH_LIMIT = 40
+# A newly fetched minute must be current when an entry is evaluated/promoted.
+# Two minutes cover minute finalization and match the existing book/mutable
+# window. The 45-minute history window is for indicators, never freshness;
+# refreshing an old payload must not renew the underlying source evidence.
+INTRADAY_SOURCE_MAX_AGE_SECONDS = 120
+
+
+def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
+                         observations=(), events=(), opened=(), previous=None,
+                         phase="OPEN", policy=None):
+    """Separate dense SHADOW scheduler; no change to the productive 40 policy.
+
+    Uses the existing exact equity-family contract. Caller supplies empirical
+    capacity and a preopen hash, not an arbitrary replacement batch number.
+    This adapter never evaluates/promotes a PAPER candidate or writes its DB.
+    Confirmed interval-volume/freshness/economics/risk still belong to the
+    existing evaluator and broker; a SHADOW HOT state grants no BUY authority.
+    """
+    from rc6_dynamic_universe.orchestrator import UniverseOrchestrator, EnginePolicy
+    selected_policy = policy or EnginePolicy()
+    if selected_policy.engine != "SCALPING":
+        raise ValueError("SCALPING_STRATEGY_REQUIRED")
+    return UniverseOrchestrator(catalog, policy=selected_policy).plan(
+        at=at, session_open=session_open, frozen=frozen, capacity=capacity,
+        observations=observations, events=events, opened=opened,
+        previous=previous, phase=phase)
 
 
 def _stamp(value):
@@ -243,10 +269,11 @@ def persist_payload(store, record, points, *, received_at):
         prior_changed = (previous or {}).get("changed_closed_points", 0)
         confirmed_now = (observations >= 2 and stable >= 5 and inserted >= 1
                          and down_steps >= 1 and changed == 0 and prior_changed == 0)
-        state = ("CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
+        state = ("REJECTED_MUTABLE_CLOSED_POINTS" if changed or prior_changed
+                 else "EMPTY_INTRADAY_PAYLOAD" if not points
+                 else "CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
                     (previous or {}).get("state") == "CONFIRMED_INTERVAL_VOLUME"
                     and changed == 0 and prior_changed == 0)
-                 else "REJECTED_MUTABLE_CLOSED_POINTS" if changed or prior_changed
                  else "PENDING_LIVE_CONFIRMATION")
         last_source = points[-1][0] if points else None
         detail = (f"observaciones={observations}; solapamiento_estable={stable}; "
@@ -264,6 +291,31 @@ SCALPING_PAPER_CAPABILITIES = frozenset({
     "READY_PAPER_SPOT", "READY_PAPER", "READY_PAPER_SHADOW",
     "READY_SHADOW", "READY_SHADOW_COMPLEMENTED", "READY_SHADOW_PARTIAL",
 })
+
+
+def _intraday_freshness_reason(contract, *, at, latest_event_at):
+    """Fail closed unless the current source and indicator tail agree and age safely."""
+    if contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
+        return contract.get("state") or "PENDING_LIVE_CONFIRMATION"
+    source_at = contract.get("last_source_at")
+    checked_at = contract.get("checked_at")
+    if not source_at or not checked_at or not latest_event_at:
+        return "NO_CURRENT_INTRADAY_SOURCE"
+    try:
+        now = aware_datetime(at)
+        source = aware_datetime(source_at)
+        checked = aware_datetime(checked_at)
+        latest = aware_datetime(latest_event_at)
+    except (ValueError, TypeError):
+        return "INVALID_INTRADAY_TIMESTAMP"
+    ages = [(now - value).total_seconds() for value in (source, checked, latest)]
+    if any(age < 0 for age in ages) or source > checked:
+        return "INTRADAY_TIMESTAMP_IN_FUTURE"
+    if any(age > INTRADAY_SOURCE_MAX_AGE_SECONDS for age in ages):
+        return "STALE_INTRADAY_SOURCE"
+    if source != latest:
+        return "INTRADAY_SOURCE_MISMATCH"
+    return ""
 
 
 def evaluate_candidate(store, record, *, at):
@@ -285,10 +337,12 @@ def evaluate_candidate(store, record, *, at):
           (record["ticker"],record["instrument_type"],record["settlement"],
            record["currency"],record["market"])).fetchone()
     points = list(reversed(points))
+    freshness_reason = _intraday_freshness_reason(
+        contract, at=at, latest_event_at=points[-1]["event_at"] if points else None)
     if record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
         reason = record.get("capability") or "CONTRACT_NOT_SIMULATABLE"
-    elif contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
-        reason = contract.get("state") or "PENDING_LIVE_CONFIRMATION"
+    elif freshness_reason:
+        reason = freshness_reason
     elif len(points) < 15:
         reason = "INSUFFICIENT_INTRADAY_POINTS"
     elif not quote:
@@ -351,8 +405,7 @@ def promote_paper_candidate(store, record, *, at):
     mode = os.getenv("PAPER_SCALPING_MODE", "ACTIVE_OBSERVE").upper()
     if mode != "ACTIVE_PAPER":
         return "OBSERVE_ONLY"
-    from be_paper_engine import Quote
-    from bv_paper_runtime import broker_from_environment
+    contract = _state(store, _identity(record)) or {}
     with store.connect() as connection:
         scalp_open = 0
         for row in connection.execute("SELECT features_json FROM paper_positions WHERE status='OPEN'"):
@@ -370,8 +423,31 @@ def promote_paper_candidate(store, record, *, at):
         candidate = connection.execute("""SELECT * FROM scalping_candidates
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
           ORDER BY id DESC LIMIT 1""", _identity(record)).fetchone()
+        latest = connection.execute("""SELECT event_at FROM ppi_intraday_points
+          WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+          ORDER BY event_at DESC LIMIT 1""", _identity(record)).fetchone()
+    freshness_reason = _intraday_freshness_reason(
+        contract, at=at, latest_event_at=latest["event_at"] if latest else None)
+    if freshness_reason:
+        return freshness_reason
     if not quote_row or not candidate or candidate["action"] != "BUY_CANDIDATE":
         return "CANDIDATE_NOT_AVAILABLE"
+    # An entry can be delayed after evaluation. Recheck both inputs before
+    # loading the broker; a fresh book alone cannot revive a stale signal.
+    try:
+        candidate_age = (aware_datetime(at)-aware_datetime(candidate["evaluated_at"])).total_seconds()
+    except (ValueError, TypeError):
+        return "INVALID_SCALPING_CANDIDATE_TIMESTAMP"
+    if not 0 <= candidate_age <= INTRADAY_SOURCE_MAX_AGE_SECONDS:
+        return "STALE_SCALPING_CANDIDATE"
+    try:
+        quote_age = (aware_datetime(at)-aware_datetime(quote_row["book_at"])).total_seconds()
+    except (ValueError, TypeError):
+        return "INVALID_BOOK_TIMESTAMP"
+    if not 0 <= quote_age <= 120:
+        return "STALE_BOOK"
+    from be_paper_engine import Quote
+    from bv_paper_runtime import broker_from_environment
     q = Quote(
         symbol=quote_row["symbol"], asset_class=quote_row["asset_class"],
         settlement=quote_row["settlement"], last=_decimal(quote_row["last"],nonnegative=True),
@@ -501,7 +577,7 @@ def run_worker(store, stop, *, clock_fn):
                     candidate_action = evaluate_candidate(store,record,at=received)
                     if candidate_action == "BUY_CANDIDATE":
                         candidates += 1
-                        result_action = promote_paper_candidate(store,record,at=received)
+                        result_action = promote_paper_candidate(store,record,at=_stamp(clock_fn()))
                         store.event("SCALPING_PAPER_PROMOTION", f"{record['ticker']}: {result_action}")
                     successful += 1
                 except Exception as exc:
