@@ -109,7 +109,7 @@ def test_future_paper_window_is_a3_specific_and_has_eod_buffers():
         paper_margin_rate=Decimal("1"),
         underlying="DOLAR_A3500",
     )
-    assert policy.admission_error("2026-10-03T13:00:00-03:00", contract) == ""
-    assert policy.admission_error("2026-10-03T14:35:00-03:00", contract) == "FUTURES_EOD_NO_NEW_ENTRIES"
-    assert policy.exit_due("2026-10-03T14:50:00-03:00", contract) is True
-    assert policy.paper_session_state("2026-10-03T15:00:00-03:00", contract) == "OUTSIDE_FUTURES_PAPER_WINDOW"
+    assert policy.admission_error("2026-10-05T13:00:00-03:00", contract) == ""
+    assert policy.admission_error("2026-10-05T14:35:00-03:00", contract) == "FUTURES_EOD_NO_NEW_ENTRIES"
+    assert policy.exit_due("2026-10-05T14:50:00-03:00", contract) is True
+    assert policy.paper_session_state("2026-10-05T15:00:00-03:00", contract) == "OUTSIDE_FUTURES_PAPER_WINDOW"
