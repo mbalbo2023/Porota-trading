@@ -219,7 +219,11 @@ def safe_capacity(report, *, endpoints, cadence_seconds, window_seconds,
                 for key in expected_identities:
                     per_identity = [row for row in endpoint_rows if tuple(row["identity"]) == key]
                     useful_fraction = sum(row["useful_distinct"] for row in per_identity) / len(per_identity)
-                    availability[key] = math.floor(window / cadence * useful_fraction)
+                    # A cold first snapshot followed only by repeats/revisions
+                    # demonstrates no ongoing sample production, even if a long
+                    # requested window makes its 1/N fraction look sufficient.
+                    advancing = {row["source_at"] for row in per_identity if row["useful_distinct"]}
+                    availability[key] = math.floor(window / cadence * useful_fraction) if len(advancing) >= 2 else 0
                 density_eligible &= {key for key, available in availability.items() if available >= samples}
                 slots[endpoint] = math.floor(min(batch * fraction * factor, cadence * factor / p95))
                 endpoint_evidence[endpoint] = {"samples": len(endpoint_rows), "latency_p95_seconds": p95,

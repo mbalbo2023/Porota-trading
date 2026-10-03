@@ -183,7 +183,7 @@ def _observation(endpoint, payload, row, received, freshness_seconds, previous):
     useful = bool(valid and 0 <= age <= freshness_seconds)
     # Older changed payloads are revisions, never new useful observations.
     distinct = bool(useful and (previous is None or
-                    (source_at >= stamp(previous[0]) and fingerprint != previous[1])))
+                    (source_at > stamp(previous[0]) and fingerprint != previous[1])))
     return {"source_at": source_at.isoformat(), "freshness_seconds": age,
             "useful": useful, "distinct": distinct, "useful_distinct": useful and distinct,
             "observation_fingerprint": fingerprint,

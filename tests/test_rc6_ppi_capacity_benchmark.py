@@ -110,6 +110,25 @@ def reseal(report):
     return report
 
 
+def test_same_source_timestamp_revision_is_not_a_new_strategy_sample():
+    from rc6_dynamic_universe.benchmark import _observation
+    row=candidates(1)[0]
+    at=datetime(2026,10,5,14,tzinfo=timezone.utc)
+    initial=_observation('current',{'date':at.isoformat(),'price':100},row,at,120,None)
+    revised=_observation('current',{'date':at.isoformat(),'price':101},row,at+timedelta(seconds=30),120,
+                          (initial['source_at'],initial['observation_fingerprint']))
+    assert revised['useful'] and not revised['distinct'] and not revised['useful_distinct']
+
+
+def test_stalled_source_clock_cannot_authorize_capacity_from_long_window(wire):
+    clock,_,behavior=wire
+    behavior['mode']='repeated'
+    report=measure(wire,endpoints=('current',),cadence_seconds=30)
+    result=safe_capacity(report,endpoints=('current',),cadence_seconds=30,window_seconds=2700,
+        required_samples=15,latency_budget_seconds=1,as_of=clock.now())
+    assert result['safe_limit']==0 and result['status']=='NO_VERIFICADO'
+
+
 @pytest.mark.parametrize("at,phase", [
     ("2026-10-03T14:00:00+00:00", "CLOSED"),  # actual Saturday
     ("2026-10-05T13:20:00+00:00", "PREOPEN"),
