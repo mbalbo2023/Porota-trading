@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Apply the complete RC6 systemd lifecycle policy on the deployment host.\n\nCanonical Git-tracked RC6 units are managed from the versioned units map.\nHistorical host residue may be retired only through the separate exact-name\nlegacy_retire_units allowlist. No discovery-based deletion is permitted.\n\nThe tool never touches PPI Watch, unknown host units, data, databases, Docker\nvolumes or secrets. Independently managed external control-plane units are\nexplicitly preserved by policy.\n"""
+"""Apply the complete RC6 systemd lifecycle policy on the deployment host.
+
+Canonical Git-tracked RC6 units are managed from the versioned units map.
+Historical host residue may be retired only through the separate exact-name
+legacy_retire_units allowlist. No discovery-based deletion is permitted.
+
+The tool never touches PPI Watch, unknown host units, data, databases, Docker
+volumes or secrets. Independently managed external control-plane units are
+explicitly preserved by policy.
+"""
 from __future__ import annotations
 
 import argparse
