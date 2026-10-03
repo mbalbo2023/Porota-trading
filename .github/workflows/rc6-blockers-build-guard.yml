@@ -1,0 +1,78 @@
+name: RC6 Blockers Authority Fix Builder
+on:
+  push:
+    branches: [audit/rc6-paper-blockers-20261002]
+    paths: [.github/workflows/rc6-blockers-build-guard.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rc6-blockers-authority-fix-builder
+  cancel-in-progress: false
+
+jobs:
+  build-and-prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/rc6-paper-blockers-authority-20261002
+          path: candidate
+      - name: Assert exact ownership boundaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = '3094a5794159e2c0630fe983d5a908514dcbcd7c'
+          test "$(gh api 'repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915' --jq .object.sha)" = 'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f'
+          mkdir evidence
+      - name: Demonstrate actual pre-fix regression
+        run: |
+          set -Eeuo pipefail
+          set +e
+          (cd candidate && python3 tests/test_rc6_contract_reconciliation_guard.py IntegrationTests.test_stale_review_recovers_in_real_reconciler -v) > evidence/baseline-regression.log 2>&1
+          rc=$?
+          set -e
+          cat evidence/baseline-regression.log
+          test "$rc" -ne 0
+          grep -q 'AssertionError: 0 != 1' evidence/baseline-regression.log
+      - name: Apply exact function-only patch and prove fixes
+        run: |
+          set -Eeuo pipefail
+          python3 tooling/scripts/rc6_blockers_apply_guard.py candidate
+          cd candidate
+          python3 -m py_compile rc6_contract_reconciliation_guard.py bf_production_paper_observer.py tests/test_rc6_contract_reconciliation_guard.py
+          python3 tests/test_rc6_contract_reconciliation_guard.py -v 2>&1 | tee ../evidence/fixed-regressions.log
+          git diff --check
+          test "$(git diff --name-only)" = 'bf_production_paper_observer.py'
+          git diff > ../evidence/reconciler.patch
+          git grep -l '_reconcile_complementary_catalog' -- tests/ > ../evidence/existing-reconciler-tests.txt || test "$?" -eq 1
+          cat ../evidence/existing-reconciler-tests.txt
+      - name: Commit only tested scope to isolated fix branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api 'repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915' --jq .object.sha)" = 'e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f'
+          cd candidate
+          test "$(git ls-remote origin refs/heads/fix/rc6-paper-blockers-authority-20261002 | cut -f1)" = '3094a5794159e2c0630fe983d5a908514dcbcd7c'
+          git config user.name 'porota-rc6-audit'
+          git config user.email 'porota-rc6-audit@users.noreply.github.com'
+          git add -- bf_production_paper_observer.py
+          git commit -m 'fix(rc6): reconsider stale local reviews and verified legacy aliases'
+          git push origin HEAD:refs/heads/fix/rc6-paper-blockers-authority-20261002
+          git rev-parse HEAD | tee ../evidence/validated-head.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-blockers-fix-proof-${{ github.run_id }}
+          path: evidence/
+          retention-days: 14
