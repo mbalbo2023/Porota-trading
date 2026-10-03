@@ -435,8 +435,8 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
     to_state = str(to_state or "").upper()
     if family not in TRANSITIONS:
         raise ValueError("PAPER_LIFECYCLE_FAMILY_UNSUPPORTED")
-    init_schema(store)
     if connection is None:
+        init_schema(store)
         with store.connect() as owned:
             owned.execute("BEGIN IMMEDIATE")
             return apply_paper_event(
