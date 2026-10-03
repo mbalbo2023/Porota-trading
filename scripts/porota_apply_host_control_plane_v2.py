@@ -63,6 +63,7 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
     managed external control-plane units cannot be included.
     """
     external=set((policy.get("external_host_units") or {}).keys())
+    residual_review=set((policy.get("residual_host_units") or {}).keys())
     result=[]
     seen=set()
     for raw in policy.get("legacy_retire_units") or []:
@@ -73,6 +74,8 @@ def build_legacy_retire_plan(policy: dict) -> list[str]:
             raise ValueError("PPI_WATCH_FORBIDDEN")
         if name in external:
             raise ValueError(f"EXTERNAL_HOST_UNIT_FORBIDDEN:{name}")
+        if name in residual_review:
+            raise ValueError(f"RESIDUAL_REVIEW_UNIT_FORBIDDEN:{name}")
         if name in seen:
             raise ValueError(f"DUPLICATE_LEGACY_RETIRE_UNIT:{name}")
         seen.add(name)
