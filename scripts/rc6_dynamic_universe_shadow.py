@@ -12,6 +12,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -144,10 +145,22 @@ def main():
         report = run_shadow(bundle, previous=previous)
         for path, payload in ((target, report), (checkpoint, {"engines": report["engines"], "frozen": report["frozen"]})):
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(path.suffix+".tmp")
-            tmp.write_text(json.dumps(payload, sort_keys=True, default=str, allow_nan=False))
-            os.chmod(tmp, 0o600)
-            tmp.replace(path)
+            # O_EXCL random temporary names cannot follow a stale symlink or
+            # overwrite an existing hardlinked source/DB through a fixed .tmp.
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                    prefix="."+path.name+".", suffix=".tmp", delete=False) as stream:
+                tmp = Path(stream.name)
+                try:
+                    json.dump(payload, stream, sort_keys=True, default=str, allow_nan=False)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                except BaseException:
+                    tmp.unlink(missing_ok=True)
+                    raise
+            try:
+                tmp.replace(path)
+            finally:
+                tmp.unlink(missing_ok=True)
     print(json.dumps({"status": "SHADOW_REPORT", "real_orders_sent": 0, "real_routes": "NOT_CALLED",
                       "engines": list(report["engines"])}))
     return 0

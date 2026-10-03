@@ -394,3 +394,22 @@ def test_cli_cannot_alias_input_or_outputs_through_temporary_or_lock_paths(tmp_p
     monkeypatch.setattr('sys.argv',['shadow','--input',str(source),'--out',str(target),'--checkpoint',str(checkpoint)])
     with pytest.raises(ValueError,match='OUTPUT_MUST_BE_SEPARATE_FROM_INPUT'): main()
     assert source.read_text()==original and not checkpoint.exists()
+
+
+def test_cli_atomic_report_does_not_follow_existing_temporary_hardlink(tmp_path,monkeypatch):
+    from scripts.rc6_dynamic_universe_shadow import main
+    import os
+    at=OPEN-timedelta(minutes=15)
+    bundle={'as_of':at.isoformat(),'session_open':OPEN.isoformat(),'catalog':catalog(2),
+        'safety':{'mode':'SIMULATION','real_orders_sent':0,'real_routes':'NOT_CALLED'},
+        'sessions':audited_sessions(),'preopen_cutoff':'2026-10-02T20:00:00+00:00','frozen_at':at.isoformat()}
+    source=tmp_path/'input.json'; target=tmp_path/'report.json'; checkpoint=tmp_path/'checkpoint.json'
+    original=json.dumps(bundle); source.write_text(original)
+    stale=target.with_suffix('.json.tmp'); os.link(source,stale)
+    monkeypatch.setattr('sys.argv',['shadow','--input',str(source),'--out',str(target),'--checkpoint',str(checkpoint)])
+    assert main()==0
+    assert source.read_text()==original and stale.read_text()==original
+    report=json.loads(target.read_text()); saved=json.loads(checkpoint.read_text())
+    assert report['frozen']==saved['frozen'] and report['real_orders_sent']==0
+    assert target.stat().st_mode&0o777==0o600 and checkpoint.stat().st_mode&0o777==0o600
+    assert not list(tmp_path.glob('.*.tmp'))
