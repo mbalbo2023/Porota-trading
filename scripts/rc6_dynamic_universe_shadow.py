@@ -112,6 +112,9 @@ def run_shadow(bundle, *, previous=None):
             "aggregate_schedule": allocation,
             "source_audit": audit_sources(), "source_reports": source_reports,
             "events": events, "frozen": frozen_reports, "tradeability": rankings, "real_orders_sent": 0,
+            "input_quality": {"source_database_effect": bundle.get("source_database_effect", "NOT_USED"),
+                "catalog_view": bundle.get("catalog_view"),
+                "observation_read_truncated": bundle.get("observation_read_truncated", "NO_VERIFICADO")},
             "real_routes": "NOT_CALLED", "profitability": "NO_VERIFICADO"}
 
 
@@ -124,7 +127,12 @@ def main():
     args = parser.parse_args()
     source, target, checkpoint = map(lambda p: Path(p).resolve(), (args.input, args.out, args.checkpoint))
     inputs = {source} | ({Path(args.db).resolve()} if args.db else set())
-    if target in inputs or checkpoint in inputs or target == checkpoint:
+    # Temporary/lock aliases are writes too: e.g. input=report.json.tmp must
+    # never be replaced while atomically publishing report.json.
+    writes = {target, checkpoint, target.with_suffix(target.suffix+".tmp"),
+              checkpoint.with_suffix(checkpoint.suffix+".tmp"),
+              checkpoint.with_suffix(checkpoint.suffix+".lock")}
+    if len(writes) != 5 or writes & inputs:
         raise ValueError("OUTPUT_MUST_BE_SEPARATE_FROM_INPUT")
     bundle = json.loads(source.read_text())
     if args.db:

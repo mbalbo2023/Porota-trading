@@ -373,3 +373,24 @@ def test_runtime_current_book_has_distinct_clocks_and_cannot_promote_unconfirmed
     current=report['observations'][0]
     assert current['endpoint']=='current' and current['source_at']==OPEN.isoformat()
     assert current['book_useful'] is True and current['received_at']==OPEN.isoformat()
+
+
+@pytest.mark.parametrize('alias',['report_tmp','checkpoint_tmp','checkpoint_lock','report_is_lock'])
+def test_cli_cannot_alias_input_or_outputs_through_temporary_or_lock_paths(tmp_path,monkeypatch,alias):
+    from scripts.rc6_dynamic_universe_shadow import main
+    target=tmp_path/'report.json'; checkpoint=tmp_path/'checkpoint.json'
+    source=tmp_path/'input.json'
+    if alias=='report_tmp': source=target.with_suffix('.json.tmp')
+    if alias=='checkpoint_tmp': source=checkpoint.with_suffix('.json.tmp')
+    if alias=='checkpoint_lock': source=checkpoint.with_suffix('.json.lock')
+    if alias=='report_is_lock': target=checkpoint.with_suffix('.json.lock')
+    at=OPEN-timedelta(minutes=15)
+    bundle={'as_of':at.isoformat(),'session_open':OPEN.isoformat(),'catalog':catalog(2),
+        'safety':{'mode':'SIMULATION','real_orders_sent':0,'real_routes':'NOT_CALLED'},
+        'sessions':audited_sessions(),'preopen_cutoff':'2026-10-02T20:00:00+00:00',
+        'frozen_at':at.isoformat(),'observation_read_truncated':True}
+    assert run_shadow(bundle)['input_quality']['observation_read_truncated'] is True
+    original=json.dumps(bundle); source.write_text(original)
+    monkeypatch.setattr('sys.argv',['shadow','--input',str(source),'--out',str(target),'--checkpoint',str(checkpoint)])
+    with pytest.raises(ValueError,match='OUTPUT_MUST_BE_SEPARATE_FROM_INPUT'): main()
+    assert source.read_text()==original and not checkpoint.exists()
