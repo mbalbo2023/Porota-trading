@@ -455,6 +455,317 @@ def test_saved_image_missing_gzip_footer_rejected(candidate, tmp_path):
         validate_image_archive(path, candidate["manifest"], image_id)
 
 
+def referenced_image(c, path, *, compressed=False, content_addressed=True,
+                     references=(0, 1, 1, 2), layer_count=3, payload_size=1,
+                     config_mutation=None, manifest_mutation=None, member_mutation=None,
+                     layer_sources=False):
+    """Real save format: unique stored blobs, ordered possibly repeated refs."""
+    raw_layers = []
+    for index in range(layer_count):
+        if index == 1:
+            raw_layers.append(b"\0" * 1024)  # Docker's native empty layer.
+            continue
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as inner:
+            payload = bytes([65 + index]) * payload_size
+            info = tarfile.TarInfo("app/layer-" + str(index) + ".txt")
+            info.size = len(payload)
+            inner.addfile(info, io.BytesIO(payload))
+        raw_layers.append(buffer.getvalue())
+    stored = [gzip.compress(layer, mtime=0) if compressed else layer for layer in raw_layers]
+    paths = [("blobs/sha256/" + hashlib.sha256(layer).hexdigest()) if content_addressed
+             else "legacy-" + str(index) + "/layer.tar" for index, layer in enumerate(stored)]
+    config = {"config": {"Labels": c["labels"]}, "rootfs": {"type": "layers", "diff_ids": [
+        "sha256:" + hashlib.sha256(raw_layers[index]).hexdigest() for index in references]}}
+    if config_mutation:
+        config_mutation(config)
+    config_bytes = canonical_bytes(config)
+    image_id = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+    config_path = "blobs/sha256/" + image_id[7:] if content_addressed else "config.json"
+    manifest = [{"Config": config_path, "Layers": [paths[index] for index in references],
+                 "RepoTags": ["fixture:exact"]}]
+    if layer_sources:
+        manifest[0]["LayerSources"] = {
+            "sha256:" + hashlib.sha256(raw_layers[index]).hexdigest(): {
+                "digest": "sha256:" + hashlib.sha256(stored[index]).hexdigest(),
+                "size": len(stored[index]),
+                "mediaType": "application/vnd.oci.image.layer.v1.tar" + ("+gzip" if compressed else ""),
+            } for index in references
+        }
+    if manifest_mutation:
+        manifest_mutation(manifest)
+    # Physical order differs from image application order, and every blob is
+    # stored once. Metadata references cannot replace exact config authority.
+    members = [(name, data, tarfile.REGTYPE) for name, data in reversed(list(zip(paths, stored)))]
+    members += [(manifest[0]["Config"], config_bytes, tarfile.REGTYPE),
+                ("manifest.json", canonical_bytes(manifest), tarfile.REGTYPE)]
+    if member_mutation:
+        members = member_mutation(members, paths)
+    with tarfile.open(path, "w:gz") as archive:
+        for name, data, kind in members:
+            info = tarfile.TarInfo(name)
+            info.type = kind
+            info.size = len(data) if kind == tarfile.REGTYPE else 0
+            if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+                info.linkname = paths[0]
+            archive.addfile(info, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
+    return image_id, sum(len(raw_layers[index]) for index in references)
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("content_addressed", [False, True])
+def test_saved_image_ordered_repeated_blob_references_are_verified(candidate, tmp_path, compressed, content_addressed):
+    path = tmp_path / "repeated-image.tar.gz"
+    image_id, logical_bytes = referenced_image(candidate, path, compressed=compressed,
+                                               content_addressed=content_addressed)
+    result = validate_image_archive(path, candidate["manifest"], image_id)
+    assert result["status"] == "GREEN" and result["image_layers_verified"] == 4
+    assert result["image_unique_layer_blobs_verified"] == 3
+    assert result["image_layer_unpacked_bytes"] == logical_bytes
+    assert result["image_config_raw_sha256"] == image_id[7:]
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_native_save_shape_23_references_11_blobs_and_13_empty_layers(candidate, tmp_path, compressed):
+    path = tmp_path / "native-shape.tar.gz"
+    references = (0, *range(2, 10), *([1] * 13), 10)
+    image_id, logical_bytes = referenced_image(candidate, path, references=references,
+                                               layer_count=11, compressed=compressed, layer_sources=True)
+    result = validate_image_archive(path, candidate["manifest"], image_id)
+    assert result["image_layers_verified"] == 23
+    assert result["image_unique_layer_blobs_verified"] == 11
+    assert result["image_layer_unpacked_bytes"] == logical_bytes
+
+
+@pytest.mark.parametrize("mutation", [
+    "earlier_repeated_diff", "last_repeated_diff", "wrong_order", "wrong_repeat_blob",
+    "short_diff_list", "short_layer_list", "duplicate_member", "missing_blob", "directory_blob",
+    "symlink_blob", "hardlink_blob", "absolute_reference", "traversal_reference",
+])
+def test_repeated_references_never_hide_order_missing_or_physical_member_attacks(candidate, tmp_path, mutation):
+    path = tmp_path / "invalid-reference.tar.gz"
+    def config_change(config):
+        diffs = config["rootfs"]["diff_ids"]
+        if mutation in {"earlier_repeated_diff", "last_repeated_diff"}:
+            diffs[1 if mutation == "earlier_repeated_diff" else 2] = "sha256:" + "0" * 64
+        elif mutation == "short_diff_list":
+            diffs.pop()
+    def manifest_change(manifest):
+        layers = manifest[0]["Layers"]
+        if mutation == "wrong_order":
+            layers[0], layers[-1] = layers[-1], layers[0]
+        elif mutation == "wrong_repeat_blob":
+            layers[2] = layers[0]
+        elif mutation == "short_layer_list":
+            layers.pop()
+        elif mutation in {"absolute_reference", "traversal_reference"}:
+            layers[1] = "/outside/layer.tar" if mutation == "absolute_reference" else "../outside/layer.tar"
+    def members_change(members, paths):
+        row = next(row for row in members if row[0] == paths[1])
+        if mutation == "duplicate_member":
+            return [*members, row]
+        if mutation == "missing_blob":
+            return [item for item in members if item is not row]
+        kinds = {"directory_blob": tarfile.DIRTYPE, "symlink_blob": tarfile.SYMTYPE, "hardlink_blob": tarfile.LNKTYPE}
+        return [(name, data, kinds[mutation] if name == paths[1] and mutation in kinds else kind)
+                for name, data, kind in members]
+    image_id, _ = referenced_image(candidate, path, compressed=True, config_mutation=config_change,
+                                   manifest_mutation=manifest_change, member_mutation=members_change)
+    with pytest.raises(ProvenanceError):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("mutation", ["missing_footer", "corrupt_crc", "trailing_garbage"])
+def test_nested_layer_gzip_reaches_crc_and_actual_eof(candidate, tmp_path, mutation):
+    path = tmp_path / "nested-gzip.tar.gz"
+    def change(members, paths):
+        result = []
+        for name, data, kind in members:
+            if name == paths[1]:
+                if mutation == "missing_footer":
+                    data = data[:-8]
+                elif mutation == "corrupt_crc":
+                    data = data[:-8] + bytes([data[-8] ^ 1]) + data[-7:]
+                else:
+                    data += b"not-gzip"
+            result.append((name, data, kind))
+        return result
+    image_id, _ = referenced_image(candidate, path, compressed=True, content_addressed=False,
+                                   member_mutation=change)
+    with pytest.raises(ProvenanceError, match="INVALID_IMAGE_LAYER_GZIP"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("mutation", ["recompressed_same_diffid", "wrong_blob_name", "wrong_config_name"])
+def test_content_addressed_save_bytes_cannot_be_rebound_by_only_the_diffid(candidate, tmp_path, mutation):
+    path = tmp_path / "blob-name-drift.tar.gz"
+    def manifest_change(manifest):
+        if mutation == "wrong_config_name":
+            manifest[0]["Config"] = "blobs/sha256/" + "0" * 64
+    def members_change(members, paths):
+        result = []
+        for name, data, kind in members:
+            if name == paths[0]:
+                if mutation == "recompressed_same_diffid":
+                    data = gzip.compress(gzip.decompress(data), mtime=1)
+                elif mutation == "wrong_blob_name":
+                    name = "blobs/sha256/" + "0" * 64
+            elif name == "manifest.json" and mutation == "wrong_blob_name":
+                manifest = json.loads(data)
+                manifest[0]["Layers"][0] = "blobs/sha256/" + "0" * 64
+                data = canonical_bytes(manifest)
+            result.append((name, data, kind))
+        return result
+    image_id, _ = referenced_image(candidate, path, compressed=True, references=(0, 2),
+                                   manifest_mutation=manifest_change, member_mutation=members_change)
+    with pytest.raises(ProvenanceError, match="IMAGE_CONTENT_ADDRESS_MISMATCH"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("mutation", ["layers_object", "diffids_object", "nonstring_layer", "nonstring_diffid"])
+def test_image_reference_metadata_types_are_strict(candidate, tmp_path, mutation):
+    path = tmp_path / "metadata-types.tar.gz"
+    def config_change(config):
+        if mutation == "diffids_object":
+            config["rootfs"]["diff_ids"] = {value: True for value in config["rootfs"]["diff_ids"]}
+        elif mutation == "nonstring_diffid":
+            config["rootfs"]["diff_ids"][0] = 1
+    def manifest_change(manifest):
+        if mutation == "layers_object":
+            manifest[0]["Layers"] = {value: True for value in manifest[0]["Layers"]}
+        elif mutation == "nonstring_layer":
+            manifest[0]["Layers"][0] = 1
+    image_id, _ = referenced_image(candidate, path, references=(0, 2), config_mutation=config_change,
+                                   manifest_mutation=manifest_change)
+    with pytest.raises(ProvenanceError, match="IMAGE_LAYER_IDENTITY_MISMATCH"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("mutation", ["single_decoded_blob", "aggregate_decoded_blobs", "logical_repeated_bytes"])
+def test_compressed_layers_and_repeated_references_have_decoded_size_bounds(candidate, tmp_path, monkeypatch, mutation):
+    from scripts import porota_artifact_provenance as provenance
+    path = tmp_path / "bounded-nested.tar.gz"
+    if mutation == "single_decoded_blob":
+        references, payload_size = (0,), 1024 * 1024
+    elif mutation == "aggregate_decoded_blobs":
+        references, payload_size = (0, 2), 40 * 1024
+    else:
+        references, payload_size = (0,) * 10, 1
+    image_id, _ = referenced_image(candidate, path, references=references, payload_size=payload_size,
+                                   compressed=True)
+    assert len(gzip.decompress(path.read_bytes())) < 64 * 1024
+    monkeypatch.setattr(provenance, "MAX_ARCHIVE_UNPACKED_BYTES", 64 * 1024)
+    with pytest.raises(ProvenanceError, match="IMAGE_LAYER_UNPACKED_SIZE_LIMIT"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+def test_layer_reference_count_cannot_evade_physical_member_cardinality(candidate, tmp_path, monkeypatch):
+    from scripts import porota_artifact_provenance as provenance
+    path = tmp_path / "many-references.tar.gz"
+    image_id, _ = referenced_image(candidate, path, references=(0,) * 6)
+    monkeypatch.setattr(provenance, "MAX_SOURCE_FILES", 5)  # exactly five physical members
+    with pytest.raises(ProvenanceError, match="IMAGE_LAYER_REFERENCE_COUNT_LIMIT"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("representation", ["raw", "gzip", "null", "empty", "partial"])
+def test_optional_layer_sources_supported_forms_keep_exact_reference_validation(candidate, tmp_path, representation):
+    path = tmp_path / "optional-sources.tar.gz"
+    def change(manifest):
+        sources = manifest[0]["LayerSources"]
+        if representation == "null":
+            manifest[0]["LayerSources"] = None  # Go's nil map representation.
+        elif representation == "empty":
+            sources.clear()
+        elif representation == "partial":
+            sources.pop(next(iter(sources)))
+    image_id, _ = referenced_image(candidate, path, compressed=representation == "gzip",
+                                   layer_sources=True, manifest_mutation=change)
+    result = validate_image_archive(path, candidate["manifest"], image_id)
+    assert result["status"] == "GREEN" and result["image_layers_verified"] == 4
+    assert result["image_unique_layer_blobs_verified"] == 3
+
+
+@pytest.mark.parametrize("mutation", [
+    "wrong_existing_digest", "absent_blob_digest", "wrong_size", "bool_size", "float_size",
+    "unsupported_media_type", "wrong_compression_type", "array_container", "string_container",
+    "string_descriptor", "nonstring_digest", "extra_descriptor",
+])
+def test_layer_sources_descriptors_cannot_disagree_with_verified_stored_blobs(candidate, tmp_path, mutation):
+    path = tmp_path / "wrong-sources.tar.gz"
+    control_id, _ = referenced_image(candidate, tmp_path / "control.tar.gz", layer_sources=True)
+    def change(manifest):
+        sources = manifest[0]["LayerSources"]
+        keys = list(sources)
+        descriptor = sources[keys[0]]
+        if mutation == "wrong_existing_digest":
+            descriptor["digest"] = sources[keys[1]]["digest"]
+        elif mutation == "absent_blob_digest":
+            descriptor["digest"] = "sha256:" + "0" * 64
+        elif mutation == "wrong_size":
+            descriptor["size"] += 1
+        elif mutation == "bool_size":
+            descriptor["size"] = True
+        elif mutation == "float_size":
+            descriptor["size"] = float(descriptor["size"])
+        elif mutation == "unsupported_media_type":
+            descriptor["mediaType"] = "application/octet-stream"
+        elif mutation == "wrong_compression_type":
+            descriptor["mediaType"] += "+gzip"
+        elif mutation == "array_container":
+            manifest[0]["LayerSources"] = []
+        elif mutation == "string_container":
+            manifest[0]["LayerSources"] = "not-a-map"
+        elif mutation == "string_descriptor":
+            sources[keys[0]] = "not-a-descriptor"
+        elif mutation == "nonstring_digest":
+            descriptor["digest"] = [descriptor["digest"]]
+        else:
+            sources["sha256:" + "0" * 64] = dict(descriptor)
+    image_id, _ = referenced_image(candidate, path, layer_sources=True, manifest_mutation=change)
+    assert image_id == control_id  # Raw config/ImageID and layer bytes are unchanged.
+    with pytest.raises(ProvenanceError, match="IMAGE_LAYER_SOURCES_(INVALID|MISMATCH)"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+def test_repeated_diffid_descriptor_is_checked_against_every_distinct_stored_representation(candidate, tmp_path):
+    path = tmp_path / "reencoded-reference.tar.gz"
+    def change(members, paths):
+        stored = next(data for name, data, _ in members if name == paths[0])
+        reencoded = gzip.compress(gzip.decompress(stored), mtime=1)
+        new_path = "blobs/sha256/" + hashlib.sha256(reencoded).hexdigest()
+        result = []
+        for name, data, kind in members:
+            if name == "manifest.json":
+                manifest = json.loads(data)
+                manifest[0]["Layers"][1] = new_path
+                data = canonical_bytes(manifest)
+            result.append((name, data, kind))
+        return [*result, (new_path, reencoded, tarfile.REGTYPE)]
+    image_id, _ = referenced_image(candidate, path, compressed=True, references=(0, 0), layer_count=1,
+                                   layer_sources=True, member_mutation=change)
+    with pytest.raises(ProvenanceError, match="IMAGE_LAYER_SOURCES_MISMATCH"):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
+@pytest.mark.parametrize("location", ["manifest", "raw_config"])
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_nonstandard_json_constants_are_rejected_in_saved_image_metadata(candidate, tmp_path, location, constant):
+    path = tmp_path / "invalid-json.tar.gz"
+    value = float(constant)
+    def manifest_change(manifest):
+        if location == "manifest":
+            sources = manifest[0]["LayerSources"]
+            sources[next(iter(sources))]["size"] = value
+    def config_change(config):
+        if location == "raw_config":
+            config["nonstandard_json"] = value
+    image_id, _ = referenced_image(candidate, path, layer_sources=True,
+                                   manifest_mutation=manifest_change, config_mutation=config_change)
+    with pytest.raises(ProvenanceError, match="INVALID_JSON_CONSTANT:" + constant):
+        validate_image_archive(path, candidate["manifest"], image_id)
+
+
 def test_legacy_presence_validator_rejects_same_paths_with_wrong_bytes(candidate):
     c = candidate
     write(c["image"], "worker.py", b"VALUE = 11\n")

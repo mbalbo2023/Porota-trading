@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -60,7 +61,7 @@ def validate_gzip_envelope(path: Path) -> int:
                 total += len(block)
                 if total > MAX_ARCHIVE_UNPACKED_BYTES:
                     raise ProvenanceError("ARCHIVE_UNPACKED_SIZE_LIMIT")
-    except (OSError, EOFError) as exc:
+    except (OSError, EOFError, zlib.error) as exc:
         raise ProvenanceError("INVALID_GZIP_ENVELOPE") from exc
     return total
 
@@ -74,11 +75,16 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
+def _invalid_json_constant(value: str) -> None:
+    # Python otherwise accepts NaN/Infinity, which are not JSON literals.
+    raise ProvenanceError("INVALID_JSON_CONSTANT:" + value)
+
+
 def decode_json(data: bytes, signature: str = "INVALID_MANIFEST") -> Any:
     if len(data) > MAX_METADATA_BYTES:
         raise ProvenanceError("METADATA_SIZE_LIMIT")
     try:
-        return json.loads(data, object_pairs_hook=_pairs)
+        return json.loads(data, object_pairs_hook=_pairs, parse_constant=_invalid_json_constant)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ProvenanceError(signature) from exc
 
@@ -448,6 +454,29 @@ def validate_bundle(repo_root: Path, bundle_path: Path, bundle_manifest_path: Pa
             "source_manifest_sha256": expected["source_manifest_sha256"]}
 
 
+class _ImageLayerReader:
+    """Hash the stored bytes while a gzip decoder consumes this one blob."""
+
+    def __init__(self, handle):
+        self.handle = handle
+        self.digest = hashlib.sha256()
+        self.bytes = 0
+
+    def read(self, size=-1):
+        block = self.handle.read(size)
+        self.digest.update(block)
+        self.bytes += len(block)
+        return block
+
+
+def _image_content_address(name: str, actual_sha256: str) -> None:
+    # Legacy docker-save names need not be content addresses. OCI blob names
+    # are independently bound to their actual STORED bytes, before decoding.
+    if name.startswith("blobs/"):
+        if name != "blobs/sha256/" + actual_sha256:
+            raise ProvenanceError("IMAGE_CONTENT_ADDRESS_MISMATCH:" + name)
+
+
 def validate_image_archive(image_path: Path, source: dict, expected_image_id: str) -> dict:
     """Rehash exported config and every layer against that exact image ID.
 
@@ -469,33 +498,111 @@ def validate_image_archive(image_path: Path, source: dict, expected_image_id: st
         if "manifest.json" not in members:
             raise ProvenanceError("IMAGE_SAVE_MANIFEST_MISSING")
         manifest = decode_json(_member_bytes(archive, members["manifest.json"]))
-        if not isinstance(manifest, list) or len(manifest) != 1:
+        if not isinstance(manifest, list) or len(manifest) != 1 or not isinstance(manifest[0], dict):
             raise ProvenanceError("EXACTLY_ONE_SAVED_IMAGE_REQUIRED")
+        if not isinstance(manifest[0].get("Config"), str):
+            raise ProvenanceError("INVALID_IMAGE_CONFIG")
         config_path = safe_path(manifest[0]["Config"])
+        if config_path not in members or not members[config_path].isfile():
+            raise ProvenanceError("IMAGE_CONFIG_MEMBER_INVALID:" + config_path)
         config_bytes = _member_bytes(archive, members[config_path])
         image_id = "sha256:" + hashlib.sha256(config_bytes).hexdigest()
         if image_id != expected_image_id:
             raise ProvenanceError("EXPORTED_IMAGE_ID_MISMATCH")
+        _image_content_address(config_path, image_id[7:])
         config = decode_json(config_bytes, "INVALID_IMAGE_CONFIG")
+        if not isinstance(config, dict) or not isinstance(config.get("rootfs"), dict):
+            raise ProvenanceError("INVALID_IMAGE_CONFIG")
         validate_image_labels(config.get("config", {}).get("Labels"), source)
         layers = manifest[0].get("Layers", [])
         diffs = config.get("rootfs", {}).get("diff_ids", [])
-        if not layers or len(layers) != len(diffs) or len(set(layers)) != len(layers):
+        if (not isinstance(layers, list) or not isinstance(diffs, list) or not layers
+                or len(layers) != len(diffs) or any(not isinstance(name, str) for name in layers)
+                or any(not isinstance(diff, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", diff) for diff in diffs)):
             raise ProvenanceError("IMAGE_LAYER_IDENTITY_MISMATCH")
-        expected_diffs = dict(zip(layers, diffs))
-        for layer in sorted(layers, key=lambda name: members[safe_path(name)].offset):
-            handle = archive.extractfile(members[layer])
-            signature = handle.read(2)
-            handle.seek(0)
-            content = gzip.GzipFile(fileobj=handle) if signature == b"\x1f\x8b" else handle
-            actual = "sha256:" + hashlib.file_digest(content, "sha256").hexdigest()
-            if actual != expected_diffs[layer]:
+        if len(layers) > MAX_SOURCE_FILES:
+            raise ProvenanceError("IMAGE_LAYER_REFERENCE_COUNT_LIMIT")
+        for name in layers:
+            safe_path(name)
+            if name not in members or not members[name].isfile():
+                raise ProvenanceError("IMAGE_LAYER_MEMBER_INVALID:" + name)
+        # Docker's optional DiffID-keyed descriptors can be absent, a Go nil
+        # map, or a partial map. Every supplied descriptor must still describe
+        # each actual stored representation referenced by that DiffID.
+        layer_sources = manifest[0].get("LayerSources")
+        if layer_sources is not None:
+            if not isinstance(layer_sources, dict) or set(layer_sources) - set(diffs):
+                raise ProvenanceError("IMAGE_LAYER_SOURCES_INVALID")
+            for descriptor in layer_sources.values():
+                if (not isinstance(descriptor, dict)
+                        or not isinstance(descriptor.get("digest"), str)
+                        or not re.fullmatch(r"sha256:[0-9a-f]{64}", descriptor["digest"])
+                        or type(descriptor.get("size")) is not int or descriptor["size"] < 0
+                        or not isinstance(descriptor.get("mediaType"), str)):
+                    raise ProvenanceError("IMAGE_LAYER_SOURCES_INVALID")
+        # Identical empty/copy layers may occur multiple times in rootfs but
+        # are stored once in a content-addressed save. Deduplicate physical
+        # reads only; never collapse the ordered expected DiffIDs into a dict.
+        actual_diffs: dict[str, str] = {}
+        decoded_sizes: dict[str, int] = {}
+        stored_digests: dict[str, str] = {}
+        compressed_layers: dict[str, bool] = {}
+        unique_decoded_bytes = 0
+        for layer in sorted(set(layers), key=lambda name: members[name].offset):
+            with archive.extractfile(members[layer]) as handle:
+                compressed = handle.peek(2)[:2] == b"\x1f\x8b"
+                stored = _ImageLayerReader(handle)
+                content = gzip.GzipFile(fileobj=stored) if compressed else stored
+                decoded = hashlib.sha256()
+                size = 0
+                try:
+                    for block in iter(lambda: content.read(1024 * 1024), b""):
+                        size += len(block)
+                        unique_decoded_bytes += len(block)
+                        if unique_decoded_bytes > MAX_ARCHIVE_UNPACKED_BYTES:
+                            raise ProvenanceError("IMAGE_LAYER_UNPACKED_SIZE_LIMIT")
+                        decoded.update(block)
+                except (OSError, EOFError, zlib.error) as exc:
+                    raise ProvenanceError("INVALID_IMAGE_LAYER_GZIP:" + layer) from exc
+                finally:
+                    if compressed:
+                        content.close()
+                if stored.bytes != members[layer].size:
+                    raise ProvenanceError("IMAGE_LAYER_STORED_SIZE_MISMATCH:" + layer)
+                _image_content_address(layer, stored.digest.hexdigest())
+                actual_diffs[layer] = "sha256:" + decoded.hexdigest()
+                decoded_sizes[layer] = size
+                stored_digests[layer] = "sha256:" + stored.digest.hexdigest()
+                compressed_layers[layer] = compressed
+        logical_decoded_bytes = 0
+        for layer, expected_diff in zip(layers, diffs):
+            if actual_diffs[layer] != expected_diff:
                 raise ProvenanceError("EXPORTED_IMAGE_LAYER_MISMATCH:" + layer)
+            if layer_sources is not None and expected_diff in layer_sources:
+                descriptor = layer_sources[expected_diff]
+                media_types = ({"application/vnd.oci.image.layer.v1.tar+gzip",
+                                "application/vnd.oci.image.layer.nondistributable.v1.tar+gzip",
+                                "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                                "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"}
+                               if compressed_layers[layer] else
+                               {"application/vnd.oci.image.layer.v1.tar",
+                                "application/vnd.oci.image.layer.nondistributable.v1.tar",
+                                "application/vnd.docker.image.rootfs.diff.tar"})
+                if (descriptor["digest"] != stored_digests[layer]
+                        or descriptor["size"] != members[layer].size
+                        or descriptor["mediaType"] not in media_types):
+                    raise ProvenanceError("IMAGE_LAYER_SOURCES_MISMATCH:" + layer)
+            logical_decoded_bytes += decoded_sizes[layer]
+            if logical_decoded_bytes > MAX_ARCHIVE_UNPACKED_BYTES:
+                raise ProvenanceError("IMAGE_LAYER_UNPACKED_SIZE_LIMIT")
     return {"status": "GREEN", "image_id": image_id,
             "image_tar_sha256": sha256_file(image_path),
             "image_config_raw_sha256": image_id.removeprefix("sha256:"),
             "image_tar_unpacked_bytes": unpacked_bytes,
             "image_layers_verified": len(layers),
+            "image_unique_layer_blobs_verified": len(actual_diffs),
+            "image_layer_source_descriptors_verified": len(layer_sources or {}),
+            "image_layer_unpacked_bytes": logical_decoded_bytes,
             "candidate_sha": source["candidate_sha"], "candidate_tree_sha": source["candidate_tree_sha"]}
 
 
