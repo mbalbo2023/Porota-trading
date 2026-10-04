@@ -29,6 +29,15 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 CONTROL_LIMIT = 256 * 1024
 
 
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("RETENTION_CONTROL_DUPLICATE_KEY")
+        value[key] = item
+    return value
+
+
 class RetentionPressure(ValueError):
     """An explicit SHADOW-only admission denial, carrying alert/status evidence."""
 
@@ -119,7 +128,7 @@ class EvidenceRetention:
             raw = b"".join(chunks)
             if len(raw) > CONTROL_LIMIT:
                 raise ValueError("RETENTION_CONTROL_LIMIT")
-            value = json.loads(raw)
+            value = json.loads(raw, object_pairs_hook=_unique_object)
             if not isinstance(value, dict):
                 raise ValueError("RETENTION_CONTROL_SHAPE")
             return value, hashlib.sha256(raw).hexdigest()
