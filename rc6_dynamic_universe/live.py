@@ -4,7 +4,7 @@ from .common import stamp
 from .capacity import safe_capacity
 from .orchestrator import (EnginePolicy, UniverseOrchestrator,
     reconcile_endpoint_slots, apply_shared_allocation)
-from .sources import audit_sources, source_observations
+from .sources import audit_sources, native_source_reports, source_observations
 from .tradeability import rank_tradeability, freeze_preopen, anomaly_events
 from cf_intraday_scalping import shadow_sampling_plan
 
@@ -20,7 +20,8 @@ def run_shadow(bundle, *, previous=None):
     policies = [EnginePolicy(), EnginePolicy(engine="EQUITY_SPOT", hot_seconds=120,
                 warm_seconds=300, discovery_seconds=600, warmup_samples=6, window_seconds=5400)]
     policies = [EnginePolicy(**(asdict(p) | bundle.get("policies", {}).get(p.engine, {}))) for p in policies]
-    observations = list(bundle.get("observations", []))
+    native_observations = list(bundle.get("observations", []))
+    observations = list(native_observations)
     capacity_policy = bundle.get("capacity_policy")
     if capacity_policy and capacity_policy.get("status") == "APPROVED_DYNAMIC":
         # The canonical child may consume the approved measured profiles; OFF
@@ -31,6 +32,8 @@ def run_shadow(bundle, *, previous=None):
     if source_reports is None:
         source_reports = [source_observations(snapshot, source=source, as_of=at)
             for source, snapshot in bundle.get("sources", {}).items()]
+    else:
+        source_reports = [dict(report) for report in source_reports]
     for report in source_reports:
         causal = [r for r in report["observations"]
             if r.get("identity") and len(r["identity"]) == 5 and r.get("source_at") and r.get("received_at")
@@ -105,9 +108,12 @@ def run_shadow(bundle, *, previous=None):
             available[endpoint] = min(available.get(endpoint, equivalent), equivalent)
     allocation = reconcile_endpoint_slots(plans, available, global_slots=min(global_limits, default=0))
     apply_shared_allocation(plans, allocation, previous)
+    # Native SQLite observations are source evidence too. Add their references
+    # only after planner ingestion; telemetry must not duplicate native warmup.
+    source_reports = source_reports + native_source_reports(native_observations, as_of=at)
     return {"mode": "SHADOW", "as_of": at.isoformat(), "engines": {p.engine: r for r, p in plans},
             "aggregate_schedule": allocation,
-            "source_audit": audit_sources(), "source_reports": source_reports,
+            "source_audit": audit_sources(reports=source_reports, as_of=at), "source_reports": source_reports,
             "events": events, "frozen": frozen_reports, "tradeability": rankings, "real_orders_sent": 0,
             "deep_priority_authority": "STRATEGY_TRADEABILITY_CAPACITY", "family_quota": False,
             "coverage_fairness_authority": "DISCOVERY_ONLY",
