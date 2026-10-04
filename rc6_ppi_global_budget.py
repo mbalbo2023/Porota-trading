@@ -320,11 +320,11 @@ class GlobalPPIBudget:
     def _borrow(self, endpoint, priority, rows, reserves, used_by, *, limits=None, global_limit=None):
         # Borrowing is always upward. First use unreserved common capacity;
         # only an already higher-ranked claimant may consume a lower floor.
-        if used_by[priority][endpoint] < reserves[priority][endpoint]:
-            return None
-        remaining = {p: {e: max(0, reserves[p][e] - used_by[p][e]) for e in ENDPOINTS} for p in PRIORITIES}
         limits = self.policy["endpoint_limits"] if limits is None else limits
         global_limit = self.policy["global_limit"] if global_limit is None else global_limit
+        remaining = self._remaining_reserves(reserves, rows, limits=limits, global_limit=global_limit)
+        if remaining[priority][endpoint] > 0:
+            return None
         common_endpoint = limits[endpoint] - sum(r["endpoint"] == endpoint for r in rows) - sum(v[endpoint] for v in remaining.values())
         common_global = global_limit - len(rows) - sum(sum(v.values()) for v in remaining.values())
         if common_endpoint > 0 and common_global > 0:
@@ -348,7 +348,8 @@ class GlobalPPIBudget:
             limits = envelope["endpoint_limits"]
             cap = envelope["global_limit"]
             reserves = self._allocate_reserves(envelope["priority_reserves"], limits=limits, global_limit=cap)
-            held = {e: sum(max(0, reserves[p][e] - used_by[p][e]) for p in PRIORITIES[:PRIORITIES.index(priority)]) for e in ENDPOINTS}
+            remaining = self._remaining_reserves(reserves, rows, limits=limits, global_limit=cap)
+            held = {e: sum(remaining[p][e] for p in PRIORITIES[:PRIORITIES.index(priority)]) for e in ENDPOINTS}
             if len(rows) >= cap or spent[endpoint] >= limits[endpoint]:
                 return "PPI_BUDGET_EXHAUSTED", None
             if spent[endpoint] + held[endpoint] >= limits[endpoint] or len(rows) + sum(held.values()) >= cap:
@@ -358,6 +359,17 @@ class GlobalPPIBudget:
         # authorities. Do not invent borrowing when any such own floor exists.
         donor = None if None in donors else next((d for d in donors if d[0] != "COMMON"), ("COMMON", endpoint))
         return None, donor
+
+    def _remaining_reserves(self, reserves, receipts, *, limits, global_limit):
+        # Precise remaining promises come from live commitment timestamps and
+        # actual residual caps, never from rounded borrowed-out telemetry.
+        # Hierarchical reallocation accounts for higher-priority borrowing on
+        # another endpoint as well as direct exhaustion of the donor endpoint.
+        spent, owned = self._usage(receipts)
+        wanted = {p: {e: max(0, reserves[p][e] - owned[p][e]) for e in ENDPOINTS} for p in PRIORITIES}
+        return self._allocate_reserves(wanted,
+            limits={e: max(0, limits[e] - spent[e]) for e in ENDPOINTS},
+            global_limit=max(0, global_limit - len(receipts)))
 
     def _wire_fd(self):
         path = Path(str(self.path) + ".wire.lock")
@@ -585,6 +597,15 @@ class GlobalPPIBudget:
         token = uuid.uuid4().hex
         deadline = time.monotonic() + .05
         try:
+            # The valid authority was observed even when its ensuing read
+            # meets a breaker or occupied flight. Commit the promise before
+            # those terminal rejections can roll back the cache transaction.
+            with closing(self._connect()) as c, c:
+                self._begin_write(c)
+                now = self._clock(c)
+                if now >= stamp(self.policy["expires_at"]).timestamp():
+                    raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                self._envelopes(c, now, record=True)
             while True:
                 with closing(self._connect()) as c, c:
                     self._begin_write(c)
@@ -594,6 +615,10 @@ class GlobalPPIBudget:
                     circuits = self._get(c, "circuits", {})
                     if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
                         raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
+                    # A fresh cache hit still observes current opened demand.
+                    # Publish its EXIT promise before another process can use
+                    # the remaining wire floor for newly opened identities.
+                    self._envelopes(c, now, record=True)
                     cache = self._get(c, "critical_books", {})
                     flights = self._get(c, "critical_book_flights", {})
                     cache = {k: v for k, v in cache.items() if 0 <= now - v["received_at"] <= age and v["authority"] == authority}
@@ -634,6 +659,7 @@ class GlobalPPIBudget:
             flight = flights.get(key)
             if not flight or flight["lease"] != token or flight["until"] <= now:
                 raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_LEASE_INVALID")
+            self._envelopes(c, now, record=True)
             flights.pop(key)
             self._put(c, "critical_book_flights", flights)
             cache = self._get(c, "critical_books", {})
@@ -667,7 +693,6 @@ class GlobalPPIBudget:
             envelopes = self._envelopes(c, now)
             seconds = max([self.policy["window_seconds"], *(e["window_seconds"] for e in envelopes)])
             requests = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - seconds,)))
-            _, used_by = self._usage(requests)
             promises = {p: {e: max([0, *(item["priority_reserves"].get(p, {}).get(e, 0) for item in envelopes)]) for e in ENDPOINTS} for p in PRIORITIES}
             limits = {e: min([self.policy["endpoint_limits"][e], *(item["endpoint_limits"][e] for item in envelopes)]) for e in ENDPOINTS}
             cap = min([self.policy["global_limit"], *(item["global_limit"] for item in envelopes)])
@@ -677,39 +702,44 @@ class GlobalPPIBudget:
             exit_demand = {e: max([self.policy.get("exit_demand", self.policy.get("priority_reserves", {}).get("EXIT_CRITICAL", {})).get(e, 0),
                 *(item.get("exit_demand", {}).get(e, item["priority_reserves"].get("EXIT_CRITICAL", {}).get(e, 0)) for item in envelopes)]) for e in ENDPOINTS}
             exact_envelopes = []
+            exact_remaining = []
+            free_limits = dict(limits)
+            free_global = cap
             for envelope in envelopes:
                 receipts = [r for r in requests if r["at"] > now - envelope["window_seconds"]]
-                _, owned = self._usage(receipts)
+                spent, _ = self._usage(receipts)
                 allocated = self._allocate_reserves(envelope["priority_reserves"], limits=envelope["endpoint_limits"], global_limit=envelope["global_limit"])
-                scope = scopes if envelope["window_seconds"] == seconds else self._window_scopes(c, now, envelope["window_seconds"])
-                donated_by = {p: {e: sum(row["borrowed_out"] for key, row in scope.items()
-                    if key.split(":")[0] == e and key.split(":")[2] == p) for e in ENDPOINTS} for p in PRIORITIES}
+                remaining = self._remaining_reserves(allocated, receipts, limits=envelope["endpoint_limits"], global_limit=envelope["global_limit"])
+                exact_remaining.append(remaining)
+                free_limits = {e: min(free_limits[e], max(0, envelope["endpoint_limits"][e] - spent[e])) for e in ENDPOINTS}
+                free_global = min(free_global, max(0, envelope["global_limit"] - len(receipts)))
                 exact_envelopes.append({name: envelope[name] for name in ("key", "recommendation_digest", "configuration_fingerprint", "window_seconds", "endpoint_limits", "global_limit", "authority_expires_at", "retain_until")} | {
                     "start_at": datetime.fromtimestamp(now - envelope["window_seconds"], timezone.utc).isoformat(),
                     "end_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
                     "admitted_in_window": len(receipts), "used_in_window": sum(r["used"] for r in receipts),
                     "priority_reserves": allocated,
-                    "reserved_remaining": {p: {e: max(0, allocated[p][e] - owned[p][e] - donated_by[p][e]) for e in ENDPOINTS} for p in PRIORITIES}})
+                    "reserved_remaining": remaining})
+            remaining = self._allocate_reserves({p: {e: min(reserves[p][e], max([0,
+                *(item[p][e] for item in exact_remaining)])) for e in ENDPOINTS} for p in PRIORITIES},
+                limits=free_limits, global_limit=free_global)
             for priority in PRIORITIES:
                 if any(reserves[priority].values()):
                     consumer = "EXIT_READER" if priority == "EXIT_CRITICAL" else "SCALPING" if priority == "SCALPING_HOT" else "SCANNER"
                     for endpoint in ENDPOINTS:
                         scopes.setdefault(":".join((endpoint, consumer, priority)), dict.fromkeys(WINDOW_FIELDS, 0) | {"denial_reason": {}})
             by_window_scope = []
-            donated = {p: {e: sum(row["borrowed_out"] for key, row in scopes.items()
-                if key.split(":")[0] == e and key.split(":")[2] == p) for e in ENDPOINTS} for p in PRIORITIES}
             for key, row in sorted(scopes.items()):
                 endpoint, consumer, priority = key.split(":")
                 by_window_scope.append(row | {"endpoint": endpoint, "consumer": consumer, "priority": priority,
                     "reserved_total": reserves[priority][endpoint],
-                    "reserved_remaining": max(0, reserves[priority][endpoint] - used_by[priority][endpoint] - donated[priority][endpoint]),
+                    "reserved_remaining": remaining[priority][endpoint],
                     "open_positions_count": opened, "exit_demand": exit_demand[endpoint]})
             window_endpoint = {}
             for endpoint in ENDPOINTS:
                 source = [r for r in by_window_scope if r["endpoint"] == endpoint]
                 window_endpoint[endpoint] = {name: sum(r[name] for r in source) for name in WINDOW_FIELDS}
                 window_endpoint[endpoint].update(reserved_total=sum(v[endpoint] for v in reserves.values()),
-                    reserved_remaining=sum(max(0, reserves[p][endpoint] - used_by[p][endpoint] - donated[p][endpoint]) for p in PRIORITIES),
+                    reserved_remaining=sum(remaining[p][endpoint] for p in PRIORITIES),
                     open_positions_count=opened, exit_demand=exit_demand[endpoint],
                     denial_reason={reason: sum(r["denial_reason"].get(reason, 0) for r in source) for reason in {reason for r in source for reason in r["denial_reason"]}})
             return {"schema": SCHEMA, "global": totals, "by_scope": rows,
