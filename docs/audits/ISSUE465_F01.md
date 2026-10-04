@@ -87,6 +87,10 @@ crossed, stale or future books are not cached. Follower waiting is bounded to
 50 ms; a kill leaves a durable flight until its conservative lease expires.
 Expiry, rollback, alias/quota/DB failure and breakers fail closed. A cache hit
 retains provider time and does not spend or claim a new provider call.
+Every valid coalescing attempt commits current demand before cache/flight or
+breaker rejection. A hit cannot bypass a larger EXIT promise, and a later
+denial cannot roll that promise back. Fetch completion also publishes the
+latest valid metadata before accepting or discarding the book.
 
 ## Real wiring
 
@@ -124,6 +128,10 @@ admitted/used receipts and remaining promises used by admission. The held
 position/demand metadata is the maximum of the live authorities; it cannot
 silently hide an older stronger promise. Lower planned demand never replaces
 the independently calculated raw EXIT demand.
+Remaining floors and admission protection use exact live debt and residual
+endpoint/global caps. Rounded `borrowed_out` counter buckets cannot consume a
+fresh floor at a rolling boundary or hold a phantom global floor after its
+donor endpoint is exhausted.
 
 ## Twenty required adversarial cases
 
@@ -189,6 +197,16 @@ revoked its release. Preserved offline RED witnesses cover:
 * headers returned by `HTTPAdapter.send` while Requests still consumed the
   raw body outside the released lease.
 
+Further own/peer attacks rejected provisional `24ca06ae`: a fresh cache hit
+after demand1→5 failed to publish the increase, allowing another authority to
+steal the four new positions' wire slots. A breaker rejection also rolled back
+that publication and left the same hole after recovery. Native SDK regressions
+now prove successful hits and denied breaker reads both publish durably,
+remaining EXIT identities receive every available book, and completion does
+not lose newly observed metadata. Another exact rolling boundary attack showed
+rounded donor telemetry reporting0 despite a fresh floor1; remaining capacity
+now derives from exact receipts and hierarchy on the same view as admission.
+
 Permanent guards exercise15/30/60s windows, authority renewal, both cap axes,
 all endpoint debts, restart, rollback, expired authority retention, known and
 unknown legacy state, bounded64-authority pressure, pre-start floor changes,
@@ -205,10 +223,11 @@ read-only peer, not represented as a complete independent re-audit.
 
 ## Local evidence and handoff boundary
 
-Focused validation: **435 passed**, failures=errors=skipped=xfail=0,
-`/workspace/issue465-evidence/front-a/reopened-final-focal.xml`, SHA256
-`8d80aa12006a157d356a22db2ec7e841680943f231440b37bf00a669f55eaaa7`.
-Includes all73 new cases, original budget/approved callers, exit supervision,
+Focused validation: **441 passed**, failures=errors=skipped=xfail=0,
+`/workspace/issue465-evidence/front-a/final-frozen-focal.xml`. Exact JUnit
+digest and frozen head/tree are recorded in the integration handoff, outside
+this source document to avoid a source/evidence identity cycle.
+Includes all79 new cases, original budget/approved callers, exit supervision,
 exit ledger isolation, capacity promotion, intraday freshness, documented SDK
 contract and production PAPER scenarios. Compile AST and diff whitespace pass.
 Environment: pinned dependencies, local Python 3.12; final Actions Python 3.11

@@ -519,6 +519,59 @@ def test_native_body_failure_is_sanitized_and_preserves_global_http_semantics(wi
         reader.close()
 
 
+@pytest.mark.parametrize("breaker", [False, True])
+def test_fresh_native_cache_hit_publishes_increased_exit_demand_before_other_process_reads(wire, tmp_path, breaker):
+    clock, calls, behavior = wire
+    original = exit_floor(clock)
+    original.update(priority_reserves={"EXIT_CRITICAL": {"book": 1}},
+        open_positions_count=1, exit_demand={"book": 1})
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    reader = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=budget, consumer="EXIT_READER")
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    try:
+        reader.login_once()
+        assert scoped_book(reader, identity, "EXIT_CRITICAL")
+        before = len(calls)
+        budget.policy = dict(original, priority_reserves={"EXIT_CRITICAL": {"book": 5}},
+            open_positions_count=5, exit_demand={"book": 5})
+        if breaker:
+            budget.report_error("intraday", "PPI_HTTP_429")
+            with pytest.raises(BudgetBackpressure, match="GLOBAL_CIRCUIT"):
+                scoped_book(reader, identity, "EXIT_CRITICAL")
+            clock.advance(61)
+        else:
+            assert scoped_book(reader, identity, "EXIT_CRITICAL")
+        assert len(calls) == before  # demand publication requires no duplicate wire
+        other = GlobalPPIBudget(budget.path, dict(original, priority_reserves={},
+            configuration_fingerprint="c" * 64, open_positions_count=0, exit_demand={}), clock=clock.now)
+        lower = [use(other, "book") for _ in range(4)]
+        assert all(not row["allowed"] for row in lower)
+        if breaker:
+            assert scoped_book(reader, identity, "EXIT_CRITICAL")
+        for index in range(1, 5):
+            assert scoped_book(reader, (f"EXIT{index}", *identity[1:]), "EXIT_CRITICAL")
+        assert len([row for row in calls if urlsplit(row[1]).path.lower().endswith("/book")]) == 5 + breaker
+        assert budget.metrics()["global"]["used"] == 5 + breaker
+        assert budget.metrics()["real_orders_sent"] == 0
+    finally:
+        reader.close()
+
+
+def test_accepted_fetch_completion_publishes_latest_valid_exit_metadata(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    original.update(priority_reserves={"EXIT_CRITICAL": {"book": 1}}, open_positions_count=1)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    def fresh_fetch():
+        budget.policy = dict(original, priority_reserves={"EXIT_CRITICAL": {"book": 5}}, open_positions_count=5)
+        return book_payload(clock)
+    assert budget.coalesced_book(identity, fresh_fetch, consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    other = GlobalPPIBudget(budget.path, dict(original, priority_reserves={},
+        configuration_fingerprint="c" * 64), clock=clock.now)
+    assert not use(other, "book")["allowed"]
+
+
 @pytest.mark.parametrize("priority,consumer", [("OPENED_CRITICAL", "SCANNER"), ("EXIT_CRITICAL", "EXIT_READER")])
 def test_429_preserves_semantics_and_durable_floor_across_restart(tmp_path, priority, consumer):
     clock = Clock()
@@ -643,6 +696,41 @@ def test_only_higher_priority_may_borrow_lower_floor_and_reports_donor(tmp_path)
     assert sum(r["borrowed_out"] for r in rows if r["priority"] == "SCALPING_HOT") == 1
     assert all(r["reserved_remaining"] == 0 for r in rows if r["endpoint"] == "book" and r["priority"] == "SCALPING_HOT")
     assert not use(budget, "book", priority="SCALPING_HOT")["allowed"]
+
+
+@pytest.mark.parametrize("initial_fraction", [0, .6])
+def test_reserved_remaining_uses_exact_wire_boundary_despite_rounded_borrow_counter(tmp_path, initial_fraction):
+    clock = Clock()
+    clock.advance(initial_fraction)
+    value = policy(clock, limits=dict(current=1, book=2, intraday=1),
+        reserves={"EXIT_CRITICAL": {"book": 1}, "SCALPING_HOT": {"book": 1}})
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", value, clock=clock.now)
+    assert use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
+    assert use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
+    clock.advance(29)
+    row = next(r for r in budget.metrics()["window"]["by_scope"] if r["endpoint"] == "book" and r["priority"] == "SCALPING_HOT")
+    assert row["reserved_remaining"] == 0
+    clock.advance(1)
+    metrics = budget.metrics()["window"]
+    row = next(r for r in metrics["by_scope"] if r["endpoint"] == "book" and r["priority"] == "SCALPING_HOT")
+    assert metrics["counter_resolution_seconds"] == 1
+    assert sum(r["borrowed_out"] for r in metrics["by_scope"] if r["endpoint"] == "book" and r["priority"] == "SCALPING_HOT") == 1
+    assert row["reserved_remaining"] == 1
+    assert metrics["active_envelopes"][0]["reserved_remaining"]["SCALPING_HOT"]["book"] == 1
+    assert use(budget, "book", priority="SCALPING_HOT")["allowed"]
+
+
+def test_donated_exhausted_endpoint_does_not_hold_phantom_global_reserve(tmp_path):
+    clock = Clock()
+    value = policy(clock, limits=dict(current=1, book=2, intraday=1),
+        reserves={"EXIT_CRITICAL": {"book": 1}, "SCALPING_HOT": {"book": 1}})
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", value, clock=clock.now)
+    assert use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
+    assert use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
+    assert use(budget, "current")["allowed"]
+    assert use(budget, "intraday")["allowed"]
+    assert budget.metrics()["global"]["used"] == 4
+    assert budget.metrics()["window"]["by_endpoint"]["book"]["reserved_remaining"] == 0
 
 
 def native_opened_store(tmp_path, clock, monkeypatch, count=5):
