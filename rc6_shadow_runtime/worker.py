@@ -1,0 +1,333 @@
+"""Canonical periodic SHADOW worker over existing observations only.
+
+No market-data client, trading writer, broker, fill, network transport or manual
+bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
+"""
+from datetime import datetime, timedelta, timezone
+import json
+import logging
+import os
+from pathlib import Path
+import sqlite3
+import time
+
+import ak_byma_calendar as calendar
+from co_market_sessions_hf6 import (TZ, BYMA_PAPER_SPOT_OPEN,
+    BYMA_PAPER_SPOT_CLOSE, byma_paper_spot_phase)
+from rc6_dynamic_universe.common import digest, stamp
+from rc6_dynamic_universe.live import run_shadow
+from rc6_dynamic_universe.runtime import read_runtime
+from rc6_dynamic_universe.sources import source_observations
+from .persistence import EvidenceFiles
+
+LOG = logging.getLogger("dynamic_shadow")
+VERSION = "WS-INTEG-PERF-04-RUNTIME-v1"
+SOURCE_FILES = {"BYMA": "rc6_public_sources_latest.json",
+                "IOL_MCP": "iol_shadow_latest.json",
+                "IOL_FAMILY_REFERENCE": "iol_family_reference_latest.json"}
+
+
+def session_context(as_of):
+    """Existing audited BYMA calendar, never a synthetic weekday calendar."""
+    at = stamp(as_of)
+    local = at.astimezone(TZ)
+    day = local.date()
+    if local.time().replace(tzinfo=None) >= BYMA_PAPER_SPOT_CLOSE:
+        day += timedelta(days=1)
+    for _ in range(370):
+        if calendar.es_dia_habil_operativo(day):
+            break
+        day += timedelta(days=1)
+    else:
+        raise ValueError("AUDITED_CALENDAR_UNAVAILABLE")
+    previous = day - timedelta(days=1)
+    for _ in range(370):
+        if calendar.es_dia_habil_operativo(previous):
+            break
+        previous -= timedelta(days=1)
+    else:
+        raise ValueError("AUDITED_PREVIOUS_SESSION_UNAVAILABLE")
+    return {"session": day.isoformat(),
+        "opening": datetime.combine(day, BYMA_PAPER_SPOT_OPEN, TZ).astimezone(timezone.utc),
+        "cutoff": datetime.combine(previous, BYMA_PAPER_SPOT_CLOSE, TZ).astimezone(timezone.utc),
+        "phase": byma_paper_spot_phase(at)}
+
+
+def _json_input(path, *, limit=8 * 1024**2):
+    path = Path(path)
+    if not path.exists():
+        return None
+    if not path.is_file() or path.stat().st_size > limit:
+        raise ValueError("SHADOW_INPUT_SIZE_LIMIT")
+    with path.open("rb") as stream:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("SHADOW_INPUT_SIZE_LIMIT")
+    return json.loads(raw)
+
+
+class ShadowRuntime:
+    def __init__(self, database, *, evidence_root=None, history_database=None,
+                 source_roots=None, capacity_path=None, policies=None,
+                 maximum_bytes=128 * 1024**2, row_limit=20000):
+        self.database = Path(database).resolve(strict=True)
+        self.history_database = Path(history_database).resolve() if history_database else None
+        self.root = Path(evidence_root or (str(self.database) + ".shadow"))
+        data_root = Path(os.getenv("DATA_DIR", str(self.database.parent.parent)))
+        self.source_roots = list(dict.fromkeys(Path(p).resolve() for p in (
+            source_roots if source_roots is not None else
+            [data_root / "market", self.database.parent.parent / "market",
+             Path(os.getenv("POROTA_IOL_SHADOW_ROOT", str(data_root / "market")))])))
+        self.capacity_path = Path(capacity_path) if capacity_path else None
+        self.policies = policies or {}
+        self.maximum_bytes, self.row_limit = maximum_bytes, row_limit
+        self.source_paths = {source: [root / name for root in self.source_roots]
+                             for source, name in SOURCE_FILES.items()}
+        configured_iol = os.getenv("POROTA_IOL_SHADOW_CACHE_PATH", "").strip()
+        if configured_iol:
+            self.source_paths["IOL_MCP"].insert(0, Path(configured_iol).resolve())
+        self.source_inputs = [p for paths in self.source_paths.values() for p in paths]
+        self.source_inputs += [root / "rc6_ppi_capacity_latest.json" for root in self.source_roots]
+        protected = [self.database, self.history_database, self.capacity_path] + self.source_inputs
+        self.files = EvidenceFiles(self.root, protected=protected, maximum_bytes=maximum_bytes)
+        self.configuration = digest({"version": VERSION, "row_limit": row_limit,
+            "provider_additional_requests": 0, "tick_seconds": 30,
+            "policies": self.policies, "history": str(self.history_database),
+            "sources": {k: list(map(str, v)) for k, v in self.source_paths.items()},
+            "capacity": str(self.capacity_path)})
+
+    def _metadata(self, at, since):
+        c = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=.005)
+        c.row_factory = sqlite3.Row
+        try:
+            c.execute("PRAGMA query_only=ON")
+            end = time.monotonic() + .15
+            c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            dataset = None
+            if "paper_workspace" in tables:
+                row = c.execute("SELECT dataset_id FROM paper_workspace WHERE id=1").fetchone()
+                dataset = row[0] if row else None
+            source_id = digest({"dataset": dataset, "path": str(self.database),
+                "inode": self.database.stat().st_ino, "device": self.database.stat().st_dev})
+            failures = []
+            if "paper_events" in tables:
+                for r in c.execute("""SELECT event_at,event_type,detail FROM paper_events
+                        WHERE event_type IN ('INTRADAY_SCALPING_UNSUPPORTED','INTRADAY_SCALPING_ERROR')
+                        AND julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
+                        ORDER BY id DESC LIMIT 200""", (since, at.isoformat())):
+                    # New collector diagnostics retain exact five-part identity.
+                    marker = ";shadow_identity="
+                    if marker not in r["detail"]:
+                        failures.append({"received_at": r["event_at"], "reason": "LEGACY_ERROR_IDENTITY_UNVERIFIED"})
+                        continue
+                    detail, encoded = r["detail"].split(marker, 1)
+                    key = json.loads(encoded)
+                    code = detail.split(":", 1)[-1].strip()
+                    if len(key) != 5 or not all(isinstance(s, str) and s for s in key):
+                        raise ValueError("PPI_ERROR_IDENTITY_INVALID")
+                    failures.append({"identity": key, "source_at": r["event_at"],
+                        "received_at": r["event_at"], "source": "PPI_INTRADAY_DIAGNOSTIC",
+                        "endpoint": "intraday", "useful": False, "native_reason": code,
+                        "source_clock_basis": "native error occurrence; no market quote", "fields": {}})
+            return source_id, failures
+        finally:
+            c.close()
+
+    def _sources(self):
+        reports, errors = {}, []
+        for source, paths in self.source_paths.items():
+            for path in paths:
+                try:
+                    value = _json_input(path)
+                    if value is not None:
+                        reports[source] = value
+                        break
+                except (OSError, ValueError, TypeError):
+                    errors.append({"source": source, "reason": "SOURCE_UNAVAILABLE_OR_INVALID"})
+        return reports, errors
+
+    def _capacity(self):
+        paths = [self.capacity_path] if self.capacity_path else [
+            p / "rc6_ppi_capacity_latest.json" for p in self.source_roots]
+        for path in paths:
+            value = _json_input(path)
+            if value is not None:
+                return value
+        return {}
+
+    def _radar(self, observations, old, at, opening):
+        """Only observed last-trade timestamps count, never total venue volume.
+
+        A repeated source clock cannot create a new business. Minute points
+        retained prospectively support same-window spread/price/new-trade events.
+        """
+        cutoff = at - timedelta(minutes=10)
+        points = {digest((o["identity"], o.get("source"), o["source_at"])): o for o in old.get("points", [])
+                  if cutoff <= stamp(o["source_at"]) <= at}
+        counters = dict(old.get("counters", {}))
+        last = dict(old.get("last_trade", {}))
+        for o in sorted(observations, key=lambda r: (r["source_at"], r["received_at"])):
+            if not o.get("useful") or o.get("endpoint") not in {"current", "radar"}:
+                continue
+            when = stamp(o["source_at"])
+            if when < max(opening, cutoff) or (at - when).total_seconds() > 120:
+                continue
+            ident = digest(o["identity"])
+            previous = stamp(last[ident]) if ident in last else None
+            if o.get("is_trade") and (previous is None or when > previous):
+                counters[ident] = counters.get(ident, 0) + 1
+                last[ident] = when.isoformat()
+            # Preserve the originally observed count on repeat/revision.
+            key = digest((o["identity"], o.get("source"), o["source_at"]))
+            fields = dict(o.get("fields", {}))
+            if o.get("is_trade"):
+                fields["trades"] = points.get(key, {}).get("fields", {}).get("trades", counters.get(ident))
+            points[key] = {**o, "endpoint": "radar", "fields": fields,
+                "trade_count_basis": ("WORKER_OBSERVED_DISTINCT_NATIVE_LAST_TRADE_TIMESTAMPS"
+                    if o.get("is_trade") else "NATIVE_SOURCE_FIELDS_ONLY; no inferred trade count")}
+        if len(points) > self.row_limit:
+            raise ValueError("SHADOW_RADAR_CAPACITY_REACHED")
+        return {"points": list(points.values()), "counters": counters, "last_trade": last}
+
+    def tick(self, as_of):
+        at = stamp(as_of)
+        with self.files as files:
+            previous = files.read("checkpoint.json.gz") or {}
+            if previous and stamp(previous["as_of"]) > at:
+                raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
+            inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
+                                  query_budget_seconds=.35)
+            source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
+            reuse = (previous.get("source_identity") == source_id and
+                     previous.get("runtime_configuration") == self.configuration)
+            if not reuse:
+                previous = {}
+            # Source identity and runtime configuration are part of the durable
+            # checkpoint, independent of the planner's capacity fingerprint.
+            started = previous.get("started_at", at.isoformat())
+            context = session_context(at)
+            sources, source_errors = self._sources()
+            capacity = self._capacity()
+            freeze_name = "preopen-" + context["session"] + ".json.gz"
+            frozen = files.read(freeze_name)
+            if frozen and frozen["source_identity"] != source_id:
+                raise ValueError("SHADOW_PREOPEN_SOURCE_IDENTITY_MISMATCH")
+            if frozen is None and at < context["opening"]:
+                from .preopen import build_preopen_inputs
+                pre = build_preopen_inputs(self.database, self.history_database, as_of=at,
+                    session_open=context["opening"], cutoff=context["cutoff"])
+                bundle = {**inputs, **pre, "as_of": at.isoformat(),
+                    "session_open": context["opening"].isoformat(),
+                    "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
+                    "capacity_report": capacity, "policies": self.policies, "observations": []}
+                pre_report = run_shadow(bundle)
+                frozen = {"schema": VERSION, "source_identity": source_id,
+                    "frozen": pre_report["frozen"], "quality": pre["quality"],
+                    "intraday_history": pre.get("intraday_history", [])}
+                files.write(freeze_name, frozen, immutable=True)
+            base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
+                "session": context["session"], "phase": context["phase"],
+                "source_database_effect": "READ_ONLY", "provider_requests": 0,
+                "provider_additional_budget": {"current": 0, "book": 0, "intraday": 0},
+                "production_limits_modified": False, "factual_execution": "NOT_CALLED",
+                "real_orders_sent": 0, "real_routes": "NOT_CALLED", "ppi_watch": "UNTOUCHED",
+                "source_errors": source_errors, "native_ppi_errors": failures,
+                "checkpoint_reused": reuse, "runtime_configuration": self.configuration,
+                "source_identity": source_id}
+            checkpoint = {**base, "started_at": started}
+            if frozen is None:
+                report = {**base, "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
+                          "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
+            else:
+                # Retain only causal radar points; re-reading a historical DB
+                # row cannot create an event before this worker first existed.
+                observations = [o for o in inputs["observations"]
+                    if stamp(o["source_at"]) >= stamp(started)
+                    and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
+                observations += [o for o in failures if o.get("identity")]
+                compatible = previous if previous.get("session") == context["session"] else {}
+                source_reports = [source_observations(value, source=name, as_of=at)
+                    for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
+                external = [{**o, "endpoint": "radar"} for r in source_reports for o in r["observations"]
+                    if o.get("identity") and o.get("source_at") and o.get("received_at")
+                    and stamp(started) <= stamp(o["source_at"]) <= stamp(o["received_at"]) <= at
+                    and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
+                radar = self._radar(observations + external, compatible.get("radar", {}), at, context["opening"])
+                checkpoint["radar"] = radar
+                observations += radar["points"]
+                bundle = {**inputs, "as_of": at.isoformat(),
+                    "session_open": context["opening"].isoformat(),
+                    "preopen_cutoff": context["cutoff"].isoformat(),
+                    "frozen_at": frozen["frozen"]["SCALPING"]["payload"]["frozen_at"],
+                    "sessions": frozen["frozen"]["SCALPING"]["payload"]["sessions"],
+                    "rankings": frozen["frozen"]["SCALPING"]["payload"],
+                    "frozen": frozen["frozen"], "intraday_history": frozen["intraday_history"],
+                    "capacity_report": capacity, "policies": self.policies,
+                    "observations": observations,
+                    "source_observation_reports": source_reports,
+                    "observation_not_before": started,
+                    "observation_received_after": previous.get("as_of", started),
+                    "sources": {k: v for k, v in sources.items() if k != "IOL_FAMILY_REFERENCE"}}
+                result = run_shadow(bundle, previous=compatible)
+                from .stages import enrich_pipeline
+                result = enrich_pipeline(self.database, result, as_of=at)
+                report = {**result, **base, "status": "SHADOW_OBSERVING",
+                    "preopen_quality": frozen["quality"],
+                    "preopen_immutable": True, "preopen_file": freeze_name,
+                    "capacity_open_status": "NO_VERIFICADO" if not capacity else capacity.get("status"),
+                    "observation_execution": "LOCAL_REUSE_ONLY; native PPI Intraday preserved",
+                    "active_paper_scanner_authority": "UNCHANGED; shadow fills NOT_CALLED"}
+                checkpoint["engines"] = result["engines"]
+            from .families import family_reports
+            from .lab import evaluate_runtime_lab
+            report["family_routing"] = family_reports(self.database, as_of=at,
+                catalog=inputs["full_catalog"], sources=sources)
+            report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
+                self.database, as_of=at, previous=previous.get("lab"))
+            # Never call a signal, economics or risk result as an execution
+            # callback. These reports cannot reach the factual broker.
+            files.write("latest.json.gz", report)
+            files.write("checkpoint.json.gz", checkpoint)
+            status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
+                "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
+            status.update(configuration_fingerprint=self.configuration,
+                preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
+                catalog_ready_count=len(inputs["catalog"]), report_digest=digest(report),
+                provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED")
+            files.write("status.json", status)
+            return report
+
+
+def run_worker(database, stop, *, clock_fn=None):
+    """Existing runtime owns the process/restart loop; only evidence is written."""
+    clock_fn = clock_fn or (lambda: datetime.now(timezone.utc).isoformat())
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    worker = None
+    while not stop.is_set():
+        try:
+            if worker is None:
+                from cg_paper_workspace import artifact_root
+                history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
+                worker = ShadowRuntime(database,
+                    evidence_root=artifact_root(database) / "dynamic-shadow",
+                    history_database=history if history.exists() else None)
+            report = worker.tick(clock_fn())
+            LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
+                     report["status"], report["phase"])
+        except Exception as exc:
+            # A bounded failed SHADOW read/write cannot stop the exit clock or
+            # turn a stale prior report into current success. No source event.
+            LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s", type(exc).__name__)
+            if worker is not None:
+                try:
+                    with worker.files as files:
+                        files.write("status.json", {"schema": VERSION, "as_of": clock_fn(),
+                            "status": "FAIL_CLOSED", "error_class": type(exc).__name__,
+                            "real_orders_sent": 0, "real_routes": "NOT_CALLED", "provider_requests": 0})
+                except (OSError, ValueError):
+                    LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
+        stop.wait(30)
