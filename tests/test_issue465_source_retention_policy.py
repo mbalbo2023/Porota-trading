@@ -1,6 +1,7 @@
 """F-05: pressure is explicit; deleting committed evidence requires exact ACK."""
 import gzip
 import fcntl
+import errno
 import hashlib
 import json
 import os
@@ -158,6 +159,56 @@ def test_changed_generation_bytes_cannot_be_deleted_with_old_manifest_and_ack(tm
     with pytest.raises(RetentionPressure, match="HARD_FILES"):
         EvidenceRetention(tmp_path, maximum_files=6).prepare(additional_files=6)
     assert path.exists()
+
+
+def test_unknown_member_in_acknowledged_generation_is_never_deleted(tmp_path):
+    path = generation(tmp_path)
+    acknowledgement(path)
+    unowned = path / "additional-audit-evidence.json"
+    unowned.write_text("preserve")
+    with pytest.raises(RetentionPressure, match="ARCHIVE_ROTATION_FAILED"):
+        EvidenceRetention(tmp_path, maximum_files=8).prepare(additional_files=6)
+    assert unowned.read_text() == "preserve" and (path / "report.json.gz").exists()
+
+
+def test_archive_member_path_in_manifest_cannot_escape_generation(tmp_path):
+    path = generation(tmp_path)
+    protected = tmp_path / "input.db"
+    protected.write_bytes(b"untouched")
+    manifest_path = path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["report"]["name"] = "../input.db"
+    manifest_path.write_text(json.dumps(manifest))
+    acknowledgement(path)
+    with pytest.raises(RetentionPressure, match="HARD_FILES"):
+        EvidenceRetention(tmp_path, maximum_files=8).prepare(additional_files=6)
+    assert protected.read_bytes() == b"untouched" and path.exists()
+
+
+@pytest.mark.parametrize("code,reason", [(errno.ENOSPC, "RETENTION_NO_SPACE"),
+    (errno.EDQUOT, "RETENTION_NO_SPACE"), (errno.EACCES, "RETENTION_PERMISSION_DENIED")])
+def test_no_space_and_permission_denied_cannot_be_silent_or_delete_evidence(tmp_path, monkeypatch, code, reason):
+    protected = tmp_path / "preopen-2026-10-05.json.gz"
+    protected.write_bytes(b"preserved freeze")
+    def unavailable(*args, **kwargs):
+        raise OSError(code, "injected admission failure")
+    monkeypatch.setattr(os, "open", unavailable)
+    with pytest.raises(RetentionPressure, match=reason) as error:
+        EvidenceRetention(tmp_path).prepare(additional_bytes=100)
+    assert protected.read_bytes() == b"preserved freeze"
+    assert error.value.metrics["shadow_degraded"]
+
+
+def test_archived_rotation_is_idempotent_and_ack_ledger_is_not_a_replay_authority(tmp_path):
+    old, current = generation(tmp_path), generation(tmp_path, number=2)
+    ledger = acknowledgement(old)
+    pointer(current)
+    policy = EvidenceRetention(tmp_path, maximum_files=14)
+    first = policy.prepare(additional_files=6)
+    second = policy.prepare(additional_files=6)
+    assert first["rotated_archived_generations"] == 1
+    assert second["rotated_archived_generations"] == 0
+    assert current.exists() and ledger.exists()
 
 
 @pytest.mark.parametrize("pin", ["argument", "registry", "current"])
