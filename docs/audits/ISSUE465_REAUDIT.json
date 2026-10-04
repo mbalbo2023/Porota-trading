@@ -2349,6 +2349,10 @@
             {
               "minimum_cases": 2,
               "node": "tests/test_issue465_stress.py::test_multiprocess_burst_cannot_spend_exit_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_stress.py::test_native_budget_writer_lock_is_explicit_child_denial_without_wire_or_exit_loss"
             }
           ]
         },
@@ -3275,6 +3279,10 @@
             {
               "minimum_cases": 2,
               "node": "tests/test_issue465_stress.py::test_multiprocess_burst_cannot_spend_exit_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_stress.py::test_native_budget_writer_lock_is_explicit_child_denial_without_wire_or_exit_loss"
             },
             {
               "minimum_cases": 1,
@@ -4575,10 +4583,10 @@
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-g-ade87-final-stress-311.xml",
-          "sha256": "a24e435aef23ce09b15b016ed25fb68d358a0ba092d38b6829dd096efd6fa2eb",
+          "path": "/workspace/issue465-authority/front-g-child-denial-final-stress-311.xml",
+          "sha256": "838aaf63fd0edaeb66edf2d1d47c8dd26644a8f66efdb34998054ef4ee47cb61",
           "skipped": 0,
-          "tests": 6,
+          "tests": 7,
           "xfail": 0
         },
         {
@@ -4600,7 +4608,7 @@
           "xfail": 0
         }
       ],
-      "head": "678acb67fa364caa82c63e250f6a0911e772ee83",
+      "head": "f91f020ac88c40c1601b51a63317b9f973a02da6",
       "id": "G",
       "paths": [
         "docs/audits/ISSUE465_STRESS.md",
@@ -4610,8 +4618,8 @@
         "tests/test_issue465_stress_audit_gate.py"
       ],
       "publication": "Native Git object/ref SHA verification; no component PR or workflow",
-      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5982182271",
-      "tree": "42302c06cba497647fcb5a064cb23cf7a782098b",
+      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5982413791",
+      "tree": "b40e07184cb93d90bbf0a0932b43908d378cd364",
       "workstream": "WS-FIX-AUDIT-08-G",
       "write_owner": "RELEASED"
     }

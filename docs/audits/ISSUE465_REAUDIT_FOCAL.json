@@ -236,24 +236,24 @@
       "tree": "6eae14f00f6b582a7bfb15577aa1c74be716ca41"
     },
     {
-      "bytes": 1110,
-      "content": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz48dGVzdHN1aXRlcyBuYW1lPSJweXRlc3QgdGVzdHMiPjx0ZXN0c3VpdGUgbmFtZT0icHl0ZXN0IiBlcnJvcnM9IjAiIGZhaWx1cmVzPSIwIiBza2lwcGVkPSIwIiB0ZXN0cz0iNiIgdGltZT0iMzAuOTIyIiB0aW1lc3RhbXA9IjIwMjYtMTAtMDRUMTY6MzU6MDMuMDc0NDA2KzAwOjAwIiBob3N0bmFtZT0iYTY5OWM1NDg1MWUyIj48dGVzdGNhc2UgY2xhc3NuYW1lPSJ0ZXN0cy50ZXN0X2lzc3VlNDY1X3N0cmVzcyIgbmFtZT0idGVzdF8xMHhfY2F0YWxvZ181eF9vYnNlcnZhdGlvbnNfZXhlcmNpc2VzX2FsbF9zaGFkb3dfbGFic19hbmRfZml2ZV9mYWN0dWFsX2V4aXRzIiB0aW1lPSIyNi4yODgiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3Rfc2xvd19kaXNrX29yX3NoYWRvd19xdW90YV9mYWlsdXJlX2Nhbm5vdF9ibG9ja19hY3R1YWxfZXhpdF9zdXBlcnZpc29yWzEzNDIxNzcyOF0iIHRpbWU9IjEuNDg1IiAvPjx0ZXN0Y2FzZSBjbGFzc25hbWU9InRlc3RzLnRlc3RfaXNzdWU0NjVfc3RyZXNzIiBuYW1lPSJ0ZXN0X3Nsb3dfZGlza19vcl9zaGFkb3dfcXVvdGFfZmFpbHVyZV9jYW5ub3RfYmxvY2tfYWN0dWFsX2V4aXRfc3VwZXJ2aXNvclsxMDI0XSIgdGltZT0iMC42MDMiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3Rfd2FsX3dyaXRlcl9sb2NrX2RvZXNfbm90X3R1cm5fc2hhZG93X2ludG9fd3JpdGVyX29yX3VuYm91bmRlZF9xdWVyeSIgdGltZT0iMC4wNDQiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3RfbXVsdGlwcm9jZXNzX2J1cnN0X2Nhbm5vdF9zcGVuZF9leGl0X2Zsb29yW2Jvb2tdIiB0aW1lPSIxLjIxNiIgLz48dGVzdGNhc2UgY2xhc3NuYW1lPSJ0ZXN0cy50ZXN0X2lzc3VlNDY1X3N0cmVzcyIgbmFtZT0idGVzdF9tdWx0aXByb2Nlc3NfYnVyc3RfY2Fubm90X3NwZW5kX2V4aXRfZmxvb3JbaW50cmFkYXldIiB0aW1lPSIxLjE3OSIgLz48L3Rlc3RzdWl0ZT48L3Rlc3RzdWl0ZXM+",
+      "bytes": 1263,
+      "content": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz48dGVzdHN1aXRlcyBuYW1lPSJweXRlc3QgdGVzdHMiPjx0ZXN0c3VpdGUgbmFtZT0icHl0ZXN0IiBlcnJvcnM9IjAiIGZhaWx1cmVzPSIwIiBza2lwcGVkPSIwIiB0ZXN0cz0iNyIgdGltZT0iMzAuMDM0IiB0aW1lc3RhbXA9IjIwMjYtMTAtMDRUMTc6MDM6MjIuOTA4Nzg3KzAwOjAwIiBob3N0bmFtZT0iYTY5OWM1NDg1MWUyIj48dGVzdGNhc2UgY2xhc3NuYW1lPSJ0ZXN0cy50ZXN0X2lzc3VlNDY1X3N0cmVzcyIgbmFtZT0idGVzdF8xMHhfY2F0YWxvZ181eF9vYnNlcnZhdGlvbnNfZXhlcmNpc2VzX2FsbF9zaGFkb3dfbGFic19hbmRfZml2ZV9mYWN0dWFsX2V4aXRzIiB0aW1lPSIyNC45NDUiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3Rfc2xvd19kaXNrX29yX3NoYWRvd19xdW90YV9mYWlsdXJlX2Nhbm5vdF9ibG9ja19hY3R1YWxfZXhpdF9zdXBlcnZpc29yWzEzNDIxNzcyOF0iIHRpbWU9IjEuNDAwIiAvPjx0ZXN0Y2FzZSBjbGFzc25hbWU9InRlc3RzLnRlc3RfaXNzdWU0NjVfc3RyZXNzIiBuYW1lPSJ0ZXN0X3Nsb3dfZGlza19vcl9zaGFkb3dfcXVvdGFfZmFpbHVyZV9jYW5ub3RfYmxvY2tfYWN0dWFsX2V4aXRfc3VwZXJ2aXNvclsxMDI0XSIgdGltZT0iMC42MjUiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3Rfd2FsX3dyaXRlcl9sb2NrX2RvZXNfbm90X3R1cm5fc2hhZG93X2ludG9fd3JpdGVyX29yX3VuYm91bmRlZF9xdWVyeSIgdGltZT0iMC4wNTgiIC8+PHRlc3RjYXNlIGNsYXNzbmFtZT0idGVzdHMudGVzdF9pc3N1ZTQ2NV9zdHJlc3MiIG5hbWU9InRlc3RfbXVsdGlwcm9jZXNzX2J1cnN0X2Nhbm5vdF9zcGVuZF9leGl0X2Zsb29yW2Jvb2tdIiB0aW1lPSIxLjAwMiIgLz48dGVzdGNhc2UgY2xhc3NuYW1lPSJ0ZXN0cy50ZXN0X2lzc3VlNDY1X3N0cmVzcyIgbmFtZT0idGVzdF9tdWx0aXByb2Nlc3NfYnVyc3RfY2Fubm90X3NwZW5kX2V4aXRfZmxvb3JbaW50cmFkYXldIiB0aW1lPSIxLjI3MyIgLz48dGVzdGNhc2UgY2xhc3NuYW1lPSJ0ZXN0cy50ZXN0X2lzc3VlNDY1X3N0cmVzcyIgbmFtZT0idGVzdF9uYXRpdmVfYnVkZ2V0X3dyaXRlcl9sb2NrX2lzX2V4cGxpY2l0X2NoaWxkX2RlbmlhbF93aXRob3V0X3dpcmVfb3JfZXhpdF9sb3NzIiB0aW1lPSIwLjYxMiIgLz48L3Rlc3RzdWl0ZT48L3Rlc3RzdWl0ZXM+",
       "dependencies": {
         "A": "ade87a8325195c91249c947c9b5af4b2f7c11a93"
       },
       "encoding": "base64",
       "front": "G",
-      "head": "678acb67fa364caa82c63e250f6a0911e772ee83",
-      "historical_path": "/workspace/issue465-authority/front-g-ade87-final-stress-311.xml",
+      "head": "f91f020ac88c40c1601b51a63317b9f973a02da6",
+      "historical_path": "/workspace/issue465-authority/front-g-child-denial-final-stress-311.xml",
       "junit": {
         "errors": 0,
         "failures": 0,
         "skipped": 0,
-        "tests": 6
+        "tests": 7
       },
       "meaning": "Frozen final focal GREEN",
-      "sha256": "a24e435aef23ce09b15b016ed25fb68d358a0ba092d38b6829dd096efd6fa2eb",
-      "tree": "42302c06cba497647fcb5a064cb23cf7a782098b"
+      "sha256": "838aaf63fd0edaeb66edf2d1d47c8dd26644a8f66efdb34998054ef4ee47cb61",
+      "tree": "b40e07184cb93d90bbf0a0932b43908d378cd364"
     },
     {
       "bytes": 6014,
@@ -263,7 +263,7 @@
       },
       "encoding": "base64",
       "front": "G",
-      "head": "678acb67fa364caa82c63e250f6a0911e772ee83",
+      "head": "f91f020ac88c40c1601b51a63317b9f973a02da6",
       "historical_path": "/workspace/issue465-authority/front-g-final-authority-gate-311.xml",
       "junit": {
         "errors": 0,
@@ -273,7 +273,7 @@
       },
       "meaning": "Frozen final focal GREEN",
       "sha256": "216de119a954d08906bc883e58a492e234776e4f1d16c23d704658eac87c9559",
-      "tree": "42302c06cba497647fcb5a064cb23cf7a782098b"
+      "tree": "b40e07184cb93d90bbf0a0932b43908d378cd364"
     },
     {
       "bytes": 6014,
@@ -283,7 +283,7 @@
       },
       "encoding": "base64",
       "front": "G",
-      "head": "678acb67fa364caa82c63e250f6a0911e772ee83",
+      "head": "f91f020ac88c40c1601b51a63317b9f973a02da6",
       "historical_path": "/workspace/issue465-authority/front-g-final-authority-gate-312.xml",
       "junit": {
         "errors": 0,
@@ -293,7 +293,7 @@
       },
       "meaning": "Frozen final focal GREEN",
       "sha256": "725315fb26f3007a8ec9e47bacd862a5da4ba885322da986f26ab5fc42ca2718",
-      "tree": "42302c06cba497647fcb5a064cb23cf7a782098b"
+      "tree": "b40e07184cb93d90bbf0a0932b43908d378cd364"
     }
   ],
   "safety": {
