@@ -45,7 +45,7 @@ Errores iniciales conservados en la evidencia del PR:
 | Métrica derivada dentro de contrato con digest válido | Integridad del contrato no valida el provenance ni el reloj de una métrica | Guard compartido catálogo/contrato; cinco regresiones cubren provenance ausente, stale, futuro, sin fuente y válido |
 | Harness de fetch diferido bloqueado | Playwright interpretaba el valor función de la asignación como callable y esperaba el Promise sin liberar | Expresiones de instalación/liberación devuelven `void 0`; el guard de navegador verifica texto y foco preservados durante el fetch pendiente |
 
-No se agregan exclusions, skips ni xfails. Se mantiene únicamente la exclusión gobernada existente `test_a3_primary_readonly_hf6.py`, con successor `tests/test_a3_primary_readonly_hf6.py`. El PR permanece DRAFT para ejecutar Predeploy V2 exacto sin promoción ni congelación de un candidato de deploy distinto del consolidado futuro. SHA/tree/run/artifact y conteos finales se registran en el PR y el cierre de ownership del issue, después del gate exacto GREEN.
+No se agregan exclusions, skips ni xfails. Se mantiene únicamente la exclusión gobernada existente `test_a3_primary_readonly_hf6.py`, con successor `tests/test_a3_primary_readonly_hf6.py`. El PR permanece DRAFT. Predeploy V2 construye y congela su artefacto exacto como evidencia de CI, sin promoción ni deploy; ese artefacto aislado no reemplaza el futuro candidato reconciliado del integration owner. SHA/tree/run/artifact y conteos finales se registran en el PR y el cierre de ownership del issue, después del gate exacto GREEN.
 
 ## Ownership y seguridad
 
