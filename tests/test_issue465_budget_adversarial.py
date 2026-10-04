@@ -5,22 +5,23 @@ The exact auditor reproduction intentionally fails at #463's frozen head.
 """
 from copy import deepcopy
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import multiprocessing
 import sqlite3
+import threading
 import time
 from urllib.parse import urlsplit
 
 import pytest
 import requests
 
-from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyTransportGuard, retry_read
+from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation, ReadOnlyTransportGuard, retry_read
 from be_paper_engine import D, PaperBroker, PaperStore
 from bq_exit_policy import PaperSessionPolicy
 import bf_production_paper_observer as observer
 from bv_paper_runtime import collect_exit_books
-from rc6_ppi_global_budget import BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget, PRIORITIES, validate_policy
+from rc6_ppi_global_budget import BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget, PRIORITIES, budget_policy, validate_policy
 from tests.test_rc6_ppi_global_budget import policy, use
 from tests.test_rc6_ppi_capacity_benchmark import Clock, wire
 from tests.test_rc6_capacity_promotion import approved, controller
@@ -115,6 +116,407 @@ def test_other_process_policy_cannot_lower_promised_exit_floor(tmp_path):
     second = GlobalPPIBudget(first.path, second_value, clock=clock.now)
     assert not use(second, "book", priority="DISCOVERY")["allowed"]
     assert use(first, "book", priority="EXIT_CRITICAL")["allowed"]
+
+
+def test_exit_demand_metrics_are_independent_of_planned_lower_reservations():
+    clock = Clock()
+    original = policy(clock, limits=dict(current=5, book=5, intraday=5))
+    state = dict(status="APPROVED_DYNAMIC", global_budget={name: original[name] for name in
+        ("window_seconds", "endpoint_limits", "global_limit", "safety_reserve")},
+        budget_settings={name: original[name] for name in ("critical_book_seconds", "lease_seconds",
+            "breaker_seconds", "session_breaker_seconds", "server_error_threshold", "maximum_bytes")},
+        recommendation_digest=original["recommendation_digest"],
+        configuration_fingerprint=original["configuration_fingerprint"], expires_at=original["expires_at"])
+    value = budget_policy(state, opened_count=5, planned_reservations={
+        "SCALPING_HOT": {"current": 1}, "STRATEGY_HOT": {"book": 3}, "WARM": {"intraday": 2}})
+    assert value["exit_demand"] == dict(current=0, book=30, intraday=0)
+    assert value["priority_reserves"]["EXIT_CRITICAL"] == dict(current=0, book=5, intraday=0)
+
+
+@pytest.mark.parametrize("replacement_window", [15, 60])
+@pytest.mark.parametrize("elapsed", [16, 31])
+def test_other_window_and_live_authority_cannot_erase_exit_promise(tmp_path, replacement_window, elapsed):
+    clock = Clock()
+    original = exit_floor(clock)
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert not use(first, "book", priority="OPENED_CRITICAL")["allowed"]
+    clock.advance(elapsed)
+    replacement = dict(original, window_seconds=replacement_window,
+        priority_reserves={}, configuration_fingerprint="c" * 64,
+        open_positions_count=0, exit_demand={})
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    lower = [use(second, "book", priority="DISCOVERY") for _ in range(5)]
+    assert all(not row["allowed"] for row in lower)
+    restarted = GlobalPPIBudget(first.path, original, clock=clock.now)
+    assert all(use(restarted, "book", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert second.metrics()["by_endpoint"]["book"]["used"] == 5
+
+
+@pytest.mark.parametrize("endpoint", ["current", "book", "intraday"])
+def test_shorter_window_or_greater_caps_cannot_forget_actual_used_debt(tmp_path, endpoint):
+    clock = Clock()
+    original = policy(clock, limits=dict(current=1, book=1, intraday=1), global_limit=1)
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert use(first, endpoint)["allowed"]
+    clock.advance(16)
+    replacement = dict(original, window_seconds=15, endpoint_limits=dict(current=10, book=10, intraday=10),
+        global_limit=30, configuration_fingerprint="c" * 64)
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    assert use(second, endpoint)["reason"] == "PPI_BUDGET_EXHAUSTED"
+    metrics = second.metrics()["window"]
+    assert metrics["effective_window_seconds"] == 30
+    assert metrics["by_endpoint"][endpoint]["used"] == 1
+    assert any(row["window_seconds"] == 30 and row["global_limit"] == 1 for row in metrics["active_envelopes"])
+    clock.advance(15)
+    assert use(second, endpoint)["allowed"]
+
+
+def test_longer_window_counts_preexisting_wire_until_its_own_boundary(tmp_path):
+    clock = Clock()
+    original = policy(clock, limits=dict(current=1, book=1, intraday=1), global_limit=1)
+    original["window_seconds"] = 15
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert use(first, "book")["allowed"]
+    clock.advance(16)
+    replacement = dict(original, window_seconds=60, configuration_fingerprint="c" * 64)
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    assert not use(second, "book")["allowed"]
+    clock.advance(45)
+    assert use(second, "book")["allowed"]
+
+
+def test_expired_authority_keeps_unelapsed_promise_but_cannot_emit(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    original["expires_at"] = (clock.now() + timedelta(seconds=2)).isoformat()
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert not use(first, "book", priority="OPENED_CRITICAL")["allowed"]
+    clock.advance(3)
+    replacement = dict(original, priority_reserves={}, exit_demand={}, open_positions_count=0,
+        configuration_fingerprint="c" * 64, window_seconds=15,
+        expires_at=(clock.now() + timedelta(hours=1)).isoformat())
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    assert not use(second, "book")["allowed"]
+    assert first.acquire("book", priority="EXIT_CRITICAL")["reason"] == "PPI_CAPACITY_EXPIRED_BACKPRESSURE"
+    clock.advance(28)
+    assert use(second, "book")["allowed"]
+
+
+def test_replacement_policy_clock_rollback_does_not_discard_original_promise(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert not use(first, "book", priority="OPENED_CRITICAL")["allowed"]
+    clock.advance(16)
+    assert not use(first, "book", priority="OPENED_CRITICAL")["allowed"]
+    replacement = dict(original, priority_reserves={}, configuration_fingerprint="c" * 64, window_seconds=15)
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    clock.advance(-1)
+    with pytest.raises(BudgetBackpressure, match="CLOCK_ROLLBACK"):
+        second.acquire("book")
+    clock.advance(1)
+    assert not use(second, "book")["allowed"]
+    assert use(first, "book", priority="EXIT_CRITICAL")["allowed"]
+
+
+def test_known_legacy_authority_is_migrated_without_losing_its_floor(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    with sqlite3.connect(budget.path) as connection:
+        for key, value in (("reserves", original["priority_reserves"]),
+            ("reserve_at", clock.now().timestamp()), ("last_policy", original)):
+            connection.execute("INSERT INTO budget_state VALUES(?,?)", (key, json.dumps(value)))
+    clock.advance(31)
+    replacement = dict(original, priority_reserves={}, configuration_fingerprint="c" * 64, window_seconds=15)
+    second = GlobalPPIBudget(budget.path, replacement, clock=clock.now)
+    assert not use(second, "book")["allowed"]
+    assert use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
+
+
+def test_unknown_legacy_authority_is_explicitly_closed_and_preserved(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    with sqlite3.connect(budget.path) as connection:
+        for key, value in (("reserves", original["priority_reserves"]), ("reserve_at", clock.now().timestamp())):
+            connection.execute("INSERT INTO budget_state VALUES(?,?)", (key, json.dumps(value)))
+    with pytest.raises(BudgetBackpressure, match="LEGACY_AUTHORITY_UNKNOWN"):
+        budget.acquire("book", priority="EXIT_CRITICAL")
+    with sqlite3.connect(budget.path) as connection:
+        assert json.loads(connection.execute("SELECT value FROM budget_state WHERE key='reserves'").fetchone()[0]) == original["priority_reserves"]
+
+
+def test_delayed_actual_start_renews_serial_lease_from_wire_timestamp(tmp_path):
+    clock = Clock()
+    original = policy(clock)
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    pending = first.acquire("book", priority="EXIT_CRITICAL")
+    clock.advance(59)
+    first.start(pending["lease"])
+    clock.advance(2)
+    second = GlobalPPIBudget(first.path, original, clock=clock.now)
+    assert second.acquire("book", priority="EXIT_CRITICAL")["reason"] == "PPI_SERIAL_BACKPRESSURE"
+    clock.advance(58)
+    assert second.acquire("book", priority="EXIT_CRITICAL")["allowed"]
+
+
+def test_actual_delayed_wire_remains_in_rolling_cap_after_admission_ages_out(wire, tmp_path):
+    clock, calls, behavior = wire
+    original = policy(clock, limits=dict(current=1, book=1, intraday=1), global_limit=1)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    actual_start = budget.start
+    def delayed_start(token):
+        clock.advance(29)
+        actual_start(token)
+    budget.start = delayed_start
+    guard = ReadOnlyTransportGuard(budget=budget).install()
+    try:
+        requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book")
+        budget.start = actual_start
+        clock.advance(2)
+        with pytest.raises(BudgetBackpressure, match="EXHAUSTED"):
+            requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book")
+        assert len(calls) == 1
+        assert budget.metrics()["window"]["by_endpoint"]["book"]["used"] == 1
+        clock.advance(28)
+        requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book")
+        assert len(calls) == 2
+    finally:
+        guard.restore()
+
+
+def test_new_stronger_promise_between_admission_and_start_is_rechecked(tmp_path):
+    clock = Clock()
+    original = policy(clock, limits=dict(current=5, book=5, intraday=5))
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    pending = first.acquire("book", priority="OPENED_CRITICAL")
+    clock.advance(1)
+    stronger = dict(original, priority_reserves={"EXIT_CRITICAL": {"book": 5}},
+        configuration_fingerprint="c" * 64)
+    second = GlobalPPIBudget(first.path, stronger, clock=clock.now)
+    assert second.acquire("book", priority="OPENED_CRITICAL")["reason"] == "PPI_SERIAL_BACKPRESSURE"
+    with pytest.raises(BudgetBackpressure, match="RESERVE"):
+        first.start(pending["lease"])
+    assert first.metrics()["global"]["used"] == 0
+
+
+def test_live_authority_cardinality_is_bounded_without_clearing_earlier_floors(tmp_path):
+    clock = Clock()
+    original = exit_floor(clock)
+    original["expires_at"] = (clock.now() + timedelta(seconds=2)).isoformat()
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    for index in range(64):
+        changed = dict(original, configuration_fingerprint=f"{index:064x}")
+        candidate = GlobalPPIBudget(first.path, changed, clock=clock.now)
+        assert not use(candidate, "book")["allowed"]
+    overflow = GlobalPPIBudget(first.path, dict(original, configuration_fingerprint="f" * 64), clock=clock.now)
+    with pytest.raises(BudgetBackpressure, match="AUTHORITY_OVERLAP_LIMIT"):
+        overflow.acquire("book")
+    with sqlite3.connect(first.path) as connection:
+        active = json.loads(connection.execute("SELECT value FROM budget_state WHERE key='reservation_envelopes_v1'").fetchone()[0])
+        assert len(active) == 64 and first.path.stat().st_size < 1024**2
+    clock.advance(31)
+    fresh = dict(original, configuration_fingerprint="f" * 64,
+        expires_at=(clock.now() + timedelta(hours=1)).isoformat())
+    candidate = GlobalPPIBudget(first.path, fresh, clock=clock.now)
+    assert use(candidate, "book", priority="EXIT_CRITICAL")["allowed"]
+    assert len(candidate.metrics()["window"]["active_envelopes"]) == 1
+
+
+@pytest.mark.parametrize("kind", ["endpoint", "global"])
+def test_same_window_larger_policy_cap_cannot_spend_another_authority_exit_floor(tmp_path, kind):
+    clock = Clock()
+    original = exit_floor(clock, global_limit=5 if kind == "global" else None)
+    first = GlobalPPIBudget(tmp_path / "budget.sqlite", original, clock=clock.now)
+    assert not use(first, "book", priority="OPENED_CRITICAL")["allowed"]
+    replacement = dict(original, priority_reserves={}, configuration_fingerprint="c" * 64,
+        endpoint_limits=dict(original["endpoint_limits"], book=10),
+        global_limit=10 if kind == "global" else 50)
+    second = GlobalPPIBudget(first.path, replacement, clock=clock.now)
+    endpoint = "current" if kind == "global" else "book"
+    assert all(not use(second, endpoint)["allowed"] for _ in range(5))
+    assert all(use(first, "book", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+
+
+def test_wire_scope_preserves_transport_failure_type_and_releases_os_lock(wire, tmp_path, monkeypatch):
+    clock, calls, behavior = wire
+    attempts = []
+    original_send = requests.adapters.HTTPAdapter.send
+    def transient_wire(adapter, request, **kwargs):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise requests.exceptions.ConnectionError("connection reset")
+        return original_send(adapter, request, **kwargs)
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", transient_wire)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    guard = ReadOnlyTransportGuard(budget=budget).install()
+    try:
+        response = retry_read(lambda: requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book"), pause=clock.advance)
+        assert response.json() and len(attempts) == 2
+        assert budget.metrics()["global"]["used"] == 2
+        assert not budget._wire_busy()
+    finally:
+        guard.restore()
+
+
+def live_wire_owner(path, value, seconds, started, release):
+    clock = lambda: datetime.fromtimestamp(seconds.value, timezone.utc)
+    budget = GlobalPPIBudget(path, value, clock=clock)
+    lease = budget.acquire("current")
+    with budget.wire_scope(lease["lease"]):
+        budget.start(lease["lease"])
+        started.put(True)
+        if release.wait(5):
+            budget.finish(lease["lease"])
+
+
+@pytest.mark.parametrize("kill_owner", [False, True])
+def test_process_wire_mutex_prevents_live_overlap_and_preserves_crash_lease(tmp_path, kill_owner):
+    clock = Clock()
+    value = exit_floor(clock)
+    context = multiprocessing.get_context("fork")
+    seconds = context.Value("d", clock.now().timestamp(), lock=False)
+    shared_clock = lambda: datetime.fromtimestamp(seconds.value, timezone.utc)
+    started, release = context.Queue(), context.Event()
+    path = str(tmp_path / "budget.sqlite")
+    owner = context.Process(target=live_wire_owner, args=(path, value, seconds, started, release))
+    owner.start()
+    try:
+        assert started.get(timeout=3)
+        second = GlobalPPIBudget(path, value, clock=shared_clock)
+        if kill_owner:
+            owner.kill()
+            owner.join(3)
+            assert second.acquire("book", priority="EXIT_CRITICAL")["reason"] == "PPI_SERIAL_BACKPRESSURE"
+        seconds.value += 61
+        if not kill_owner:
+            assert second.acquire("book", priority="EXIT_CRITICAL")["reason"] == "PPI_SERIAL_BACKPRESSURE"
+            release.set()
+            owner.join(3)
+            assert owner.exitcode == 0
+        assert use(second, "book", priority="EXIT_CRITICAL")["allowed"]
+    finally:
+        # A killed child may die holding Event's internal synchronization;
+        # never reuse that poisoned IPC primitive in the crash fixture.
+        if not kill_owner:
+            release.set()
+        if owner.is_alive():
+            owner.kill()
+        owner.join(3)
+
+
+@pytest.mark.parametrize("past_time_lease", [False, True])
+def test_native_streaming_body_retains_actual_wire_ownership(monkeypatch, tmp_path, past_time_lease):
+    clock = Clock()
+    body_started, release = threading.Event(), threading.Event()
+    calls, errors, completed, streams = [], [], [], []
+    class Body:
+        def __init__(self, blocked):
+            self.blocked = blocked
+        def stream(self, chunk_size, decode_content=True):
+            streams.append(self.blocked)
+            if self.blocked:
+                body_started.set()
+                assert release.wait(3), "offline body was not released"
+            yield b'{"complete":true}'
+        def close(self):
+            pass
+        def release_conn(self):
+            pass
+    def headers_only(adapter, request, **kwargs):
+        calls.append(request.url)
+        response = requests.Response()
+        response.status_code, response.request, response.url = 200, request, request.url
+        response.raw = Body(len(calls) == 1)
+        return response
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", headers_only)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    guard = ReadOnlyTransportGuard(budget=budget, consumer="SCANNER").install()
+    def first():
+        try:
+            completed.append(requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Current").json())
+        except Exception as error:
+            errors.append(error)
+    worker = threading.Thread(target=first)
+    worker.start()
+    try:
+        assert body_started.wait(2)
+        if past_time_lease:
+            # read_timeout is inactivity: a body can remain active after60s.
+            clock.advance(61)
+        with guard.read_scope(priority="EXIT_CRITICAL"):
+            with pytest.raises(BudgetBackpressure, match="SERIAL"):
+                requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book")
+        assert worker.is_alive() and len(calls) == 1
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive() and not errors and completed == [{"complete": True}]
+        with guard.read_scope(priority="EXIT_CRITICAL"):
+            assert requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book").json() == {"complete": True}
+        assert len(calls) == 2 and streams == [True, False]
+        assert budget.metrics()["global"]["used"] == 2
+    finally:
+        release.set()
+        worker.join(2)
+        guard.restore()
+
+
+def test_explicit_unowned_http_streaming_is_denied_before_admission_or_wire(wire, tmp_path):
+    clock, calls, behavior = wire
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    guard = ReadOnlyTransportGuard(budget=budget).install()
+    try:
+        with pytest.raises(ReadOnlyPolicyViolation, match="STREAMING_READ_NOT_OWNED"):
+            requests.get("https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book", stream=True)
+        prepared = requests.Request("GET", "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Book").prepare()
+        with pytest.raises(ReadOnlyPolicyViolation, match="STREAMING_READ_NOT_OWNED"):
+            requests.Session().send(prepared, stream=True)
+        assert not calls and budget.metrics()["global"]["requested"] == 0
+    finally:
+        guard.restore()
+
+
+@pytest.mark.parametrize("status", [200, 429, 401, 403])
+def test_native_body_failure_is_sanitized_and_preserves_global_http_semantics(wire, tmp_path, monkeypatch, status):
+    clock, calls, behavior = wire
+    closed = []
+    class BrokenBody:
+        def stream(self, chunk_size, decode_content=True):
+            raise requests.exceptions.ChunkedEncodingError("RAW_PRIVATE_BODY_CANARY")
+            yield b""
+        def close(self):
+            closed.append(True)
+        def release_conn(self):
+            pass
+    original_send = requests.adapters.HTTPAdapter.send
+    def broken_body(adapter, request, **kwargs):
+        response = original_send(adapter, request, **kwargs)
+        if urlsplit(request.url).path.lower().endswith("/intraday"):
+            response._content, response._content_consumed = False, False
+            response.raw = BrokenBody()
+        return response
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", broken_body)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    reader = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=budget, consumer="SCALPING")
+    try:
+        reader.login_once()
+        behavior["status"] = status
+        with pytest.raises(Exception):
+            reader.intraday("GGAL", "ACCIONES", "A-24HS")
+        code = f"PPI_HTTP_{status}" if status >= 400 else "PPI_CHUNKEDENCODINGERROR"
+        assert reader.last_read_error_code == code
+        metrics = budget.metrics()
+        assert metrics["global"]["used"] == 1 and closed
+        assert "RAW_PRIVATE" not in json.dumps(metrics)
+        if status >= 400:
+            assert metrics["circuits"]["global"]["code"] == code
+            before = len(calls)
+            with pytest.raises(BudgetBackpressure):
+                reader.intraday("GGAL", "ACCIONES", "A-24HS")
+            assert len(calls) == before
+    finally:
+        reader.close()
 
 
 @pytest.mark.parametrize("priority,consumer", [("OPENED_CRITICAL", "SCANNER"), ("EXIT_CRITICAL", "EXIT_READER")])

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from json import JSONDecodeError
 from typing import Callable, Optional
@@ -252,6 +252,8 @@ class ReadOnlyTransportGuard:
         def guarded_request(session, method, url, **kwargs):
             try:
                 checked_method, checked_path = guard.check(method, url, count_login=True)
+                if kwargs.get("stream"):
+                    raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
                 with guard._lock:
                     guard.calls_blocked += 1
@@ -265,6 +267,8 @@ class ReadOnlyTransportGuard:
         def guarded_send(adapter, request, **kwargs):
             try:
                 checked_method, checked_path = guard.check(request.method, request.url)
+                if kwargs.get("stream"):
+                    raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
                 with guard._lock:
                     guard.calls_blocked += 1
@@ -284,22 +288,37 @@ class ReadOnlyTransportGuard:
                     guard._record(checked_method, checked_path, "BACKPRESSURE")
                     raise BudgetBackpressure(admitted["reason"])
                 lease = admitted["lease"]
-                budget.start(lease)
-            with guard._lock:
-                guard.calls_allowed += 1
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
-            try:
-                response = original_send(adapter, request, **kwargs)
-            except Exception as error:
-                guard._read_error(classify_read_error(error))
+            ownership = budget.wire_scope(lease) if budget is not None and hasattr(budget, "wire_scope") else nullcontext()
+            # HTTPAdapter.send returns headers. Session.send would consume
+            # the body AFTER return and outside the durable wire lease. The
+            # native non-streaming read includes body completion and errors.
+            with ownership:
+                response = None
+                try:
+                    if budget is not None:
+                        budget.start(lease)
+                    with guard._lock:
+                        guard.calls_allowed += 1
+                    response = original_send(adapter, request, **kwargs)
+                    if response.status_code >= 400:
+                        guard._read_error(f"PPI_HTTP_{response.status_code}")
+                    response.content
+                except Exception as error:
+                    status = response.status_code if response is not None else None
+                    code = (f"PPI_HTTP_{status}" if status and status >= 400 else
+                        str(error) if type(error).__name__ == "BudgetBackpressure" else classify_read_error(error))
+                    guard._read_error(code)
+                    try:
+                        if response is not None:
+                            response.close()
+                    finally:
+                        if budget is not None:
+                            budget.finish(lease, status_code=status, error_code=code)
+                    raise
                 if budget is not None:
-                    budget.finish(lease, error_code=classify_read_error(error))
-                raise
-            if response.status_code >= 400:
-                guard._read_error(f"PPI_HTTP_{response.status_code}")
-            if budget is not None:
-                budget.finish(lease, status_code=response.status_code)
-            return response
+                    budget.finish(lease, status_code=response.status_code)
+                return response
 
         requests.sessions.Session.request = guarded_request
         requests.adapters.HTTPAdapter.send = guarded_send

@@ -5,6 +5,8 @@ Base: rejected, frozen #463 at `caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423`.
 Authority: #465, complete #464 report/comment, #458 A–N, #460 and #462 O–V.
 WRITE_OWNER declaration: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981112240.
 Narrow existing-test reconciliation: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981320592.
+Peer counterexample reacquisition: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981557266.
+Full HTTP body/serial ownership blocker: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981655796.
 
 PAPER/SHADOW only, real_orders_sent=0, real routes NOT_CALLED. No provider,
 production runtime, productive DB, PPI Watch, merge, deploy or Predeploy action
@@ -45,8 +47,12 @@ bounded exact-identity single-flight/coalescing:
 * Usage is counted independently per priority; OPENED never subtracts EXIT
   reserve. Every lower request holds all remaining higher floors by endpoint
   **and** globally before wire admission, including every actual retry.
-* Promises cannot be lowered within their established window by another
-  process or configuration. Oversubscribed plans allocate by rank and protect
+* Each valid originating authority retains its own window, endpoint/global
+  caps and monotonic promises. Every live authority constrains the same
+  receipts, including after its first window, through the later of authority
+  expiry and last observation plus its original window. Another process
+  cannot shrink that horizon, erase a promise or enlarge the old authority's
+  caps. Oversubscribed plans allocate by rank and protect
   EXIT book first; they expose demand that cannot be reserved, rather than
   manufacturing capacity or hiding the shortage.
 * Only a higher claimant can borrow common/lower capacity; both incoming and
@@ -57,6 +63,18 @@ bounded exact-identity single-flight/coalescing:
   original guards are unchanged. Factual baseline 20/40 and cadences remain.
 * Admission receipts, serial lease, breakers and counters survive restart.
   SQLite never remains locked during network reads or single-flight waiting.
+* Successful actual start rechecks all live envelopes, renews the durable lease
+  from that start and moves the receipt to actual wire time. Expired unstarted
+  leases cannot resurrect. A confirmed pre-wire failure releases only its
+  unused claim; an emitted receipt is never erased by policy replacement.
+* A nonblocking OS mutex covers the actual adapter send, complete native body
+  and finish. A live slow body cannot lose wire ownership after a time lease
+  expires; process death releases the mutex but retains the crash lease.
+  Explicit `stream=True` is unowned and fails before admission or wire.
+* Authority cardinality is capped at64. Overlap pressure fails closed rather
+  than evicting a still-valid stronger authority. Legacy state with a known
+  originating policy preserves its bounds/promise; a legacy promise without
+  reconstructible authority explicitly fails closed without clearing it.
 
 Cache/single-flight resides in the existing private budget sidecar, never the
 trading DB. Key is the hash of all five identity fields, never ticker alone.
@@ -99,6 +117,13 @@ Admission protection uses exact rolling receipt timestamps. Counter telemetry
 is explicitly aggregated at one-second resolution with reported start/end;
 denial bursts have fixed scope cardinality. Older telemetry is pruned after
 one hour, within the sidecar's existing disk/page/receipt quota.
+The aggregate horizon is the longest active window and reservation summary is
+the conservative union under the tightest live caps. `active_envelopes`
+exposes each exact originating window, bounds, authority expiry/retention,
+admitted/used receipts and remaining promises used by admission. The held
+position/demand metadata is the maximum of the live authorities; it cannot
+silently hide an older stronger promise. Lower planned demand never replaces
+the independently calculated raw EXIT demand.
 
 ## Twenty required adversarial cases
 
@@ -148,17 +173,42 @@ The real SDK strips HTTP status on errors and may refresh/retry internally on
 each native read; preserves the originating HTTP429/401/403 through that same
 read's internal retry, while a subsequent read reports its current circuit
 denial and a successful probe resets it. Front B consumes this public contract
-without private guard introspection. No parser, provider transport, credential
-or response-body logging is added. Three actual SDK fake-wire regressions
+without private guard introspection. No parser, credential or response-body
+logging is added. Three actual SDK fake-wire regressions
 exercise reset, internal retry, global breaker and zero additional off-wire
 sends.
 
+Peer self-review rejected the first provisional Front A head `558cf04b` and
+revoked its release. Preserved offline RED witnesses cover:
+
+* raw `exit_demand` overwritten by the last WARM planning variable;
+* shorter-window and enlarged endpoint/global-cap policies consuming another
+  still-valid authority's EXIT floor, including renewal after the first30s;
+* acquire at0/start at59 admitting a second sender at61 without first finish,
+  and actual wire debt dropping out when admission time aged out;
+* headers returned by `HTTPAdapter.send` while Requests still consumed the
+  raw body outside the released lease.
+
+Permanent guards exercise15/30/60s windows, authority renewal, both cap axes,
+all endpoint debts, restart, rollback, expired authority retention, known and
+unknown legacy state, bounded64-authority pressure, pre-start floor changes,
+actual delayed native wire, body failures, explicit streaming rejection,
+actual raw body blocking even beyond60s and cross-process live/kill ownership.
+The wire scope preserves native transport exception types and retry counting.
+HTTP429/401/403 remain globally authoritative even when body reading fails;
+the socket is closed before finish and only sanitized diagnosis is exposed.
+
+Reopened causal test evidence `reopened-red.xml` records12 failures among16
+focused cases before the correction. Independent peer witness scripts remain
+outside the repository; they are reexecuted against the new frozen head by the
+read-only peer, not represented as a complete independent re-audit.
+
 ## Local evidence and handoff boundary
 
-Focused validation: **406 passed**, failures=errors=skipped=xfail=0,
-`/workspace/issue465-evidence/front-a/final-focal.xml`, SHA256
-`99d92d84005c1ca6248d1b52de528bb16dc3a587a9f5fef1bd3cbc66976ecab0`.
-Includes all 44 new cases, original budget/approved callers, exit supervision,
+Focused validation: **435 passed**, failures=errors=skipped=xfail=0,
+`/workspace/issue465-evidence/front-a/reopened-final-focal.xml`, SHA256
+`8d80aa12006a157d356a22db2ec7e841680943f231440b37bf00a669f55eaaa7`.
+Includes all73 new cases, original budget/approved callers, exit supervision,
 exit ledger isolation, capacity promotion, intraday freshness, documented SDK
 contract and production PAPER scenarios. Compile AST and diff whitespace pass.
 Environment: pinned dependencies, local Python 3.12; final Actions Python 3.11
