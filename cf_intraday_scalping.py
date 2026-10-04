@@ -12,6 +12,7 @@ from collections import OrderedDict
 
 import hashlib
 import json
+import math
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -49,8 +50,27 @@ INTRADAY_NEGATIVE_MAX_TTL_SECONDS = 3600
 INTRADAY_REPROBE_MIN_SPACING_SECONDS = 60
 INTRADAY_CAPABILITY_CACHE_MAX_ENTRIES = 2048
 INTRADAY_CAPABILITY_SCHEMA = "rc6.intraday-capability.v1"
+INTRADAY_CAPABILITY_WARMUP_STATE = "INTRADAY_CAPABILITY_WARMUP_PENDING"
+INTRADAY_CAPABILITY_REJECTED_STATE = "INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED_POINTS"
 INTRADAY_CAPABILITY_CLOSED_STATES = frozenset({"PPI_INSTRUMENT_NOT_FOUND",
-    "INTRADAY_CAPABILITY_REPROBE_PENDING", "INTRADAY_CAPABILITY_REPROBE_FAILED"})
+    "INTRADAY_CAPABILITY_REPROBE_PENDING", "INTRADAY_CAPABILITY_REPROBE_FAILED",
+    INTRADAY_CAPABILITY_WARMUP_STATE, INTRADAY_CAPABILITY_REJECTED_STATE})
+
+
+def _unique_capability_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("INTRADAY_CAPABILITY_DUPLICATE_KEY")
+        result[key] = value
+    return result
+
+
+def _finite_capability_number(encoded):
+    number = float(encoded)
+    if not math.isfinite(number):
+        raise ValueError("INTRADAY_CAPABILITY_NONFINITE_NUMBER")
+    return number
 
 
 def _capability_detail(contract):
@@ -59,9 +79,11 @@ def _capability_detail(contract):
     if len(encoded) > 16 * 1024:
         raise ValueError("INTRADAY_CAPABILITY_STATE_BOUND")
     try:
-        detail = json.loads(encoded)
+        detail = json.loads(encoded, object_pairs_hook=_unique_capability_keys,
+            parse_float=_finite_capability_number, parse_constant=_finite_capability_number)
     except (ValueError, TypeError):
-        if (contract or {}).get("state") in INTRADAY_CAPABILITY_CLOSED_STATES or '"capability"' in encoded:
+        if ((contract or {}).get("state") in INTRADAY_CAPABILITY_CLOSED_STATES
+                or '"capability"' in encoded or encoded.lstrip().startswith(("{", "["))):
             raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
         return None
     if not isinstance(detail, dict) or detail.get("schema") != INTRADAY_CAPABILITY_SCHEMA:
@@ -71,13 +93,24 @@ def _capability_detail(contract):
     capability = detail.get("capability")
     if not isinstance(capability, dict):
         raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
+    for field, count in (("identity", 5), ("request", 3), ("negative_origin_identity", 5)):
+        values = capability.get(field)
+        if (not isinstance(values, list) or len(values) != count
+                or any(not isinstance(value, str) or not 0 < len(value) <= 256 for value in values)):
+            raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
+    request = [capability["identity"][index] for index in (0, 1, 4)]
+    if (capability["request"] != request
+            or [capability["negative_origin_identity"][index] for index in (0, 1, 4)] != request):
+        raise ValueError("INTRADAY_CAPABILITY_IDENTITY_MISMATCH")
     try:
         first, last, due = [aware_datetime(capability[field]) for field in
             ("first_seen_at", "last_seen_at", "retry_due_at")]
-        if not first <= last <= due or (due - last).total_seconds() > INTRADAY_NEGATIVE_MAX_TTL_SECONDS:
+        checked = aware_datetime(contract["checked_at"])
+        if (not first <= last <= due or last > checked
+                or (due - last).total_seconds() > INTRADAY_NEGATIVE_MAX_TTL_SECONDS):
             raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
         if not capability.get("warmup_reset_required"):
-            if aware_datetime(capability["warmup_after"]) != aware_datetime(capability["recovered_at"]):
+            if not aware_datetime(capability["warmup_after"]) == aware_datetime(capability["recovered_at"]) == last:
                 raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID") from exc
@@ -87,7 +120,15 @@ def _capability_detail(contract):
             or not isinstance(capability.get("warmup_reset_required"), bool)
             or not isinstance(capability.get("catalog_config_fingerprint"), str)
             or len(capability["catalog_config_fingerprint"]) != 64
-            or not isinstance(capability.get("identity"), list) or len(capability["identity"]) != 5):
+            or any(char not in "0123456789abcdef" for char in capability["catalog_config_fingerprint"])
+            or capability.get("session_id") != last.astimezone(TZ).date().isoformat()
+            or not isinstance(capability.get("identity"), list) or len(capability["identity"]) != 5
+            or ((contract or {}).get("state") in {INTRADAY_CAPABILITY_WARMUP_STATE, INTRADAY_CAPABILITY_REJECTED_STATE}
+                and capability["warmup_reset_required"])):
+        raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
+    cooldown = min(INTRADAY_NEGATIVE_MAX_TTL_SECONDS, INTRADAY_NEGATIVE_TTL_SECONDS *
+        2 ** (max(1, capability["consecutive_failures"]) - 1))
+    if (due - last).total_seconds() != cooldown:
         raise ValueError("INTRADAY_CAPABILITY_STATE_INVALID")
     return dict(capability)
 
@@ -190,18 +231,37 @@ class IntradayCapabilityCache:
                   "INTRADAY_CAPABILITY_TTL_REPROBE")
         return {"allowed": due, "reprobe": due, "reason": reason if due else "INTRADAY_CAPABILITY_COOLDOWN"}
 
-    def outcome(self, record, previous, *, at, fingerprint, result, recovered=False, probe_reason=None):
+    def begin_probe(self, record, previous, *, at, fingerprint, reason):
+        """Persistable attempt admission precedes the wire, even across death."""
+        now = aware_datetime(at)
+        session_id = now.astimezone(TZ).date().isoformat()
+        same_context = (previous.get("session_id") == session_id
+            and previous.get("catalog_config_fingerprint") == fingerprint)
+        failures = previous["consecutive_failures"] if same_context else 0
+        cooldown = min(INTRADAY_NEGATIVE_MAX_TTL_SECONDS, INTRADAY_NEGATIVE_TTL_SECONDS *
+            2 ** (max(1, failures) - 1))
+        pending = dict(previous, last_seen_at=_stamp(now),
+            retry_due_at=_stamp(now + timedelta(seconds=cooldown)), session_id=session_id,
+            attempts=min(2147483647, previous["attempts"] + 1),
+            last_result="READ_ONLY_REPROBE_PENDING", reason_code=reason,
+            capability_status="REPROBE_PENDING", catalog_config_fingerprint=fingerprint,
+            consecutive_failures=failures, warmup_reset_required=True, warmup_after=None,
+            reprobe_reason=reason)
+        return self.remember(record, pending)
+
+    def outcome(self, record, previous, *, at, fingerprint, result, recovered=False,
+                probe_reason=None, attempt_started=False):
         now = aware_datetime(at)
         session_id = now.astimezone(TZ).date().isoformat()
         previous = previous or {}
         same_context = (previous.get("session_id") == session_id
             and previous.get("catalog_config_fingerprint") == fingerprint)
         failures = min(3, int(previous.get("consecutive_failures", 0)) + 1) if same_context else 1
-        cooldown = min(INTRADAY_NEGATIVE_MAX_TTL_SECONDS,
+        cooldown = INTRADAY_NEGATIVE_TTL_SECONDS if recovered else min(INTRADAY_NEGATIVE_MAX_TTL_SECONDS,
             INTRADAY_NEGATIVE_TTL_SECONDS * (2 ** (failures - 1)))
         value = {"first_seen_at": previous.get("first_seen_at") or _stamp(now),
             "last_seen_at": _stamp(now), "retry_due_at": _stamp(now + timedelta(seconds=cooldown)),
-            "session_id": session_id, "attempts": min(2147483647, int(previous.get("attempts", 0)) + 1),
+            "session_id": session_id, "attempts": min(2147483647, int(previous.get("attempts", 0)) + int(not attempt_started)),
             "last_result": result, "recovered_at": _stamp(now) if recovered else None,
             "reason_code": ("INTRADAY_CAPABILITY_RECOVERED_WARMUP_REQUIRED" if recovered else
                 result if result == "PPI_INSTRUMENT_NOT_FOUND" else "INTRADAY_CAPABILITY_REPROBE_FAILED"),
@@ -495,7 +555,8 @@ def _request_capability_state(store, record):
         row = connection.execute("""SELECT * FROM ppi_intraday_contract_state
             WHERE symbol=? AND asset_class=? AND settlement=?
               AND state IN ('PPI_INSTRUMENT_NOT_FOUND','INTRADAY_CAPABILITY_REPROBE_FAILED',
-                            'INTRADAY_CAPABILITY_REPROBE_PENDING')
+                            'INTRADAY_CAPABILITY_REPROBE_PENDING','INTRADAY_CAPABILITY_WARMUP_PENDING',
+                            'INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED_POINTS')
             ORDER BY julianday(checked_at) DESC,market,currency LIMIT 1""",
             IntradayCapabilityCache.request(record)).fetchone()
     if row is None:
@@ -534,6 +595,9 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
             raise ValueError("INTRADAY_REPROBE_NO_FRESH_SOURCE")
         capability = dict(capability, warmup_reset_required=False,
             warmup_after=_stamp(received_at), recovered_at=_stamp(received_at),
+            last_seen_at=_stamp(received_at), session_id=aware_datetime(received_at).astimezone(TZ).date().isoformat(),
+            retry_due_at=_stamp(aware_datetime(received_at) + timedelta(seconds=INTRADAY_NEGATIVE_TTL_SECONDS)),
+            attempts=min(2147483647, capability["attempts"] + 1), consecutive_failures=0,
             last_result="READ_ONLY_RECOVERED", reason_code="INTRADAY_CAPABILITY_RECOVERED_WARMUP_REQUIRED",
             capability_status="RECOVERED_WARMUP")
         previous = dict(previous or {}, observations=0, stable_overlap=0)
@@ -592,13 +656,33 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
                     (previous or {}).get("state") == "CONFIRMED_INTERVAL_VOLUME"
                     and changed == 0 and prior_changed == 0)
                  else "PENDING_LIVE_CONFIRMATION")
+        volume_contract_state = state
+        if warmup_after:
+            # Recovery is a distinct durable state until the *whole* native
+            # warmup is satisfied. Even replacing metadata with valid legacy
+            # text cannot borrow pre-epoch history before all 15 source samples.
+            # Empty and rejected native transitions retain that authority too;
+            # closed-minute rejection remains stronger than an ordinary warmup.
+            if state == "REJECTED_MUTABLE_CLOSED_POINTS":
+                state = INTRADAY_CAPABILITY_REJECTED_STATE
+            elif state != "CONFIRMED_INTERVAL_VOLUME":
+                state = INTRADAY_CAPABILITY_WARMUP_STATE
+            else:
+                post_epoch_samples = connection.execute("""SELECT COUNT(*) FROM (
+                SELECT 1 FROM ppi_intraday_points
+                WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+                  AND julianday(event_at)>julianday(?) LIMIT 15)""",
+                    (*identity, warmup_after)).fetchone()[0]
+                if post_epoch_samples < 15:
+                    state = INTRADAY_CAPABILITY_WARMUP_STATE
         last_source = points[-1][0] if points else None
         detail = (f"observaciones={observations}; solapamiento_estable={stable}; "
                   f"cerrados_modificados={changed}; nuevos={inserted}; "
                   f"mutables_refrescados={refreshed}; descensos_volumen={down_steps}")
         if capability:
             detail = json.dumps({"schema": INTRADAY_CAPABILITY_SCHEMA,
-                "capability": capability, "contract_detail": detail},
+                "capability": capability, "volume_contract_state": volume_contract_state,
+                "contract_detail": detail},
                 sort_keys=True, separators=(",", ":"), allow_nan=False)
         connection.execute("""INSERT OR REPLACE INTO ppi_intraday_contract_state
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -879,7 +963,7 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
     from bd_ppi_readonly_guard import (ProductionMarketReader, retry_read,
-                                       session_invalid, classify_read_error,
+                                       classify_read_error,
                                        instrument_not_found)
     from bf_production_paper_observer import _secret
     init_schema(store)
@@ -954,6 +1038,7 @@ def run_worker(store, stop, *, clock_fn):
                 capability = None
                 reprobe = False
                 fingerprint = ""
+                read_error_code = None
                 try:
                     key = _identity(record)
                     capability = capability_cache.restore(record, _request_capability_state(store, record))
@@ -966,9 +1051,9 @@ def run_worker(store, stop, *, clock_fn):
                     if reprobe:
                         # Invalidate old signal authority before the read-only
                         # wire call, also for session/config-triggered probes.
-                        pending = dict(capability, warmup_reset_required=True, warmup_after=None,
-                            capability_status="REPROBE_PENDING", reason_code=decision["reason"])
-                        _invalidate_intraday_capability(store, record, pending, at=at)
+                        capability = capability_cache.begin_probe(record, capability, at=at,
+                            fingerprint=fingerprint, reason=decision["reason"])
+                        _invalidate_intraday_capability(store, record, capability, at=at)
                         reprobes += 1
                     if dynamic_selection["dynamic"]:
                         state = dynamic_selection["rows"][key]["state"]
@@ -978,9 +1063,17 @@ def run_worker(store, stop, *, clock_fn):
                     scope = (reader.read_scope(priority=priority, identity=key)
                         if getattr(reader, "budget_enabled", False) is True and hasattr(reader, "read_scope") else nullcontext())
                     with scope:
-                        payload = retry_read(lambda: reader.intraday(
-                            record["ticker"],record["instrument_type"],record["settlement"]),
-                            retries=0 if reprobe else 1)
+                        try:
+                            payload = retry_read(lambda: reader.intraday(
+                                record["ticker"],record["instrument_type"],record["settlement"]),
+                                retries=0 if reprobe else 1)
+                        except Exception as read_error:
+                            # Authentication/HTTP diagnostics belong only to
+                            # the actual read. Local persistence/decoder errors
+                            # cannot borrow an earlier transport result or turn
+                            # malformed stored text into a new login attempt.
+                            read_error_code = _intraday_read_error_code(reader, read_error, classify_read_error)
+                            raise
                     received = _stamp(clock_fn())
                     points = normalize_payload(payload,received_at=received)
                     if reprobe:
@@ -988,7 +1081,7 @@ def run_worker(store, stop, *, clock_fn):
                             raise ValueError("INTRADAY_REPROBE_NO_FRESH_SOURCE")
                         recovery = capability_cache.outcome(record, capability, at=received,
                             fingerprint=fingerprint, result="READ_ONLY_RECOVERED", recovered=True,
-                            probe_reason=decision["reason"])
+                            probe_reason=decision["reason"], attempt_started=True)
                         result = persist_payload(store, record, points, received_at=received,
                             capability_recovery=recovery)
                         _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_RECOVERED", record, recovery)
@@ -1006,12 +1099,12 @@ def run_worker(store, stop, *, clock_fn):
                         store.event("SCALPING_PAPER_PROMOTION", f"{record['ticker']}: {result_action}")
                     successful += 1
                 except Exception as exc:
-                    error_code = _intraday_read_error_code(reader, exc, classify_read_error)
-                    if error_code == "PPI_INSTRUMENT_NOT_FOUND" and instrument_not_found(exc):
+                    error_code = read_error_code or "PPI_" + type(exc).__name__.upper()
+                    if read_error_code == "PPI_INSTRUMENT_NOT_FOUND" and instrument_not_found(exc):
                         negative_at = _stamp(clock_fn())
                         negative = capability_cache.outcome(record, capability, at=negative_at,
                             fingerprint=fingerprint, result="PPI_INSTRUMENT_NOT_FOUND",
-                            probe_reason=decision["reason"] if reprobe else None)
+                            probe_reason=decision["reason"] if reprobe else None, attempt_started=reprobe)
                         _invalidate_intraday_capability(store, record, negative, at=negative_at)
                         unsupported_this_batch += 1
                         _capability_event(store, "INTRADAY_SCALPING_UNSUPPORTED", record, negative)
@@ -1020,14 +1113,14 @@ def run_worker(store, stop, *, clock_fn):
                             retry_at = _stamp(clock_fn())
                             negative = capability_cache.outcome(record, capability, at=retry_at,
                                 fingerprint=fingerprint, result=error_code,
-                                probe_reason=decision["reason"])
+                                probe_reason=decision["reason"], attempt_started=True)
                             _invalidate_intraday_capability(store, record, negative, at=retry_at)
                             _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_REPROBE_FAILED", record, negative)
                         failed += 1
                         store.event("INTRADAY_SCALPING_ERROR",
                                     f"{record['ticker']}: {error_code};shadow_identity=" +
                                     json.dumps(_identity(record), separators=(",", ":")))
-                        if error_code == "PPI_SESSION_INVALID" or session_invalid(exc):
+                        if error_code == "PPI_SESSION_INVALID":
                             invalid_session = True
                             break
                 stop.wait(0.75)
