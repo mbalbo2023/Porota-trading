@@ -1,22 +1,26 @@
 {
-  "registered_paths": 53,
-  "route_count": 55,
+  "registered_paths": 100,
+  "route_count": 102,
   "routes": [
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
         "runtime",
-        "safety",
-        "readiness"
+        "safety"
       ],
+      "canonical_view": "inicio/resumen",
       "datasets": [
         "observer_state",
-        "candidate_identity_v2"
+        "paper_equity_by_currency",
+        "paper_daily_risk",
+        "paper_positions",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "o_dashboard.dashboard",
-      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -25,24 +29,34 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/",
-      "ready_counter_authority": "candidate_identity_v2",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "dashboard principal",
+      "title_or_surface": "Inicio > Estado & atención",
       "write_route": false
     },
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "learning_history"
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
       ],
+      "canonical_view": "en-vivo/decisiones",
       "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
         "paper_decisions",
-        "decision_evidence_latest"
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "o_dashboard.ai_decisions_dashboard",
-      "family_dimension": "NOT_APPLICABLE",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -51,33 +65,31 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/ai-decisions",
-      "ready_counter_authority": "NOT_APPLICABLE",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "decisiones de IA",
+      "title_or_surface": "En Vivo > Decisiones",
       "write_route": false
     },
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "catalog",
-        "readiness",
-        "contract",
         "history",
-        "iol_current",
-        "caucion"
+        "learning_history"
       ],
+      "canonical_view": "analitica/performance",
       "datasets": [
-        "financial_instrument_catalog",
-        "candidate_identity_v2",
-        "contract_evidence_v2_current",
+        "paper_positions",
         "history_canonical_v2",
-        "IOL section cache",
-        "paper_caucion_allocations"
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.annual_analysis",
-      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -86,9 +98,241 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/analisis",
-      "ready_counter_authority": "candidate_identity_v2",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "análisis anual",
+      "title_or_surface": "Analítica > Performance",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/performance",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Performance",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/cierre-diario",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/cierre-diario",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Cierre diario",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/experimentos",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/experimentos",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Experimentos",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/historico",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/historico",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Histórico",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/reportes",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/reportes",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Reportes",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/salidas",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/salidas",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Salidas",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/senales",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/analitica/senales",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Señales",
       "write_route": false
     },
     {
@@ -97,6 +341,7 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "observer_state",
         "paper_positions"
@@ -104,6 +349,7 @@
       "endpoint": "o_dashboard.dashboard_json",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -112,6 +358,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/dashboard",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "snapshot dashboard",
@@ -131,12 +378,14 @@
         "scalping",
         "caucion"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "canonical dashboard truth projection"
       ],
       "endpoint": "ep_dashboard_truth_layer_rc6.dashboard_truth",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -145,6 +394,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/dashboard/truth",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "API canónica",
@@ -156,12 +406,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "diagnostics snapshot"
       ],
       "endpoint": "bc_dashboard_v163.diagnostics",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -170,6 +422,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/diagnostics/download",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "diagnóstico",
@@ -181,12 +434,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "notification_outbox"
       ],
       "endpoint": "o_dashboard.failed_notifications",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -195,6 +450,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/failed-notifications",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "notificaciones fallidas",
@@ -206,12 +462,14 @@
       "canonical_concepts": [
         "learning_history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "paper_learning_samples"
       ],
       "endpoint": "o_dashboard.learning_logs",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -220,6 +478,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/learning-logs",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "logs de aprendizaje",
@@ -231,12 +490,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "sanitized log snapshots"
       ],
       "endpoint": "bg_paper_dashboard.log_download",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -245,6 +506,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/logs/current",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "log actual",
@@ -256,12 +518,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "sanitized log snapshots"
       ],
       "endpoint": "o_dashboard.download_log",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -270,6 +534,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/logs/download/{log_type}",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "descarga de log",
@@ -282,6 +547,7 @@
         "catalog",
         "readiness"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "financial_instrument_catalog",
         "candidate_identity_v2"
@@ -289,6 +555,7 @@
       "endpoint": "o_dashboard.observation_instruments",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -297,6 +564,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/observation-instruments",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "instrumentos observados",
@@ -308,12 +576,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "observer_state"
       ],
       "endpoint": "bg_paper_dashboard.observer_state",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -322,6 +592,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/observer/state",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "estado runtime",
@@ -333,12 +604,14 @@
       "canonical_concepts": [
         "caucion"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "paper_caucion_allocations"
       ],
       "endpoint": "bg_paper_dashboard.caucion_allocations",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -347,6 +620,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/paper/caucion-allocations",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "asignaciones de caución",
@@ -359,12 +633,14 @@
         "runtime",
         "timers"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "rc6 snapshots"
       ],
       "endpoint": "rc6_snapshot_dashboard.latest_snapshot",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -373,6 +649,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/rc6/snapshots/latest",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "snapshot RC6",
@@ -384,12 +661,14 @@
       "canonical_concepts": [
         "history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "action4 reports"
       ],
       "endpoint": "bg_paper_dashboard.action4_download",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -398,6 +677,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/reports/action4",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte action4",
@@ -409,12 +689,14 @@
       "canonical_concepts": [
         "history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "action4 reports"
       ],
       "endpoint": "bg_paper_dashboard.action4_publish",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "POST"
@@ -423,6 +705,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/reports/action4",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte action4",
@@ -435,12 +718,14 @@
         "history",
         "learning_history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "weekly reports"
       ],
       "endpoint": "o_dashboard.download_weekly_report",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -449,6 +734,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/reports/weekly/download",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte semanal",
@@ -461,12 +747,14 @@
         "history",
         "learning_history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "reports"
       ],
       "endpoint": "bg_paper_dashboard.report_download",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -475,6 +763,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/reports/{report_id}/{kind}",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte versionado",
@@ -486,12 +775,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "sre proposals"
       ],
       "endpoint": "o_dashboard.sre_encolar",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "POST"
@@ -500,6 +791,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/sre/encolar/{propuesta_id}",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "encolado SRE",
@@ -511,12 +803,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "sre proposals"
       ],
       "endpoint": "o_dashboard.sre_propuestas",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -525,6 +819,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/sre/propuestas",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "propuestas SRE",
@@ -537,12 +832,14 @@
         "runtime",
         "safety"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "testing authorization ledger"
       ],
       "endpoint": "o_dashboard.testing_autorizar",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "POST"
@@ -551,6 +848,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/testing/autorizar",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "autorización testing",
@@ -563,12 +861,14 @@
         "runtime",
         "safety"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "testing state"
       ],
       "endpoint": "o_dashboard.testing_estado",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -577,6 +877,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/testing/estado",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "estado testing",
@@ -588,12 +889,42 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
+      "datasets": [
+        "bounded sanitized log snapshot"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "API",
+      "legacy_compatible_alias": false,
+      "locale": "JSON canónico",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/api/trader/logs/download",
+      "presentation_endpoint": "NOT_APPLICABLE",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "sanitized log tail",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "observer_state"
       ],
       "endpoint": "o_dashboard.estado_v15",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -602,6 +933,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/v15/estado",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "compatibilidad v15",
@@ -613,12 +945,14 @@
       "canonical_concepts": [
         "runtime"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "observer_state"
       ],
       "endpoint": "o_dashboard.estado_detallado",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "API",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET"
@@ -627,6 +961,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/api/v16/estado",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "compatibilidad v16",
@@ -636,17 +971,21 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "learning_history",
-        "iol_current"
+        "history",
+        "learning_history"
       ],
+      "canonical_view": "analitica/experimentos",
       "datasets": [
-        "decision_evidence_latest",
-        "paper_learning_samples",
-        "IOL section cache"
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "o_dashboard.blog_de_aprendizaje",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -655,243 +994,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/aprendizaje",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "aprendizaje histórico y salud actual separada",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "safety"
-      ],
-      "datasets": [
-        "runtime configuration"
-      ],
-      "endpoint": "o_dashboard.config_editor",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/config",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "configuración",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "safety"
-      ],
-      "datasets": [
-        "runtime configuration"
-      ],
-      "endpoint": "o_dashboard.config_save",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "POST"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/config",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "configuración",
-      "write_route": true
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime"
-      ],
-      "datasets": [
-        "sanitized log snapshots"
-      ],
-      "endpoint": "o_dashboard.logs_dashboard",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/dashboard/logs",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "logs",
-      "write_route": false
-    },
-    {
-      "accessibility": "JSON/HTTP",
-      "as_of_semantics": "NOT_APPLICABLE",
-      "canonical_concepts": [],
-      "datasets": [
-        "FastAPI schema/UI"
-      ],
-      "endpoint": "fastapi.applications.swagger_ui_html",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "FRAMEWORK",
-      "locale": "JSON canónico",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "mode_authority": "NOT_APPLICABLE",
-      "navigation": "NOT_APPLICABLE",
-      "pagination": "Paginación/limit del contrato API",
-      "path": "/docs",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "NOT_APPLICABLE",
-      "title_or_surface": "framework",
-      "write_route": false
-    },
-    {
-      "accessibility": "JSON/HTTP",
-      "as_of_semantics": "NOT_APPLICABLE",
-      "canonical_concepts": [],
-      "datasets": [
-        "FastAPI schema/UI"
-      ],
-      "endpoint": "fastapi.applications.swagger_ui_redirect",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "FRAMEWORK",
-      "locale": "JSON canónico",
-      "methods": [
-        "GET",
-        "HEAD"
-      ],
-      "mode_authority": "NOT_APPLICABLE",
-      "navigation": "NOT_APPLICABLE",
-      "pagination": "Paginación/limit del contrato API",
-      "path": "/docs/oauth2-redirect",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "NOT_APPLICABLE",
-      "title_or_surface": "framework",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "readiness",
-        "strategy_eligibility"
-      ],
-      "datasets": [
-        "observer_state",
-        "candidate_identity_v2",
-        "paper_decisions",
-        "paper_positions",
-        "trade_gate_evaluations"
-      ],
-      "endpoint": "bg_paper_dashboard.en_vivo",
-      "family_dimension": "ticker + familia + mercado + moneda + settlement",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/en-vivo",
-      "ready_counter_authority": "candidate_identity_v2",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "actividad actual",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime"
-      ],
-      "datasets": [
-        "observer_state"
-      ],
-      "endpoint": "o_dashboard.health",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/health",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "health probe",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "history"
-      ],
-      "datasets": [
-        "history_canonical_v2",
-        "production_history",
-        "candle store"
-      ],
-      "endpoint": "o_dashboard.datos_historicos",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/historicos",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "histórico, sin autoridad sobre readiness",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "history"
-      ],
-      "datasets": [
-        "official_source_evidence",
-        "financial snapshots"
-      ],
-      "endpoint": "bg_paper_dashboard.financial",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/informacion-financiera",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "información financiera",
+      "title_or_surface": "Analítica > Experimentos",
       "write_route": false
     },
     {
@@ -901,13 +1007,20 @@
         "runtime",
         "timers"
       ],
+      "canonical_view": "sistema/configuracion",
       "datasets": [
         "observer_state",
-        "systemd snapshot"
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
       ],
-      "endpoint": "o_dashboard.infra_dashboard",
+      "endpoint": "o_dashboard.config_editor",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -915,10 +1028,484 @@
       "mode_authority": "observer_state",
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/infra",
+      "path": "/config",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "infraestructura",
+      "title_or_surface": "Sistema > Configuración",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/configuracion",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.config_save",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "POST"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/config",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Configuración",
+      "write_route": true
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/logs",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.logs_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/dashboard/logs",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Logs",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "canonical_view": "NOT_APPLICABLE",
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.swagger_ui_html",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "legacy_compatible_alias": false,
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/docs",
+      "presentation_endpoint": "NOT_APPLICABLE",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "JSON/HTTP",
+      "as_of_semantics": "NOT_APPLICABLE",
+      "canonical_concepts": [],
+      "canonical_view": "NOT_APPLICABLE",
+      "datasets": [
+        "FastAPI schema/UI"
+      ],
+      "endpoint": "fastapi.applications.swagger_ui_redirect",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "FRAMEWORK",
+      "legacy_compatible_alias": false,
+      "locale": "JSON canónico",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "mode_authority": "NOT_APPLICABLE",
+      "navigation": "NOT_APPLICABLE",
+      "pagination": "Paginación/limit del contrato API",
+      "path": "/docs/oauth2-redirect",
+      "presentation_endpoint": "NOT_APPLICABLE",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "NOT_APPLICABLE",
+      "title_or_surface": "framework",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/resumen",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "bg_paper_dashboard.en_vivo",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/capacidad",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/capacidad",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Capacidad & Coverage",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/cierres",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/cierres",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Cierres",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/decisiones",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/decisiones",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Decisiones",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/fuentes",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/fuentes",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Fuentes",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/oportunidades",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/oportunidades",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Oportunidades",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/posiciones",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/posiciones",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Posiciones",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "strategy_eligibility",
+        "readiness"
+      ],
+      "canonical_view": "en-vivo/workers",
+      "datasets": [
+        "observer_state",
+        "candidate_identity_v2",
+        "paper_positions",
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/en-vivo/workers",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "En Vivo > Riesgo & Workers",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime"
+      ],
+      "canonical_view": "NOT_APPLICABLE",
+      "datasets": [
+        "observer_state"
+      ],
+      "endpoint": "o_dashboard.health",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/health",
+      "presentation_endpoint": "NOT_APPLICABLE",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "health probe",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/historico",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.datos_historicos",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/historicos",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Histórico",
       "write_route": false
     },
     {
@@ -929,14 +1516,120 @@
         "readiness",
         "contract"
       ],
+      "canonical_view": "instrumentos/evidencia",
       "datasets": [
         "financial_instrument_catalog",
         "candidate_identity_v2",
-        "contract_evidence_v2_current"
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
+      ],
+      "endpoint": "bg_paper_dashboard.financial",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/informacion-financiera",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Instrumentos > Evidencia",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/resumen",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.infra_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/infra",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "inicio/resumen",
+      "datasets": [
+        "observer_state",
+        "paper_equity_by_currency",
+        "paper_daily_risk",
+        "paper_positions",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/inicio",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Inicio > Estado & atención",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract"
+      ],
+      "canonical_view": "instrumentos/buscador",
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
       ],
       "endpoint": "bg_paper_dashboard.instrumentos",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -945,28 +1638,167 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/instrumentos",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "instrumentos y contratos",
+      "title_or_surface": "Instrumentos > Buscador",
       "write_route": false
     },
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "runtime",
+        "catalog",
         "readiness",
-        "strategy_eligibility"
+        "contract"
       ],
+      "canonical_view": "instrumentos/contrato",
       "datasets": [
-        "observer_state",
+        "financial_instrument_catalog",
         "candidate_identity_v2",
-        "trade_gate_evaluations",
-        "paper_positions"
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/instrumentos/contrato",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Instrumentos > Contrato",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract"
+      ],
+      "canonical_view": "instrumentos/evidencia",
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/instrumentos/evidencia",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Instrumentos > Evidencia",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract"
+      ],
+      "canonical_view": "instrumentos/ficha",
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/instrumentos/ficha",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Instrumentos > Ficha",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "catalog",
+        "readiness",
+        "contract"
+      ],
+      "canonical_view": "instrumentos/mercado",
+      "datasets": [
+        "financial_instrument_catalog",
+        "candidate_identity_v2",
+        "contract_evidence_v2_current",
+        "contract_evidence_v2_snapshots",
+        "market_snapshots"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/instrumentos/mercado",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Instrumentos > Mercado & Liquidez",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/resumen",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.motor",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -975,26 +1807,30 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/motor-trading",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "motor PAPER visible",
+      "title_or_surface": "Trading > Resumen",
       "write_route": false
     },
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "runtime",
+        "readiness",
+        "strategy_eligibility",
         "catalog"
       ],
+      "canonical_view": "universo/discovery",
       "datasets": [
-        "observer_state",
+        "candidate_identity_v2",
         "financial_instrument_catalog",
-        "market_snapshots"
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.observacion",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1003,21 +1839,24 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/observacion",
-      "ready_counter_authority": "NOT_APPLICABLE",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "observación",
+      "title_or_surface": "Universo > Discovery",
       "write_route": false
     },
     {
       "accessibility": "JSON/HTTP",
       "as_of_semantics": "NOT_APPLICABLE",
       "canonical_concepts": [],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "FastAPI schema/UI"
       ],
       "endpoint": "fastapi.applications.openapi",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "FRAMEWORK",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET",
@@ -1027,21 +1866,57 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/openapi.json",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "NOT_APPLICABLE",
       "title_or_surface": "framework",
       "write_route": false
     },
     {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/cierre-diario",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/postcierre",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Analítica > Cierre diario",
+      "write_route": false
+    },
+    {
       "accessibility": "JSON/HTTP",
       "as_of_semantics": "NOT_APPLICABLE",
       "canonical_concepts": [],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "FastAPI schema/UI"
       ],
       "endpoint": "fastapi.applications.redoc_html",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "FRAMEWORK",
+      "legacy_compatible_alias": false,
       "locale": "JSON canónico",
       "methods": [
         "GET",
@@ -1051,6 +1926,7 @@
       "navigation": "NOT_APPLICABLE",
       "pagination": "Paginación/limit del contrato API",
       "path": "/redoc",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "NOT_APPLICABLE",
       "title_or_surface": "framework",
@@ -1063,14 +1939,18 @@
         "history",
         "learning_history"
       ],
+      "canonical_view": "analitica/reportes",
       "datasets": [
         "paper_positions",
-        "paper_learning_samples",
-        "reports"
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.reports",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1079,9 +1959,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/reportes",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "reportes",
+      "title_or_surface": "Analítica > Reportes",
       "write_route": false
     },
     {
@@ -1091,12 +1972,14 @@
         "history",
         "learning_history"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "monthly reports"
       ],
       "endpoint": "o_dashboard.download_monthly_report",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1105,6 +1988,7 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/reports/monthly",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "reporte mensual",
@@ -1117,12 +2001,14 @@
         "runtime",
         "safety"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "restart request ledger"
       ],
       "endpoint": "o_dashboard.restart_request",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "POST"
@@ -1131,6 +2017,7 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/restart-request",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "solicitud controlada",
@@ -1143,14 +2030,18 @@
         "runtime",
         "safety"
       ],
+      "canonical_view": "riesgo/resumen",
       "datasets": [
-        "observer_state",
-        "trade_gate_evaluations",
-        "risk ledgers"
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "zz_wave8_dashboard_live_rc6.riesgo",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1159,154 +2050,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/riesgo",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "riesgo",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "iol_current",
-        "timers"
-      ],
-      "datasets": [
-        "observer_state",
-        "api_health",
-        "source_sync",
-        "IOL section cache"
-      ],
-      "endpoint": "o_dashboard.salud_apis",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/salud",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "salud de fuentes",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "scalping",
-        "readiness",
-        "strategy_eligibility"
-      ],
-      "datasets": [
-        "intraday_scalping_worker_state",
-        "candidate_identity_v2",
-        "ppi_intraday_contract_state",
-        "scalping_candidates",
-        "paper_positions"
-      ],
-      "endpoint": "bg_paper_dashboard.scalping",
-      "family_dimension": "ticker + familia + mercado + moneda + settlement",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/scalping",
-      "ready_counter_authority": "candidate_identity_v2",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "scalping PAPER/OBSERVE",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "timers",
-        "readiness",
-        "caucion"
-      ],
-      "datasets": [
-        "observer_state",
-        "systemd snapshot",
-        "candidate_identity_v2",
-        "paper_cauciones"
-      ],
-      "endpoint": "bg_paper_dashboard.sistema",
-      "family_dimension": "ticker + familia + mercado + moneda + settlement",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/sistema",
-      "ready_counter_authority": "candidate_identity_v2",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "sistema e introspección",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime",
-        "timers"
-      ],
-      "datasets": [
-        "sre snapshots",
-        "systemd snapshot"
-      ],
-      "endpoint": "o_dashboard.sre_dashboard",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/sre",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "SRE",
-      "write_route": false
-    },
-    {
-      "accessibility": "ARIA + foco + texto además de color + Voice Access",
-      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
-      "canonical_concepts": [
-        "runtime"
-      ],
-      "datasets": [
-        "notification_outbox",
-        "notification_worker_state"
-      ],
-      "endpoint": "bc_dashboard_v163.telegram",
-      "family_dimension": "NOT_APPLICABLE",
-      "kind": "VISIBLE_SURFACE",
-      "locale": "es-AR",
-      "methods": [
-        "GET"
-      ],
-      "mode_authority": "observer_state",
-      "navigation": "Enlaces sin token; menú canónico y Arriba",
-      "pagination": "Máximo 10 filas visibles + Mostrar más",
-      "path": "/telegram",
-      "ready_counter_authority": "NOT_APPLICABLE",
-      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "notificaciones",
+      "title_or_surface": "Riesgo > Resumen",
       "write_route": false
     },
     {
@@ -1316,13 +2063,706 @@
         "runtime",
         "safety"
       ],
+      "canonical_view": "riesgo/event-risk",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/event-risk",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > Event Risk",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "riesgo/exposicion",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/exposicion",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > Exposición",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "riesgo/limites",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/limites",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > Límites",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "riesgo/liquidez",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/liquidez",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > Liquidez & Salidas",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "riesgo/pnl",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/pnl",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > P&L / Drawdown",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "safety"
+      ],
+      "canonical_view": "riesgo/posiciones",
+      "datasets": [
+        "paper_daily_risk",
+        "paper_equity_by_currency",
+        "paper_positions",
+        "paper_exit_intents",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/riesgo/posiciones",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Riesgo > Posiciones",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/salud",
       "datasets": [
         "observer_state",
-        "testing state"
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.salud_apis",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/salud",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Salud",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/scalping",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "bg_paper_dashboard.scalping",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/scalping",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Scalping",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/scheduler",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/scheduler",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Scheduler",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/resumen",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "bg_paper_dashboard.sistema",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/backups",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/backups",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Backups",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/configuracion",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/configuracion",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Configuración",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/evidencia",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/evidencia",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Evidencia",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/integraciones",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/integraciones",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Integraciones",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/logs",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/logs",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Logs",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/salud",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/salud",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Salud",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/scheduler",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/scheduler",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Scheduler",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/workers",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sistema/workers",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Workers",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/salud",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "o_dashboard.sre_dashboard",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/sre",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Salud",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/workers",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "bc_dashboard_v163.telegram",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/telegram",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Workers",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "runtime",
+        "timers"
+      ],
+      "canonical_view": "sistema/evidencia",
+      "datasets": [
+        "observer_state",
+        "api_health",
+        "canonical worker states",
+        "systemd snapshot",
+        "bounded sanitized log snapshot",
+        "non-secret configuration allowlist",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "o_dashboard.solapa_testing",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1331,9 +2771,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/testing",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "controles de testing",
+      "title_or_surface": "Sistema > Evidencia",
       "write_route": false
     },
     {
@@ -1341,19 +2782,20 @@
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
         "readiness",
-        "contract",
         "strategy_eligibility",
-        "caucion"
+        "contract"
       ],
+      "canonical_view": "trading/resumen",
       "datasets": [
         "candidate_identity_v2",
+        "financial_instrument_catalog",
         "contract_evidence_v2_current",
-        "trade_gate_evaluations",
-        "paper_cauciones"
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.trading",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1362,9 +2804,175 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/trading",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "estrategias",
+      "title_or_surface": "Trading > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/derivados",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/derivados",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Derivados",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/equity-spot",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/equity-spot",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Equity Spot",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/renta-fija",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/renta-fija",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Renta Fija",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/scalping",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/scalping",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Scalping",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "contract"
+      ],
+      "canonical_view": "trading/tesoreria",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "contract_evidence_v2_current",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/trading/tesoreria",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Trading > Tesorería / FCI",
       "write_route": false
     },
     {
@@ -1376,6 +2984,7 @@
         "strategy_eligibility",
         "caucion"
       ],
+      "canonical_view": "NOT_APPLICABLE",
       "datasets": [
         "candidate_identity_v2",
         "contract_evidence_v2_current",
@@ -1385,6 +2994,7 @@
       "endpoint": "bg_paper_dashboard.trading_section",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1393,6 +3003,7 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/trading/{section}",
+      "presentation_endpoint": "NOT_APPLICABLE",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
       "title_or_surface": "estrategia por familia",
@@ -1402,22 +3013,52 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "catalog",
         "readiness",
-        "contract",
         "strategy_eligibility",
-        "caucion"
+        "catalog"
       ],
+      "canonical_view": "universo/resumen",
       "datasets": [
-        "financial_instrument_catalog",
         "candidate_identity_v2",
-        "contract_evidence_v2_current",
-        "trade_gate_evaluations",
-        "paper_cauciones"
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Resumen",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
+      ],
+      "canonical_view": "universo/resumen",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bh_universe_dashboard_hf6.universo_operativo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1426,23 +3067,191 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/universo-operativo",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "universo multi-familia",
+      "title_or_surface": "Universo > Resumen",
       "write_route": false
     },
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
-        "strategy_eligibility"
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
       ],
+      "canonical_view": "universo/coverage",
       "datasets": [
-        "trade_gate_evaluations"
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo/coverage",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Coverage",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
+      ],
+      "canonical_view": "universo/discovery",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo/discovery",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Discovery",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
+      ],
+      "canonical_view": "universo/excluidos",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo/excluidos",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Excluidos",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
+      ],
+      "canonical_view": "universo/familias",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo/familias",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Familias",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "readiness",
+        "strategy_eligibility",
+        "catalog"
+      ],
+      "canonical_view": "universo/tradeability",
+      "datasets": [
+        "candidate_identity_v2",
+        "financial_instrument_catalog",
+        "committed SHADOW generation adapter"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "ticker + familia + mercado + moneda + settlement",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "Máximo 10 filas visibles + Mostrar más",
+      "path": "/universo/tradeability",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "candidate_identity_v2",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Universo > Tradeability",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
+        "history",
+        "learning_history"
+      ],
+      "canonical_view": "analitica/experimentos",
+      "datasets": [
+        "paper_positions",
+        "history_canonical_v2",
+        "production_history",
+        "report_registry",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1451,9 +3260,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/validacion",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "validación SHADOW/BINDING",
+      "title_or_surface": "Analítica > Experimentos",
       "write_route": false
     },
     {
@@ -1461,19 +3271,23 @@
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
         "runtime",
-        "readiness",
-        "strategy_eligibility"
+        "strategy_eligibility",
+        "readiness"
       ],
+      "canonical_view": "en-vivo/resumen",
       "datasets": [
         "observer_state",
         "candidate_identity_v2",
-        "paper_decisions",
         "paper_positions",
-        "trade_gate_evaluations"
+        "paper_decisions",
+        "decision_evidence_snapshots",
+        "trade_gate_evaluations",
+        "committed SHADOW generation adapter"
       ],
       "endpoint": "o_dashboard.actividad_en_vivo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
       "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -1482,9 +3296,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "Máximo 10 filas visibles + Mostrar más",
       "path": "/vivo",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "candidate_identity_v2",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "actividad actual",
+      "title_or_surface": "En Vivo > Resumen",
       "write_route": false
     }
   ],
