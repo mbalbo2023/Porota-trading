@@ -247,13 +247,19 @@ class RuntimeCapacityController:
         path = self.environ.get("POROTA_CAPACITY_SHADOW_PATH")
         if not path and self.database is not None:
             from cg_paper_workspace import artifact_root
-            path = artifact_root(self.database) / "dynamic-shadow/latest.json.gz"
-        value = read_json(path, compressed=str(path).endswith(".gz"), limit=64 * 1024**2) if path else {}
-        if "payload" in value:
-            if value.get("digest") != digest(value["payload"]):
-                raise ValueError("CAPACITY_SHADOW_DIGEST_INVALID")
-            value = value["payload"]
-        return value
+            path = artifact_root(self.database) / "dynamic-shadow/CURRENT.json"
+        if not path:
+            return {}
+        # Legacy configuration may name latest.json.gz; that basename now
+        # selects its directory's committed bundle, never an independent file.
+        path = Path(path)
+        root = path.parent if path.name in {"CURRENT.json", "latest.json.gz"} else path
+        from rc6_shadow_runtime.persistence import read_committed_generation
+        report = read_committed_generation(root)["report"]
+        retention = report.get("evidence_retention", {})
+        if retention.get("status") == "RETENTION_PRESSURE" or retention.get("shadow_degraded"):
+            raise ValueError("CAPACITY_SHADOW_RETENTION_PRESSURE")
+        return report
 
     def validated_report(self, as_of=None, *, expected_fingerprint=None):
         """Return the exact raw report pinned by a current approved state."""

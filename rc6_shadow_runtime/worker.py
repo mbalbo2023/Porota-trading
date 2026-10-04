@@ -18,10 +18,10 @@ from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles
+from .persistence import EvidenceFiles, failure_reason
 
 LOG = logging.getLogger("dynamic_shadow")
-VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
+VERSION = "WS-FIX-AUDIT-08-RUNTIME-v3"
 SOURCE_FILES = {"BYMA": "rc6_public_sources_latest.json",
                 "IOL_MCP": "iol_shadow_latest.json",
                 "IOL_FAMILY_REFERENCE": "iol_family_reference_latest.json"}
@@ -69,7 +69,7 @@ def _json_input(path, *, limit=8 * 1024**2):
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
-                 maximum_bytes=128 * 1024**2, row_limit=20000):
+                 maximum_bytes=128 * 1024**2, row_limit=20000, fault_inject=None):
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root or (str(self.database) + ".shadow"))
@@ -92,8 +92,9 @@ class ShadowRuntime:
         self.source_inputs += [root / "rc6_ppi_capacity_latest.json" for root in self.source_roots]
         capacity_protected = self.capacity_controller.protected_paths
         configured_shadow = self.capacity_controller.environ.get("POROTA_CAPACITY_SHADOW_PATH")
-        owned_latest = (self.root / "latest.json.gz").absolute()
-        if configured_shadow and Path(configured_shadow).absolute() == owned_latest:
+        owned_outputs = {(self.root / name).absolute() for name in ("latest.json.gz", "CURRENT.json")}
+        owned_outputs.add(self.root.absolute())
+        if configured_shadow and Path(configured_shadow).absolute() in owned_outputs:
             # The factual selectors read this worker's own output. Only that
             # exact output role is writable; a policy/report/approval sharing
             # the same path remains protected, as do aliases handled by files.
@@ -101,10 +102,11 @@ class ShadowRuntime:
                 if k.startswith("POROTA_CAPACITY_") and k.endswith("_PATH")
                 and k != "POROTA_CAPACITY_SHADOW_PATH" and v}
             capacity_protected = [p for p in capacity_protected
-                if p.absolute() != owned_latest or p.absolute() in other_inputs]
+                if p.absolute() not in owned_outputs or p.absolute() in other_inputs]
         protected = ([self.database, self.history_database, self.capacity_path]
                      + self.source_inputs + capacity_protected)
-        self.files = EvidenceFiles(self.root, protected=protected, maximum_bytes=maximum_bytes)
+        self.files = EvidenceFiles(self.root, protected=protected, maximum_bytes=maximum_bytes,
+                                   fault_inject=fault_inject)
         self.configuration = digest({"version": VERSION, "row_limit": row_limit,
             "provider_additional_requests": 0, "tick_seconds": 30,
             "policies": self.policies, "history": str(self.history_database),
@@ -185,6 +187,8 @@ class ShadowRuntime:
                   if cutoff <= stamp(o["source_at"]) <= at}
         counters = dict(old.get("counters", {}))
         last = dict(old.get("last_trade", {}))
+        if max(len(points), len(counters), len(last)) > self.row_limit:
+            raise ValueError("SHADOW_RADAR_CAPACITY_REACHED")
         for o in sorted(observations, key=lambda r: (r["source_at"], r["received_at"])):
             if not o.get("useful") or o.get("endpoint") not in {"current", "radar"}:
                 continue
@@ -194,10 +198,15 @@ class ShadowRuntime:
             ident = digest(o["identity"])
             previous = stamp(last[ident]) if ident in last else None
             if o.get("is_trade") and (previous is None or when > previous):
+                if ((ident not in counters and len(counters) >= self.row_limit)
+                        or (ident not in last and len(last) >= self.row_limit)):
+                    raise ValueError("SHADOW_RADAR_CAPACITY_REACHED")
                 counters[ident] = counters.get(ident, 0) + 1
                 last[ident] = when.isoformat()
             # Preserve the originally observed count on repeat/revision.
             key = digest((o["identity"], o.get("source"), o["source_at"]))
+            if key not in points and len(points) >= self.row_limit:
+                raise ValueError("SHADOW_RADAR_CAPACITY_REACHED")
             fields = dict(o.get("fields", {}))
             if o.get("is_trade"):
                 fields["trades"] = points.get(key, {}).get("fields", {}).get("trades", counters.get(ident))
@@ -216,7 +225,8 @@ class ShadowRuntime:
                 "capacity_policy": capacity_policy["fingerprint"],
                 "entry_signal_lab": "rc6.runtime-entry-signals.v1",
                 "operational_funnel": "rc6.prospective-operational-funnel.v1"})
-            previous = files.read("checkpoint.json.gz") or {}
+            committed = files.read_generation(allow_degraded=True)
+            previous = committed["checkpoint"] if committed else {}
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
@@ -266,6 +276,13 @@ class ShadowRuntime:
             if frozen is None:
                 report = {**base, "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
                           "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
+                # Even a closed preopen gate must account for actual received
+                # sources; it cannot claim an empty audit over nonempty input.
+                from rc6_dynamic_universe.sources import native_source_reports, audit_sources
+                report["source_reports"] = native_source_reports(inputs["observations"], as_of=at) + [
+                    source_observations(value, source=name, as_of=at)
+                    for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
+                report["source_audit"] = audit_sources(reports=report["source_reports"], as_of=at)
             else:
                 # Retain only causal radar points; re-reading a historical DB
                 # row cannot create an event before this worker first existed.
@@ -293,6 +310,7 @@ class ShadowRuntime:
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
                     "policies": self.policies,
                     "observations": observations,
+                    "source_native_observations": inputs["observations"],
                     "source_observation_reports": source_reports,
                     "observation_not_before": started,
                     "observation_received_after": previous.get("as_of", started),
@@ -324,8 +342,6 @@ class ShadowRuntime:
                 exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"))
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
-            files.write("latest.json.gz", report)
-            files.write("checkpoint.json.gz", checkpoint)
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
@@ -335,8 +351,11 @@ class ShadowRuntime:
                 capacity_policy_status=capacity_policy["status"],
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
                 operational_funnel_status=report["operational_funnel"]["status"])
-            files.write("status.json", status)
-            return report
+            generation = files.commit_generation(report, checkpoint, status,
+                source_watermark={"source_identity": source_id, "as_of": at.isoformat(),
+                    "previous_as_of": previous.get("as_of"), "started_at": started},
+                configuration_fingerprint=configuration)
+            return generation["report"]
 
 
 def run_worker(database, stop, *, clock_fn=None):
@@ -361,13 +380,12 @@ def run_worker(database, stop, *, clock_fn=None):
         except Exception as exc:
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.
-            LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s", type(exc).__name__)
+            LOG.warning("DYNAMIC_SHADOW_RUNTIME_FAIL_CLOSED:%s:%s", type(exc).__name__,
+                        failure_reason(exc))
             if worker is not None:
                 try:
                     with worker.files as files:
-                        files.write("status.json", {"schema": VERSION, "as_of": clock_fn(),
-                            "status": "FAIL_CLOSED", "error_class": type(exc).__name__,
-                            "real_orders_sent": 0, "real_routes": "NOT_CALLED", "provider_requests": 0})
+                        files.record_failure(as_of=clock_fn(), error=exc)
                 except (OSError, ValueError):
                     LOG.warning("DYNAMIC_SHADOW_STATUS_UNAVAILABLE")
         stop.wait(30)
