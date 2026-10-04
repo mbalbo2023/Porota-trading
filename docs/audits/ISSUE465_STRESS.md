@@ -61,10 +61,10 @@ these G results are historical measurements, not final dependency evidence.
 The launcher binds the selected A budget in parent and spawned processes
 without constructing a consolidated candidate. Final focal evidence must
 bind the ultimately released A head. The full suite must then exercise all
-six current cases with the released C/D generation/retention implementation. Initial
+seven current cases with the released C/D generation/retention implementation. Initial
 causal REDs remain intact; final runs use unique evidence filenames.
 
-Final G dependency evidence binds released A
+First frozen G dependency evidence binds released A
 `ade87a8325195c91249c947c9b5af4b2f7c11a93`: six stress/process/lock cases
 GREEN on Python3.11.16, failures/errors/skipped/xfail0. Unique JUnit
 `front-g-ade87-final-stress-311.xml` SHA256
@@ -75,6 +75,25 @@ remains explicit. Intraday admitted five within its cap; book lower priorities
 admitted zero; each case then admitted all five EXIT requests. These are
 component/dependency results. Consolidated source and the exact image still
 require the full governed suite and final Predeploy.
+
+The first complete integration suites executed all3,529 cases on both pinned
+interpreters and found an additional harness defect: a valid50ms SQLite
+acquisition backpressure escaped the burst child, instead of becoming an
+explicit denial. Both original full RED JUnits are preserved. The reserve/cap
+assertions did not change. The harness now catches only the exact expected
+native acquisition uncertainty, records exact reason counts, and keeps
+unexpected start/finish errors as failures. A new real writer-lock child test
+was RED before repair (`front-g-child-lock-causal-red.xml`), then GREEN; after
+the lock is released all five EXIT starts/finishes pass and usage is exactly5.
+The seven stress cases then passed against the same released A. No A source,
+limits, timeouts, priority or risk parameter changed.
+
+The third full-suite RED was an unchanged legacy directory fixture creating
+0750 under this managed shell's0077 umask, producing0700. Its production guard
+correctly rejected that mode. The local checkout runner now gives the pytest
+child the standard GitHub0022 umask. No original test or guard was changed;
+the original environmental RED is retained, with the final full-root and
+Predeploy evidence required to establish closure.
 
 The matrix gate adds 39 adversarial evidence cases. It binds the required
 finding and clause IDs, minimum executed parameter counts, original audit
