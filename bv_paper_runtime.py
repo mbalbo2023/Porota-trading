@@ -280,12 +280,18 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--performance-worker'],
+    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--performance-worker'], ['--dynamic-shadow-worker'],
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    if argv == ['--dynamic-shadow-worker']:
+        # Local-only reader: no runtime_store/PaperBroker/schema/provider in
+        # this child. The existing supervisor owns periodic execution/restart.
+        from rc6_shadow_runtime.worker import run_worker
+        run_worker(database_path(), stop, clock_fn=now_iso)
+        return 0
     if argv == ['--performance-worker']:
         from rc6_performance.capture import run_worker
         run_worker(database_path(), stop)
@@ -332,6 +338,7 @@ def main(argv=None):
         children = ChildProcesses({
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
             "performance": [sys.executable, str(Path(__file__).resolve()), "--performance-worker"],
+            "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],

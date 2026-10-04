@@ -30,6 +30,11 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
             ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (row_limit+1,))]
         if len(catalog) > row_limit:
             raise ValueError("CATALOG_READ_TRUNCATED")
+        full_catalog = [dict(r) for r in connection.execute("""SELECT ticker,instrument_type,market,
+            currency,settlement,status,capability FROM financial_instrument_catalog
+            ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (row_limit+1,))]
+        if len(full_catalog) > row_limit:
+            raise ValueError("FULL_CATALOG_READ_TRUNCATED")
         opened = [tuple(r) for r in connection.execute("""SELECT symbol,asset_class,market,currency,settlement
             FROM paper_positions WHERE status='OPEN' ORDER BY paper_id LIMIT ?""", (row_limit+1,))]
         if len(opened) > row_limit:
@@ -62,13 +67,14 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
                     "received_at": r["last_verified_at"], "source": r["source"], "useful": True,
                     "endpoint": "intraday", "intraday_confirmed": contracts.get(key, False),
                     "fields": {"price": r["price"]},
+                    "volume_semantics": "INTERVAL_VOLUME" if contracts.get(key, False) else "NO_VERIFICADO",
                     "volume_unit": "NO_VERIFICADO", "entry_authority": False})
             truncated = len(rows) > row_limit
         else:
             truncated = False
         if "market_snapshots" in tables:
             rows = list(connection.execute("""SELECT symbol,asset_class,market,currency,settlement,
-                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size FROM market_snapshots
+                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots
                 WHERE julianday(observed_at)<=julianday(?) AND julianday(observed_at)>=julianday(?)
                 ORDER BY id DESC LIMIT ?""", (at.isoformat(), at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), row_limit+1)))
             for r in rows[:row_limit]:
@@ -86,9 +92,12 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
                 observations.append({"identity": key, "source_at": r["trade_at"], "received_at": r["observed_at"],
                     "source": "PPI_MARKETDATA_CURRENT", "endpoint": "current", "useful": current_fresh,
                     "book_at": r["book_at"], "book_useful": book_fresh,
-                    "fields": {"price": r["last"]}, "entry_authority": False})
+                    "is_trade": r["last_kind"] == "TRADE",
+                    "fields": {"price": r["last"], **({"spread_bps":
+                        (float(r["ask"])/float(r["bid"])-1)*10000} if book_fresh else {})},
+                    "entry_authority": False})
             truncated |= len(rows) > row_limit
-        return {"catalog": catalog, "opened": opened, "observations": observations,
+        return {"catalog": catalog, "full_catalog": full_catalog, "opened": opened, "observations": observations,
                 "catalog_view": "ALL_READY_PAPER_IDENTITIES; financial catalogue unchanged",
                 "observation_read_truncated": truncated,
                 "safety": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,

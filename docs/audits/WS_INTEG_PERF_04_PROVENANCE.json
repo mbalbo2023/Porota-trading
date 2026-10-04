@@ -1,0 +1,294 @@
+{
+  "base": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+  "branch": "integration/ws-integ-perf-04-runtime-shadow-20261003",
+  "candidate_identity_source": "exact GitHub Predeploy V2 frozen-candidate artifact; immutable final PR evidence",
+  "compatibility": [
+    {
+      "head": "b8c95c10459cb8ede2925da491730f5988b29561",
+      "pr": 456,
+      "status": "COMPATIBLE_RECONCILED",
+      "tree_conflicts": 0
+    },
+    {
+      "head": "77c4e13768b252a8e7a614a0653b0b0dabb1ed02",
+      "pr": 457,
+      "status": "COMPATIBLE_RECONCILED",
+      "tree_conflicts": 0
+    },
+    {
+      "head": "84528216cd85060075b63be25e71876e1b742b0c",
+      "pr": 455,
+      "status": "COMPATIBLE_RECONCILED",
+      "tree_conflicts": 0
+    },
+    {
+      "head": "c48960e105640c385d94ac03461b0c936ebf95a7",
+      "pr": 459,
+      "status": "COMPATIBLE_RECONCILED",
+      "tree_conflicts": 0
+    },
+    {
+      "head": "d738db79a452c699b50aed00ac539e57e1cc3b04",
+      "integrated": false,
+      "owner_evidence": [
+        "https://github.com/mbalbo2023/Porota-trading/issues/446#issuecomment-5970813881",
+        "https://github.com/mbalbo2023/Porota-trading/issues/446#issuecomment-5970834126",
+        "https://github.com/mbalbo2023/Porota-trading/issues/446#issuecomment-5971023410"
+      ],
+      "pr": 453,
+      "status": "BLOQUEADO_POR_453"
+    }
+  ],
+  "deploy_owner": "NOT_ACQUIRED",
+  "final_state": "BLOCKED_FOR_INDEPENDENT_AUDIT",
+  "futures": {
+    "head": "d738db79a452c699b50aed00ac539e57e1cc3b04",
+    "integrated": false,
+    "pr": 453,
+    "status": "BLOQUEADO_POR_453"
+  },
+  "inputs": [
+    {
+      "conflicts": 0,
+      "files": [
+        "A\tAUDITORIA_IMPLEMENTACION_PERFORMANCE_RC6.md",
+        "A\tHANDOFF_WS_PERF_01.md",
+        "A\tPERFORMANCE_TRUTH_MATRIX_RC6.json",
+        "M\tbe_paper_engine.py",
+        "M\tbf_production_paper_observer.py",
+        "M\tbm_exit_supervisor.py",
+        "M\tbv_paper_runtime.py",
+        "A\trc6_performance/__init__.py",
+        "A\trc6_performance/capture.py",
+        "A\trc6_performance/common.py",
+        "A\trc6_performance/costs.py",
+        "A\trc6_performance/counterfactuals.py",
+        "A\trc6_performance/lineage.py",
+        "A\trc6_performance/metrics.py",
+        "A\trc6_performance/replay.py",
+        "A\trc6_performance/report.py",
+        "A\trc6_performance/scanner.py",
+        "A\trc6_performance/shadow.py",
+        "A\tscripts/rc6_performance_audit.py",
+        "A\tscripts/rc6_performance_report.py",
+        "A\ttests/test_rc6_performance_capture.py",
+        "A\ttests/test_rc6_performance_costs.py",
+        "A\ttests/test_rc6_performance_report.py",
+        "A\ttests/test_rc6_performance_runtime.py",
+        "A\ttests/test_rc6_performance_shadow.py"
+      ],
+      "head": "b8c95c10459cb8ede2925da491730f5988b29561",
+      "pr": 456,
+      "tree": "f580e451d83eadc43575684378cb8f009d02366f"
+    },
+    {
+      "conflicts": 0,
+      "files": [
+        "M\t.github/workflows/porota-deploy-v2-promote.yml",
+        "M\tcf_intraday_scalping.py",
+        "A\tscripts/rc6_deploy_failure_cleanup.py",
+        "A\tscripts/rc6_deploy_preopen_gate.py",
+        "A\ttests/test_rc6_deploy_failure_cleanup.py",
+        "A\ttests/test_rc6_deploy_preopen_gate.py",
+        "M\ttests/test_rc6_deploy_runtime_completeness.py",
+        "A\ttests/test_rc6_intraday_freshness.py"
+      ],
+      "head": "77c4e13768b252a8e7a614a0653b0b0dabb1ed02",
+      "pr": 457,
+      "tree": "20aae8dd25af2c2f32883a1559076930761d983a"
+    },
+    {
+      "conflicts": 0,
+      "files": [
+        "A\tdocs/audits/RC6_RESIDUAL_OPS_CLOSURE_2026-10-03.md",
+        "M\tops/policy/host-control-plane-reconciliation-v2.json",
+        "M\tscripts/porota_apply_host_control_plane_v2.py",
+        "M\ttests/test_porota_apply_host_control_plane_v2.py"
+      ],
+      "head": "84528216cd85060075b63be25e71876e1b742b0c",
+      "pr": 455,
+      "tree": "87c3c2ecb49325600fe47b6e6103d6b9e427275e"
+    },
+    {
+      "conflicts": 0,
+      "files": [
+        "A\t.github/workflows/rc6-ppi-capacity-shadow.yml",
+        "M\tbe_paper_engine.py",
+        "M\tcf_intraday_scalping.py",
+        "A\tdocs/audits/WS_PERF_03_DYNAMIC_UNIVERSE.md",
+        "A\trc6_dynamic_universe/__init__.py",
+        "A\trc6_dynamic_universe/benchmark.py",
+        "A\trc6_dynamic_universe/capacity.py",
+        "A\trc6_dynamic_universe/common.py",
+        "A\trc6_dynamic_universe/economics.py",
+        "A\trc6_dynamic_universe/orchestrator.py",
+        "A\trc6_dynamic_universe/routing.py",
+        "A\trc6_dynamic_universe/runtime.py",
+        "A\trc6_dynamic_universe/sources.py",
+        "A\trc6_dynamic_universe/tradeability.py",
+        "A\tscripts/rc6_dynamic_universe_shadow.py",
+        "A\tscripts/rc6_ppi_capacity_benchmark.py",
+        "A\ttests/test_rc6_dynamic_orchestrator.py",
+        "A\ttests/test_rc6_dynamic_sources.py",
+        "A\ttests/test_rc6_dynamic_tradeability.py",
+        "A\ttests/test_rc6_ppi_capacity_benchmark.py"
+      ],
+      "head": "c48960e105640c385d94ac03461b0c936ebf95a7",
+      "pr": 459,
+      "tree": "531173c05d6f02628a2e9fe1cc19ca13664613a8"
+    }
+  ],
+  "integration_head": "80941d6b5e4479a0080b3ab26a8452697fb566ea",
+  "integration_tree": "939946b119b75fce1ddfa60b1fb2a8024f933244",
+  "issue": 460,
+  "mission": "WS-INTEG-PERF-04",
+  "protection_evidence": {
+    "ast_preservation": {
+      "bv_paper_runtime.py": {
+        "allowed_changes": [
+          "new SHADOW child early route and supervisor registration only"
+        ],
+        "native_intraday_batch_limit": null,
+        "unchanged_functions": [
+          "_sqlite_contention",
+          "_reader_status_write",
+          "_best_effort_runtime_event",
+          "broker_from_environment",
+          "run_clock",
+          "collect_exit_books",
+          "run_reader"
+        ]
+      },
+      "cf_intraday_scalping.py": {
+        "allowed_changes": [
+          "scoped native error diagnostic detail only"
+        ],
+        "native_intraday_batch_limit": 40,
+        "unchanged_functions": [
+          "shadow_sampling_plan",
+          "_stamp",
+          "_decimal",
+          "_field",
+          "normalize_payload",
+          "init_schema",
+          "_identity",
+          "_market_open",
+          "select_batch",
+          "_state",
+          "persist_payload",
+          "_intraday_freshness_reason",
+          "evaluate_candidate",
+          "promote_paper_candidate",
+          "_heartbeat"
+        ]
+      }
+    },
+    "byte_identical": [
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "be_paper_engine.py",
+        "sha256": "11c5c42aa050b27b7e40760d0e66dc465866e0ca40c575178008ce72961dd402"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "bf_production_paper_observer.py",
+        "sha256": "ca63fb9b9c6453f3a32ceb37610a1d556667a4af11fefb467dc5ec33894874f5"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "bm_exit_supervisor.py",
+        "sha256": "e93f5b588919be711eb4059074ae5a3585a8dcf7f2ae782e99cdd391fa07ce2b"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "bw_daily_risk.py",
+        "sha256": "0da45d0289516b2cc553b4f579ab430780f7222f361e5e50450082b6ef7f3143"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "bq_exit_policy.py",
+        "sha256": "fa57a5fe456c1c7c2d20282365c343632bac00808624312da4805f249cf4eb11"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/__init__.py",
+        "sha256": "f14e98aad51984f3ac156a60d200e0eb2ac728367e48b1ec58e9ccbbfed2dcd0"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/capture.py",
+        "sha256": "5e0bf6a95cc66668e810ce628b4af53a395753d0956b1433ad1172813e131c5a"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/common.py",
+        "sha256": "9c845296d845f33b4c86f153b722fd90c8e2f8f9d278afc1c3fe519b2ecd2cd3"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/costs.py",
+        "sha256": "74523eaf58036642372cc587c73c794717aae6a7e1d1a8b28ecfd7cd7e8aa4ce"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/counterfactuals.py",
+        "sha256": "fed1dff6ab5364718313b23cf9479ae84c6100f470d3669ee40128564bb59ef8"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/lineage.py",
+        "sha256": "065328c196ada5792af428a1f5f6b40e890154292b350d92e7df2c0879c8e1f8"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/metrics.py",
+        "sha256": "d9cb2d7db1ea812d56180ab39b37bed98ff6d12fbd6af7856d499b0379ed3f72"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/replay.py",
+        "sha256": "bd853aa7b07c5245c51ae704c20f1661245d45c0df19c71aac628f5018eb58ec"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/report.py",
+        "sha256": "2c93c0cae7dbadbe4b4b592aa823f0b1cfd5ab2ba098061b7cdede9bb0a80ddf"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/scanner.py",
+        "sha256": "955f4239c9892dae309687c3ad6ea56cf939c02c3005978fa7c9c96a935f8f9c"
+      },
+      {
+        "byte_identical_to_reconciled_inputs": true,
+        "path": "rc6_performance/shadow.py",
+        "sha256": "e7d4038bf3b3e8b88d0f182b684db80d65e05c264d8370fe6b72b22d294afa90"
+      }
+    ],
+    "ppi_watch_mutations": 0,
+    "reference": "80941d6b5e4479a0080b3ab26a8452697fb566ea"
+  },
+  "publishable_scope": "four released workstreams plus canonical SHADOW wiring",
+  "safety": {
+    "deploy": "NOT_PERFORMED",
+    "merge": "NOT_PERFORMED",
+    "mode": "SHADOW / PRODUCTION_PAPER source / SIMULATION tests",
+    "ppi_watch": "UNTOUCHED",
+    "production_mutation": "NOT_PERFORMED",
+    "provider_additional_budget": {
+      "book": 0,
+      "current": 0,
+      "intraday": 0
+    },
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED"
+  },
+  "schema_version": 1,
+  "unverified": [
+    "runtime execution in production (no deploy)",
+    "OPEN PPI capacity/latency/freshness",
+    "actual OPEN discovery coverage/missed discoveries/scalping density",
+    "score calibration OOS",
+    "economic edge and future profitability"
+  ]
+}

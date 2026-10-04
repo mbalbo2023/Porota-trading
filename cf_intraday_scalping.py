@@ -586,11 +586,13 @@ def run_worker(store, stop, *, clock_fn):
                             record["ticker"], record["instrument_type"], record["settlement"]))
                         unsupported_this_batch += 1
                         store.event("INTRADAY_SCALPING_UNSUPPORTED",
-                                    f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND")
+                                    f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND;shadow_identity=" +
+                                    json.dumps(_identity(record), separators=(",", ":")))
                     else:
                         failed += 1
                         store.event("INTRADAY_SCALPING_ERROR",
-                                    f"{record['ticker']}: {classify_read_error(exc)}")
+                                    f"{record['ticker']}: {classify_read_error(exc)};shadow_identity=" +
+                                    json.dumps(_identity(record), separators=(",", ":")))
                         if session_invalid(exc):
                             invalid_session = True
                             break
