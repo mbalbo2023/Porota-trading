@@ -5,7 +5,7 @@ all engines and actual retries. No trading DB, broker or provider is imported.
 """
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from copy import deepcopy
@@ -29,6 +29,7 @@ CONSUMERS = ("SCANNER", "SCALPING", "EXIT_READER", "TREASURY", "UNSCOPED")
 WINDOW_FIELDS = ("requested", "admitted", "used", "dropped", "borrowed_in", "borrowed_out", "coalesced")
 BOOK_CACHE_LIMIT = 64
 BOOK_CACHE_BYTES = 16384
+AUTHORITY_LIMIT = 64
 
 
 class BudgetBackpressure(RuntimeError):
@@ -49,9 +50,9 @@ def budget_policy(state, *, opened_count=0, planned_reservations=None):
     settings = state["budget_settings"]
     limits = envelope["endpoint_limits"]
     opened = _int(opened_count)
-    demand = {"current": 0, "intraday": 0,
+    exit_demand = {"current": 0, "intraday": 0,
         "book": math.ceil(opened * envelope["window_seconds"] / settings["critical_book_seconds"])}
-    critical = {e: min(limits[e], demand[e]) for e in ENDPOINTS}
+    critical = {e: min(limits[e], exit_demand[e]) for e in ENDPOINTS}
     reserves = {"EXIT_CRITICAL": critical}
     # OPENED is a separate claimant. Its reads can never discharge EXIT's
     # indelegable floor, even when the requests refer to the same position.
@@ -66,7 +67,7 @@ def budget_policy(state, *, opened_count=0, planned_reservations=None):
         "global_limit": envelope["global_limit"], "max_parallel_requests": 1,
         "safety_reserve": envelope["safety_reserve"], "priority_reserves": reserves,
         "expires_at": state["expires_at"], "open_positions_count": opened,
-        "exit_demand": demand, **settings}
+        "exit_demand": exit_demand, **settings}
 
 
 def validate_policy(policy):
@@ -238,23 +239,66 @@ class GlobalPPIBudget:
         self._put(c, bucket, value)
         c.execute("DELETE FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)<?", (int(now) - 3600,))
 
-    def _reserves(self, c, now):
-        promises = self._get(c, "reserves", {})
-        reserve_at = self._get(c, "reserve_at", now)
-        if now - reserve_at >= self.policy["window_seconds"]:
-            promises, reserve_at = {}, now
-        for priority, values in self.policy.get("priority_reserves", {}).items():
-            promises[priority] = {e: max(promises.get(priority, {}).get(e, 0), values.get(e, 0)) for e in ENDPOINTS}
-        self._put(c, "reserves", promises)
-        self._put(c, "reserve_at", reserve_at)
-        return self._allocate_reserves(promises)
+    @staticmethod
+    def _authority(policy, now):
+        binding = {name: policy[name] for name in ("recommendation_digest", "configuration_fingerprint",
+            "window_seconds", "endpoint_limits", "global_limit")}
+        return dict(binding, key=digest(binding), observed_at=now,
+            authority_expires_at=stamp(policy["expires_at"]).timestamp(),
+            retain_until=max(stamp(policy["expires_at"]).timestamp(), now + policy["window_seconds"]),
+            priority_reserves=deepcopy(policy.get("priority_reserves", {})),
+            open_positions_count=policy.get("open_positions_count", 0),
+            exit_demand=deepcopy(policy.get("exit_demand", {})))
 
-    def _allocate_reserves(self, promises):
+    def _envelopes(self, c, now, *, record=False):
+        # Authorities can coexist in different live workers. An independent
+        # process cannot replace an old valid cap, shrink its rolling window,
+        # or erase its EXIT promise. Each authority constrains the SAME wire
+        # receipts until both its authority and its last observed window end.
+        saved = self._get(c, "reservation_envelopes_v1")
+        if saved is None:
+            saved = []
+            legacy = self._get(c, "reserves", {})
+            previous = self._get(c, "last_policy")
+            if legacy or previous:
+                if previous is None:
+                    # A reservation without its originating bounds/expiry
+                    # cannot be safely reconstructed from a replacement.
+                    raise BudgetBackpressure("PPI_BUDGET_LEGACY_AUTHORITY_UNKNOWN")
+                previous = validate_policy(previous)
+                at = self._get(c, "reserve_at", self._get(c, "last_clock", now))
+                inherited = self._authority(previous, at)
+                inherited["priority_reserves"] = legacy or inherited["priority_reserves"]
+                saved.append(inherited)
+        envelopes = {item["key"]: deepcopy(item) for item in saved if item["retain_until"] > now}
+        if now < stamp(self.policy["expires_at"]).timestamp():
+            current = self._authority(self.policy, now)
+            old = envelopes.get(current["key"])
+            if old:
+                for priority in PRIORITIES:
+                    values = current["priority_reserves"].setdefault(priority, {})
+                    for endpoint in ENDPOINTS:
+                        values[endpoint] = max(values.get(endpoint, 0), old["priority_reserves"].get(priority, {}).get(endpoint, 0))
+                current["authority_expires_at"] = max(current["authority_expires_at"], old["authority_expires_at"])
+                current["observed_at"] = now if record else old["observed_at"]
+                current["retain_until"] = max(old["retain_until"], current["authority_expires_at"],
+                    current["observed_at"] + current["window_seconds"])
+                current["open_positions_count"] = max(current["open_positions_count"], old["open_positions_count"])
+                current["exit_demand"] = {e: max(current["exit_demand"].get(e, 0), old["exit_demand"].get(e, 0)) for e in ENDPOINTS}
+            envelopes[current["key"]] = current
+        if len(envelopes) > AUTHORITY_LIMIT:
+            raise BudgetBackpressure("PPI_BUDGET_AUTHORITY_OVERLAP_LIMIT")
+        result = list(envelopes.values())
+        if record:
+            self._put(c, "reservation_envelopes_v1", result)
+        return result
+
+    def _allocate_reserves(self, promises, *, limits=None, global_limit=None):
         # Oversubscribed plans cannot create capacity. Allocate independently
         # by rank, protecting EXIT book first also under a tighter global cap.
         # An impossible demand is exposed separately, never claimed reserved.
-        left = dict(self.policy["endpoint_limits"])
-        global_left = self.policy["global_limit"]
+        left = dict(self.policy["endpoint_limits"] if limits is None else limits)
+        global_left = self.policy["global_limit"] if global_limit is None else global_limit
         result = {p: dict.fromkeys(ENDPOINTS, 0) for p in PRIORITIES}
         for priority in PRIORITIES:
             for endpoint in ("book", "current", "intraday"):
@@ -273,14 +317,16 @@ class GlobalPPIBudget:
             used_by[row["priority"]][row["endpoint"]] += 1
         return spent, used_by
 
-    def _borrow(self, endpoint, priority, rows, reserves, used_by):
+    def _borrow(self, endpoint, priority, rows, reserves, used_by, *, limits=None, global_limit=None):
         # Borrowing is always upward. First use unreserved common capacity;
         # only an already higher-ranked claimant may consume a lower floor.
         if used_by[priority][endpoint] < reserves[priority][endpoint]:
             return None
         remaining = {p: {e: max(0, reserves[p][e] - used_by[p][e]) for e in ENDPOINTS} for p in PRIORITIES}
-        common_endpoint = self.policy["endpoint_limits"][endpoint] - sum(r["endpoint"] == endpoint for r in rows) - sum(v[endpoint] for v in remaining.values())
-        common_global = self.policy["global_limit"] - len(rows) - sum(sum(v.values()) for v in remaining.values())
+        limits = self.policy["endpoint_limits"] if limits is None else limits
+        global_limit = self.policy["global_limit"] if global_limit is None else global_limit
+        common_endpoint = limits[endpoint] - sum(r["endpoint"] == endpoint for r in rows) - sum(v[endpoint] for v in remaining.values())
+        common_global = global_limit - len(rows) - sum(sum(v.values()) for v in remaining.values())
         if common_endpoint > 0 and common_global > 0:
             return "COMMON", endpoint
         for donor in reversed(PRIORITIES[PRIORITIES.index(priority) + 1:]):
@@ -293,6 +339,77 @@ class GlobalPPIBudget:
                 if remaining[donor][donor_endpoint] > 0:
                     return donor, donor_endpoint
         return "COMMON", endpoint
+
+    def _admission(self, endpoint, priority, receipts, envelopes, now):
+        donors = []
+        for envelope in envelopes:
+            rows = [row for row in receipts if row["at"] > now - envelope["window_seconds"]]
+            spent, used_by = self._usage(rows)
+            limits = envelope["endpoint_limits"]
+            cap = envelope["global_limit"]
+            reserves = self._allocate_reserves(envelope["priority_reserves"], limits=limits, global_limit=cap)
+            held = {e: sum(max(0, reserves[p][e] - used_by[p][e]) for p in PRIORITIES[:PRIORITIES.index(priority)]) for e in ENDPOINTS}
+            if len(rows) >= cap or spent[endpoint] >= limits[endpoint]:
+                return "PPI_BUDGET_EXHAUSTED", None
+            if spent[endpoint] + held[endpoint] >= limits[endpoint] or len(rows) + sum(held.values()) >= cap:
+                return "PPI_HIGH_PRIORITY_RESERVE_BACKPRESSURE", None
+            donors.append(self._borrow(endpoint, priority, rows, reserves, used_by, limits=limits, global_limit=cap))
+        # One wire read can discharge the same rank's promises in multiple
+        # authorities. Do not invent borrowing when any such own floor exists.
+        donor = None if None in donors else next((d for d in donors if d[0] != "COMMON"), ("COMMON", endpoint))
+        return None, donor
+
+    def _wire_fd(self):
+        path = Path(str(self.path) + ".wire.lock")
+        self._check_one(path)
+        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        if os.fstat(fd).st_nlink != 1:
+            os.close(fd)
+            raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        return fd
+
+    def _wire_busy(self):
+        path = Path(str(self.path) + ".wire.lock")
+        if self._check_one(path) is None:
+            return False
+        fd = self._wire_fd()
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def wire_scope(self, lease):
+        # requests' read timeout governs inactivity rather than total body
+        # duration. Keep an independent OS lock through the actual full body;
+        # a live slow sender cannot lose serial ownership to clock expiry.
+        fd = None
+        try:
+            try:
+                fd = self._wire_fd()
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise BudgetBackpressure("PPI_SERIAL_BACKPRESSURE") from error
+                with closing(self._connect()) as c:
+                    now = stamp(self.clock()).timestamp()
+                    active = self._get(c, "inflight")
+                    if not active or active["lease"] != lease or active["until"] <= now:
+                        raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
+            except (OSError, ValueError, sqlite3.Error) as error:
+                raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
+            # Preserve the provider exception type; only setup failures are
+            # budget-state failures. The SQL connection is closed before wire.
+            yield
+        finally:
+            if fd is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
 
     def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
         if endpoint not in ENDPOINTS or priority not in PRIORITIES:
@@ -314,7 +431,8 @@ class GlobalPPIBudget:
                         reason = "PPI_GLOBAL_CIRCUIT_OPEN" if key == "global" else "PPI_ENDPOINT_CIRCUIT_OPEN"
                         break
                 lease = self._get(c, "inflight")
-                if lease and lease["until"] > now:
+                wire_busy = self._wire_busy()
+                if wire_busy or (lease and lease["until"] > now):
                     reason = reason or "PPI_SERIAL_BACKPRESSURE"
                 elif lease:
                     self._put(c, "inflight", None)
@@ -324,17 +442,10 @@ class GlobalPPIBudget:
                 c.execute("DELETE FROM budget_requests WHERE at<?", (now - 3600,))
                 if c.execute("SELECT COUNT(*) FROM budget_requests").fetchone()[0] >= 20000:
                     reason = reason or "PPI_BUDGET_ROW_LIMIT"
-                rows = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - self.policy["window_seconds"],)))
-                spent, used_by = self._usage(rows)
-                effective = self._reserves(c, now)
-                rank = PRIORITIES.index(priority)
-                prior = PRIORITIES[:rank]
-                held = {e: sum(max(0, effective.get(p, {}).get(e, 0) - used_by[p][e]) for p in prior) for e in ENDPOINTS}
-                if len(rows) >= self.policy["global_limit"] or spent[endpoint] >= self.policy["endpoint_limits"][endpoint]:
-                    reason = reason or "PPI_BUDGET_EXHAUSTED"
-                elif (spent[endpoint] + held[endpoint] >= self.policy["endpoint_limits"][endpoint]
-                        or len(rows) + sum(held.values()) >= self.policy["global_limit"]):
-                    reason = reason or "PPI_HIGH_PRIORITY_RESERVE_BACKPRESSURE"
+                rows = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - 3600,)))
+                envelopes = self._envelopes(c, now, record=True)
+                constrained, donor = self._admission(endpoint, priority, rows, envelopes, now)
+                reason = reason or constrained
                 if reason:
                     self._total(c, endpoint, consumer, priority, dropped=1)
                     self._window_total(c, now, endpoint, consumer, priority, requested=1, dropped=1, reason=reason)
@@ -342,11 +453,11 @@ class GlobalPPIBudget:
                     return {"allowed": False, "reason": reason, "lease": None}
                 token = uuid.uuid4().hex
                 c.execute("INSERT INTO budget_requests VALUES(?,?,?,?,?,0)", (token, now, endpoint, consumer, priority))
-                self._put(c, "inflight", {"lease": token, "until": now + self.policy["lease_seconds"]})
+                self._put(c, "inflight", {"lease": token, "until": now + self.policy["lease_seconds"],
+                    "lease_seconds": self.policy["lease_seconds"]})
                 self._put(c, "policy_fingerprint", digest(self.policy))
                 self._put(c, "last_policy", self.policy)
                 self._total(c, endpoint, consumer, priority, allowed=1)
-                donor = self._borrow(endpoint, priority, rows, effective, used_by)
                 self._window_total(c, now, endpoint, consumer, priority, requested=1, admitted=1, borrowed_in=int(donor is not None))
                 if donor is not None and donor[0] != "COMMON":
                     # Attribution is explicitly to the reserve owner rather
@@ -370,7 +481,15 @@ class GlobalPPIBudget:
                 circuits = self._get(c, "circuits", {})
                 if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", row["endpoint"])):
                     raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
-                c.execute("UPDATE budget_requests SET used=1 WHERE lease=?", (lease,))
+                receipts = list(c.execute("SELECT * FROM budget_requests WHERE lease!=? AND at>?", (lease, now - 3600)))
+                reason, _ = self._admission(row["endpoint"], row["priority"], receipts, self._envelopes(c, now, record=True), now)
+                if reason:
+                    raise BudgetBackpressure(reason)
+                # Admission can be paused. Both rolling wire debt and crashed
+                # sender coverage must originate at actual start, atomically.
+                active["until"] = max(active["until"], now + max(active.get("lease_seconds", 0), self.policy["lease_seconds"]))
+                self._put(c, "inflight", active)
+                c.execute("UPDATE budget_requests SET used=1,at=? WHERE lease=?", (now, lease))
                 self._total(c, row["endpoint"], row["consumer"], row["priority"], used=1)
                 self._window_total(c, now, row["endpoint"], row["consumer"], row["priority"], used=1)
         except (OSError, ValueError, sqlite3.Error) as error:
@@ -408,6 +527,10 @@ class GlobalPPIBudget:
             if not row:
                 raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
             self._outcome(c, row["endpoint"], now, error_code or (f"PPI_HTTP_{status_code}" if status_code and status_code >= 400 else None))
+            if not row["used"]:
+                # A confirmed pre-wire rejection releases its unused claim;
+                # emitted receipts are never cleared by policy replacement.
+                c.execute("DELETE FROM budget_requests WHERE lease=?", (lease,))
             active = self._get(c, "inflight")
             if active and active["lease"] == lease:
                 self._put(c, "inflight", None)
@@ -522,6 +645,17 @@ class GlobalPPIBudget:
                     del cache[min(cache, key=lambda k: cache[k]["received_at"])]
             self._put(c, "critical_books", cache)
 
+    def _window_scopes(self, c, now, seconds):
+        scopes = {}
+        for bucket in c.execute("SELECT value FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)>=?", (int(now - seconds),)):
+            for key, item in json.loads(bucket[0]).items():
+                row = scopes.setdefault(key, dict.fromkeys(WINDOW_FIELDS, 0) | {"denial_reason": {}})
+                for name in WINDOW_FIELDS:
+                    row[name] += item[name]
+                for reason, count in item["denial_reason"].items():
+                    row["denial_reason"][reason] = row["denial_reason"].get(reason, 0) + count
+        return scopes
+
     def metrics(self):
         with closing(self._connect()) as c:
             rows = [dict(r) for r in c.execute("SELECT * FROM budget_totals ORDER BY endpoint,consumer,priority")]
@@ -530,20 +664,32 @@ class GlobalPPIBudget:
             last_clock = self._get(c, "last_clock", now)
             if now < last_clock:
                 raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
-            requests = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - self.policy["window_seconds"],)))
+            envelopes = self._envelopes(c, now)
+            seconds = max([self.policy["window_seconds"], *(e["window_seconds"] for e in envelopes)])
+            requests = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - seconds,)))
             _, used_by = self._usage(requests)
-            promises = self._get(c, "reserves", self.policy.get("priority_reserves", {}))
-            if now - self._get(c, "reserve_at", now) >= self.policy["window_seconds"]:
-                promises = self.policy.get("priority_reserves", {})
-            reserves = self._allocate_reserves(promises)
-            scopes = {}
-            for bucket in c.execute("SELECT value FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)>=?", (int(now - self.policy["window_seconds"]),)):
-                for key, item in json.loads(bucket[0]).items():
-                    row = scopes.setdefault(key, dict.fromkeys(WINDOW_FIELDS, 0) | {"denial_reason": {}})
-                    for name in WINDOW_FIELDS:
-                        row[name] += item[name]
-                    for reason, count in item["denial_reason"].items():
-                        row["denial_reason"][reason] = row["denial_reason"].get(reason, 0) + count
+            promises = {p: {e: max([0, *(item["priority_reserves"].get(p, {}).get(e, 0) for item in envelopes)]) for e in ENDPOINTS} for p in PRIORITIES}
+            limits = {e: min([self.policy["endpoint_limits"][e], *(item["endpoint_limits"][e] for item in envelopes)]) for e in ENDPOINTS}
+            cap = min([self.policy["global_limit"], *(item["global_limit"] for item in envelopes)])
+            reserves = self._allocate_reserves(promises, limits=limits, global_limit=cap)
+            scopes = self._window_scopes(c, now, seconds)
+            opened = max([self.policy.get("open_positions_count", 0), *(item["open_positions_count"] for item in envelopes)])
+            exit_demand = {e: max([self.policy.get("exit_demand", self.policy.get("priority_reserves", {}).get("EXIT_CRITICAL", {})).get(e, 0),
+                *(item.get("exit_demand", {}).get(e, item["priority_reserves"].get("EXIT_CRITICAL", {}).get(e, 0)) for item in envelopes)]) for e in ENDPOINTS}
+            exact_envelopes = []
+            for envelope in envelopes:
+                receipts = [r for r in requests if r["at"] > now - envelope["window_seconds"]]
+                _, owned = self._usage(receipts)
+                allocated = self._allocate_reserves(envelope["priority_reserves"], limits=envelope["endpoint_limits"], global_limit=envelope["global_limit"])
+                scope = scopes if envelope["window_seconds"] == seconds else self._window_scopes(c, now, envelope["window_seconds"])
+                donated_by = {p: {e: sum(row["borrowed_out"] for key, row in scope.items()
+                    if key.split(":")[0] == e and key.split(":")[2] == p) for e in ENDPOINTS} for p in PRIORITIES}
+                exact_envelopes.append({name: envelope[name] for name in ("key", "recommendation_digest", "configuration_fingerprint", "window_seconds", "endpoint_limits", "global_limit", "authority_expires_at", "retain_until")} | {
+                    "start_at": datetime.fromtimestamp(now - envelope["window_seconds"], timezone.utc).isoformat(),
+                    "end_at": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+                    "admitted_in_window": len(receipts), "used_in_window": sum(r["used"] for r in receipts),
+                    "priority_reserves": allocated,
+                    "reserved_remaining": {p: {e: max(0, allocated[p][e] - owned[p][e] - donated_by[p][e]) for e in ENDPOINTS} for p in PRIORITIES}})
             for priority in PRIORITIES:
                 if any(reserves[priority].values()):
                     consumer = "EXIT_READER" if priority == "EXIT_CRITICAL" else "SCALPING" if priority == "SCALPING_HOT" else "SCANNER"
@@ -557,23 +703,24 @@ class GlobalPPIBudget:
                 by_window_scope.append(row | {"endpoint": endpoint, "consumer": consumer, "priority": priority,
                     "reserved_total": reserves[priority][endpoint],
                     "reserved_remaining": max(0, reserves[priority][endpoint] - used_by[priority][endpoint] - donated[priority][endpoint]),
-                    "open_positions_count": self.policy.get("open_positions_count", 0),
-                    "exit_demand": self.policy.get("exit_demand", self.policy.get("priority_reserves", {}).get("EXIT_CRITICAL", {})).get(endpoint, 0)})
+                    "open_positions_count": opened, "exit_demand": exit_demand[endpoint]})
             window_endpoint = {}
             for endpoint in ENDPOINTS:
                 source = [r for r in by_window_scope if r["endpoint"] == endpoint]
                 window_endpoint[endpoint] = {name: sum(r[name] for r in source) for name in WINDOW_FIELDS}
                 window_endpoint[endpoint].update(reserved_total=sum(v[endpoint] for v in reserves.values()),
                     reserved_remaining=sum(max(0, reserves[p][endpoint] - used_by[p][endpoint] - donated[p][endpoint]) for p in PRIORITIES),
-                    open_positions_count=self.policy.get("open_positions_count", 0),
-                    exit_demand=self.policy.get("exit_demand", self.policy.get("priority_reserves", {}).get("EXIT_CRITICAL", {})).get(endpoint, 0),
+                    open_positions_count=opened, exit_demand=exit_demand[endpoint],
                     denial_reason={reason: sum(r["denial_reason"].get(reason, 0) for r in source) for reason in {reason for r in source for reason in r["denial_reason"]}})
             return {"schema": SCHEMA, "global": totals, "by_scope": rows,
-                "window": {"start_at": datetime.fromtimestamp(now - self.policy["window_seconds"], timezone.utc).isoformat(),
+                "window": {"start_at": datetime.fromtimestamp(now - seconds, timezone.utc).isoformat(),
                     "end_at": datetime.fromtimestamp(now, timezone.utc).isoformat(), "counter_resolution_seconds": 1,
+                    "policy_window_seconds": self.policy["window_seconds"], "effective_window_seconds": seconds,
+                    "active_envelopes": exact_envelopes,
+                    "reservation_summary": "CONSERVATIVE_UNION; admission checks every exact active envelope",
                     "by_endpoint": window_endpoint, "by_scope": by_window_scope,
                     "reserve_hierarchy": list(PRIORITIES), "lower_priority_exit_borrowing": "FORBIDDEN",
-                    "exit_unreserved_demand": {e: max(0, self.policy.get("exit_demand", {}).get(e, 0) - reserves["EXIT_CRITICAL"][e]) for e in ENDPOINTS}},
+                    "exit_unreserved_demand": {e: max(0, exit_demand[e] - reserves["EXIT_CRITICAL"][e]) for e in ENDPOINTS}},
                 "policy_authority": self.policy.get("authority", "EXPLICIT_APPROVED_OPEN_CAPACITY"),
                 "by_endpoint": {e: {name: sum(r[name] for r in rows if r["endpoint"] == e) for name in totals} for e in ENDPOINTS},
                 "circuits": self._get(c, "circuits", {}), "last_backpressure": self._get(c, "last_backpressure"),
@@ -717,6 +864,9 @@ class RuntimePPIBudget:
     def start(self, lease):
         if lease:
             self.budget.start(lease)
+
+    def wire_scope(self, lease):
+        return self.budget.wire_scope(lease) if lease and self.budget else nullcontext()
 
     def finish(self, lease, **outcome):
         if lease:
