@@ -4,8 +4,10 @@ No network, productive store, broker credential, or real-order route is used.
 The exact auditor reproduction intentionally fails at #463's frozen head.
 """
 from copy import deepcopy
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+import fcntl
 import json
 import multiprocessing
 import sqlite3
@@ -605,6 +607,343 @@ def test_db_locked_is_bounded_and_no_wire_while_uncertain(tmp_path):
     assert budget.metrics()["global"]["used"] == 1
 
 
+def _budget_contents(path):
+    with closing(sqlite3.connect(path)) as c:
+        return {table: list(c.execute(f"SELECT * FROM {table} ORDER BY 1,2"))
+            for table in ("budget_state", "budget_requests", "budget_totals")}
+
+
+def _confirmed_pre_wire_state_cancel(budget, lease, faults, deadline):
+    """Only a known failure before wire may retry confirmed cancellation.
+
+    Caller owns the lease and knows the sender was never invoked. Unknown
+    failures, expired/invalid leases and any failure after start remain fatal.
+    """
+    while True:
+        try:
+            budget.finish(lease, error_code="PPI_BUDGET_STATE_UNAVAILABLE")
+            faults.append("PREWIRE_CANCEL_CONFIRMED")
+            return
+        except BudgetBackpressure as error:
+            if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE" or time.monotonic() >= deadline:
+                raise
+            faults.append("PREWIRE_CANCEL_STATE_UNAVAILABLE")
+            time.sleep(.005)
+
+
+def test_initialized_restart_only_reads_journal_schema_and_keeps_promises(tmp_path, monkeypatch):
+    clock = Clock()
+    config = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", config, clock=clock.now)
+    assert not use(budget, "book", consumer="SCANNER", priority="OPENED_CRITICAL")["allowed"]
+    assert use(budget, "current", consumer="SCANNER")["allowed"]
+    before, contents, metrics = budget.path.read_bytes(), _budget_contents(budget.path), budget.metrics()
+    writes = []
+    connect = GlobalPPIBudget._connect
+    def traced_connect(self, **kwargs):
+        c = connect(self, **kwargs)
+        def authorizer(action, first, second, *_):
+            if (action in {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE,
+                    sqlite3.SQLITE_CREATE_TABLE, sqlite3.SQLITE_DROP_TABLE}
+                    or action == sqlite3.SQLITE_PRAGMA and first.lower() in {"journal_mode", "max_page_count"} and second is not None):
+                writes.append((action, first, second))
+            return sqlite3.SQLITE_OK
+        c.set_authorizer(authorizer)
+        return c
+    monkeypatch.setattr(GlobalPPIBudget, "_connect", traced_connect)
+    with closing(sqlite3.connect(budget.path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+        restarted = GlobalPPIBudget(budget.path, config, clock=clock.now)
+        assert restarted.metrics() == metrics
+        assert writes == [], "initialized restart must not issue mode setters, DDL or state writes"
+        assert budget.path.read_bytes() == before
+        writer.rollback()
+    assert _budget_contents(budget.path) == contents
+    assert all(use(restarted, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert restarted.metrics()["global"]["used"] == 6
+
+
+def test_constructor_exclusive_writer_is_bounded_typed_and_recovers_exact_floor(tmp_path):
+    clock = Clock()
+    config = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", config, clock=clock.now)
+    assert not use(budget, "book", priority="OPENED_CRITICAL")["allowed"]
+    assert use(budget, "current", consumer="SCANNER")["allowed"]
+    before, contents, metrics = budget.path.read_bytes(), _budget_contents(budget.path), budget.metrics()
+    with closing(sqlite3.connect(budget.path)) as writer:
+        writer.execute("BEGIN EXCLUSIVE")
+        writer.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+        started = time.monotonic()
+        with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+            GlobalPPIBudget(budget.path, config, clock=clock.now)
+        assert time.monotonic() - started < 1
+        assert budget.path.read_bytes() == before
+        writer.rollback()
+    restarted = GlobalPPIBudget(budget.path, config, clock=clock.now)
+    assert _budget_contents(budget.path) == contents and restarted.metrics() == metrics
+    assert all(not use(restarted, "book", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+    assert all(use(restarted, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert restarted.metrics()["global"]["used"] == 6
+
+
+def test_constructor_bootstrap_mutex_is_bounded_and_keeps_initialized_bytes(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    clock = Clock()
+    config = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", config, clock=clock.now)
+    assert not use(budget, "book", priority="OPENED_CRITICAL")["allowed"]
+    before, contents = budget.path.read_bytes(), _budget_contents(budget.path)
+    with open(str(budget.path) + ".bootstrap.lock", "a") as owner, ThreadPoolExecutor(max_workers=1) as pool:
+        fcntl.flock(owner, fcntl.LOCK_EX)
+        try:
+            started = time.monotonic()
+            pending = pool.submit(GlobalPPIBudget, budget.path, config, clock=clock.now)
+            with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+                pending.result(timeout=1)
+            assert time.monotonic() - started < 1
+        finally:
+            fcntl.flock(owner, fcntl.LOCK_UN)
+    assert budget.path.read_bytes() == before and _budget_contents(budget.path) == contents
+    assert all(use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_existing_wal_mode_is_rejected_without_conversion_or_state_reset(tmp_path, foreign):
+    clock = Clock()
+    config = exit_floor(clock)
+    path = tmp_path / "budget.sqlite"
+    if not foreign:
+        budget = GlobalPPIBudget(path, config, clock=clock.now)
+        assert not use(budget, "book", priority="OPENED_CRITICAL")["allowed"]
+        assert use(budget, "current", consumer="SCANNER")["allowed"]
+        contents = _budget_contents(path)
+    with closing(sqlite3.connect(path)) as writer:
+        if foreign:
+            writer.execute("CREATE TABLE foreign_state(value TEXT)")
+            writer.execute("INSERT INTO foreign_state VALUES('PAPER_FIXTURE_ONLY')")
+            writer.commit()
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="JOURNAL_MODE|SEPARATE_DATABASE"):
+        GlobalPPIBudget(path, config, clock=clock.now)
+    assert path.read_bytes() == before
+    with closing(sqlite3.connect(path)) as reader:
+        assert reader.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        if foreign:
+            assert list(reader.execute("SELECT * FROM foreign_state")) == [("PAPER_FIXTURE_ONLY",)]
+    if not foreign:
+        assert _budget_contents(path) == contents
+
+
+def test_unfinished_bootstrap_keeps_existing_receipts_counters_and_promises(tmp_path):
+    clock = Clock()
+    config = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", config, clock=clock.now)
+    assert not use(budget, "book", priority="OPENED_CRITICAL")["allowed"]
+    assert use(budget, "current", consumer="SCANNER")["allowed"]
+    metrics = budget.metrics()
+    with closing(sqlite3.connect(budget.path)) as interrupted:
+        interrupted.execute("DELETE FROM budget_state WHERE key='schema'")
+        interrupted.commit()
+    contents = _budget_contents(budget.path)
+    restarted = GlobalPPIBudget(budget.path, config, clock=clock.now)
+    after = _budget_contents(budget.path)
+    after["budget_state"] = [row for row in after["budget_state"] if row[0] != "schema"]
+    assert after == contents and restarted.metrics() == metrics
+    assert all(not use(restarted, "book", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+    assert all(use(restarted, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert restarted.metrics()["global"]["used"] == 6
+
+
+def _flapping_constructor_writer(path, ready, release, committed, proceed):
+    with closing(sqlite3.connect(path, timeout=.5)) as writer:
+        for index in range(len(ready)):
+            writer.execute("BEGIN EXCLUSIVE")
+            writer.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+            ready[index].set()
+            assert release[index].wait(5)
+            writer.commit()
+            committed[index].set()
+            assert proceed[index].wait(5)
+
+
+def test_real_process_flapping_writer_startup_denials_preserve_exact_exit_floor(tmp_path):
+    clock = Clock()
+    config = exit_floor(clock)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", config, clock=clock.now)
+    assert not use(budget, "book", priority="OPENED_CRITICAL")["allowed"]
+    assert use(budget, "current", consumer="SCANNER")["allowed"]
+    contents, metrics = _budget_contents(budget.path), budget.metrics()
+    ctx = multiprocessing.get_context("spawn")
+    ready, release, committed, proceed = ([ctx.Event() for _ in range(6)] for _ in range(4))
+    writer = ctx.Process(target=_flapping_constructor_writer,
+        args=(str(budget.path), ready, release, committed, proceed))
+    writer.start()
+    denials, recoveries = 0, 0
+    try:
+        for index in range(6):
+            assert ready[index].wait(5)
+            before = budget.path.read_bytes()
+            started = time.monotonic()
+            with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+                GlobalPPIBudget(budget.path, config, clock=clock.now)
+            assert time.monotonic() - started < 1
+            denials += 1
+            assert budget.path.read_bytes() == before
+            release[index].set()
+            assert committed[index].wait(5)
+            restarted = GlobalPPIBudget(budget.path, config, clock=clock.now)
+            assert _budget_contents(budget.path) == contents and restarted.metrics() == metrics
+            recoveries += 1
+            proceed[index].set()
+    finally:
+        for signal in [*release, *proceed]:
+            signal.set()
+        writer.join(10)
+        if writer.is_alive():
+            writer.terminate()
+            writer.join(5)
+    assert writer.exitcode == 0 and denials == recoveries == 6
+    assert all(not use(restarted, "book", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+    assert all(use(restarted, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert restarted.metrics()["global"]["used"] == 6
+
+
+def test_constructor_io_uncertainty_has_only_sanitized_public_reason(tmp_path, monkeypatch):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    before = budget.path.read_bytes()
+    def unavailable(*_, **__):
+        raise OSError("SENSITIVE_FIXTURE_ONLY_DO_NOT_EXPOSE")
+    monkeypatch.setattr(sqlite3, "connect", unavailable)
+    with pytest.raises(BudgetBackpressure) as caught:
+        GlobalPPIBudget(budget.path, budget.policy, clock=clock.now)
+    assert str(caught.value) == "PPI_BUDGET_STATE_UNAVAILABLE" and budget.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("emitted", [False, True])
+def test_finish_sqlite_uncertainty_is_typed_and_preserves_claim_or_wire_debt(tmp_path, emitted):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    pending = budget.acquire("current", consumer="SCANNER")
+    assert pending["allowed"]
+    if emitted:
+        budget.start(pending["lease"])
+    before, contents, metrics = budget.path.read_bytes(), _budget_contents(budget.path), budget.metrics()
+    with closing(sqlite3.connect(budget.path)) as writer:
+        writer.execute("BEGIN IMMEDIATE")
+        started = time.monotonic()
+        with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+            budget.finish(pending["lease"])
+        assert time.monotonic() - started < 1 and budget.path.read_bytes() == before
+        writer.rollback()
+    assert _budget_contents(budget.path) == contents and budget.metrics() == metrics
+    assert budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["reason"] == "PPI_SERIAL_BACKPRESSURE"
+    budget.finish(pending["lease"])
+    assert len(_budget_contents(budget.path)["budget_requests"]) == int(emitted)
+    assert all(not use(budget, "book", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+    assert all(use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+    assert budget.metrics()["global"]["used"] == 5 + emitted
+
+
+def test_wire_scope_enter_sqlite_uncertainty_cannot_release_or_spend_claim(tmp_path):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    pending = budget.acquire("current", consumer="SCANNER")
+    before, contents = budget.path.read_bytes(), _budget_contents(budget.path)
+    with closing(sqlite3.connect(budget.path)) as writer:
+        writer.execute("BEGIN EXCLUSIVE")
+        with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+            with budget.wire_scope(pending["lease"]):
+                pytest.fail("uncertain wire scope entered actual sender")
+        assert budget.path.read_bytes() == before
+        writer.rollback()
+    assert _budget_contents(budget.path) == contents
+    budget.finish(pending["lease"])
+    assert budget.metrics()["global"]["used"] == 0
+    assert all(not use(budget, "book", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+    assert all(use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(5))
+
+
+def test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits(wire, tmp_path, monkeypatch):
+    clock, calls, _ = wire
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    reader = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=budget, consumer="EXIT_READER")
+    actual_acquire, actual_start, actual_finish = budget.acquire, budget.start, budget.finish
+    admissions, faults, owner = [], [], []
+    def traced_acquire(*args, **kwargs):
+        result = actual_acquire(*args, **kwargs)
+        if result["allowed"]:
+            admissions.append(result["lease"])
+        return result
+    def busy_start(lease):
+        lock = sqlite3.connect(budget.path)
+        lock.execute("BEGIN IMMEDIATE")
+        lock.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+        owner.append(lock)
+        actual_start(lease)
+    def busy_guard_finish(lease, **kwargs):
+        try:
+            return actual_finish(lease, **kwargs)
+        finally:
+            for lock in owner:
+                lock.rollback()
+                lock.close()
+            owner.clear()
+    try:
+        reader.login_once()
+        before = len(calls)
+        monkeypatch.setattr(budget, "acquire", traced_acquire)
+        monkeypatch.setattr(budget, "start", busy_start)
+        monkeypatch.setattr(budget, "finish", busy_guard_finish)
+        with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+            reader.current("GGAL", "ACCIONES", "A-24HS")
+        assert len(calls) == before and reader.last_read_error_code == "PPI_BUDGET_STATE_UNAVAILABLE"
+        rows = _budget_contents(budget.path)["budget_requests"]
+        assert len(admissions) == len(rows) == 1 and rows[0][-1] == 0
+        assert budget.metrics()["global"]["used"] == 0
+        monkeypatch.setattr(budget, "start", actual_start)
+        lock = sqlite3.connect(budget.path)
+        lock.execute("BEGIN IMMEDIATE")
+        def busy_cancel_once(lease, **kwargs):
+            try:
+                return actual_finish(lease, **kwargs)
+            except BudgetBackpressure as error:
+                assert str(error) == "PPI_BUDGET_STATE_UNAVAILABLE"
+                lock.rollback()
+                raise
+        monkeypatch.setattr(budget, "finish", busy_cancel_once)
+        try:
+            _confirmed_pre_wire_state_cancel(budget, admissions[0], faults, time.monotonic() + 2)
+        finally:
+            lock.rollback()
+            lock.close()
+        assert faults == ["PREWIRE_CANCEL_STATE_UNAVAILABLE", "PREWIRE_CANCEL_CONFIRMED"]
+        assert not _budget_contents(budget.path)["budget_requests"] and len(calls) == before
+        monkeypatch.setattr(budget, "finish", actual_finish)
+        assert all(not use(budget, "book", consumer="SCANNER", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+        for index in range(5):
+            assert scoped_book(reader, (f"EXIT{index}", "ACCIONES", "BYMA", "ARS", "A-24HS"), "EXIT_CRITICAL")
+        assert len(calls) == before + 5 and budget.metrics()["global"]["used"] == 5
+        rows = _budget_contents(budget.path)["budget_requests"]
+        assert len(rows) == 5 and all(row[2] == "book" and row[-1] == 1 for row in rows)
+    finally:
+        for lock in owner:
+            lock.rollback()
+            lock.close()
+        reader.close()
+
+
+def test_pre_wire_cleanup_never_hides_an_unknown_lease_failure(tmp_path):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    faults = []
+    with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_LEASE_INVALID$"):
+        _confirmed_pre_wire_state_cancel(budget, "unknown", faults, time.monotonic() + 2)
+    assert not faults and budget.metrics()["global"]["used"] == 0
+
+
 def test_abandoned_lease_cannot_be_started_after_expiry_even_without_new_owner(tmp_path):
     clock = Clock()
     budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock, common=1), clock=clock.now)
@@ -944,25 +1283,54 @@ def test_off_reader_repeats_original_wire_reads_without_coalescing(wire, tmp_pat
         reader.close()
 
 
-def _budget_worker(path, config, at, consumer, priority, count, start, output):
+def _budget_worker(path, config, at, consumer, priority, count, ready, start, output):
     clock = Clock(at)
-    budget = GlobalPPIBudget(path, config, clock=clock.now)
-    start.wait(5)
+    faults = []
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            budget = GlobalPPIBudget(path, config, clock=clock.now)
+            break
+        except BudgetBackpressure as error:
+            if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE" or time.monotonic() >= deadline:
+                raise
+            faults.append("CONSTRUCTOR_STATE_UNAVAILABLE")
+            time.sleep(.005)
+    ready.put(priority)
+    assert start.wait(5)
     allowed = 0
     for _ in range(count):
         deadline = time.monotonic() + 5
         while True:
             try:
-                row = use(budget, "book", consumer=consumer, priority=priority)
-            except BudgetBackpressure:
+                row = budget.acquire("book", consumer=consumer, priority=priority)
+            except BudgetBackpressure as error:
+                assert str(error) == "PPI_BUDGET_STATE_UNAVAILABLE"
+                faults.append("ACQUIRE_STATE_UNAVAILABLE")
                 row = {"allowed": False, "reason": "PPI_BUDGET_STATE_UNAVAILABLE"}
             if row["allowed"]:
-                allowed += 1
-                break
+                started = False
+                try:
+                    with budget.wire_scope(row["lease"]):
+                        budget.start(row["lease"])
+                        started = True
+                        # A finish failure after start remains fatal and its
+                        # debt must survive. Only confirmed pre-wire STATE
+                        # cancellation below permits an eventual EXIT retry.
+                        budget.finish(row["lease"])
+                except BudgetBackpressure as error:
+                    if started or str(error) != "PPI_BUDGET_STATE_UNAVAILABLE":
+                        raise
+                    faults.append("START_OR_SCOPE_STATE_UNAVAILABLE")
+                    _confirmed_pre_wire_state_cancel(budget, row["lease"], faults, deadline)
+                    row = {"allowed": False, "reason": str(error)}
+                else:
+                    allowed += 1
+                    break
             if priority != "EXIT_CRITICAL" or row["reason"] not in {"PPI_SERIAL_BACKPRESSURE", "PPI_BUDGET_STATE_UNAVAILABLE"} or time.monotonic() >= deadline:
                 break
             time.sleep(.005)
-    output.put((priority, allowed))
+    output.put((priority, allowed, faults))
 
 
 def test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor(tmp_path):
@@ -971,17 +1339,27 @@ def test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor(tmp
     path = str(tmp_path / "budget.sqlite")
     parent = GlobalPPIBudget(path, config, clock=clock.now)
     context = multiprocessing.get_context("fork")
-    start, output = context.Event(), context.Queue()
+    ready, start, output = context.Queue(), context.Event(), context.Queue()
     scopes = [("SCANNER", "OPENED_CRITICAL", 20), ("SCALPING", "SCALPING_HOT", 20), ("EXIT_READER", "EXIT_CRITICAL", 5)]
-    processes = [context.Process(target=_budget_worker, args=(path, config, clock.now().isoformat(), consumer, priority, count, start, output)) for consumer, priority, count in scopes]
+    processes = [context.Process(target=_budget_worker, args=(path, config, clock.now().isoformat(), consumer, priority, count, ready, start, output)) for consumer, priority, count in scopes]
     for process in processes:
         process.start()
+    assert {ready.get(timeout=5) for _ in processes} == {priority for _, priority, _ in scopes}
     start.set()
     for process in processes:
         process.join(timeout=15)
         assert process.exitcode == 0
-    assert dict(output.get(timeout=2) for _ in processes) == {"OPENED_CRITICAL": 0, "SCALPING_HOT": 0, "EXIT_CRITICAL": 5}
-    assert parent.metrics()["global"]["used"] == 5
+    results = [output.get(timeout=2) for _ in processes]
+    assert {priority: allowed for priority, allowed, _ in results} == {"OPENED_CRITICAL": 0, "SCALPING_HOT": 0, "EXIT_CRITICAL": 5}
+    faults = [fault for _, _, values in results for fault in values]
+    canceled = faults.count("PREWIRE_CANCEL_CONFIRMED")
+    assert canceled == faults.count("START_OR_SCOPE_STATE_UNAVAILABLE")
+    metrics = parent.metrics()
+    assert metrics["global"]["used"] == 5 and metrics["global"]["allowed"] == 5 + canceled
+    contents = _budget_contents(parent.path)
+    assert len(contents["budget_requests"]) == 5 and all(row[-1] == 1 for row in contents["budget_requests"])
+    envelopes = json.loads(dict(contents["budget_state"])["reservation_envelopes_v1"])
+    assert len(envelopes) == 1 and envelopes[0]["priority_reserves"]["EXIT_CRITICAL"]["book"] == 5
 
 
 def _single_flight_worker(path, config, at, ready, release, output, calls, owner):

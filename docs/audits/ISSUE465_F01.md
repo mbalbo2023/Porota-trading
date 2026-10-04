@@ -7,6 +7,7 @@ WRITE_OWNER declaration: https://github.com/mbalbo2023/Porota-trading/issues/465
 Narrow existing-test reconciliation: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981320592.
 Peer counterexample reacquisition: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981557266.
 Full HTTP body/serial ownership blocker: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981655796.
+Constructor contention reacquisition: https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5982591398.
 
 PAPER/SHADOW only, real_orders_sent=0, real routes NOT_CALLED. No provider,
 production runtime, productive DB, PPI Watch, merge, deploy or Predeploy action
@@ -221,16 +222,77 @@ focused cases before the correction. Independent peer witness scripts remain
 outside the repository; they are reexecuted against the new frozen head by the
 read-only peer, not represented as a complete independent re-audit.
 
+## Consolidated startup contention and pre-wire recovery
+
+Both full-suite V2 runs exposed the same initialized-constructor failure,
+before admission: `PRAGMA journal_mode=DELETE` raised raw SQLite `database is
+locked` while another process committed request state. The previous regression
+held a RESERVED lock; it did not cover EXCLUSIVE transitions or flapping
+commits. A constructor-only OS lock did not serialize those normal writers.
+This was a startup availability/diagnostic defect. The failed A fixture retained
+no emitted receipt; the G fixture retained five intraday receipts and its
+untouched five-book EXIT floor. Neither trace showed a stolen reservation.
+
+Initialized validation now uses a journal-mode getter and one read snapshot
+for mode, tables and schema. It never issues a mode setter, DDL or state write.
+Only a new or known unfinished bootstrap can configure DELETE and create the
+fixed tables, with the marker in the same native transaction. Existing WAL or
+foreign state is rejected without conversion or counter/promise reset. The
+bootstrap mutex uses nonblocking acquisition with a 50ms deadline; SQLite keeps
+its 50ms busy limit. Constructor IO/SQLite uncertainty has the sanitized public
+reason `PPI_BUDGET_STATE_UNAVAILABLE`. Explicit policy/path/schema violations
+remain visible. Required private permissions are retained without redundantly
+changing already-correct mode bits.
+
+The causal run against untouched `ade87a83` recorded 9 failures among 11 new
+guards (`startup-ade87a83-red.xml`). The final 13-guard replay loads the exact
+old Git blob into memory and records 10 failures, including the native guarded
+caller (`startup-ade87a83-exact-red-v3.xml`). The first version of this external
+replay used stdin and therefore could not launch its spawn fixture; its raw
+V2 log/XML are preserved as harness evidence and are not claimed as a valid
+flapping-writer proof. The file-backed V3 replay resolves that harness issue.
+
+Permanent startup tests audit native SQLite mutation authorization, exercise
+an EXCLUSIVE writer and six real-process EXCLUSIVE/write/commit phases, bound
+mutex and database denial, compare unchanged bytes/counters/envelopes, verify
+known interrupted-bootstrap recovery, and require all five EXIT admissions
+after the same five lower denials. Initialized and foreign WAL fixtures retain
+their original mode and state. No capacity limit, lease interval, risk guard
+or reserve assertion was weakened.
+
+Exposing the actual lifecycle in the three-process fixture then found an EXIT
+`start` that waited out SQLite's bounded busy limit after three confirmed
+starts and before its fourth send. Both lower scopes still emitted zero calls.
+That RED is retained in `startup-working-first.xml` and its log. The previous
+test helper caught the entire acquire/start/finish sequence and could leave
+an unused admission blocking a fixed-clock fixture. The burst now acknowledges
+all constructors before releasing concurrent workers, records every known
+STATE denial and cancellation, and models actual `wire_scope` ownership.
+Known STATE failure before the sender is invoked permits only bounded retry
+of confirmed `finish` cancellation, then an eventual EXIT retry. Unknown
+faults and every finish failure after successful start remain fatal. Exact
+lower=0/EXIT=5, used=5, admitted=5+confirmed cancellations, five used receipts and
+the original envelope are asserted independently.
+
+`finish` now sanitizes SQLite/IO uncertainty and rolls back without clearing
+an unconfirmed claim, inflight lease or emitted receipt. A native SDK/guard
+test injects the real start lock, verifies zero HTTP sends while uncertain,
+forces another actual busy cancellation, confirms its deletion before retry,
+then requires five actual EXIT book reads. Separate emitted/unstarted finish
+tests preserve debt and typed denial; wire-scope entry uncertainty cannot send
+or release a claim. An unrelated lease error cannot be swallowed by cleanup.
+
 ## Local evidence and handoff boundary
 
-Focused validation: **441 passed**, failures=errors=skipped=xfail=0,
-`/workspace/issue465-evidence/front-a/final-frozen-focal.xml`. Exact JUnit
+Focused validation: **454 passed**, failures=errors=skipped=xfail=0,
+with uniquely named startup-successor frozen focal XML in
+`/workspace/issue465-evidence/front-a/`. Exact JUnit
 digest and frozen head/tree are recorded in the integration handoff, outside
 this source document to avoid a source/evidence identity cycle.
-Includes all79 new cases, original budget/approved callers, exit supervision,
+Includes all92 new cases, original budget/approved callers, exit supervision,
 exit ledger isolation, capacity promotion, intraday freshness, documented SDK
 contract and production PAPER scenarios. Compile AST and diff whitespace pass.
-Environment: pinned dependencies, local Python 3.12; final Actions Python 3.11
+Environment: pinned dependencies, local Python 3.11 and 3.12; final Actions Python 3.11
 and consolidated exact artifact remain the integration owner's authority.
 
 Reproduction command:
@@ -246,6 +308,7 @@ Actual OPEN capacity/latency, account fees, executable live fills, OOS edge and
 runtime of the new candidate remain external NO_VERIFICADO. No capacity,
 score, TP/SL/EOD/MaxHold or position-limit promotion occurs here.
 
-Front A code and all acquired hunks are released upon its frozen tested commit
-handoff. DEPLOY_OWNER remains NOT_ACQUIRED. This front does not create a PR or
+Front A stops writes upon its frozen tested commit handoff; the integration
+owner publishes the exact successor and native release. DEPLOY_OWNER remains
+NOT_ACQUIRED. This front does not create a PR or
 trigger its own gate; the final candidate must supersede #463 for reauditing.

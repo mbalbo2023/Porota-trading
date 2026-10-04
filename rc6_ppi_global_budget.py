@@ -111,7 +111,15 @@ class GlobalPPIBudget:
         self.path = Path(path).absolute()
         self.policy = validate_policy(policy)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
-        self.protected = {Path(p).resolve() for p in protected if p is not None}
+        try:
+            self.protected = {Path(p).resolve() for p in protected if p is not None}
+            self._bootstrap()
+        except (OSError, sqlite3.Error) as error:
+            # Startup contention is an off-wire denial just like admission.
+            # Never expose native IO messages or create an ungoverned sender.
+            raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
+
+    def _bootstrap(self):
         self._check_path()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock_path = Path(str(self.path) + ".bootstrap.lock")
@@ -120,13 +128,27 @@ class GlobalPPIBudget:
         with os.fdopen(fd, "a") as lock:
             if os.fstat(fd).st_nlink != 1:
                 raise ValueError("PPI_BUDGET_PATH_ALIAS")
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            deadline = time.monotonic() + .05
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as error:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
+                    time.sleep(min(.005, remaining))
             self._check_path()
             if not self.path.exists():
                 db = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW, 0o600)
                 os.close(db)
             with closing(self._connect(timeout=.05)) as c, c:
-                c.execute("PRAGMA journal_mode=DELETE")
+                # All initialized validation shares one read snapshot. Even a
+                # setter to the existing mode can race a worker's commit lock;
+                # foreign/WAL state must never be converted by a restart.
+                c.execute("BEGIN")
+                if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
+                    raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
                 tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 expected_tables = {"budget_state", "budget_requests", "budget_totals"}
                 if tables - expected_tables:
@@ -138,20 +160,28 @@ class GlobalPPIBudget:
                 # active worker with redundant DDL or a schema write. Only an
                 # unfinished first bootstrap may create the fixed tables.
                 if old_schema is None:
-                    self._limit_pages(c)
-                    c.executescript("""
-                    CREATE TABLE IF NOT EXISTS budget_state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                    CREATE TABLE IF NOT EXISTS budget_requests(
+                    c.rollback()
+                    if c.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
+                        raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+                    self._begin_write(c)
+                    # Native executescript would commit the transaction before
+                    # DDL. Keep the fixed schema and marker atomic, while IF
+                    # NOT EXISTS preserves a known interrupted bootstrap.
+                    for statement in (
+                        "CREATE TABLE IF NOT EXISTS budget_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+                        """CREATE TABLE IF NOT EXISTS budget_requests(
                       lease TEXT PRIMARY KEY, at REAL NOT NULL, endpoint TEXT NOT NULL,
-                      consumer TEXT NOT NULL, priority TEXT NOT NULL, used INTEGER NOT NULL);
-                    CREATE TABLE IF NOT EXISTS budget_totals(
+                      consumer TEXT NOT NULL, priority TEXT NOT NULL, used INTEGER NOT NULL)""",
+                        """CREATE TABLE IF NOT EXISTS budget_totals(
                       endpoint TEXT NOT NULL, consumer TEXT NOT NULL, priority TEXT NOT NULL,
                       requested INTEGER NOT NULL, allowed INTEGER NOT NULL,
                       used INTEGER NOT NULL, dropped INTEGER NOT NULL,
-                      PRIMARY KEY(endpoint,consumer,priority));
-                """)
+                      PRIMARY KEY(endpoint,consumer,priority))""",
+                    ):
+                        c.execute(statement)
                     self._put(c, "schema", SCHEMA)
-            os.chmod(self.path, 0o600)
+            if self.path.stat().st_mode & 0o777 != 0o600:
+                os.chmod(self.path, 0o600)
 
     def _check_one(self, path):
         if path.resolve() in self.protected:
@@ -532,20 +562,24 @@ class GlobalPPIBudget:
         self._put(c, "last_error", {"endpoint": endpoint, "code": code, "at": now})
 
     def finish(self, lease, *, status_code=None, error_code=None):
-        with closing(self._connect()) as c, c:
-            self._begin_write(c)
-            now = self._clock(c)
-            row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
-            if not row:
-                raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
-            self._outcome(c, row["endpoint"], now, error_code or (f"PPI_HTTP_{status_code}" if status_code and status_code >= 400 else None))
-            if not row["used"]:
-                # A confirmed pre-wire rejection releases its unused claim;
-                # emitted receipts are never cleared by policy replacement.
-                c.execute("DELETE FROM budget_requests WHERE lease=?", (lease,))
-            active = self._get(c, "inflight")
-            if active and active["lease"] == lease:
-                self._put(c, "inflight", None)
+        try:
+            with closing(self._connect()) as c, c:
+                self._begin_write(c)
+                now = self._clock(c)
+                row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
+                if not row:
+                    raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
+                self._outcome(c, row["endpoint"], now, error_code or (f"PPI_HTTP_{status_code}" if status_code and status_code >= 400 else None))
+                if not row["used"]:
+                    # Only confirmed pre-wire rejection can release a claim.
+                    # An uncertain finish rolls back and retains both the
+                    # conservative inflight lease and any emitted wire debt.
+                    c.execute("DELETE FROM budget_requests WHERE lease=?", (lease,))
+                active = self._get(c, "inflight")
+                if active and active["lease"] == lease:
+                    self._put(c, "inflight", None)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
     def report_error(self, endpoint, code):
         with closing(self._connect()) as c, c:
