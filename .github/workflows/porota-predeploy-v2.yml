@@ -137,7 +137,7 @@ jobs:
               'errors': errors,
               'exclusions': exclusions,
               'pytest_exit_code': int(os.environ['TEST_RC']),
-              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests else 'RED',
+              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests and discovered > 0 and not any((failures, errors, skipped, xfail)) else 'RED',
           }
           Path('/tmp/porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(f'POROTA_TEST_DISCOVERED={discovered}')
@@ -150,6 +150,7 @@ jobs:
           print(f'POROTA_GOVERNED_TEST_STATUS={result["status"]}')
           assert discovered > 0, 'automatic discovery returned zero tests'
           assert discovered == tests, f'collected/executed mismatch: {discovered}!={tests}'
+          assert not any((failures, errors, skipped, xfail)), 'final governed suite requires zero failures/errors/skips/xfails'
           PY
           test "$TEST_RC" -eq 0
           echo 'POROTA_GOVERNED_TESTS=GREEN'
@@ -267,7 +268,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker run --rm --pull never --entrypoint python "$IMAGE" - <<'PY'
+          docker run --rm -i --pull never --network none --entrypoint python "$IMAGE" - <<'PY'
           import bg_paper_dashboard
           import bf_production_paper_observer
           import bv_paper_runtime
@@ -275,6 +276,14 @@ jobs:
           import be_paper_engine
           import bw_daily_risk
           import dh_paper_dynamic_risk_gate_hf6
+          import rc6_paper_family_lifecycle
+          import rc6_ppi_future_contract_policy
+          import rc6_shadow_runtime.worker
+          import rc6_shadow_runtime.entry_signals
+          import rc6_shadow_runtime.funnel
+          import rc6_shadow_runtime.source_authority
+          import rc6_dynamic_universe.promotion
+          import rc6_ppi_global_budget
           import o_dashboard
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
@@ -283,9 +292,16 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Runtime images intentionally exclude tests and CI metadata. The exact
-          # image has already passed compile/import-closure/import-smoke gates.
-          echo "POROTA_EXACT_IMAGE_TEST_SOURCES=EXCLUDED_FROM_RUNTIME_IMAGE"
+          # Report the extracted image contents, rather than assuming its
+          # Docker context excludes test sources or CI metadata.
+          python - <<'PY'
+          from pathlib import Path
+          app = Path('/tmp/porota-predeploy-app')
+          sources = list(app.rglob('test_*.py'))
+          print('POROTA_EXACT_IMAGE_TEST_SOURCES=' + ('PRESENT' if sources else 'ABSENT'))
+          print('POROTA_EXACT_IMAGE_TEST_SOURCE_FILES=' + str(len(sources)))
+          print('POROTA_EXACT_IMAGE_CI_METADATA=' + ('PRESENT' if (app / '.github').is_dir() else 'ABSENT'))
+          PY
           echo "POROTA_EXACT_IMAGE_IMPORT_SMOKE=GREEN"
           echo "POROTA_FULL_SUITE=SEE_GOVERNED_TEST_EVIDENCE"
           echo "POROTA_GOVERNED_TEST_DISCOVERY=REPOSITORY_ROOT_AUTOMATIC"

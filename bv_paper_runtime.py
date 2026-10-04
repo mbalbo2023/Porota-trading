@@ -12,6 +12,7 @@ import faulthandler
 faulthandler.enable(all_threads=True)
 
 import fcntl
+from contextlib import nullcontext
 import os
 import signal
 import sqlite3
@@ -139,15 +140,22 @@ class ChildProcesses:
 
 def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
     broker = broker_from_environment(store, clock_fn=clock_fn)
+    telemetry = None
+    try:
+        from rc6_performance.capture import ExitTelemetry
+        telemetry = ExitTelemetry(str(store.path)+".performance.sqlite")
+    except (OSError, ValueError, sqlite3.Error):
+        LOG.warning("EXIT_TELEMETRY_INITIALIZATION_UNVERIFIED")
     supervisor = PositionExitSupervisor(broker, clock_fn=clock_fn,
         session_policy=broker.session_policy,
-        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")))
+        max_hold_minutes=int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360")), telemetry=telemetry)
     last_valuation = 0.0
     try:
         while not stop.is_set():
             children.poll()
             try:
                 supervisor.tick()
+                broker.supervise_futures(clock_fn())
                 if time.monotonic() - last_valuation >= 30:
                     broker.mark_equity({}, as_of=clock_fn())
                     last_valuation = time.monotonic()
@@ -168,6 +176,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from bd_ppi_readonly_guard import retry_read, session_invalid
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
+    from rc6_paper_family_lifecycle import future_position_contract
+    for future in getattr(store, 'active_future_positions', lambda: [])():
+        positions.append({**future, "asset_class": "FUTUROS", "paper_id": future["lifecycle_id"]})
     failures = len(invalid)
     for p in positions:
         if should_stop():
@@ -175,15 +186,26 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
         beat()
         stage = "EXECUTION_POLICY"
         try:
-            if policy.execution_error(p, at):
+            is_future = p.get("asset_class") == "FUTUROS"
+            if not is_future and policy.execution_error(p, at):
                 continue
+            original_contract = future_position_contract(p) if is_future else None
             stage = "BROKER_BOOK"
-            book = retry_read(lambda: reader.book(
-                p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+            scope = getattr(reader, "read_scope", None)
+            identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
+            with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
+                book = retry_read(lambda: reader.book(
+                    p["symbol"],p["asset_class"],p["settlement"]), retries=1)
             stage = "CATALOG_LOOKUP"
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
             stage = "NORMALIZE_QUOTE"
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
+            if is_future:
+                from dataclasses import replace
+                # Request identity is the exact position; catalog changes cannot
+                # invent new exit terms or grant fresh entry authority.
+                q = replace(q, contract=original_contract, currency=p["currency"],
+                            market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
             stage = "PERSIST_QUOTE"
             store.add_quote(q)
             stage = "VALIDATE_QUOTE"
@@ -227,7 +249,8 @@ def run_reader(store, stop):
                     stop.wait(5)
                     continue
                 try:
-                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http)
+                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http,
+                                                    consumer="EXIT_READER", priority="EXIT_CRITICAL")
                     reader.login_once()
                     store.event("PPI_LOGIN", "owner=exit_reader")
                     status("READY", "Sesión de lectura iniciada; sin órdenes")
@@ -274,12 +297,22 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'],
+    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--performance-worker'], ['--dynamic-shadow-worker'],
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    if argv == ['--dynamic-shadow-worker']:
+        # Local-only reader: no runtime_store/PaperBroker/schema/provider in
+        # this child. The existing supervisor owns periodic execution/restart.
+        from rc6_shadow_runtime.worker import run_worker
+        run_worker(database_path(), stop, clock_fn=now_iso)
+        return 0
+    if argv == ['--performance-worker']:
+        from rc6_performance.capture import run_worker
+        run_worker(database_path(), stop)
+        return 0
     # Sólo el proceso padre prepara el esquema. Los hijos heredan la marca
     # y deben abrir SQLite sin ejecutar DDL ni reconstruir índices: al borrar
     # esa marca cada worker volvía a tomar el lock y el scanner nunca llegaba
@@ -321,6 +354,8 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         children = ChildProcesses({
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
+            "performance": [sys.executable, str(Path(__file__).resolve()), "--performance-worker"],
+            "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],

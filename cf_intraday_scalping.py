@@ -7,6 +7,8 @@ temporal, solapamiento estable y nuevos minutos durante una rueda abierta.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import json
 import os
 import time
@@ -33,6 +35,32 @@ SCALPING_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING", "WAITING_MARKET"})
 # upper bound and leaves enough capacity even with the focus/open-position set.
 DEFAULT_INTRADAY_SCAN_SECONDS = 180
 DEFAULT_INTRADAY_BATCH_LIMIT = 40
+# A newly fetched minute must be current when an entry is evaluated/promoted.
+# Two minutes cover minute finalization and match the existing book/mutable
+# window. The 45-minute history window is for indicators, never freshness;
+# refreshing an old payload must not renew the underlying source evidence.
+INTRADAY_SOURCE_MAX_AGE_SECONDS = 120
+
+
+def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
+                         observations=(), events=(), opened=(), previous=None,
+                         phase="OPEN", policy=None):
+    """Separate dense SHADOW scheduler; no change to the productive 40 policy.
+
+    Uses the existing exact equity-family contract. Caller supplies empirical
+    capacity and a preopen hash, not an arbitrary replacement batch number.
+    This adapter never evaluates/promotes a PAPER candidate or writes its DB.
+    Confirmed interval-volume/freshness/economics/risk still belong to the
+    existing evaluator and broker; a SHADOW HOT state grants no BUY authority.
+    """
+    from rc6_dynamic_universe.orchestrator import UniverseOrchestrator, EnginePolicy
+    selected_policy = policy or EnginePolicy()
+    if selected_policy.engine != "SCALPING":
+        raise ValueError("SCALPING_STRATEGY_REQUIRED")
+    return UniverseOrchestrator(catalog, policy=selected_policy).plan(
+        at=at, session_open=session_open, frozen=frozen, capacity=capacity,
+        observations=observations, events=events, opened=opened,
+        previous=previous, phase=phase)
 
 
 def _stamp(value):
@@ -84,8 +112,20 @@ def normalize_payload(payload, *, received_at, local_day=None):
 
 
 def init_schema(store):
+    """Initialize native inputs once, including the canonical #456 authority.
+
+    PaperStore already owns this immutable evidence table. A standalone
+    Intraday store uses the identical table/index before entering its loop;
+    evaluation performs only its existing transactional INSERT OR IGNORE.
+    """
     with store.connect() as connection:
         connection.executescript("""
+        CREATE TABLE IF NOT EXISTS decision_evidence_snapshots(
+          decision_key TEXT PRIMARY KEY, captured_at TEXT NOT NULL,
+          schema_version TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
+          payload_json TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_decision_evidence_captured
+          ON decision_evidence_snapshots(captured_at, decision_key);
         CREATE TABLE IF NOT EXISTS ppi_intraday_points(
           symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
           currency TEXT NOT NULL, settlement TEXT NOT NULL, event_at TEXT NOT NULL,
@@ -189,6 +229,32 @@ def select_batch(store, *, limit, cursor=0):
     return (priority + selected)[:limit], next_cursor, len(rows)
 
 
+def select_runtime_batch(store, *, limit, cursor=0, at, controller=None):
+    """OFF returns the original batch; approved selection has its own gate."""
+    baseline, next_cursor, universe = select_batch(store, limit=limit, cursor=cursor)
+    from rc6_dynamic_universe.promotion import capacity_controller_from_environment
+    controller = controller or capacity_controller_from_environment(getattr(store, "path", None))
+    if controller.state(at)["status"] != "APPROVED_DYNAMIC":
+        return baseline, next_cursor, universe, {"dynamic": False}
+    with store.connect() as c:
+        opened = [tuple(r) for r in c.execute("""SELECT symbol,asset_class,market,currency,settlement
+            FROM paper_positions WHERE status='OPEN' AND asset_class IN ('ACCIONES','CEDEARS','ETFS')""")]
+        rows = [dict(r) for r in c.execute("""SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement,
+            c.capability,c.status FROM financial_instrument_catalog c JOIN candidate_identity_v2 r
+            USING(ticker,instrument_type,market,currency,settlement)
+            WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
+              AND c.capability LIKE 'READY_PAPER_%' AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS')""")]
+    selection = controller.selection("SCALPING", baseline, as_of=at, opened=opened)
+    if not selection["dynamic"]:
+        return baseline, next_cursor, universe, selection
+    aliases = {}
+    for row in rows:
+        aliases.setdefault((row["ticker"], row["instrument_type"], row["settlement"]), []).append(row)
+    ready = {_identity(values[0]): values[0] for values in aliases.values() if len(values) == 1}
+    selected = [ready[k] for k in selection["selected"] if k in ready]
+    return selected, cursor, universe, selection
+
+
 def _state(store, identity):
     with store.connect() as connection:
         row = connection.execute("""SELECT * FROM ppi_intraday_contract_state
@@ -243,10 +309,11 @@ def persist_payload(store, record, points, *, received_at):
         prior_changed = (previous or {}).get("changed_closed_points", 0)
         confirmed_now = (observations >= 2 and stable >= 5 and inserted >= 1
                          and down_steps >= 1 and changed == 0 and prior_changed == 0)
-        state = ("CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
+        state = ("REJECTED_MUTABLE_CLOSED_POINTS" if changed or prior_changed
+                 else "EMPTY_INTRADAY_PAYLOAD" if not points
+                 else "CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
                     (previous or {}).get("state") == "CONFIRMED_INTERVAL_VOLUME"
                     and changed == 0 and prior_changed == 0)
-                 else "REJECTED_MUTABLE_CLOSED_POINTS" if changed or prior_changed
                  else "PENDING_LIVE_CONFIRMATION")
         last_source = points[-1][0] if points else None
         detail = (f"observaciones={observations}; solapamiento_estable={stable}; "
@@ -266,6 +333,31 @@ SCALPING_PAPER_CAPABILITIES = frozenset({
 })
 
 
+def _intraday_freshness_reason(contract, *, at, latest_event_at):
+    """Fail closed unless the current source and indicator tail agree and age safely."""
+    if contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
+        return contract.get("state") or "PENDING_LIVE_CONFIRMATION"
+    source_at = contract.get("last_source_at")
+    checked_at = contract.get("checked_at")
+    if not source_at or not checked_at or not latest_event_at:
+        return "NO_CURRENT_INTRADAY_SOURCE"
+    try:
+        now = aware_datetime(at)
+        source = aware_datetime(source_at)
+        checked = aware_datetime(checked_at)
+        latest = aware_datetime(latest_event_at)
+    except (ValueError, TypeError):
+        return "INVALID_INTRADAY_TIMESTAMP"
+    ages = [(now - value).total_seconds() for value in (source, checked, latest)]
+    if any(age < 0 for age in ages) or source > checked:
+        return "INTRADAY_TIMESTAMP_IN_FUTURE"
+    if any(age > INTRADAY_SOURCE_MAX_AGE_SECONDS for age in ages):
+        return "STALE_INTRADAY_SOURCE"
+    if source != latest:
+        return "INTRADAY_SOURCE_MISMATCH"
+    return ""
+
+
 def evaluate_candidate(store, record, *, at):
     identity = _identity(record)
     contract = _state(store, identity) or {}
@@ -274,7 +366,7 @@ def evaluate_candidate(store, record, *, at):
     score = Decimal("0")
     economics = {"binding": True, "execution_enabled": False, "passed": False}
     with store.connect() as connection:
-        points = connection.execute("""SELECT event_at,price,volume FROM ppi_intraday_points
+        points = connection.execute("""SELECT event_at,price,volume,first_received_at,last_verified_at,source FROM ppi_intraday_points
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
             AND julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
           ORDER BY event_at DESC LIMIT 30""",
@@ -285,10 +377,12 @@ def evaluate_candidate(store, record, *, at):
           (record["ticker"],record["instrument_type"],record["settlement"],
            record["currency"],record["market"])).fetchone()
     points = list(reversed(points))
+    freshness_reason = _intraday_freshness_reason(
+        contract, at=at, latest_event_at=points[-1]["event_at"] if points else None)
     if record.get("capability") not in SCALPING_PAPER_CAPABILITIES:
         reason = record.get("capability") or "CONTRACT_NOT_SIMULATABLE"
-    elif contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
-        reason = contract.get("state") or "PENDING_LIVE_CONFIRMATION"
+    elif freshness_reason:
+        reason = freshness_reason
     elif len(points) < 15:
         reason = "INSUFFICIENT_INTRADAY_POINTS"
     elif not quote:
@@ -339,7 +433,53 @@ def evaluate_candidate(store, record, *, at):
           (evaluated,*identity,action,str(score),str(points[-1]["price"]) if points else None,
            str(points[-1]["volume"]) if points else None,len(points),reason,
            json.dumps(economics,sort_keys=True)))
+        if quote:
+            _record_native_entry_snapshot(connection, record, points, dict(quote), contract,
+                action=action, score=score, reason=reason, economics=economics, evaluated=evaluated)
     return action
+
+
+def _record_native_entry_snapshot(connection, record, points, quote, contract, *,
+                                  action, score, reason, economics, evaluated):
+    """Same native writer/input vector; telemetry has no execution callback."""
+    import hashlib
+    from rc6_dynamic_universe.common import digest
+    from rc6_shadow_runtime.entry_signals import native_entry_snapshot, NATIVE_INPUT_SCHEMA
+    key = "scalping-native:" + digest(_identity(record)) + ":" + evaluated + ":" + str(quote.get("book_at"))
+    config = {"version": "SCALPING_HF3_NATIVE_V1", "samples": 15, "window_minutes": 45,
+        "min_net_margin": os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"),
+        "max_spread": os.getenv("PAPER_SCALPING_MAX_SPREAD", "0.005"),
+        "score_threshold": os.getenv("PAPER_SCALPING_SCORE_THRESHOLD", "0.68"),
+        "source_max_age_seconds": INTRADAY_SOURCE_MAX_AGE_SECONDS}
+    inputs = {"schema": NATIVE_INPUT_SCHEMA,
+        "price_samples": [{"price": str(p["price"]), "source_at": p["event_at"],
+            "received_at": p["last_verified_at"], "first_received_at": p["first_received_at"],
+            "source": p["source"]} for p in points],
+        "momentum": economics.get("momentum"), "spread_fraction": economics.get("spread_fraction"),
+        "samples": len(points), "rvol": None,
+        "activity": {"interval_volume_contract": contract.get("state", "NO_VERIFICADO"),
+            "volume_unit": "NO_VERIFICADO", "rvol_status": "NO_VERIFICADO"}}
+    exact_quote = {name: quote.get(name) for name in ("symbol", "asset_class", "settlement", "currency", "market",
+        "bid", "ask", "bid_size", "ask_size", "last", "book_at", "trade_at", "observed_at")}
+    exact_quote["metadata_source"] = quote.get("metadata_source") or quote.get("source")
+    from bq_exit_policy import PaperSessionPolicy
+    policy = PaperSessionPolicy()
+    if policy.supports(exact_quote) and policy.close_at_eod:
+        _, close_at = policy.bounds(evaluated, exact_quote)
+        inputs["eod_at"] = _stamp(close_at - timedelta(minutes=policy.exit_minutes))
+        inputs["eod_policy"] = {"source": "bq_exit_policy.PaperSessionPolicy",
+            "exit_minutes": policy.exit_minutes, "close_at_eod": policy.close_at_eod}
+    else:
+        inputs["eod_at"] = None
+        inputs["eod_reason"] = "NATIVE_EOD_HORIZON_UNAVAILABLE"
+    snapshot = native_entry_snapshot(decision_key=key, quote=exact_quote, action=action,
+        score=str(score), reason=reason, strategy_id="SCALPING_BASELINE", strategy_version=config["version"],
+        signal_at=evaluated, decision_at=evaluated, configuration_fingerprint=digest(config),
+        entry_signal_inputs=inputs, economics=economics, git_sha=os.getenv("POROTA_BUILD_SHA"))
+    encoded = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    connection.execute("""INSERT OR IGNORE INTO decision_evidence_snapshots
+        (decision_key,captured_at,schema_version,payload_sha256,payload_json) VALUES(?,?,?,?,?)""",
+        (key, snapshot["captured_at"], "rc6.decision-inputs.v1", hashlib.sha256(encoded.encode()).hexdigest(), encoded))
 
 
 def promote_paper_candidate(store, record, *, at):
@@ -351,8 +491,7 @@ def promote_paper_candidate(store, record, *, at):
     mode = os.getenv("PAPER_SCALPING_MODE", "ACTIVE_OBSERVE").upper()
     if mode != "ACTIVE_PAPER":
         return "OBSERVE_ONLY"
-    from be_paper_engine import Quote
-    from bv_paper_runtime import broker_from_environment
+    contract = _state(store, _identity(record)) or {}
     with store.connect() as connection:
         scalp_open = 0
         for row in connection.execute("SELECT features_json FROM paper_positions WHERE status='OPEN'"):
@@ -370,8 +509,31 @@ def promote_paper_candidate(store, record, *, at):
         candidate = connection.execute("""SELECT * FROM scalping_candidates
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
           ORDER BY id DESC LIMIT 1""", _identity(record)).fetchone()
+        latest = connection.execute("""SELECT event_at FROM ppi_intraday_points
+          WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+          ORDER BY event_at DESC LIMIT 1""", _identity(record)).fetchone()
+    freshness_reason = _intraday_freshness_reason(
+        contract, at=at, latest_event_at=latest["event_at"] if latest else None)
+    if freshness_reason:
+        return freshness_reason
     if not quote_row or not candidate or candidate["action"] != "BUY_CANDIDATE":
         return "CANDIDATE_NOT_AVAILABLE"
+    # An entry can be delayed after evaluation. Recheck both inputs before
+    # loading the broker; a fresh book alone cannot revive a stale signal.
+    try:
+        candidate_age = (aware_datetime(at)-aware_datetime(candidate["evaluated_at"])).total_seconds()
+    except (ValueError, TypeError):
+        return "INVALID_SCALPING_CANDIDATE_TIMESTAMP"
+    if not 0 <= candidate_age <= INTRADAY_SOURCE_MAX_AGE_SECONDS:
+        return "STALE_SCALPING_CANDIDATE"
+    try:
+        quote_age = (aware_datetime(at)-aware_datetime(quote_row["book_at"])).total_seconds()
+    except (ValueError, TypeError):
+        return "INVALID_BOOK_TIMESTAMP"
+    if not 0 <= quote_age <= 120:
+        return "STALE_BOOK"
+    from be_paper_engine import Quote
+    from bv_paper_runtime import broker_from_environment
     q = Quote(
         symbol=quote_row["symbol"], asset_class=quote_row["asset_class"],
         settlement=quote_row["settlement"], last=_decimal(quote_row["last"],nonnegative=True),
@@ -457,7 +619,7 @@ def run_worker(store, stop, *, clock_fn):
                     stop.wait(20)
                     continue
                 try:
-                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http)
+                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http, consumer="SCALPING")
                     reader.login_once()
                     store.event("PPI_LOGIN", "owner=scalping")
                 except Exception as exc:
@@ -472,10 +634,14 @@ def run_worker(store, stop, *, clock_fn):
             # Keep the rotation cursor fixed for one extra cycle. Calling
             # select_batch again revalidates exact full-key readiness instead
             # of replaying stale record dictionaries from memory.
-            selected, next_cursor, universe = select_batch(
-                store, limit=batch_limit, cursor=cursor)
+            selected, next_cursor, universe, dynamic_selection = select_runtime_batch(
+                store, limit=batch_limit, cursor=cursor, at=at)
             phase = "RECHECK" if paired_recheck else "BASELINE"
-            if paired_recheck:
+            if dynamic_selection["dynamic"]:
+                phase = "APPROVED_DYNAMIC"
+                paired_recheck = False
+                paired_next_cursor = cursor
+            elif paired_recheck:
                 cursor = paired_next_cursor
                 paired_recheck = False
             else:
@@ -484,6 +650,10 @@ def run_worker(store, stop, *, clock_fn):
             selected = [record for record in selected
                         if (record["ticker"], record["instrument_type"], record["settlement"])
                         not in unsupported_requests]
+            opened_keys = set()
+            if getattr(reader, "budget_enabled", False) is True:
+                opened_keys = {(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
+                    for p in store.open_positions() if p["asset_class"] in SCALPING_STRATEGY_FAMILIES}
             successful = failed = inserted = confirmed = candidates = 0
             unsupported_this_batch = 0
             invalid_session = False
@@ -491,8 +661,17 @@ def run_worker(store, stop, *, clock_fn):
                 if stop.is_set():
                     break
                 try:
-                    payload = retry_read(lambda: reader.intraday(
-                        record["ticker"],record["instrument_type"],record["settlement"]), retries=1)
+                    key = _identity(record)
+                    if dynamic_selection["dynamic"]:
+                        state = dynamic_selection["rows"][key]["state"]
+                        priority = "OPENED_CRITICAL" if key in dynamic_selection["opened_priority"] else {"HOT": "SCALPING_HOT", "WARM": "WARM"}.get(state, "DISCOVERY")
+                    else:
+                        priority = "OPENED_CRITICAL" if key in opened_keys else "DISCOVERY"
+                    scope = (reader.read_scope(priority=priority, identity=key)
+                        if getattr(reader, "budget_enabled", False) is True and hasattr(reader, "read_scope") else nullcontext())
+                    with scope:
+                        payload = retry_read(lambda: reader.intraday(
+                            record["ticker"],record["instrument_type"],record["settlement"]), retries=1)
                     received = _stamp(clock_fn())
                     points = normalize_payload(payload,received_at=received)
                     result = persist_payload(store,record,points,received_at=received)
@@ -501,7 +680,9 @@ def run_worker(store, stop, *, clock_fn):
                     candidate_action = evaluate_candidate(store,record,at=received)
                     if candidate_action == "BUY_CANDIDATE":
                         candidates += 1
-                        result_action = promote_paper_candidate(store,record,at=received)
+                        result_action = ("DISCOVERY_OR_WARMUP_NO_ENTRY_AUTHORITY" if dynamic_selection["dynamic"]
+                            and key not in dynamic_selection["entry_identities"] else
+                            promote_paper_candidate(store,record,at=_stamp(clock_fn())))
                         store.event("SCALPING_PAPER_PROMOTION", f"{record['ticker']}: {result_action}")
                     successful += 1
                 except Exception as exc:
@@ -510,11 +691,13 @@ def run_worker(store, stop, *, clock_fn):
                             record["ticker"], record["instrument_type"], record["settlement"]))
                         unsupported_this_batch += 1
                         store.event("INTRADAY_SCALPING_UNSUPPORTED",
-                                    f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND")
+                                    f"{record['ticker']}: PPI_INSTRUMENT_NOT_FOUND;shadow_identity=" +
+                                    json.dumps(_identity(record), separators=(",", ":")))
                     else:
                         failed += 1
                         store.event("INTRADAY_SCALPING_ERROR",
-                                    f"{record['ticker']}: {classify_read_error(exc)}")
+                                    f"{record['ticker']}: {classify_read_error(exc)};shadow_identity=" +
+                                    json.dumps(_identity(record), separators=(",", ":")))
                         if session_invalid(exc):
                             invalid_session = True
                             break
@@ -526,7 +709,7 @@ def run_worker(store, stop, *, clock_fn):
                        successful=successful,failed=failed,inserted=inserted,
                        confirmed=confirmed,candidates=candidates,
                        detail=(f"universo={universe}; lote={len(selected)}; scanner activo; "
-                               f"fase_confirmacion={phase}; paired_recheck=1; "
+                               f"fase_confirmacion={phase}; paired_recheck={int(not dynamic_selection['dynamic'])}; "
                                f"intraday_unavailable={unsupported_this_batch}; "
                                f"unsupported_cached={len(unsupported_requests)}; "
                                f"modo={os.getenv('PAPER_SCALPING_MODE','ACTIVE_OBSERVE')}; "
@@ -537,7 +720,7 @@ def run_worker(store, stop, *, clock_fn):
                 reader.close()
                 reader = None
                 next_login = time.monotonic() + 60
-            stop.wait(interval)
+            stop.wait(dynamic_selection.get("cadence_seconds", interval))
     finally:
         if reader:
             reader.close()
