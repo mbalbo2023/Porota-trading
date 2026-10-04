@@ -82,11 +82,70 @@ acquisition backpressure escaped the burst child, instead of becoming an
 explicit denial. Both original full RED JUnits are preserved. The reserve/cap
 assertions did not change. The harness now catches only the exact expected
 native acquisition uncertainty, records exact reason counts, and keeps
-unexpected start/finish errors as failures. A new real writer-lock child test
+unexpected lifecycle errors as failures. A new real writer-lock child test
 was RED before repair (`front-g-child-lock-causal-red.xml`), then GREEN; after
 the lock is released all five EXIT starts/finishes pass and usage is exactly5.
 The seven stress cases then passed against the same released A. No A source,
 limits, timeouts, priority or risk parameter changed.
+
+The subsequent exact consolidated `9ac` full suite executed 3,551 cases:
+Python3.12 was GREEN, while Python3.11 exposed a native `start` writer lock
+after an allowed Intraday acquisition, before any modeled wire. The original
+full XML/log/binding and conservative unused claim are retained. An unchanged
+offline real-lock witness reproduced the same failure on frozen G `f91f020a`
+and A `c3a73a0e`; its first start returned typed STATE with native SQLITE_BUSY=5,
+zero modeled wires and unchanged receipt/inflight/counters. This is a fixture
+lifecycle defect, not permission to borrow the EXIT floor.
+
+Reacquisition was declared before these two-path edits in
+[native G WRITE_OWNER](https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5983420657).
+The burst now holds the native OS wire scope, validates its exact readonly
+receipt and inflight lease, and retries only the same `start` when the exact
+public STATE error has native SQLITE_BUSY=5 and its unstarted claim remains
+unchanged. After exactly one modeled read and verified completion, it can
+confirm only that same lease's `finish`, preserving its immutable used debt.
+No lease is acquired again, canceled, or sent twice. Every known fault records
+its phase, native code and exact lease identity. Readonly verification or
+wire-scope-entry failure remains fatal even for SQLite5; no unverifiable state
+is labeled recovered. Unknown IO/SQLite codes, missing causes, invalid leases,
+changed debt or inflight ownership and unverified completion remain fatal.
+
+The offline confirmation deadline is checked before and after every snapshot,
+start, modeled read and finish, and after entering and leaving the actual wire
+scope. A peer caught a missing check after scope exit: the actual used receipt
+remained safe, but a late exit could acknowledge success after its deadline.
+That RED is preserved in the external peer receipt, and its permanent guard
+now fails explicitly. Tests cover already-expired available state, deadlines
+after readonly state and successful mutations, and delayed native scope/body
+boundaries. A mutation that finished too late is still a failure; its original
+used receipt is retained rather than canceled.
+
+The deterministic real BEGIN IMMEDIATE fixture injects both a start lock and
+a post-completion finish lock, checks exact conserved receipt/inflight/counters
+under each denial, then requires five unique modeled wires and five EXIT used
+receipts. Ten negative start/finish cases use actual native IO, SQLITE_LOCKED6,
+SQLITE_CANTOPEN14, raw BUSY5 and missing-cause faults. Additional guards prove
+unknown acquisition errors cannot become denials; EXCLUSIVE readonly failures
+cannot be retried; marker/deadline/lease proof cannot be fabricated; and an
+apparently BUSY response after mutated state cannot start or send again.
+
+The original 30 attempts per lower child, denial-reason sums, lower-book=0,
+Intraday in [1,5], total used=5+lower and all five EXIT admissions remain
+unchanged. Added assertions equate every used receipt with a unique modeled
+wire and bind parent/spawned source path/SHA to the frozen A dependency.
+Constructor ACKs precede the same concurrent admission burst; the separate A
+EXCLUSIVE/flapping startup guards remain active. Fixture waits and cleanup
+are bounded. Native SQLite50ms, leases, caps, reserves and runtime code are
+unchanged. This confirms finite recovery in an offline model; it does not add
+automatic productive recovery or promise provider/SQL availability.
+
+The successor adds 32 permanent lifecycle guards, bringing the exact stress
+module to 39 executed cases. Final frozen JUnit, logs, synthetic metrics,
+parent/spawn import bindings and retained causal REDs use unique paths under
+`/workspace/issue465-evidence/front-g/`; the external handoff records exact
+head/tree/digests without a source/evidence identity cycle. Both pinned
+Python3.11.16 and Python3.12.14 must be GREEN with zero failure/error/skip/xfail.
+The unchanged 39-case matrix gate remains a separate integration authority.
 
 The third full-suite RED was an unchanged legacy directory fixture creating
 0750 under this managed shell's0077 umask, producing0700. Its production guard
