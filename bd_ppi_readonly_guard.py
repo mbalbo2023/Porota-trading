@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from json import JSONDecodeError
 from typing import Callable, Optional
@@ -124,6 +125,8 @@ def instrument_not_found(error: BaseException) -> bool:
 
 def classify_read_error(error: BaseException) -> str:
     """Etiqueta estable para observabilidad sin almacenar cuerpos sensibles."""
+    if type(error).__name__ == "BudgetBackpressure":
+        return "PPI_BUDGET_BACKPRESSURE"
     if session_invalid(error):
         return "PPI_SESSION_INVALID"
     if instrument_not_found(error):
@@ -177,6 +180,21 @@ class ReadOnlyTransportGuard:
     _original_request: object = None
     _original_send: object = None
     _last_login_at: Optional[float] = None
+    budget: object = None
+    consumer: str = "UNSCOPED"
+    priority: str = "DISCOVERY"
+    _scope: threading.local = field(default_factory=threading.local)
+
+    @contextmanager
+    def read_scope(self, *, priority=None, identity=None):
+        previous = getattr(self._scope, "priority", None)
+        if identity is not None and (len(identity) != 5 or any(not isinstance(x, str) or not x for x in identity)):
+            raise ValueError("PPI_BUDGET_EXACT_IDENTITY_REQUIRED")
+        self._scope.priority = priority or self.priority
+        try:
+            yield
+        finally:
+            self._scope.priority = previous
 
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
@@ -244,10 +262,30 @@ class ReadOnlyTransportGuard:
                     str(request.method).upper(), _normal_path(request.url), "BLOCKED"
                 )
                 raise
+            endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
+            budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
+            lease = None
+            if budget is not None:
+                from rc6_ppi_global_budget import BudgetBackpressure
+                admitted = budget.acquire(endpoint, consumer=guard.consumer,
+                    priority=getattr(guard._scope, "priority", None) or guard.priority)
+                if not admitted["allowed"]:
+                    guard._record(checked_method, checked_path, "BACKPRESSURE")
+                    raise BudgetBackpressure(admitted["reason"])
+                lease = admitted["lease"]
+                budget.start(lease)
             with guard._lock:
                 guard.calls_allowed += 1
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
-            return original_send(adapter, request, **kwargs)
+            try:
+                response = original_send(adapter, request, **kwargs)
+            except Exception as error:
+                if budget is not None:
+                    budget.finish(lease, error_code=classify_read_error(error))
+                raise
+            if budget is not None:
+                budget.finish(lease, status_code=response.status_code)
+            return response
 
         requests.sessions.Session.request = guarded_request
         requests.adapters.HTTPAdapter.send = guarded_send
@@ -266,12 +304,17 @@ class ProductionMarketReader:
     """Fachada sin atributo de ordenes, cuentas, transferencias ni cancelacion."""
 
     def __init__(self, api_key: str, api_secret: str,
-                 audit: Optional[Callable[[str, str, str], None]] = None):
+                 audit: Optional[Callable[[str, str, str], None]] = None, *,
+                 budget=None, consumer="UNSCOPED", priority="DISCOVERY"):
         if not api_key or not api_secret:
             raise ValueError("Faltan credenciales productivas.")
         self.__api_key = api_key
         self.__api_secret = api_secret
-        self.__guard = ReadOnlyTransportGuard(audit=audit).install()
+        if budget is None:
+            from rc6_ppi_global_budget import budget_from_environment
+            budget = budget_from_environment()
+        self.__guard = ReadOnlyTransportGuard(audit=audit, budget=budget,
+            consumer=consumer, priority=priority).install()
         self.__client = None
         self.__authenticated = False
 
@@ -283,6 +326,10 @@ class ProductionMarketReader:
             "login_calls": self.__guard.login_calls,
             "authenticated": self.__authenticated,
         }
+
+    @property
+    def budget_enabled(self):
+        return self.__guard.budget is not None
 
     def login_once(self) -> None:
         if self.__authenticated:
@@ -300,10 +347,24 @@ class ProductionMarketReader:
         return self.__client.marketdata
 
     def current(self, ticker: str, instrument_type: str, settlement: str):
-        return self._market().current(ticker, instrument_type, settlement)
+        return self._read("current", ticker, instrument_type, settlement)
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
-        return self._market().book(ticker, instrument_type, settlement)
+        return self._read("book", ticker, instrument_type, settlement)
+
+    def read_scope(self, *, priority=None, identity=None):
+        return self.__guard.read_scope(priority=priority, identity=identity)
+
+    def _read(self, endpoint, *args):
+        try:
+            return getattr(self._market(), endpoint)(*args)
+        except Exception as error:
+            budget = getattr(getattr(self, "_ProductionMarketReader__guard", None), "budget", None)
+            # HTTP status errors are counted once at the actual send. Native
+            # SDK 200/session and parse errors become sanitized diagnostics.
+            if budget is not None and (session_invalid(error) or isinstance(error, JSONDecodeError)):
+                budget.report_error(endpoint, classify_read_error(error))
+            raise
 
     def estimate_bonds(self, parameters):
         """Read-only PPI bond valuation; caller must supply every model field."""
@@ -388,7 +449,7 @@ class ProductionMarketReader:
         )
 
     def intraday(self, ticker: str, instrument_type: str, settlement: str):
-        return self._market().intraday(ticker, instrument_type, settlement)
+        return self._read("intraday", ticker, instrument_type, settlement)
 
     def close(self) -> None:
         self.__guard.restore()
