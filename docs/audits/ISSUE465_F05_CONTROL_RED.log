@@ -1,0 +1,51 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+______ test_duplicate_archive_ack_keys_cannot_override_non_durable_export ______
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_archive_ack_key0')
+
+    def test_duplicate_archive_ack_keys_cannot_override_non_durable_export(tmp_path):
+        old, current = generation(tmp_path), generation(tmp_path, number=2)
+        ack = acknowledgement(old)
+        ack.write_text(ack.read_text().replace('"durable": true', '"durable": false, "durable": true'))
+        pointer(current)
+>       with pytest.raises(RetentionPressure, match="HARD_FILES"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:139: Failed
+___________ test_duplicate_current_keys_fail_closed_before_rotation ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_current_keys_fa0')
+
+    def test_duplicate_current_keys_fail_closed_before_rotation(tmp_path):
+        path = generation(tmp_path)
+        acknowledgement(path)
+        pointer(path)
+        current = tmp_path / "CURRENT.json"
+        current.write_text(current.read_text().replace('"sequence": 1', '"sequence": 1, "sequence": 1'))
+>       with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:150: Failed
+____ test_duplicate_pin_registry_keys_cannot_release_an_audited_generation _____
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_pin_registry_ke0')
+
+    def test_duplicate_pin_registry_keys_cannot_release_an_audited_generation(tmp_path):
+        old, current = generation(tmp_path), generation(tmp_path, number=2)
+        acknowledgement(old)
+        pointer(current)
+        generation_id = old.name.removeprefix("gen-")
+        (tmp_path / "retention-pins.json").write_text('{"schema":"RC6_SHADOW_EVIDENCE_PINS_V1",'
+            '"generation_ids":["' + generation_id + '"],"generation_ids":[]}')
+>       with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:162: Failed
+=========================== short test summary info ============================
+FAILED tests/test_issue465_source_retention_policy.py::test_duplicate_archive_ack_keys_cannot_override_non_durable_export
+FAILED tests/test_issue465_source_retention_policy.py::test_duplicate_current_keys_fail_closed_before_rotation
+FAILED tests/test_issue465_source_retention_policy.py::test_duplicate_pin_registry_keys_cannot_release_an_audited_generation
