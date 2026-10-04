@@ -1875,6 +1875,54 @@
               "node": "tests/test_issue465_provenance.py::test_saved_image_missing_gzip_footer_rejected"
             },
             {
+              "minimum_cases": 4,
+              "node": "tests/test_issue465_provenance.py::test_saved_image_ordered_repeated_blob_references_are_verified"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_provenance.py::test_native_save_shape_23_references_11_blobs_and_13_empty_layers"
+            },
+            {
+              "minimum_cases": 13,
+              "node": "tests/test_issue465_provenance.py::test_repeated_references_never_hide_order_missing_or_physical_member_attacks"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_nested_layer_gzip_reaches_crc_and_actual_eof"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_content_addressed_save_bytes_cannot_be_rebound_by_only_the_diffid"
+            },
+            {
+              "minimum_cases": 4,
+              "node": "tests/test_issue465_provenance.py::test_image_reference_metadata_types_are_strict"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_compressed_layers_and_repeated_references_have_decoded_size_bounds"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_provenance.py::test_layer_reference_count_cannot_evade_physical_member_cardinality"
+            },
+            {
+              "minimum_cases": 5,
+              "node": "tests/test_issue465_provenance.py::test_optional_layer_sources_supported_forms_keep_exact_reference_validation"
+            },
+            {
+              "minimum_cases": 12,
+              "node": "tests/test_issue465_provenance.py::test_layer_sources_descriptors_cannot_disagree_with_verified_stored_blobs"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_provenance.py::test_repeated_diffid_descriptor_is_checked_against_every_distinct_stored_representation"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_provenance.py::test_nonstandard_json_constants_are_rejected_in_saved_image_metadata"
+            },
+            {
               "minimum_cases": 1,
               "node": "tests/test_issue465_provenance.py::test_legacy_presence_validator_rejects_same_paths_with_wrong_bytes"
             },
@@ -1895,9 +1943,9 @@
       ],
       "fix_code": "scripts/porota_artifact_provenance.py; bundle/validator scripts; narrow Predeploy V2 guards",
       "id": "E",
-      "negative_test": "Altered byte/manifest/path/labels/modes, context injection, symlink/hardlink/tar traversal and broken gzip envelopes.",
+      "negative_test": "Altered byte/manifest/path/labels/modes, context injection, symlink/hardlink/tar traversal and broken gzip envelopes; valid repeated layer references versus conflicting ordered DiffIDs, duplicate physical members and decoded-layer bounds; non-JSON NaN/Infinity and inconsistent optional LayerSources descriptors rejected.",
       "original_evidence": "Audit #464 artifact cannot independently rehash411MB; validator formerly checked presence/import/parse only.",
-      "rca": "Presence/import validation permitted valid altered Python source and insufficient saved-image/config byte linkage.",
+      "rca": "Presence/import validation permitted valid altered Python source and insufficient saved-image/config byte linkage. Native intermediate Predeploy exposed a separate export defect: valid23 ordered references to11 physical blobs, including13 identical empty layers, were rejected by a uniqueness restriction; repair verifies every ordered reference without collapsing conflicting DiffIDs.",
       "remaining_uncertainty": "Final native artifact ZIP is rehashed separately after download; next independent auditor must repeat. No installed runtime verification.",
       "state": "HARDENED_AND_TESTED"
     },
@@ -3679,6 +3727,54 @@
               "node": "tests/test_issue465_provenance.py::test_saved_image_missing_gzip_footer_rejected"
             },
             {
+              "minimum_cases": 4,
+              "node": "tests/test_issue465_provenance.py::test_saved_image_ordered_repeated_blob_references_are_verified"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_provenance.py::test_native_save_shape_23_references_11_blobs_and_13_empty_layers"
+            },
+            {
+              "minimum_cases": 13,
+              "node": "tests/test_issue465_provenance.py::test_repeated_references_never_hide_order_missing_or_physical_member_attacks"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_nested_layer_gzip_reaches_crc_and_actual_eof"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_content_addressed_save_bytes_cannot_be_rebound_by_only_the_diffid"
+            },
+            {
+              "minimum_cases": 4,
+              "node": "tests/test_issue465_provenance.py::test_image_reference_metadata_types_are_strict"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_provenance.py::test_compressed_layers_and_repeated_references_have_decoded_size_bounds"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_provenance.py::test_layer_reference_count_cannot_evade_physical_member_cardinality"
+            },
+            {
+              "minimum_cases": 5,
+              "node": "tests/test_issue465_provenance.py::test_optional_layer_sources_supported_forms_keep_exact_reference_validation"
+            },
+            {
+              "minimum_cases": 12,
+              "node": "tests/test_issue465_provenance.py::test_layer_sources_descriptors_cannot_disagree_with_verified_stored_blobs"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_provenance.py::test_repeated_diffid_descriptor_is_checked_against_every_distinct_stored_representation"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_provenance.py::test_nonstandard_json_constants_are_rejected_in_saved_image_metadata"
+            },
+            {
               "minimum_cases": 1,
               "node": "tests/test_issue465_provenance.py::test_legacy_presence_validator_rejects_same_paths_with_wrong_bytes"
             },
@@ -3699,9 +3795,9 @@
       ],
       "fix_code": "scripts/porota_artifact_provenance.py; bundle/validator scripts; narrow Predeploy V2 guards",
       "id": "AUDIT17-05",
-      "negative_test": "Altered byte/manifest/path/labels/modes, context injection, symlink/hardlink/tar traversal and broken gzip envelopes.",
+      "negative_test": "Altered byte/manifest/path/labels/modes, context injection, symlink/hardlink/tar traversal and broken gzip envelopes; valid repeated layer references versus conflicting ordered DiffIDs, duplicate physical members and decoded-layer bounds; non-JSON NaN/Infinity and inconsistent optional LayerSources descriptors rejected.",
       "original_evidence": "Original independent audit\u00a717 programmable blocker/gate5.",
-      "rca": "Presence/import validation permitted valid altered Python source and insufficient saved-image/config byte linkage.",
+      "rca": "Presence/import validation permitted valid altered Python source and insufficient saved-image/config byte linkage. Native intermediate Predeploy exposed a separate export defect: valid23 ordered references to11 physical blobs, including13 identical empty layers, were rejected by a uniqueness restriction; repair verifies every ordered reference without collapsing conflicting DiffIDs.",
       "remaining_uncertainty": "Final native artifact ZIP is rehashed separately after download; next independent auditor must repeat. No installed runtime verification.",
       "state": "HARDENED_AND_TESTED"
     },
@@ -4688,14 +4784,23 @@
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-e-final-tests.xml",
-          "sha256": "0d587d23c7bfa2ebcb94097d50792c7d764a5d7b0ab37a0c7951da40124465a8",
+          "path": "/workspace/issue465-authority/front-e-frozen-02da06be-focal-311.xml",
+          "sha256": "d5fb80f16034963e9c679000f817bbf892809bbcc9be8360a8c8ae361c1dcd3c",
           "skipped": 0,
-          "tests": 129,
+          "tests": 186,
+          "xfail": 0
+        },
+        {
+          "errors": 0,
+          "failures": 0,
+          "path": "/workspace/issue465-authority/front-e-frozen-02da06be-focal-312.xml",
+          "sha256": "587fd51e3285c49a5b6d5f19bd0f796dfa9fc38acd56bb11cc6f3c8f7d43736f",
+          "skipped": 0,
+          "tests": 186,
           "xfail": 0
         }
       ],
-      "head": "57a5370926bd41bca778734c4bcd42789a8f39e4",
+      "head": "02da06be024e0e5132a6f00d199dfaaf0f9ce372",
       "id": "E",
       "paths": [
         ".github/workflows/porota-predeploy-v2.yml",
@@ -4706,8 +4811,8 @@
         "tests/test_issue465_provenance.py"
       ],
       "publication": "Native Git object/ref SHA verification; no component PR or workflow",
-      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5981690181",
-      "tree": "b20364f51849ec758ef59978718c69c8f5bb8b37",
+      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5984309727",
+      "tree": "cfbf4ced302a0a47cafe82306f3b74aba1871bb1",
       "workstream": "WS-FIX-AUDIT-08-E",
       "write_owner": "RELEASED"
     },
