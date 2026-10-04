@@ -2405,6 +2405,38 @@
             {
               "minimum_cases": 1,
               "node": "tests/test_issue465_stress.py::test_native_budget_writer_lock_is_explicit_child_denial_without_wire_or_exit_loss"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_stress.py::test_native_start_and_post_completion_finish_locks_confirm_same_lease_without_resends"
+            },
+            {
+              "minimum_cases": 10,
+              "node": "tests/test_issue465_stress.py::test_lifecycle_never_retries_unknown_native_or_untyped_fault"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_stress.py::test_burst_never_converts_unknown_acquisition_fault_into_a_denial"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_stress.py::test_unverifiable_readonly_lease_snapshot_is_fatal_without_any_retry_or_mutation"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_stress.py::test_lifecycle_deadlines_before_and_after_reads_and_mutations_remain_fatal"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_stress.py::test_wire_scope_and_modeled_read_post_deadlines_cannot_acknowledge_success"
+            },
+            {
+              "minimum_cases": 5,
+              "node": "tests/test_issue465_stress.py::test_finish_requires_verified_completion_and_one_exact_valid_lease_marker"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_stress.py::test_apparently_busy_after_mutated_state_cannot_retry_or_emit_another_wire"
             }
           ]
         },
@@ -2457,9 +2489,9 @@
       ],
       "fix_code": "scripts/rc6_issue465_stress.py; tests/test_issue465_stress.py; C/A canonical bounds",
       "id": "G",
-      "negative_test": "Slow actual fsync/quota before commit/real WAL writer/three lower-priority burst processes; named resource limits.",
+      "negative_test": "Slow actual fsync/quota before commit/real WAL writer/three lower-priority burst processes; named resource limits; real START/FINISH locks, unknown causes, uncertain reads, ambiguous commits, scope deadlines and duplicate/missing modeled-wire markers.",
       "original_evidence": "Audit #464 lacks representative10x/5x load/host resource proof; #465\u00a711 requires offline stress.",
-      "rca": "Concurrency/safety/resource boundaries need actual independent processes and canonical ledger/supervisor proofs.",
+      "rca": "Concurrency/safety/resource boundaries need actual independent processes and canonical ledger/supervisor proofs. Full-root v3 exposed finite START SQLITE_BUSY5 after acquisition; the harness now confirms the same lease against native read-only state, never reacquires/resends. Unknown causes, ambiguous state and deadline violations stay fatal, including peer-discovered wire-scope exit past deadline.",
       "remaining_uncertainty": "Large12k/60k workload can explicitly degrade at existing32MiB funnel bound and is NOT counted completed. Offline measurements do not certify host SLO/OPEN freshness.",
       "state": "HARDENED_AND_TESTED"
     },
@@ -3390,6 +3422,38 @@
             },
             {
               "minimum_cases": 1,
+              "node": "tests/test_issue465_stress.py::test_native_start_and_post_completion_finish_locks_confirm_same_lease_without_resends"
+            },
+            {
+              "minimum_cases": 10,
+              "node": "tests/test_issue465_stress.py::test_lifecycle_never_retries_unknown_native_or_untyped_fault"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_stress.py::test_burst_never_converts_unknown_acquisition_fault_into_a_denial"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_stress.py::test_unverifiable_readonly_lease_snapshot_is_fatal_without_any_retry_or_mutation"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_stress.py::test_lifecycle_deadlines_before_and_after_reads_and_mutations_remain_fatal"
+            },
+            {
+              "minimum_cases": 3,
+              "node": "tests/test_issue465_stress.py::test_wire_scope_and_modeled_read_post_deadlines_cannot_acknowledge_success"
+            },
+            {
+              "minimum_cases": 5,
+              "node": "tests/test_issue465_stress.py::test_finish_requires_verified_completion_and_one_exact_valid_lease_marker"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_stress.py::test_apparently_busy_after_mutated_state_cannot_retry_or_emit_another_wire"
+            },
+            {
+              "minimum_cases": 1,
               "node": "tests/test_issue465_stress_audit_gate.py::test_gate_binds_current_sha_tree_test_counts_and_external_uncertainty"
             },
             {
@@ -3433,9 +3497,9 @@
       ],
       "fix_code": "scripts/rc6_issue465_stress.py; tests/test_issue465_stress.py; C/A canonical bounds; exact new SHA/tree/root governed suite/Predeploy V2",
       "id": "AUDIT17-04",
-      "negative_test": "Slow actual fsync/quota before commit/real WAL writer/three lower-priority burst processes; named resource limits.",
+      "negative_test": "Slow actual fsync/quota before commit/real WAL writer/three lower-priority burst processes; named resource limits; real START/FINISH locks, unknown causes, uncertain reads, ambiguous commits, scope deadlines and duplicate/missing modeled-wire markers.",
       "original_evidence": "Original independent audit\u00a717 programmable blocker/gate4.",
-      "rca": "Concurrency/safety/resource boundaries need actual independent processes and canonical ledger/supervisor proofs.",
+      "rca": "Concurrency/safety/resource boundaries need actual independent processes and canonical ledger/supervisor proofs. Full-root v3 exposed finite START SQLITE_BUSY5 after acquisition; the harness now confirms the same lease against native read-only state, never reacquires/resends. Unknown causes, ambiguous state and deadline violations stay fatal, including peer-discovered wire-scope exit past deadline.",
       "remaining_uncertainty": "Large12k/60k workload can explicitly degrade at existing32MiB funnel bound and is NOT counted completed. Offline measurements do not certify host SLO/OPEN freshness.",
       "state": "HARDENED_AND_TESTED"
     },
@@ -4696,10 +4760,19 @@
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-g-final-a-6a86e81f-stress-311.xml",
-          "sha256": "e73f82cd7e18d448cc400f72f5f10202ac50b7054648a0ad5e2bdfdcb3741341",
+          "path": "/workspace/issue465-evidence/front-g/frozen-03dc4f78-stress-311.xml",
+          "sha256": "cd7736b451662a6a3353e50d406e4b3faaa1f4bcb4519c4cf895c1744094eaa6",
           "skipped": 0,
-          "tests": 7,
+          "tests": 39,
+          "xfail": 0
+        },
+        {
+          "errors": 0,
+          "failures": 0,
+          "path": "/workspace/issue465-evidence/front-g/frozen-03dc4f78-stress-312.xml",
+          "sha256": "cf77181eede469bbbe233eff04a3f9f254e46051517b29fa1a47a72695b2256a",
+          "skipped": 0,
+          "tests": 39,
           "xfail": 0
         },
         {
@@ -4721,7 +4794,7 @@
           "xfail": 0
         }
       ],
-      "head": "f91f020ac88c40c1601b51a63317b9f973a02da6",
+      "head": "03dc4f7821f6c2ab2d32ea8bc9f5a64ba5a0342f",
       "id": "G",
       "paths": [
         "docs/audits/ISSUE465_STRESS.md",
@@ -4731,8 +4804,8 @@
         "tests/test_issue465_stress_audit_gate.py"
       ],
       "publication": "Native Git object/ref SHA verification; no component PR or workflow",
-      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5982413791",
-      "tree": "b40e07184cb93d90bbf0a0932b43908d378cd364",
+      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5983728429",
+      "tree": "06d7354f7ff402b21c5697e15e644d0fe71e9f0e",
       "workstream": "WS-FIX-AUDIT-08-G",
       "write_owner": "RELEASED"
     }
