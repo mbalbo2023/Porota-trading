@@ -144,7 +144,8 @@ def test_approved_envelope_reserves_actual_opened_demand_once(wire):
     values = approved(wire)
     state = controller(values).state(values[-1])
     config = budget_policy(state, opened_count=2, planned_reservations={"SCALPING_HOT": {"book": 3, "intraday": 3}})
-    assert config["priority_reserves"]["EXIT_CRITICAL"] == {"current": 2, "book": 12, "intraday": 2}
+    assert config["priority_reserves"]["EXIT_CRITICAL"] == {"current": 0, "book": 12, "intraday": 0}
+    assert config["priority_reserves"]["OPENED_CRITICAL"] == {"current": 2, "book": 2, "intraday": 2}
     assert config["global_limit"] == 45 and config["max_parallel_requests"] == 1
 
 

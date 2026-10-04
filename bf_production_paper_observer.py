@@ -255,6 +255,16 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  **financial_catalog.quote_terms(metadata))
 
 
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
+    """Native scanner reads; exact opened identity enables bounded book reuse."""
+    scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
+    with scope:
+        current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
+        book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
+    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
+    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+
+
 def _support_schema(store):
     with store.connect() as c:
         c.executescript("""
@@ -1833,7 +1843,11 @@ def run():
             cycle_failures = 0
             cycle_session_invalid = False
             latencies = []
-            opened_requests = {(p["symbol"], p["asset_class"], p["settlement"]) for p in store.open_positions()} if getattr(reader, "budget_enabled", False) else set()
+            opened_identities = {}
+            if getattr(reader, "budget_enabled", False):
+                for p in store.open_positions():
+                    opened_identities.setdefault((p["symbol"], p["asset_class"], p["settlement"]), set()).add(
+                        (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]))
             for symbol, asset_class, settlement in symbols:
                 if STOP:
                     break
@@ -1842,15 +1856,11 @@ def run():
                     request_key = (symbol, asset_class, settlement)
                     dynamic_scope = next((s for s in feasibility["active_plan"].get("dynamic_scopes", [])
                         if tuple(s["request"]) == request_key), {})
-                    priority = "OPENED_CRITICAL" if request_key in opened_requests else dynamic_scope.get("priority", "DISCOVERY")
-                    scope = reader.read_scope(priority=priority, identity=dynamic_scope.get("identity")) if hasattr(reader, "read_scope") else nullcontext()
-                    with scope:
-                        current = retry_read(
-                            lambda: reader.current(symbol, asset_class, settlement), retries=1)
-                        book = retry_read(
-                            lambda: reader.book(symbol, asset_class, settlement), retries=1)
-                    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement)
-                    q = normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+                    priority = "OPENED_CRITICAL" if request_key in opened_identities else dynamic_scope.get("priority", "DISCOVERY")
+                    exact_opened = opened_identities.get(request_key, set())
+                    scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
+                    q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
+                        priority=priority, identity=scope_identity)
                     # Persistir la observación sirve para trazabilidad, pero un
                     # trade/libro stale nunca alcanza al motor ni a sus gates.
                     store.add_quote(q)

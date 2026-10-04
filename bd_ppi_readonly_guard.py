@@ -188,17 +188,27 @@ class ReadOnlyTransportGuard:
     @contextmanager
     def read_scope(self, *, priority=None, identity=None):
         previous = getattr(self._scope, "priority", None)
+        previous_identity = getattr(self._scope, "identity", None)
         if identity is not None and (len(identity) != 5 or any(not isinstance(x, str) or not x for x in identity)):
             raise ValueError("PPI_BUDGET_EXACT_IDENTITY_REQUIRED")
         self._scope.priority = priority or self.priority
+        self._scope.identity = identity
         try:
             yield
         finally:
             self._scope.priority = previous
+            self._scope.identity = previous_identity
 
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
             self.audit(method, path, result)
+
+    def _read_error(self, code):
+        # The SDK can refresh/retry inside one read after HTTP401. Preserve
+        # its originating auth/rate-limit diagnosis when that retry meets the
+        # already-open circuit. A new _read resets this thread-local value.
+        if getattr(self._scope, "read_error_code", None) not in {"PPI_HTTP_429", "PPI_HTTP_401", "PPI_HTTP_403"}:
+            self._scope.read_error_code = code
 
     def check(self, method: str, url: str, *, count_login: bool = False) -> tuple[str, str]:
         parsed = urlsplit(str(url))
@@ -270,6 +280,7 @@ class ReadOnlyTransportGuard:
                 admitted = budget.acquire(endpoint, consumer=guard.consumer,
                     priority=getattr(guard._scope, "priority", None) or guard.priority)
                 if not admitted["allowed"]:
+                    guard._read_error(admitted["reason"])
                     guard._record(checked_method, checked_path, "BACKPRESSURE")
                     raise BudgetBackpressure(admitted["reason"])
                 lease = admitted["lease"]
@@ -280,9 +291,12 @@ class ReadOnlyTransportGuard:
             try:
                 response = original_send(adapter, request, **kwargs)
             except Exception as error:
+                guard._read_error(classify_read_error(error))
                 if budget is not None:
                     budget.finish(lease, error_code=classify_read_error(error))
                 raise
+            if response.status_code >= 400:
+                guard._read_error(f"PPI_HTTP_{response.status_code}")
             if budget is not None:
                 budget.finish(lease, status_code=response.status_code)
             return response
@@ -331,6 +345,11 @@ class ProductionMarketReader:
     def budget_enabled(self):
         return self.__guard.budget is not None
 
+    @property
+    def last_read_error_code(self):
+        """Sanitized current-read diagnosis; no response body or global LKG."""
+        return getattr(self.__guard._scope, "read_error_code", None)
+
     def login_once(self) -> None:
         if self.__authenticated:
             return
@@ -350,15 +369,27 @@ class ProductionMarketReader:
         return self._read("current", ticker, instrument_type, settlement)
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
+        self.__guard._scope.read_error_code = None
+        identity = getattr(self.__guard._scope, "identity", None)
+        priority = getattr(self.__guard._scope, "priority", None) or self.__guard.priority
+        shared = getattr(self.__guard.budget, "coalesced_book", None)
+        if callable(shared) and identity is not None and priority in {"EXIT_CRITICAL", "OPENED_CRITICAL"}:
+            if (identity[0], identity[1], identity[4]) != (ticker, instrument_type, settlement):
+                raise ValueError("PPI_BUDGET_REQUEST_IDENTITY_MISMATCH")
+            return shared(identity, lambda: self._read("book", ticker, instrument_type, settlement),
+                consumer=self.__guard.consumer, priority=priority)
         return self._read("book", ticker, instrument_type, settlement)
 
     def read_scope(self, *, priority=None, identity=None):
         return self.__guard.read_scope(priority=priority, identity=identity)
 
     def _read(self, endpoint, *args):
+        self.__guard._scope.read_error_code = None
         try:
             return getattr(self._market(), endpoint)(*args)
         except Exception as error:
+            if self.last_read_error_code is None:
+                self.__guard._scope.read_error_code = classify_read_error(error)
             budget = getattr(getattr(self, "_ProductionMarketReader__guard", None), "budget", None)
             # HTTP status errors are counted once at the actual send. Native
             # SDK 200/session and parse errors become sanitized diagnostics.
