@@ -131,6 +131,39 @@ def test_acknowledged_unpinned_generation_rotates_but_ack_ledger_remains(tmp_pat
     assert result["projected_files"] <= 14
 
 
+def test_duplicate_archive_ack_keys_cannot_override_non_durable_export(tmp_path):
+    old, current = generation(tmp_path), generation(tmp_path, number=2)
+    ack = acknowledgement(old)
+    ack.write_text(ack.read_text().replace('"durable": true', '"durable": false, "durable": true'))
+    pointer(current)
+    with pytest.raises(RetentionPressure, match="HARD_FILES"):
+        EvidenceRetention(tmp_path, maximum_files=14).prepare(additional_files=6)
+    assert old.exists()
+
+
+def test_duplicate_current_keys_fail_closed_before_rotation(tmp_path):
+    path = generation(tmp_path)
+    acknowledgement(path)
+    pointer(path)
+    current = tmp_path / "CURRENT.json"
+    current.write_text(current.read_text().replace('"sequence": 1', '"sequence": 1, "sequence": 1'))
+    with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+        EvidenceRetention(tmp_path).prepare()
+    assert path.exists()
+
+
+def test_duplicate_pin_registry_keys_cannot_release_an_audited_generation(tmp_path):
+    old, current = generation(tmp_path), generation(tmp_path, number=2)
+    acknowledgement(old)
+    pointer(current)
+    generation_id = old.name.removeprefix("gen-")
+    (tmp_path / "retention-pins.json").write_text('{"schema":"RC6_SHADOW_EVIDENCE_PINS_V1",'
+        '"generation_ids":["' + generation_id + '"],"generation_ids":[]}')
+    with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+        EvidenceRetention(tmp_path, maximum_files=15).prepare(additional_files=6)
+    assert old.exists()
+
+
 def test_no_ack_never_rotates_committed_generation_even_under_pressure(tmp_path):
     old = generation(tmp_path)
     with pytest.raises(RetentionPressure, match="HARD_FILES"):
