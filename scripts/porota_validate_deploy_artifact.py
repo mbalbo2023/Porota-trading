@@ -12,6 +12,7 @@ import argparse
 import ast
 import hashlib
 import json
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -109,12 +110,24 @@ def sha256(path: Path) -> str:
 def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
+    unsafe_paths = sorted(
+        p.relative_to(artifact_root).as_posix() for p in artifact_root.rglob("*")
+        if p.is_symlink() or (not p.is_dir() and not stat.S_ISREG(p.lstat().st_mode))
+    )
+    safe_present = present - set(unsafe_paths)
+    source_byte_mismatches = sorted(
+        p for p in expected if p in safe_present
+        and (sha256(repo_root / p) != sha256(artifact_root / p))
+    )
+    unexpected_runtime_files = sorted(
+        p for p in present if p not in expected and is_runtime_relevant(p)
+    )
 
     local_modules = root_local_modules(repo_root, expected)
     missing_imports: list[dict[str, str]] = []
     parse_errors: list[dict[str, str]] = []
 
-    for rel in sorted(p for p in present if p.endswith(".py")):
+    for rel in sorted(p for p in safe_present if p.endswith(".py")):
         source = artifact_root / rel
         try:
             imports = imported_top_levels(source)
@@ -129,7 +142,7 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
                 )
 
     manifest_files = []
-    for rel in sorted(p for p in present if is_runtime_relevant(p)):
+    for rel in sorted(p for p in safe_present if is_runtime_relevant(p)):
         manifest_files.append(
             {
                 "path": rel,
@@ -141,11 +154,15 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
     result = {
         "schema_version": 1,
         "status": "GREEN"
-        if not (missing_runtime or missing_imports or parse_errors)
+        if not (missing_runtime or missing_imports or parse_errors
+                or source_byte_mismatches or unexpected_runtime_files or unsafe_paths)
         else "FAILED",
         "expected_runtime_files": len(expected),
         "artifact_runtime_files": len(manifest_files),
         "missing_runtime_files": missing_runtime,
+        "source_byte_mismatches": source_byte_mismatches,
+        "unexpected_runtime_files": unexpected_runtime_files,
+        "unsafe_paths": unsafe_paths,
         "missing_local_imports": missing_imports,
         "parse_errors": parse_errors,
         "files": manifest_files,
@@ -158,12 +175,31 @@ def main() -> int:
     ap.add_argument("--repo-root", default=".")
     ap.add_argument("--artifact-root", required=True)
     ap.add_argument("--manifest-out")
+    ap.add_argument("--source-manifest")
+    ap.add_argument("--image-inspect")
+    ap.add_argument("--candidate-sha")
+    ap.add_argument("--tree-sha")
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     artifact_root = Path(args.artifact_root).resolve()
     expected = git_tracked_runtime_files(repo_root)
     result = validate(repo_root, artifact_root, expected)
+    if args.source_manifest:
+        if not args.image_inspect:
+            ap.error("--source-manifest requires --image-inspect")
+        try:
+            from scripts.porota_artifact_provenance import validate_image, ProvenanceError
+        except ModuleNotFoundError:
+            from porota_artifact_provenance import validate_image, ProvenanceError
+        try:
+            result["byte_provenance"] = validate_image(
+                repo_root, artifact_root, Path(args.source_manifest), Path(args.image_inspect),
+                args.candidate_sha, args.tree_sha,
+            )
+        except (ProvenanceError, OSError, KeyError) as exc:
+            result["status"] = "FAILED"
+            result["byte_provenance"] = {"status": "RED", "failure_signature": str(exc)}
 
     payload = json.dumps(result, indent=2, sort_keys=True)
     if args.manifest_out:
@@ -180,6 +216,10 @@ def main() -> int:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_IMPORT_CLOSURE", file=sys.stderr)
     if result["parse_errors"]:
         print("POROTA_ARTIFACT_INTEGRITY=FAILED_PARSE", file=sys.stderr)
+    if result["source_byte_mismatches"] or result["unexpected_runtime_files"] or result["unsafe_paths"]:
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_SOURCE_BYTES", file=sys.stderr)
+    if result.get("byte_provenance", {}).get("status") == "RED":
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_BYTE_PROVENANCE", file=sys.stderr)
     return 1
 
 
