@@ -7,6 +7,7 @@ trading source, provider, broker, container, or external archive is accessed.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import fcntl
+import errno
 import hashlib
 import json
 import math
@@ -266,7 +267,10 @@ class EvidenceRetention:
                 raise RetentionPressure("RETENTION_WRITER_BUSY", {}) from exc
             return self._prepare(additional_bytes=additional_bytes, additional_files=additional_files, pinned=pinned)
         except OSError as exc:
-            raise RetentionPressure("RETENTION_IO_UNAVAILABLE", {"error_class": type(exc).__name__}) from exc
+            reason = ("RETENTION_NO_SPACE" if exc.errno in {errno.ENOSPC, errno.EDQUOT} else
+                "RETENTION_PERMISSION_DENIED" if exc.errno in {errno.EACCES, errno.EPERM} else
+                "RETENTION_IO_UNAVAILABLE")
+            raise RetentionPressure(reason, {"error_class": type(exc).__name__}) from exc
         finally:
             if owned and fd is not None:
                 os.close(fd)
