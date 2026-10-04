@@ -1,6 +1,6 @@
 """Shared SHADOW entry point used by both the canonical runtime and offline CLI."""
 from dataclasses import asdict
-from .common import stamp
+from .common import digest, stamp
 from .capacity import safe_capacity
 from .orchestrator import (EnginePolicy, UniverseOrchestrator,
     reconcile_endpoint_slots, apply_shared_allocation)
@@ -110,7 +110,23 @@ def run_shadow(bundle, *, previous=None):
     apply_shared_allocation(plans, allocation, previous)
     # Native SQLite observations are source evidence too. Add their references
     # only after planner ingestion; telemetry must not duplicate native warmup.
-    source_reports = source_reports + native_source_reports(native_observations, as_of=at)
+    native_reports = native_source_reports(
+        bundle.get("source_native_observations", native_observations), as_of=at)
+    native_inputs = {}
+    for row in native_observations:
+        key = digest(row)
+        native_inputs[key] = native_inputs.get(key, 0) + 1
+    for report in native_reports:
+        accepted = 0
+        for row in report["observations"]:
+            key = digest(row)
+            if native_inputs.get(key, 0):
+                accepted += 1
+                native_inputs[key] -= 1
+        report["runtime_ingestion"] = {"accepted": accepted,
+            "excluded_from_planner_input": len(report["observations"]) - accepted,
+            "reason": "PLANNER_NATIVE_INPUT_SET; excluded source receipts retained as evidence"}
+    source_reports = source_reports + native_reports
     return {"mode": "SHADOW", "as_of": at.isoformat(), "engines": {p.engine: r for r, p in plans},
             "aggregate_schedule": allocation,
             "source_audit": audit_sources(reports=source_reports, as_of=at), "source_reports": source_reports,
