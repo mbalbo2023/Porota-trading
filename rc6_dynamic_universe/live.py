@@ -107,4 +107,3 @@ def run_shadow(bundle, *, previous=None):
                 "catalog_view": bundle.get("catalog_view"),
                 "observation_read_truncated": bundle.get("observation_read_truncated", "NO_VERIFICADO")},
             "real_routes": "NOT_CALLED", "profitability": "NO_VERIFICADO"}
-

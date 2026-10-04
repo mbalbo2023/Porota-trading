@@ -118,7 +118,9 @@ Productive discovery remains repository-root automatic pytest, with only the pre
 | 22 | Source WAL writer concurrency, exclusive private writer, alias/quota/atomic replacement guards |
 | 23 | Compatible published candidate full suite/Predeploy GREEN; all-five diagnostic RED solely on four reserved #453 tests; mission remains BLOCKED |
 
-Exact counts and final run identities are attached to the PR after candidate freeze. Predeploy builds once, validates automatic runtime closure, and exports the immutable image/bundle. The downloaded exact image is additionally exercised locally with stdin explicitly attached and network disabled, because the current canonical import-smoke invocation omits `-i`. This supplementary check cannot mutate the droplet. No alternative build is substituted for the frozen image.
+Pinned local verification: 255/255 focused and 2792/2792 governed full-suite tests pass, with zero failures, errors, skips, or xfails. The all-five offline diagnostic executes 2804 tests: 2800 pass and precisely the same four #453 tests fail. Its local Git metadata/index matches the reconciled tree, as required by the host-manifest acceptance test; no foreign source is patched. JUnit digests and per-test failure signatures are preserved in provenance.
+
+Final Predeploy run identities are attached to the PR after candidate freeze. Predeploy builds once, validates automatic runtime closure, and exports the immutable image/bundle. The downloaded exact image is additionally exercised locally with stdin explicitly attached and network disabled, because the current canonical import-smoke invocation omits `-i`. This supplementary check cannot mutate the droplet. No alternative build is substituted for the frozen image.
 
 ## Reserved #453 blocker and honest closure
 
