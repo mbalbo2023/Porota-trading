@@ -420,6 +420,58 @@
             },
             {
               "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_initialized_restart_only_reads_journal_schema_and_keeps_promises"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_exclusive_writer_is_bounded_typed_and_recovers_exact_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_bootstrap_mutex_is_bounded_and_keeps_initialized_bytes"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_existing_wal_mode_is_rejected_without_conversion_or_state_reset"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_unfinished_bootstrap_keeps_existing_receipts_counters_and_promises"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_real_process_flapping_writer_startup_denials_preserve_exact_exit_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_io_uncertainty_has_only_sanitized_public_reason"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_finish_sqlite_uncertainty_is_typed_and_preserves_claim_or_wire_debt"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_wire_scope_enter_sqlite_uncertainty_cannot_release_or_spend_claim"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_pre_wire_cleanup_never_hides_an_unknown_lease_failure"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_actual_sdk_post_body_finish_lock_keeps_used_debt_and_never_resends"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work"
+            },
+            {
+              "minimum_cases": 1,
               "node": "tests/test_issue465_budget_adversarial.py::test_abandoned_lease_cannot_be_started_after_expiry_even_without_new_owner"
             },
             {
@@ -521,8 +573,8 @@
       "id": "F-01",
       "negative_test": "Same original audit policy, lower-priority retries/processes; cache expiry/429/identity/DB-lock/kill attacks.",
       "original_evidence": "Audit #464 F-01 / appendix: five OPENED consume five reserved book calls; EXIT denied.",
-      "rca": "EXIT/OPENED shared reservation usage; scanner current freshness coupled to exit book availability.",
-      "remaining_uncertainty": "Provider outage can deny all wire reads; reserve cannot manufacture books. OPEN capacity/latency remain NO_VERIFICADO.",
+      "rca": "EXIT/OPENED shared reservation usage; scanner current freshness coupled to exit book availability. Complete integration also exposed a redundant initialized SQLite journal setter, unbounded bootstrap locking and unhandled prewire state uncertainty; fix-forward uses read-only restart validation, bounded typed backpressure and explicit lease cleanup/recovery. Tests acknowledge initialized child constructors before racing admissions, retain concurrent restart/flapping-writer faults separately, and bound same-lease completed-send confirmation without new wire requests or expired-deadline mutation.",
+      "remaining_uncertainty": "Provider outage or uncertain locked state can deny reads; reserve cannot manufacture books. Unconfirmed leases and emitted debt remain conservative until confirmation/expiry; completed sends are never replayed. OPEN capacity/latency and installed-runtime recovery remain NO_VERIFICADO.",
       "state": "FIXED_AND_TESTED"
     },
     {
@@ -2640,6 +2692,58 @@
             },
             {
               "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_initialized_restart_only_reads_journal_schema_and_keeps_promises"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_exclusive_writer_is_bounded_typed_and_recovers_exact_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_bootstrap_mutex_is_bounded_and_keeps_initialized_bytes"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_existing_wal_mode_is_rejected_without_conversion_or_state_reset"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_unfinished_bootstrap_keeps_existing_receipts_counters_and_promises"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_real_process_flapping_writer_startup_denials_preserve_exact_exit_floor"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_constructor_io_uncertainty_has_only_sanitized_public_reason"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_finish_sqlite_uncertainty_is_typed_and_preserves_claim_or_wire_debt"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_wire_scope_enter_sqlite_uncertainty_cannot_release_or_spend_claim"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits"
+            },
+            {
+              "minimum_cases": 2,
+              "node": "tests/test_issue465_budget_adversarial.py::test_pre_wire_cleanup_never_hides_an_unknown_lease_failure"
+            },
+            {
+              "minimum_cases": 1,
+              "node": "tests/test_issue465_budget_adversarial.py::test_actual_sdk_post_body_finish_lock_keeps_used_debt_and_never_resends"
+            },
+            {
+              "minimum_cases": 6,
+              "node": "tests/test_issue465_budget_adversarial.py::test_completed_finish_recovery_never_hides_unknown_or_unverified_work"
+            },
+            {
+              "minimum_cases": 1,
               "node": "tests/test_issue465_budget_adversarial.py::test_abandoned_lease_cannot_be_started_after_expiry_even_without_new_owner"
             },
             {
@@ -2741,8 +2845,8 @@
       "id": "AUDIT17-01",
       "negative_test": "Same original audit policy, lower-priority retries/processes; cache expiry/429/identity/DB-lock/kill attacks.",
       "original_evidence": "Original independent audit\u00a717 programmable blocker/gate1.",
-      "rca": "EXIT/OPENED shared reservation usage; scanner current freshness coupled to exit book availability.",
-      "remaining_uncertainty": "Provider outage can deny all wire reads; reserve cannot manufacture books. OPEN capacity/latency remain NO_VERIFICADO.",
+      "rca": "EXIT/OPENED shared reservation usage; scanner current freshness coupled to exit book availability. Complete integration also exposed a redundant initialized SQLite journal setter, unbounded bootstrap locking and unhandled prewire state uncertainty; fix-forward uses read-only restart validation, bounded typed backpressure and explicit lease cleanup/recovery. Tests acknowledge initialized child constructors before racing admissions, retain concurrent restart/flapping-writer faults separately, and bound same-lease completed-send confirmation without new wire requests or expired-deadline mutation.",
+      "remaining_uncertainty": "Provider outage or uncertain locked state can deny reads; reserve cannot manufacture books. Unconfirmed leases and emitted debt remain conservative until confirmation/expiry; completed sends are never replayed. OPEN capacity/latency and installed-runtime recovery remain NO_VERIFICADO.",
       "state": "FIXED_AND_TESTED"
     },
     {
@@ -4331,23 +4435,32 @@
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-evidence/front-a/final-frozen-focal.xml",
-          "sha256": "ad21a28358a22dc0d768e9d90c667523a3944a43c34582478871b966984897ad",
+          "path": "/workspace/issue465-evidence/front-a/frozen-c3a73a0e-focal-311.xml",
+          "sha256": "33783b4d100e237b16425371775509783d4211e9c08ee9aef3ba96c019b22160",
           "skipped": 0,
-          "tests": 441,
+          "tests": 462,
           "xfail": 0
         },
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-a-peer-final-ade87a83-targeted-tests.xml",
-          "sha256": "fe5aab322d071f12cdeb0bf4760066ed7f0dee163d93cd558785b33f44e9d614",
+          "path": "/workspace/issue465-evidence/front-a/frozen-c3a73a0e-focal-312.xml",
+          "sha256": "00a55032ee885b39d16716205679b62a6f99c3c265108f52ee4f9226c415ee4b",
+          "skipped": 0,
+          "tests": 462,
+          "xfail": 0
+        },
+        {
+          "errors": 0,
+          "failures": 0,
+          "path": "/workspace/issue465-authority/front-a-peer-final-6a86e81f-targeted-tests.xml",
+          "sha256": "fe4ca3254b747a369ae4d0d427195d37187d98b558d7d84fd7599747fcb64c7c",
           "skipped": 0,
           "tests": 21,
           "xfail": 0
         }
       ],
-      "head": "ade87a8325195c91249c947c9b5af4b2f7c11a93",
+      "head": "c3a73a0e7eb328787f2fe218a02c1926f400f6ea",
       "id": "A",
       "paths": [
         "bd_ppi_readonly_guard.py",
@@ -4358,8 +4471,8 @@
         "tests/test_rc6_ppi_global_budget.py"
       ],
       "publication": "Native Git object/ref SHA verification; no component PR or workflow",
-      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5982146697",
-      "tree": "3df15db9bc76f5a7a2d2427921728da14551cdb6",
+      "release_authority": "https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5983324006",
+      "tree": "cbd8815257897d874a6c24fdcdb2b654d6089647",
       "workstream": "WS-FIX-AUDIT-08-A",
       "write_owner": "RELEASED"
     },
@@ -4367,14 +4480,14 @@
       "base": "caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423",
       "branch": "fix/issue465-capability-20261004",
       "dependencies": {
-        "A": "ade87a8325195c91249c947c9b5af4b2f7c11a93"
+        "A": "c3a73a0e7eb328787f2fe218a02c1926f400f6ea"
       },
       "focal_evidence": [
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/f02-final-repaired-a-ade87a8.xml",
-          "sha256": "9ab4f9244ceacbe0246ca81a8fa4b7bc49766ab5ec12f4535854ecafb608ded8",
+          "path": "/workspace/issue465-authority/f02-frozen-b87cb8442-a6a86e81fdd9b-focal.xml",
+          "sha256": "baf800499150b24d8eff952d4874abd76e1553f8128c324d94d8a9a0a2dd801e",
           "skipped": 0,
           "tests": 186,
           "xfail": 0
@@ -4382,8 +4495,8 @@
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-f-peer-b-frozen-nine-green.xml",
-          "sha256": "7c7e4e4c382e8d528f3f354cda28a164433beeb98a45ee94a0253e5801c14452",
+          "path": "/workspace/issue465-authority/front-f-peer-b87-a6a86e81fdd9b-rb9b2h4w/pytest.xml",
+          "sha256": "365de3f9d52652e9c194ccc2e4b410efb3c5ba8e3bf108852b91be6e2da9038c",
           "skipped": 0,
           "tests": 9,
           "xfail": 0
@@ -4577,14 +4690,14 @@
       "base": "caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423",
       "branch": "fix/issue465-stress-20261004",
       "dependencies": {
-        "A": "ade87a8325195c91249c947c9b5af4b2f7c11a93"
+        "A": "c3a73a0e7eb328787f2fe218a02c1926f400f6ea"
       },
       "focal_evidence": [
         {
           "errors": 0,
           "failures": 0,
-          "path": "/workspace/issue465-authority/front-g-child-denial-final-stress-311.xml",
-          "sha256": "838aaf63fd0edaeb66edf2d1d47c8dd26644a8f66efdb34998054ef4ee47cb61",
+          "path": "/workspace/issue465-authority/front-g-final-a-6a86e81f-stress-311.xml",
+          "sha256": "e73f82cd7e18d448cc400f72f5f10202ac50b7054648a0ad5e2bdfdcb3741341",
           "skipped": 0,
           "tests": 7,
           "xfail": 0
