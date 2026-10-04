@@ -61,6 +61,19 @@ def test_native_ppi_only_is_audited_without_reingesting_observations():
     assert_links(report)
 
 
+def test_native_receipts_excluded_at_start_watermark_remain_source_audit_evidence():
+    row = {"source": "PPI_MARKETDATA_CURRENT", "source_at": "2026-10-05T13:19:00+00:00",
+        "received_at": "2026-10-05T13:19:01+00:00", "useful": True,
+        "identity": ["S1", "ACCIONES", "BYMA", "ARS", "A-24HS"], "fields": {"price": 100}}
+    report = run_shadow(bundle(observations=[], source_native_observations=[row]))
+    source = report["source_reports"][0]
+    assert source["observations"] == [row]
+    assert source["runtime_ingestion"]["accepted"] == 0
+    assert source["runtime_ingestion"]["excluded_from_planner_input"] == 1
+    assert source["observations"][0]["source_at"] != source["observations"][0]["received_at"]
+    assert_links(report)
+
+
 def test_ppi_iol_disagreement_preserves_primary_path_units_clocks_and_conflict():
     snapshots = {"PPI_API": {"records": [quote()]},
         "IOL": {"symbols": [quote(price=120, source_path="fixture/iol/S1", conflicts=["PRICE_DISCREPANCY"])]}}
