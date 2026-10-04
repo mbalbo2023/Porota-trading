@@ -7,7 +7,7 @@ proves quote age. Observations never grant signal or execution authority.
 from collections.abc import Mapping
 from datetime import datetime, timezone
 
-from .common import identity, number, stamp
+from .common import digest, identity, number, stamp
 
 
 SOURCE_ALIASES = {
@@ -39,6 +39,8 @@ VOLUME_UNITS = frozenset({"SHARES", "UNITS", "CONTRACTS", "NOMINALS", "ARS", "US
 PRICE_UNITS = frozenset({"PER_SHARE", "PER_UNIT", "PER_CONTRACT", "PER_NOMINAL", "PER_100_NOMINALS", "QUOTE_UNIT"})
 PROVIDER_TIMES = ("provider_observed_at", "provider_timestamp", "source_at", "timestamp", "date", "tradeDate")
 RECEIVED_TIMES = ("received_at", "captured_at", "capture_observed_at", "observed_at", "collected_at", "refreshed_at", "generated_at")
+MAX_SOURCE_AUDIT_REPORTS = 64
+MAX_SOURCE_AUDIT_OBSERVATIONS = 100000
 DOM_ROUTE_FAMILIES = {
     "/Cotizaciones/Acciones": "ACCIONES", "/Cotizaciones/Cedears": "CEDEARS",
     "/Cotizaciones/ETFs": "ETFS", "/Cotizaciones/Bonos": "BONOS",
@@ -308,6 +310,9 @@ def source_observations(snapshot, *, source, as_of, max_age_seconds=120):
                              "received_at": _iso(received), "useful": reason is None,
                              "fields": fields, "units": units, "reason": reason or "USEFUL_SHADOW_OBSERVATION",
                              "native_reason": row.get("reason"), "age_seconds": age,
+                             "source_path": row.get("source_path") or envelope.get("source_path"),
+                             "provenance": row.get("provenance", envelope.get("provenance")),
+                             "conflicts": row.get("conflicts", []),
                              "decision_effect": "OBSERVE_ONLY", "live_decision_authority": False})
     errors = _source_errors(snapshot)
     useful = sum(row["useful"] for row in observations)
@@ -320,8 +325,83 @@ def source_observations(snapshot, *, source, as_of, max_age_seconds=120):
             "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"}
 
 
-def audit_sources(snapshots=None, *, as_of=None, max_age_seconds=120):
+def native_source_reports(observations, *, as_of):
+    """Reference normalized caller evidence without reinterpreting its clocks/units.
+
+    These rows have already reached the planner. They are telemetry only: a
+    report must not cause a second ingestion or confer provider capability.
+    Missing source/path/unit provenance remains explicitly unverified.
+    """
+    cutoff = stamp(as_of).isoformat()
+    groups = {}
+    for index, row in enumerate(observations):
+        if index >= MAX_SOURCE_AUDIT_OBSERVATIONS:
+            raise ValueError("SOURCE_AUDIT_OBSERVATION_CAPACITY_REACHED")
+        if not isinstance(row, Mapping):
+            raise ValueError("NATIVE_SOURCE_OBSERVATION_SHAPE_REQUIRED")
+        source = str(row.get("source") or "NO_VERIFICADO")
+        groups.setdefault(source, []).append(dict(row))
+        if len(groups) > MAX_SOURCE_AUDIT_REPORTS:
+            raise ValueError("SOURCE_AUDIT_REPORT_CAPACITY_REACHED")
+    reports = []
+    for source, rows in sorted(groups.items()):
+        useful = sum(row.get("useful") is True for row in rows)
+        reports.append({"source": source, "as_of": cutoff, "observations": rows,
+            "errors": [], "native_input": True,
+            "counts": {"seen": len(rows), "useful": useful, "rejected": len(rows) - useful},
+            "provider_state": "NORMALIZED_CALLER_EVIDENCE; capability NO_VERIFICADO",
+            "provider_available": None, "status": "SHADOW_EVIDENCE",
+            "decision_effect": "OBSERVE_ONLY", "live_decision_authority": False,
+            "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"})
+    return reports
+
+
+def audit_sources(snapshots=None, *, as_of=None, max_age_seconds=120, reports=None):
     """Document factual existing sources, optionally audit supplied offline caches."""
+    if snapshots is not None and reports is not None:
+        raise ValueError("SOURCE_AUDIT_SINGLE_REPORT_AUTHORITY_REQUIRED")
+    if reports is not None:
+        if as_of is None:
+            raise ValueError("SNAPSHOT_AUDIT_CUTOFF_REQUIRED")
+        cutoff = stamp(as_of).isoformat()
+        if not isinstance(reports, list):
+            raise ValueError("SOURCE_REPORT_LIST_REQUIRED")
+        if len(reports) > MAX_SOURCE_AUDIT_REPORTS:
+            raise ValueError("SOURCE_AUDIT_REPORT_CAPACITY_REACHED")
+        linked = {}
+        observation_count = 0
+        for index, report in enumerate(reports):
+            if (not isinstance(report, Mapping) or not report.get("source") or
+                    not isinstance(report.get("observations"), list)):
+                raise ValueError("SOURCE_REPORT_SHAPE_REQUIRED")
+            rows = report["observations"]
+            observation_count += len(rows)
+            if observation_count > MAX_SOURCE_AUDIT_OBSERVATIONS:
+                raise ValueError("SOURCE_AUDIT_OBSERVATION_CAPACITY_REACHED")
+            if any(not isinstance(row, Mapping) for row in rows):
+                raise ValueError("SOURCE_OBSERVATION_SHAPE_REQUIRED")
+            useful = sum(row.get("useful") is True for row in rows)
+            if report.get("counts") != {"seen": len(rows), "useful": useful, "rejected": len(rows) - useful}:
+                raise ValueError("SOURCE_REPORT_COUNTS_MISMATCH")
+            if stamp(report["as_of"]).isoformat() != cutoff:
+                raise ValueError("SOURCE_REPORT_CUTOFF_MISMATCH")
+            # A JSON pointer and its digest bind the existing report, retaining
+            # all rows/errors/clocks/conflicts in one authoritative model.
+            linked[str(index)] = {"source": report["source"], "report_pointer": f"/source_reports/{index}",
+                "report_digest": digest(report), "status": report["status"],
+                "counts": dict(report["counts"]), "provider_available": report.get("provider_available"),
+                "source_paths": sorted({str(row["source_path"]) for row in rows if row.get("source_path")}),
+                "path_provenance_missing": sum(not row.get("source_path") for row in rows),
+                "runtime_ingestion": report.get("runtime_ingestion"),
+                "evidence_authority": "SOURCE_REPORT_REFERENCE; no independent normalization"}
+        return {"schema": "RC6_SOURCE_AUDIT_LINKED_V2", "as_of": cutoff,
+            "sources": SOURCE_MANIFEST, "snapshots": linked,
+            "source_reports_pointer": "/source_reports", "source_reports_digest": digest(reports),
+            "source_report_count": len(reports),
+            "status": "OBSERVED_SOURCE_REPORTS" if reports else "NO_SOURCE_REPORTS",
+            "sufficiently_fresh_transversal_radar": "NO_VERIFICADO",
+            "decision_effect": "OBSERVE_ONLY", "live_decision_authority": False,
+            "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"}
     reports = {}
     if snapshots:
         if as_of is None:
