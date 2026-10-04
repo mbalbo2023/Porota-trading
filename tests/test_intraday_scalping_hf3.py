@@ -154,7 +154,7 @@ def test_instrument_not_found_is_explicit_strategy_unavailability():
     assert readonly.transient_payload_error(error) is False
 
 
-def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeypatch):
+def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeypatch, store):
     import bf_production_paper_observer as observer
 
     class FakeStop:
@@ -164,13 +164,6 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
         def wait(self, seconds):
             if seconds >= 60:
                 self.stopped = True
-
-    class FakeStore:
-        def __init__(self):
-            self.events = []
-            self.audit_http = lambda *args: None
-        def event(self, *args):
-            self.events.append(args)
 
     class FakeReader:
         metrics = {"http_blocked": 0}
@@ -185,13 +178,17 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
         def close(self):
             pass
 
-    store = FakeStore()
+    events = []
+    native_event = store.event
+    def capture_event(*args):
+        events.append(args)
+        native_event(*args)
+    monkeypatch.setattr(store, "event", capture_event)
     heartbeats = []
     selected = [
         record(ticker="BAES"),
         record(ticker="GGAL"),
     ]
-    monkeypatch.setattr(scalping, "init_schema", lambda store: None)
     monkeypatch.setattr(scalping, "_market_open", lambda at: True)
     monkeypatch.setattr(scalping, "select_batch",
                         lambda store, limit, cursor=0: (selected, 2, len(selected)))
@@ -210,8 +207,8 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
     running = [row for row in heartbeats if row["state"] == "RUNNING"]
     assert running and running[0]["successful"] == 1 and running[0]["failed"] == 0
     assert "intraday_unavailable=1" in running[0]["detail"]
-    assert any(event[0] == "INTRADAY_SCALPING_UNSUPPORTED" for event in store.events)
-    assert not any(event[0] == "INTRADAY_SCALPING_ERROR" for event in store.events)
+    assert any(event[0] == "INTRADAY_SCALPING_UNSUPPORTED" for event in events)
+    assert not any(event[0] == "INTRADAY_SCALPING_ERROR" for event in events)
 
 
 def test_lectura_vacia_se_reintenta_una_sola_vez_sin_login():
