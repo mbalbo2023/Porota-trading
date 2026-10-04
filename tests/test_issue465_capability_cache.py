@@ -164,7 +164,7 @@ def test_new_session_recovers_same_worker_without_restart(tmp_path, monkeypatch)
     assert [call[0] for call in h.calls] == [0, 2]
     assert len(h.readers) == 1
     assert h.cuts[2]["heartbeat"]["successful"] == 1
-    assert h.cuts[2]["states"][0]["state"] == "PENDING_LIVE_CONFIRMATION"
+    assert h.cuts[2]["states"][0]["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING"
     assert h.cuts[2]["fills"] == 0
 
 
@@ -231,7 +231,7 @@ def test_valid_next_session_exits_negative_requires_new_native_points(tmp_path, 
         assert not meta["warmup_reset_required"] and meta["session_id"] == "2026-10-06"
         assert meta["recovered_at"] is not None
         assert cut["states"][0]["observations"] <= 2
-        assert cut["states"][0]["state"] == "PENDING_LIVE_CONFIRMATION"
+        assert cut["states"][0]["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING"
         assert cut["fills"] == 0
         assert not any(row["action"] == "BUY_CANDIDATE" for row in cut["candidates"])
 
@@ -255,10 +255,10 @@ def test_old_confirmed_history_cannot_supply_recovery_warmup_or_candidate(tmp_pa
         if worker.cycle == 1:
             assert scalping.promote_paper_candidate(worker.store, row, at=worker.at) == "PPI_INSTRUMENT_NOT_FOUND"
         if worker.cycle == 5:
-            # Interval contract can re-confirm while 15 wholly new samples are
-            # still unavailable; an old BUY row must remain unexecutable.
+            # Interval evidence alone cannot leave the durable recovery state
+            # before all 15 new source samples; old BUY authority stays closed.
             assert scalping.promote_paper_candidate(worker.store, row,
-                at=worker.times[worker.cycle - 1]) == "CANDIDATE_NOT_AVAILABLE"
+                at=worker.times[worker.cycle - 1]) == "INTRADAY_CAPABILITY_WARMUP_PENDING"
             checked.append(True)
     h.before_cycle = before_cycle
     h.run()
@@ -534,7 +534,7 @@ def test_capability_recovery_never_clears_closed_minute_revision_rejection(tmp_p
         c.execute("UPDATE ppi_intraday_contract_state SET changed_closed_points=1,state='REJECTED_MUTABLE_CLOSED_POINTS'")
     h.run()
     assert all(cut["states"][0]["changed_closed_points"] == 1 for cut in h.cuts)
-    assert h.cuts[-1]["states"][0]["state"] == "REJECTED_MUTABLE_CLOSED_POINTS"
+    assert h.cuts[-1]["states"][0]["state"] == "INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED_POINTS"
     assert all(cut["fills"] == 0 for cut in h.cuts)
 
 
@@ -573,7 +573,7 @@ def test_catalog_rebind_of_same_wire_request_requires_readonly_fresh_warmup(tmp_
     assert meta["negative_origin_identity"] == list(scalping._identity(original))
     assert meta["identity"] == list(scalping._identity(replacement))
     assert meta["reprobe_reason"] == "INTRADAY_CAPABILITY_CATALOG_CONFIG_REPROBE"
-    assert rebound["state"] == "PENDING_LIVE_CONFIRMATION" and rebound["observations"] == 0
+    assert rebound["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING" and rebound["observations"] == 0
     assert all(cut["fills"] == 0 and cut["candidates"] == [] for cut in h.cuts[:2])
 
 
@@ -627,3 +627,270 @@ def test_invalid_candidate_timestamp_after_recovery_is_rejected_before_broker(tm
     assert scalping.promote_paper_candidate(h.store, h.records[0], at=h.times[-1]) == "INVALID_SCALPING_CANDIDATE_TIMESTAMP"
     with h.store.connect() as c:
         assert c.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("stage", ["probe", "partial_confirmation"])
+@pytest.mark.parametrize("corrupt", ["truncated", "empty", "plain_legacy", "scalar_json", "missing_schema", "missing_epoch", "duplicate_keys"])
+def test_recovered_warmup_metadata_replacement_cannot_borrow_old_history_after_restart(
+        tmp_path, monkeypatch, stage, corrupt):
+    minutes = [0, 15] if stage == "probe" else [0, 15, 21, 24]
+    h = Harness(tmp_path, monkeypatch, times=[DAY + timedelta(minutes=m) for m in minutes],
+        behavior=missing_once).run()
+    meta = capability(h.cuts[-1])
+    with h.store.connect() as c:
+        row = dict(c.execute("SELECT * FROM ppi_intraday_contract_state").fetchone())
+        fresh = c.execute("SELECT COUNT(*) FROM ppi_intraday_points WHERE event_at>?",
+            (meta["warmup_after"],)).fetchone()[0]
+        assert fresh < 15 and h.cuts[-1]["fills"] == 0
+        parsed = json.loads(row["detail"])
+        if corrupt == "truncated":
+            detail = "{"
+        elif corrupt == "empty":
+            detail = ""
+        elif corrupt == "plain_legacy":
+            detail = "observaciones=2; solapamiento_estable=15; cerrados_modificados=0; nuevos=1"
+        elif corrupt == "scalar_json":
+            detail = json.dumps("observaciones=2; solapamiento_estable=15")
+        elif corrupt == "missing_schema":
+            parsed.pop("schema")
+            detail = json.dumps(parsed)
+        elif corrupt == "missing_epoch":
+            parsed["capability"].pop("warmup_after")
+            detail = json.dumps(parsed)
+        else:
+            detail = row["detail"].replace('"schema":',
+                '"schema":"' + scalping.INTRADAY_CAPABILITY_SCHEMA + '","schema":', 1)
+        c.execute("UPDATE ppi_intraday_contract_state SET detail=?", (detail,))
+    calls_before = len(h.calls)
+    final_minute = minutes[-1]
+    h.times = [DAY + timedelta(minutes=final_minute + offset) for offset in (1, 2)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert all(cut["fills"] == 0 for cut in h.cuts[-2:])
+    assert len(h.calls) == calls_before  # fail closed before the next provider read
+    assert all(cut["heartbeat"]["failed"] == 1 for cut in h.cuts[-2:])
+    assert all(cut["states"][0]["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING" for cut in h.cuts[-2:])
+
+
+def test_never_negative_legacy_contract_retains_native_warmup_and_paper_entry(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, times=[DAY, DAY + timedelta(minutes=1)]).run()
+    assert [call[0] for call in h.calls] == [0, 1]
+    assert h.cuts[0]["states"][0]["state"] == "PENDING_LIVE_CONFIRMATION"
+    assert h.cuts[-1]["states"][0]["state"] == "CONFIRMED_INTERVAL_VOLUME"
+    assert h.cuts[-1]["states"][0]["detail"].startswith("observaciones=")
+    assert h.cuts[-1]["fills"] == 1
+    assert all(cut["heartbeat"]["failed"] == 0 for cut in h.cuts)
+
+
+@pytest.mark.parametrize("transition", ["empty", "stale", "invalid_payload", "global_error", "session_invalid", "closed_revision"])
+def test_native_transition_cannot_erase_recovery_barrier_before_restart(tmp_path, monkeypatch, transition):
+    import requests
+    times = (0, 15, 21, 24) if transition == "closed_revision" else (0, 15, 16)
+    transition_cycle = len(times) - 1
+    def outcome(worker, _request):
+        if worker.cycle == 0:
+            return Exception("Instrument not found")
+        if worker.cycle != transition_cycle:
+            return None
+        if transition == "empty":
+            return []
+        if transition == "stale":
+            return [{"date": (DAY + timedelta(minutes=14)).isoformat(), "price": "100", "volume": "10"}]
+        if transition == "invalid_payload":
+            return [{"date": "invalid-native-date", "price": "100", "volume": "10"}]
+        if transition == "session_invalid":
+            return Exception("Unauthorized")
+        if transition == "global_error":
+            response = requests.Response()
+            response.status_code = 429
+            return requests.HTTPError("sanitized fake rate limit", response=response)
+        rows = payload(worker.at)
+        rows[32]["price"] = "999"  # actual post-epoch 11:02 point, closed at 11:10
+        return rows
+    h = Harness(tmp_path, monkeypatch, times=[DAY + timedelta(minutes=m) for m in times], behavior=outcome)
+    for minutes_ago in (1, 0):
+        at = DAY - timedelta(minutes=minutes_ago)
+        scalping.persist_payload(h.store, h.records[0], scalping.normalize_payload(payload(at), received_at=at),
+            received_at=at.isoformat())
+    h.run()
+    row = h.cuts[-1]["states"][0]
+    expected = ("INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED_POINTS" if transition == "closed_revision" else
+        "INTRADAY_CAPABILITY_WARMUP_PENDING")
+    assert row["state"] == expected
+    if transition == "closed_revision":
+        assert row["changed_closed_points"] == 1
+    if transition == "empty":
+        assert json.loads(row["detail"])["volume_contract_state"] == "EMPTY_INTRADAY_PAYLOAD"
+    epoch = json.loads(row["detail"])["capability"]["warmup_after"]
+    with h.store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM ppi_intraday_points WHERE julianday(event_at)<=julianday(?)",
+            (epoch,)).fetchone()[0] >= 15
+        assert c.execute("SELECT COUNT(*) FROM ppi_intraday_points WHERE julianday(event_at)>julianday(?)",
+            (epoch,)).fetchone()[0] < 15
+        c.execute("UPDATE ppi_intraday_contract_state SET detail=?",
+            ("observaciones=2; solapamiento_estable=15; cerrados_modificados=0; nuevos=1",))
+    calls_before = len(h.calls)
+    h.times = [DAY + timedelta(minutes=times[-1] + offset) for offset in (1, 2)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert len(h.calls) == calls_before
+    assert all(cut["states"][0]["state"] == expected and cut["fills"] == 0 for cut in h.cuts[-2:])
+    assert all(cut["heartbeat"]["failed"] == 1 for cut in h.cuts[-2:])
+
+
+@pytest.mark.parametrize("checked", ["invalid-durable-clock", None, "2026-10-05T10:46:00", (DAY - timedelta(seconds=1)).isoformat()])
+def test_corrupt_native_checked_clock_is_rejected_before_probe_and_failure_transition(tmp_path, monkeypatch, checked):
+    h = Harness(tmp_path, monkeypatch, times=[DAY], behavior=missing_once).run()
+    with h.store.connect() as c:
+        if checked is None:
+            import sqlite3
+            with pytest.raises(sqlite3.IntegrityError, match="NOT NULL"):
+                c.execute("UPDATE ppi_intraday_contract_state SET checked_at=NULL")
+            assert c.execute("SELECT checked_at FROM ppi_intraday_contract_state").fetchone()[0] == scalping._stamp(DAY)
+            return
+        c.execute("UPDATE ppi_intraday_contract_state SET checked_at=?", (checked,))
+    h.times = [DAY + timedelta(minutes=15)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert len(h.calls) == 1
+    assert h.cuts[-1]["heartbeat"]["failed"] == 1 and h.cuts[-1]["fills"] == 0
+    assert h.cuts[-1]["states"][0]["state"] == "PPI_INSTRUMENT_NOT_FOUND"
+
+
+def test_empty_native_response_then_catalog_rebind_preserves_same_wire_recovery_epoch(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, times=[DAY + timedelta(minutes=m) for m in (0, 15, 16, 17, 18)],
+        behavior=lambda worker, _r: Exception("Instrument not found") if worker.cycle == 0 else
+            [] if worker.cycle == 2 else None)
+    replacement = instrument(currency="USD_MEP")
+    original_identity = list(scalping._identity(h.records[0]))
+    def rebind(worker):
+        if worker.cycle != 3:
+            return
+        with worker.store.connect() as c:
+            c.execute("UPDATE financial_instrument_catalog SET status='RETIRED'")
+            catalog.persist(c, {**replacement, "settlement_source": "PPI_FIELD", "description": "empty then rebind",
+                "last_seen_at": worker.at.isoformat(), "run_id": "issue465-empty-rebind", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+            catalog.sync_candidate_universe(c, worker.at.isoformat())
+        worker.records = [replacement]
+    h.before_cycle = rebind
+    h.run()
+    rebound = next(row for row in h.cuts[-1]["states"] if row["currency"] == "USD_MEP")
+    meta = json.loads(rebound["detail"])["capability"]
+    assert rebound["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING"
+    assert meta["negative_origin_identity"] == original_identity
+    assert meta["warmup_after"] == scalping._stamp(DAY + timedelta(minutes=17))
+    assert meta["reprobe_reason"] == "INTRADAY_CAPABILITY_CATALOG_CONFIG_REPROBE"
+    assert all(row["action"] != "BUY_CANDIDATE" for row in h.cuts[-1]["candidates"] if row["currency"] == "USD_MEP")
+    assert all(cut["fills"] == 0 for cut in h.cuts)
+
+
+@pytest.mark.parametrize("corrupt", ["nan", "positive_infinity", "negative_infinity", "overflow_number",
+    "wrong_origin", "wrong_request", "missing_session", "null_session", "wrong_session", "nonhex_fingerprint", "early_due"])
+def test_toxic_durable_lineage_or_context_cannot_create_early_probe_or_escape_worker(tmp_path, monkeypatch, corrupt):
+    h = Harness(tmp_path, monkeypatch, times=[DAY], behavior=missing_once).run()
+    with h.store.connect() as c:
+        row = dict(c.execute("SELECT * FROM ppi_intraday_contract_state").fetchone())
+        parsed = json.loads(row["detail"])
+        cap = parsed["capability"]
+        if corrupt in {"nan", "positive_infinity", "negative_infinity"}:
+            cap["negative_origin_identity"][0] = float({"nan": "nan", "positive_infinity": "inf", "negative_infinity": "-inf"}[corrupt])
+        elif corrupt == "overflow_number":
+            cap["future_numeric_diagnostic"] = {"unused": "overflow-number"}
+        elif corrupt == "wrong_origin":
+            cap["negative_origin_identity"][0] = "ANOTHER_WIRE_REQUEST"
+        elif corrupt == "wrong_request":
+            cap["request"][2] = "INMEDIATA"
+        elif corrupt == "missing_session":
+            cap.pop("session_id")
+        elif corrupt == "null_session":
+            cap["session_id"] = None
+        elif corrupt == "wrong_session":
+            cap["session_id"] = "2026-10-06"
+        elif corrupt == "nonhex_fingerprint":
+            cap["catalog_config_fingerprint"] = "!" * 64
+        else:
+            cap["retry_due_at"] = scalping._stamp(DAY + timedelta(seconds=30))
+        detail = json.dumps(parsed).replace('"overflow-number"', "1e999")
+        c.execute("UPDATE ppi_intraday_contract_state SET detail=?", (detail,))
+    h.times = [DAY + timedelta(minutes=1), DAY + timedelta(minutes=15)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert len(h.calls) == 1  # corruption is not a real context change or due TTL
+    assert all(cut["heartbeat"]["failed"] == 1 and cut["fills"] == 0 for cut in h.cuts[-2:])
+    assert all(cut["states"][0]["state"] == "PPI_INSTRUMENT_NOT_FOUND" for cut in h.cuts[-2:])
+
+
+@pytest.mark.parametrize("trigger", ["ttl", "new_session", "config", "catalog_rebind"])
+def test_process_death_after_durable_probe_start_renews_cooldown_without_double_count(tmp_path, monkeypatch, trigger):
+    class OfflineProcessDeath(BaseException):
+        pass
+    h = Harness(tmp_path, monkeypatch, times=[DAY], behavior=missing_once).run()
+    probe_at = DAY + (timedelta(minutes=15) if trigger == "ttl" else
+        timedelta(days=1) if trigger == "new_session" else timedelta(minutes=1))
+    if trigger == "config":
+        monkeypatch.setenv("PAPER_INTRADAY_SCAN_SECONDS", "90")
+    if trigger == "catalog_rebind":
+        replacement = instrument(currency="USD_MEP")
+        with h.store.connect() as c:
+            c.execute("UPDATE financial_instrument_catalog SET status='RETIRED'")
+            catalog.persist(c, {**replacement, "settlement_source": "PPI_FIELD", "description": "crash rebind",
+                "last_seen_at": probe_at.isoformat(), "run_id": "issue465-crash-rebind", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+            catalog.sync_candidate_universe(c, probe_at.isoformat())
+        h.records = [replacement]
+    def interrupted(_worker, _request):
+        raise OfflineProcessDeath()
+    h.times = [probe_at]
+    h.at = probe_at
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = interrupted
+    with pytest.raises(OfflineProcessDeath):
+        h.run()
+    pending = scalping._state(h.store, scalping._identity(h.records[0]))
+    meta = json.loads(pending["detail"])["capability"]
+    assert pending["state"] == "INTRADAY_CAPABILITY_REPROBE_PENDING"
+    assert meta["attempts"] == len(h.calls) == 2
+    assert meta["last_seen_at"] == pending["checked_at"] == scalping._stamp(probe_at)
+    assert meta["retry_due_at"] == scalping._stamp(probe_at + timedelta(minutes=15))
+    h.times = [probe_at + timedelta(seconds=1), probe_at + timedelta(seconds=899), probe_at + timedelta(seconds=900)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert len(h.calls) == 3 and h.calls[-1][1] == probe_at + timedelta(minutes=15)
+    final = scalping._state(h.store, scalping._identity(h.records[0]))
+    assert final["state"] == "INTRADAY_CAPABILITY_WARMUP_PENDING" and final["observations"] == 0
+    assert json.loads(final["detail"])["capability"]["attempts"] == 3
+    assert all(cut["fills"] == 0 for cut in h.cuts)
+
+
+def test_local_invalid_clock_text_cannot_impersonate_authentication_or_repeat_login(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, times=[DAY], behavior=missing_once).run()
+    with h.store.connect() as c:
+        c.execute("UPDATE ppi_intraday_contract_state SET checked_at='invalid token'")
+    h.times = [DAY + timedelta(minutes=minute) for minute in (15, 16, 17)]
+    h.at = h.times[0]
+    h.cycle = 0
+    h.stopped = False
+    h.behavior = lambda _h, _r: None
+    h.run()
+    assert len(h.readers) == 2  # one per process run; corrupt local text is not SDK authentication
+    assert len(h.calls) == 1
+    errors = [event for event in h.cuts[-1]["events"] if event["event_type"] == "INTRADAY_SCALPING_ERROR"]
+    assert len(errors) == 3
+    assert all("PPI_VALUEERROR;shadow_identity=" in event["detail"] for event in errors)
+    assert all(cut["heartbeat"]["state"] == "ERROR" and cut["heartbeat"]["failed"] == 1 and cut["fills"] == 0
+        for cut in h.cuts[-3:])
