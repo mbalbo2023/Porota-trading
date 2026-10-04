@@ -270,7 +270,7 @@ all constructors before releasing concurrent workers, records every known
 STATE denial and cancellation, and models actual `wire_scope` ownership.
 Known STATE failure before the sender is invoked permits only bounded retry
 of confirmed `finish` cancellation, then an eventual EXIT retry. Unknown
-faults and every finish failure after successful start remain fatal. Exact
+faults remain fatal. Exact
 lower=0/EXIT=5, used=5, admitted=5+confirmed cancellations, five used receipts and
 the original envelope are asserted independently.
 
@@ -282,18 +282,74 @@ then requires five actual EXIT book reads. Separate emitted/unstarted finish
 tests preserve debt and typed denial; wire-scope entry uncertainty cannot send
 or release a claim. An unrelated lease error cannot be swallowed by cleanup.
 
+The exact frozen `6a86e81f` focal runs on both Python versions exposed a
+distinct completion case: a modeled body had completed, but `finish` met the
+same finite SQLite writer contention. Both RED XML/logs and retained-debt JSON
+are preserved under `frozen-6a86e81f-focal-{311,312}`. They retain one or two
+used EXIT receipts and the inflight lease, with zero lower sends and floor5.
+The runtime implementation remains byte-identical to `6a86e81f`.
+
+The fixture now distinguishes a completed send from a rejected pre-wire claim.
+It holds the same OS wire scope, records `FINISH_STATE_UNAVAILABLE`, verifies
+the immutable used receipt, and confirms only that same lease's metadata after
+native SQLITE_BUSY/LOCKED recovery. It never calls acquire, start, sender or
+cancellation again for a completed send. Unknown IO/lease/commit failures,
+unverified completion and an elapsed deadline remain explicit failures. The
+final assertion matches exactly five unique modeled sends to five used
+receipts and five confirmed completions. Every confirmed pre-wire cancellation
+still explains the additional admitted-but-unused counter.
+
+The native SDK regression returns a real `Response.raw.stream` body, verifies
+its completion before injecting the actual finish lock, and observes exactly
+one completed fake wire plus typed STATE, retained used debt and lease. Its
+finite recovery rejoins that same retained ownership and confirms metadata
+without another wire; four remaining EXIT reads bring the total to five.
+The native guard itself stays bounded and fail-closed. These fixtures model
+finite state recovery; they do not guarantee provider or SQL availability.
+
+A peer then found an expired-deadline/free-database gap in that new fixture
+helper. Its RED is preserved as `front-a-peer-finish-deadline-red.json`. The
+deadline is now checked before every debt read, cancellation, finish and retry,
+and after bounded operations. Already-expired available or locked state cannot
+invoke finish or mutate its lease. Tests also expire time between debt read and
+finish and after a completed finish; a late operation cannot be acknowledged
+as timely, and its already-emitted receipt remains intact. Pre-wire cleanup
+has the same deadline guard. This correction changes only tests/documentation.
+
+The subsequent 462-case working run found a separate legacy fixture race on
+Python3.11: its admission event was released before both child constructors
+acknowledged readiness. A sibling's writer therefore caused an explicit,
+bounded constructor STATE denial at the read-only journal getter. The unchanged
+`6a86e81f` legacy source, raw XML/logs from both versions, child traceback and
+read-only conserved counters are bound in
+`legacy-admission-6a86e81f-red-causal-binding.json`. Other uncommitted test
+changes in that working run are explicitly identified in that binding.
+
+The narrow coordination change was authorized before edits in
+[native WRITE_OWNER expansion](https://github.com/mbalbo2023/Porota-trading/issues/465#issuecomment-5983208574).
+Both constructors now acknowledge readiness before the same simultaneous
+admission event; all waits, joins and fixture-child cleanup are bounded.
+The original eight requests and assertions `0 < count <= 3`,
+`allowed == used == count` and `requested == allowed + dropped == 8` remain
+unchanged. No admission exception is caught or retried in this legacy helper.
+The six-spawn EXCLUSIVE/write/commit startup fault test remains concurrent,
+separate from this admission burst. Runtime bytes remain those of `6a86e81f`.
+
 ## Local evidence and handoff boundary
 
-Focused validation: **454 passed**, failures=errors=skipped=xfail=0,
-with uniquely named startup-successor frozen focal XML in
+Focused validation: **462 passed**, failures=errors=skipped=xfail=0,
+with uniquely named successor frozen focal XML in
 `/workspace/issue465-evidence/front-a/`. Exact JUnit
 digest and frozen head/tree are recorded in the integration handoff, outside
 this source document to avoid a source/evidence identity cycle.
-Includes all92 new cases, original budget/approved callers, exit supervision,
+Includes all 100 new cases, original budget/approved callers, exit supervision,
 exit ledger isolation, capacity promotion, intraday freshness, documented SDK
 contract and production PAPER scenarios. Compile AST and diff whitespace pass.
-Environment: pinned dependencies, local Python 3.11 and 3.12; final Actions Python 3.11
-and consolidated exact artifact remain the integration owner's authority.
+Environment: pinned local dependencies, Python 3.11 and 3.12 tested separately.
+Predeploy's Ubuntu24.04 runner uses its default Python (3.12 expected; actual
+job logs are authoritative), while the exact Docker image pins Python3.11.
+Their final consolidated checks and artifact remain the integration owner's
+authority.
 
 Reproduction command:
 

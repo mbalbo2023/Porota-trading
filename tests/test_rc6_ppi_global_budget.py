@@ -374,10 +374,11 @@ def test_admission_waits_bounded_for_a_changing_native_sqlite_writer(tmp_path):
     assert budget.metrics()["global"] == {"requested": 1, "allowed": 1, "used": 1, "dropped": 0}
 
 
-def _process_admission(path, config, at, ready, output):
+def _process_admission(path, config, at, ready, initialized, output):
     clock = Clock(at)
     budget = GlobalPPIBudget(path, config, clock=clock.now)
-    ready.wait()
+    initialized.put(multiprocessing.current_process().name)
+    assert ready.wait(timeout=10), "admission barrier was not released"
     count = 0
     for _ in range(4):
         if use(budget, "book", consumer="SCANNER")["allowed"]:
@@ -391,18 +392,37 @@ def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
     path = str(tmp_path / "budget.sqlite")
     budget = GlobalPPIBudget(path, config, clock=clock.now)
     ctx = multiprocessing.get_context("fork")
-    ready, output = ctx.Event(), ctx.Queue()
-    workers = [ctx.Process(target=_process_admission, args=(path, config, clock.now().isoformat(), ready, output)) for _ in range(2)]
-    for p in workers: p.start()
-    ready.set()
-    for p in workers:
-        p.join(timeout=10)
-        assert p.exitcode == 0
-    count = sum(output.get(timeout=2) for _ in workers)
-    assert 0 < count <= 3
-    metrics = budget.metrics()["global"]
-    assert metrics["allowed"] == metrics["used"] == count
-    assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8
+    ready, initialized, output = ctx.Event(), ctx.Queue(), ctx.Queue()
+    workers = [ctx.Process(target=_process_admission, args=(path, config, clock.now().isoformat(), ready, initialized, output)) for _ in range(2)]
+    try:
+        # This fixture contests admission, after both constructors complete.
+        # Exclusive/flapping startup contention has its own adversarial tests.
+        for p in workers:
+            p.start()
+            assert initialized.get(timeout=5) == p.name
+        ready.set()
+        for p in workers:
+            p.join(timeout=10)
+            assert p.exitcode == 0
+        count = sum(output.get(timeout=2) for _ in workers)
+        assert 0 < count <= 3
+        metrics = budget.metrics()["global"]
+        assert metrics["allowed"] == metrics["used"] == count
+        assert metrics["requested"] == metrics["allowed"] + metrics["dropped"] == 8
+    finally:
+        ready.set()
+        for p in workers:
+            if p.pid is not None:
+                if p.is_alive():
+                    p.terminate()
+                p.join(timeout=2)
+                if p.is_alive():
+                    p.kill()
+                    p.join(timeout=2)
+                assert not p.is_alive(), "fixture process cleanup did not complete"
+        for queue in (initialized, output):
+            queue.cancel_join_thread()
+            queue.close()
 
 
 @pytest.mark.parametrize("invalid", ["expired", "approval_corrupt", "policy_corrupt", "native_env_invalid", "opened_ledger_missing"])

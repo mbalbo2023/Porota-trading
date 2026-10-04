@@ -613,6 +613,16 @@ def _budget_contents(path):
             for table in ("budget_state", "budget_requests", "budget_totals")}
 
 
+def _native_sqlite_busy(error):
+    return (isinstance(error, sqlite3.OperationalError)
+        and getattr(error, "sqlite_errorcode", -1) & 255 in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED})
+
+
+def _check_confirmation_deadline(deadline):
+    if time.monotonic() >= deadline:
+        raise BudgetBackpressure("PPI_BUDGET_CONFIRMATION_DEADLINE")
+
+
 def _confirmed_pre_wire_state_cancel(budget, lease, faults, deadline):
     """Only a known failure before wire may retry confirmed cancellation.
 
@@ -620,15 +630,62 @@ def _confirmed_pre_wire_state_cancel(budget, lease, faults, deadline):
     failures, expired/invalid leases and any failure after start remain fatal.
     """
     while True:
+        _check_confirmation_deadline(deadline)
         try:
             budget.finish(lease, error_code="PPI_BUDGET_STATE_UNAVAILABLE")
+            _check_confirmation_deadline(deadline)
             faults.append("PREWIRE_CANCEL_CONFIRMED")
             return
         except BudgetBackpressure as error:
-            if str(error) != "PPI_BUDGET_STATE_UNAVAILABLE" or time.monotonic() >= deadline:
+            if (str(error) != "PPI_BUDGET_STATE_UNAVAILABLE" or not _native_sqlite_busy(error.__cause__)
+                    or time.monotonic() >= deadline):
                 raise
             faults.append("PREWIRE_CANCEL_STATE_UNAVAILABLE")
             time.sleep(.005)
+
+
+def _completed_wire_debt(budget, lease, faults, deadline):
+    while True:
+        _check_confirmation_deadline(deadline)
+        try:
+            with closing(sqlite3.connect(budget.path.as_uri() + "?mode=ro", uri=True, timeout=.05)) as c:
+                c.execute("PRAGMA query_only=ON")
+                row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
+            assert row is not None and row[0] == lease and row[-1] == 1
+            _check_confirmation_deadline(deadline)
+            return tuple(row)
+        except sqlite3.OperationalError as error:
+            if not _native_sqlite_busy(error) or time.monotonic() >= deadline:
+                raise
+            faults.append("COMPLETED_DEBT_READ_SQLITE_BUSY")
+            time.sleep(.005)
+
+
+def _confirmed_completed_wire_finish(budget, lease, faults, deadline, *, completed, status_code=200):
+    """Confirm one completed send, retaining ownership and all used debt.
+
+    SQLite BUSY is explicitly recorded. No acquisition, start, cancellation
+    or sender is called again; unknown errors and elapsed deadlines are fatal.
+    """
+    assert completed is True, "body completion must be verified before confirmation"
+    _check_confirmation_deadline(deadline)
+    debt = _completed_wire_debt(budget, lease, faults, deadline)
+    while True:
+        _check_confirmation_deadline(deadline)
+        try:
+            budget.finish(lease, status_code=status_code)
+            _check_confirmation_deadline(deadline)
+        except BudgetBackpressure as error:
+            if (str(error) != "PPI_BUDGET_STATE_UNAVAILABLE" or not _native_sqlite_busy(error.__cause__)
+                    or time.monotonic() >= deadline):
+                raise
+            faults.append("FINISH_STATE_UNAVAILABLE")
+            assert _completed_wire_debt(budget, lease, faults, deadline) == debt
+            time.sleep(.005)
+        else:
+            assert _completed_wire_debt(budget, lease, faults, deadline) == debt
+            faults.append("COMPLETED_FINISH_CONFIRMED")
+            return
 
 
 def test_initialized_restart_only_reads_journal_schema_and_keeps_promises(tmp_path, monkeypatch):
@@ -935,13 +992,142 @@ def test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits(wi
         reader.close()
 
 
-def test_pre_wire_cleanup_never_hides_an_unknown_lease_failure(tmp_path):
+@pytest.mark.parametrize("failure", ["unknown_lease", "expired_available"])
+def test_pre_wire_cleanup_never_hides_an_unknown_lease_failure(tmp_path, failure):
     clock = Clock()
     budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
     faults = []
-    with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_LEASE_INVALID$"):
-        _confirmed_pre_wire_state_cancel(budget, "unknown", faults, time.monotonic() + 2)
+    pending = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    before, contents = budget.path.read_bytes(), _budget_contents(budget.path)
+    lease = "unknown" if failure == "unknown_lease" else pending["lease"]
+    deadline = time.monotonic() + 2 if failure == "unknown_lease" else time.monotonic() - 1
+    with pytest.raises(BudgetBackpressure, match="LEASE_INVALID" if failure == "unknown_lease" else "CONFIRMATION_DEADLINE"):
+        _confirmed_pre_wire_state_cancel(budget, lease, faults, deadline)
     assert not faults and budget.metrics()["global"]["used"] == 0
+    assert budget.path.read_bytes() == before and _budget_contents(budget.path) == contents
+    budget.finish(pending["lease"])
+
+
+def test_actual_sdk_post_body_finish_lock_keeps_used_debt_and_never_resends(wire, tmp_path, monkeypatch):
+    clock, calls, _ = wire
+    completed = []
+    fake_send = requests.adapters.HTTPAdapter.send
+    class RawBody:
+        def __init__(self, payload, endpoint):
+            self.payload, self.endpoint = payload, endpoint
+        def stream(self, *args, **kwargs):
+            yield self.payload
+            completed.append(self.endpoint)
+        def close(self):
+            pass
+    def raw_body_send(adapter, request, **kwargs):
+        response = fake_send(adapter, request, **kwargs)
+        endpoint = urlsplit(request.url).path.lower().rsplit("/", 1)[-1]
+        response.raw = RawBody(response.content, endpoint)
+        response._content, response._content_consumed = False, False
+        return response
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", raw_body_send)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    reader = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=budget,
+        consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    actual_finish = budget.finish
+    faults = []
+    def post_body_busy_finish(lease, **kwargs):
+        assert completed.count("book") == 1, "guard must complete the actual raw body before finish"
+        with closing(sqlite3.connect(budget.path)) as owner:
+            owner.execute("BEGIN IMMEDIATE")
+            owner.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+            try:
+                actual_finish(lease, **kwargs)
+            except BudgetBackpressure as error:
+                assert str(error) == "PPI_BUDGET_STATE_UNAVAILABLE" and _native_sqlite_busy(error.__cause__)
+                faults.append("FINISH_STATE_UNAVAILABLE")
+                raise
+            finally:
+                owner.rollback()
+    try:
+        reader.login_once()
+        before = len(calls)
+        monkeypatch.setattr(budget, "finish", post_body_busy_finish)
+        with pytest.raises(BudgetBackpressure, match="^PPI_BUDGET_STATE_UNAVAILABLE$"):
+            reader.book("EXIT0", "ACCIONES", "A-24HS")
+        assert len(calls) == before + 1 and completed.count("book") == 1
+        contents = _budget_contents(budget.path)
+        assert len(contents["budget_requests"]) == 1
+        debt = contents["budget_requests"][0]
+        lease = debt[0]
+        assert debt[-1] == 1 and json.loads(dict(contents["budget_state"])["inflight"])["lease"] == lease
+        assert budget.metrics()["global"]["used"] == 1
+        monkeypatch.setattr(budget, "finish", actual_finish)
+        # The native guard fails closed and retains its lease. The fixture
+        # rejoins that same still-valid ownership for finite confirmation;
+        # production availability or automatic retry is not assumed.
+        with budget.wire_scope(lease):
+            _confirmed_completed_wire_finish(budget, lease, faults, time.monotonic() + 2, completed=True)
+        contents = _budget_contents(budget.path)
+        assert contents["budget_requests"] == [debt] and json.loads(dict(contents["budget_state"])["inflight"]) is None
+        assert faults == ["FINISH_STATE_UNAVAILABLE", "COMPLETED_FINISH_CONFIRMED"]
+        assert len(calls) == before + 1 and completed.count("book") == 1
+        assert all(not use(budget, "book", consumer="SCANNER", priority="OPENED_CRITICAL")["allowed"] for _ in range(5))
+        for index in range(1, 5):
+            assert scoped_book(reader, (f"EXIT{index}", "ACCIONES", "BYMA", "ARS", "A-24HS"), "EXIT_CRITICAL")
+        assert len(calls) == before + 5 and completed.count("book") == 5
+        assert budget.metrics()["global"]["used"] == 5
+        assert len(_budget_contents(budget.path)["budget_requests"]) == 5
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("failure", ["unverified_body", "unknown_io", "deadline_locked", "deadline_available", "after_debt_read", "after_finish"])
+def test_completed_finish_recovery_never_hides_unknown_or_unverified_work(tmp_path, monkeypatch, failure):
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock), clock=clock.now)
+    pending = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    budget.start(pending["lease"])
+    before, contents = budget.path.read_bytes(), _budget_contents(budget.path)
+    faults = []
+    with closing(sqlite3.connect(budget.path)) as owner, monkeypatch.context() as changes:
+        if failure == "unknown_io":
+            def unknown_failure(**kwargs):
+                raise OSError(5, "fixture unknown IO")
+            changes.setattr(budget, "_connect", unknown_failure)
+        elif failure == "deadline_locked":
+            owner.execute("BEGIN IMMEDIATE")
+        elif failure in {"after_debt_read", "after_finish"}:
+            monotonic, shifted = time.monotonic, [0]
+            changes.setattr(time, "monotonic", lambda: monotonic() + shifted[0])
+            if failure == "after_debt_read":
+                read = _completed_wire_debt
+                def delayed_debt(*args, **kwargs):
+                    value = read(*args, **kwargs)
+                    shifted[0] = 3
+                    return value
+                changes.setitem(globals(), "_completed_wire_debt", delayed_debt)
+            else:
+                finish = budget.finish
+                def late_finish(*args, **kwargs):
+                    value = finish(*args, **kwargs)
+                    shifted[0] = 3
+                    return value
+                changes.setattr(budget, "finish", late_finish)
+        expected = AssertionError if failure == "unverified_body" else BudgetBackpressure
+        with pytest.raises(expected):
+            _confirmed_completed_wire_finish(budget, pending["lease"], faults,
+                time.monotonic() - 1 if failure in {"deadline_locked", "deadline_available"} else time.monotonic() + 2,
+                completed=failure != "unverified_body")
+        owner.rollback()
+    assert not faults
+    if failure == "after_finish":
+        after = _budget_contents(budget.path)
+        assert after["budget_requests"] == contents["budget_requests"]
+        assert json.loads(dict(after["budget_state"])["inflight"]) is None
+    else:
+        assert budget.path.read_bytes() == before and _budget_contents(budget.path) == contents
+    # Only after the modeled read completes and uncertainty has cleared does
+    # the test confirm its metadata; the emitted debt remains spendable once.
+    budget.finish(pending["lease"])
+    assert all(use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"] for _ in range(4))
+    assert budget.metrics()["global"]["used"] == 5
 
 
 def test_abandoned_lease_cannot_be_started_after_expiry_even_without_new_owner(tmp_path):
@@ -1286,6 +1472,7 @@ def test_off_reader_repeats_original_wire_reads_without_coalescing(wire, tmp_pat
 def _budget_worker(path, config, at, consumer, priority, count, ready, start, output):
     clock = Clock(at)
     faults = []
+    wire_calls = []
     deadline = time.monotonic() + 5
     while True:
         try:
@@ -1314,10 +1501,12 @@ def _budget_worker(path, config, at, consumer, priority, count, ready, start, ou
                     with budget.wire_scope(row["lease"]):
                         budget.start(row["lease"])
                         started = True
-                        # A finish failure after start remains fatal and its
-                        # debt must survive. Only confirmed pre-wire STATE
-                        # cancellation below permits an eventual EXIT retry.
-                        budget.finish(row["lease"])
+                        assert row["lease"] not in wire_calls
+                        # Budget-only stress models one completed body. A
+                        # known BUSY completion keeps this same wire_scope,
+                        # verifies debt and never replays this modeled send.
+                        wire_calls.append(row["lease"])
+                        _confirmed_completed_wire_finish(budget, row["lease"], faults, deadline, completed=True)
                 except BudgetBackpressure as error:
                     if started or str(error) != "PPI_BUDGET_STATE_UNAVAILABLE":
                         raise
@@ -1330,7 +1519,7 @@ def _budget_worker(path, config, at, consumer, priority, count, ready, start, ou
             if priority != "EXIT_CRITICAL" or row["reason"] not in {"PPI_SERIAL_BACKPRESSURE", "PPI_BUDGET_STATE_UNAVAILABLE"} or time.monotonic() >= deadline:
                 break
             time.sleep(.005)
-    output.put((priority, allowed, faults))
+    output.put((priority, allowed, faults, wire_calls))
 
 
 def test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor(tmp_path):
@@ -1350,14 +1539,18 @@ def test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor(tmp
         process.join(timeout=15)
         assert process.exitcode == 0
     results = [output.get(timeout=2) for _ in processes]
-    assert {priority: allowed for priority, allowed, _ in results} == {"OPENED_CRITICAL": 0, "SCALPING_HOT": 0, "EXIT_CRITICAL": 5}
-    faults = [fault for _, _, values in results for fault in values]
+    assert {priority: allowed for priority, allowed, _, _ in results} == {"OPENED_CRITICAL": 0, "SCALPING_HOT": 0, "EXIT_CRITICAL": 5}
+    faults = [fault for _, _, values, _ in results for fault in values]
     canceled = faults.count("PREWIRE_CANCEL_CONFIRMED")
     assert canceled == faults.count("START_OR_SCOPE_STATE_UNAVAILABLE")
     metrics = parent.metrics()
     assert metrics["global"]["used"] == 5 and metrics["global"]["allowed"] == 5 + canceled
     contents = _budget_contents(parent.path)
     assert len(contents["budget_requests"]) == 5 and all(row[-1] == 1 for row in contents["budget_requests"])
+    wire_calls = [lease for _, _, _, calls in results for lease in calls]
+    assert len(wire_calls) == len(set(wire_calls)) == 5
+    assert set(wire_calls) == {row[0] for row in contents["budget_requests"]}
+    assert faults.count("COMPLETED_FINISH_CONFIRMED") == 5
     envelopes = json.loads(dict(contents["budget_state"])["reservation_envelopes_v1"])
     assert len(envelopes) == 1 and envelopes[0]["priority_reserves"]["EXIT_CRITICAL"]["book"] == 5
 
