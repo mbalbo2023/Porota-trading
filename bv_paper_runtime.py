@@ -148,6 +148,7 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
             children.poll()
             try:
                 supervisor.tick()
+                broker.supervise_futures(clock_fn())
                 if time.monotonic() - last_valuation >= 30:
                     broker.mark_equity({}, as_of=clock_fn())
                     last_valuation = time.monotonic()
@@ -168,6 +169,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from bd_ppi_readonly_guard import retry_read, session_invalid
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
+    from rc6_paper_family_lifecycle import future_position_contract
+    for future in getattr(store, 'active_future_positions', lambda: [])():
+        positions.append({**future, "asset_class": "FUTUROS", "paper_id": future["lifecycle_id"]})
     failures = len(invalid)
     for p in positions:
         if should_stop():
@@ -175,8 +179,10 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
         beat()
         stage = "EXECUTION_POLICY"
         try:
-            if policy.execution_error(p, at):
+            is_future = p.get("asset_class") == "FUTUROS"
+            if not is_future and policy.execution_error(p, at):
                 continue
+            original_contract = future_position_contract(p) if is_future else None
             stage = "BROKER_BOOK"
             book = retry_read(lambda: reader.book(
                 p["symbol"],p["asset_class"],p["settlement"]), retries=1)
@@ -184,6 +190,12 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"])
             stage = "NORMALIZE_QUOTE"
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
+            if is_future:
+                from dataclasses import replace
+                # Request identity is the exact position; catalog changes cannot
+                # invent new exit terms or grant fresh entry authority.
+                q = replace(q, contract=original_contract, currency=p["currency"],
+                            market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
             stage = "PERSIST_QUOTE"
             store.add_quote(q)
             stage = "VALIDATE_QUOTE"

@@ -139,7 +139,7 @@ class DailyRisk:
                 from rc6_paper_family_lifecycle import future_risk_snapshot
                 future_before = future_risk_snapshot(
                     self.store, currency, start, connection=c,
-                    max_mark_age_seconds=self.broker.quote_max_age_seconds)
+                    max_mark_age_seconds=self.broker.quote_max_age_seconds, exclusive=True)
                 future_now = future_risk_snapshot(
                     self.store, currency, at, connection=c,
                     max_mark_age_seconds=self.broker.quote_max_age_seconds)

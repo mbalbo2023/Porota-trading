@@ -154,7 +154,7 @@ def exit_due(at, contract):
     local = value.astimezone(A3_TZ)
     expiry = datetime.fromisoformat(str(contract.expires_at).replace("Z", "+00:00")).astimezone(A3_TZ)
     cutoff_minutes = PAPER_CLOSE.hour * 60 + PAPER_CLOSE.minute - PAPER_EXIT_MINUTES
-    return (local.date() >= expiry.date()
+    return (local >= expiry
             or local.hour * 60 + local.minute >= cutoff_minutes)
 
 
