@@ -14,7 +14,7 @@
   "field_authority_matrix": "field_authority_matrix.md",
   "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
   "finance_head": "a0961dee37906a5be94ab3d263466de3d6c59475",
-  "generated_at": "2026-10-05T03:24:26.389557+00:00",
+  "generated_at": "2026-10-05T05:04:54.297909+00:00",
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -350,10 +350,10 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_rc6_future_contract_policy.py::test_standard_dlr_policy_uses_exact_a3_terms_and_paper_full_notional"
+        "tests/test_rc6_convergence_finance_review.py::test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority"
       ],
       "id": "C-23",
-      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "node_scope": "Dedicated native semantic attack or explicit external authentication trust-limit guard; not evidence of market execution or economic edge.",
       "original_expected": "DLR multiplier is USD 1,000",
       "original_gap": "Particular live series external",
       "original_observed": "Lifecycle validates `cash_multiplier=1000`",
@@ -785,10 +785,10 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest"
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound"
       ],
       "id": "C-52",
-      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "node_scope": "Dedicated native semantic attack or explicit external authentication trust-limit guard; not evidence of market execution or economic edge.",
       "original_expected": "Rehashed cost corruption is detected semantically",
       "original_gap": "Real tariff correctness external",
       "original_observed": "`LEDGER_COST_RECONCILIATION`",
@@ -800,10 +800,10 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package"
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound"
       ],
       "id": "C-53",
-      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "node_scope": "Dedicated native semantic attack or explicit external authentication trust-limit guard; not evidence of market execution or economic edge.",
       "original_expected": "Rehashed opening quantity corruption is detected",
       "original_gap": "Other valid coordinated forgery needs pin",
       "original_observed": "`OPENING_QUANTITY_MISMATCH`",
@@ -905,10 +905,10 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_issue465_historical_package.py::test_manifest_digest_independently_pinned_and_mixed_generations_rejected"
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r78_coordinated_currency_relabel_rejects_original_pin_and_retains_unknown_source_with_rebound_pin"
       ],
       "id": "C-60",
-      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "node_scope": "Dedicated native semantic attack or explicit external authentication trust-limit guard; not evidence of market execution or economic edge.",
       "original_expected": "Original pin detects ARS→USD_MEP relabel",
       "original_gap": "Pin must be independently held",
       "original_observed": "`MANIFEST_DIGEST_MISMATCH`",
@@ -920,10 +920,10 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
       "current_native_nodes": [
-        "tests/test_issue465_historical_package.py::test_exact_hand_calculation_partials_currencies_and_no_slippage_double_count"
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r78_coordinated_currency_relabel_rejects_original_pin_and_retains_unknown_source_with_rebound_pin"
       ],
       "id": "C-61",
-      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "node_scope": "Dedicated native semantic attack or explicit external authentication trust-limit guard; not evidence of market execution or economic edge.",
       "original_expected": "New self-supplied pin is not source authentication",
       "original_gap": "Source-owner reconciliation absent",
       "original_observed": "Fully rehashed valid relabel was accepted; opaque source commitment unchanged",
@@ -1016,8 +1016,10 @@
   },
   "real_orders_sent": 0,
   "real_routes_used": [],
+  "receipt_hash_policy": "No self-hash. The consolidated JSON is bound by the separate evidence_manifest.json; embedded receipt hashes cover only independent receipt files.",
   "receipt_hashes": {
-    "consolidated_finance_evidence.json": "cc52aad90b892ce41972c8d7ad2af065ae23513d451206597861d8da93c9c578",
+    "closure_preservation_red_7175d956_receipt.json": "f4569efc1579a77dba9653a555819cbdcc094abbe790c69945bf14b2c5675a3d",
+    "closure_preservation_red_7175d956_tests.xml": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e",
     "core_finance_review_receipt.json": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00",
     "core_finance_review_tests.xml": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267",
     "finance_focused_receipt.json": "a0ebdde8d10e3befc0df796105ee3b9515cb07eedbaffbf758120696289858cf",
@@ -1033,7 +1035,7 @@
     "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",
     "retention_ack_resume_red_2fb29369.json": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
   },
-  "reference_root_sha": "6e50048abe016e3b6c1116c09ec8e8bd1b304aef",
+  "reference_root_sha": "7175d9565040715551d5a10677b56689b183e26f",
   "requirements": [
     {
       "aliases": [
@@ -1294,6 +1296,85 @@
         "finance_focused_receipt.json",
         "core_finance_review_receipt.json",
         "lab_phase_review_receipt.json"
+      ]
+    },
+    {
+      "aliases": [
+        "R18_MISSING_EXACT_CONTRACT",
+        "C-23",
+        "DLR_MULTIPLIER_SEMANTIC_GUARD"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Actual current-series broker terms and authenticated historical source ownership remain EXTERNAL_NO_VERIFICADO. Synthetic wrong-contract rejection confers no external authority."
+      ],
+      "fix_paths": [
+        "be_paper_engine.py",
+        "bs_instrument_contracts.py",
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "id": "R19",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance_review.py::test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "A raw snapshot digest is only integrity of its declared fields. A changed DLR multiplier must still fail exact contract semantics even if the snapshot digest and position dimension are coherently rewritten.",
+      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipts": [
+        "closure_preservation_red_7175d956_receipt.json",
+        "closure_preservation_red_7175d956_tests.xml"
+      ]
+    },
+    {
+      "aliases": [
+        "C-52",
+        "C-53",
+        "HISTORICAL_FINANCIAL_SEMANTIC_RECONCILIATION"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Actual account tariff, commissions/rights/VAT breakdown and real twenty-session master remain EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/recompute.py"
+      ],
+      "id": "R74",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r74_inconsistent_cost_or_quantity_is_rejected_after_all_public_hashes_and_pin_are_rebound"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Valid public row/file digests and a newly supplied manifest pin do not make inconsistent entry cost, opening quantity or fill charge a reconciled ledger.",
+      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipts": [
+        "closure_preservation_red_7175d956_receipt.json",
+        "closure_preservation_red_7175d956_tests.xml"
+      ]
+    },
+    {
+      "aliases": [
+        "C-60",
+        "C-61",
+        "HISTORICAL_EXTERNAL_PIN_TRUST_LIMIT"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Coordinated supported-currency relabel with a rebound pin is an explicit TRUST_LIMIT, not proof of valid FX, real monetary denomination or source authentication. Source-owner reconciliation remains EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/recompute.py"
+      ],
+      "id": "R78",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r78_coordinated_currency_relabel_rejects_original_pin_and_retains_unknown_source_with_rebound_pin"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "The original external pin detects a coordinated currency relabel. If the writer also controls the supplied pin, a coherent supported-currency relabel can be recomputed; this establishes arithmetic only and must retain external source authentication pending.",
+      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipts": [
+        "closure_preservation_red_7175d956_receipt.json",
+        "closure_preservation_red_7175d956_tests.xml"
       ]
     }
   ],

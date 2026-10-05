@@ -4,12 +4,20 @@
   "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
   "files": {
     "docs/audits/rc6_convergence_finance/acceptance_review.md": {
-      "bytes": 14605,
-      "sha256": "2edf155d3aa53110501f74e831cd0058f5764fbf56fe5fb06748ffc0a2bd599c"
+      "bytes": 16974,
+      "sha256": "9f7dd832b88bf83ed808706031f5f2f46f5700fa424f529a90af21aa9971c0f7"
+    },
+    "docs/audits/rc6_convergence_finance/closure_preservation_red_7175d956_receipt.json": {
+      "bytes": 4014,
+      "sha256": "f4569efc1579a77dba9653a555819cbdcc094abbe790c69945bf14b2c5675a3d"
+    },
+    "docs/audits/rc6_convergence_finance/closure_preservation_red_7175d956_tests.xml": {
+      "bytes": 14572,
+      "sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e"
     },
     "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
-      "bytes": 73352,
-      "sha256": "b4bfebeeea5d2efdeeaed4763711e8ea1343939fd5b8afb50e599aacbea99bbb"
+      "bytes": 78702,
+      "sha256": "bc7a5b7578890862f4ad01a9c755a3de2f2335f3e3ee473f99c2ecfce3d1fdc9"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -84,12 +92,12 @@
       "sha256": "308d6e20b34a39ecb3c6e6ea09b3142f46c9f6901b86a88ebb135234a72b22e7"
     },
     "tests/test_rc6_convergence_finance_historical_review.py": {
-      "bytes": 1841,
-      "sha256": "e0bfafccb817b1be74a270c4ce0472b368c6c69291e582e7df120165398a6fcb"
+      "bytes": 6150,
+      "sha256": "2fb38b4d5e5aea01f4256c21f9bcf3cfece0da6c71bd0c3b1cc96783340adfd8"
     },
     "tests/test_rc6_convergence_finance_review.py": {
-      "bytes": 14052,
-      "sha256": "b2e96da65dbfed4c8fe0d4e7ecc505a2bbc972f5bd40354a1fe094d0858765aa"
+      "bytes": 17689,
+      "sha256": "d5e89fdbd3404f9c89ee575bd6b936116d75a9f4375f26395f1b41dbc4b168df"
     },
     "tests/test_rc6_shadow_lab_atomic_capture.py": {
       "bytes": 19053,
@@ -100,5 +108,5 @@
   "producer": "FINANCE_REVIEW_AGENT_OFFLINE",
   "schema": "rc6.finance-evidence-manifest.v1",
   "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY",
-  "updated_at": "2026-10-05T03:24:26.507180+00:00"
+  "updated_at": "2026-10-05T05:05:33.152945+00:00"
 }

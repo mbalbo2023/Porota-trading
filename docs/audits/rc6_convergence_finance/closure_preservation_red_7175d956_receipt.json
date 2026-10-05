@@ -1,0 +1,83 @@
+{
+  "counting_rule": "Parametrized variants are not independent economic scenarios; this receipt tests native software mechanisms and trust limits only.",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "execution_counts": {
+    "errors": 0,
+    "failures": 2,
+    "skipped": 0,
+    "tests": 19
+  },
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "finished_at": "2026-10-05T04:58:59.476428+00:00",
+  "finished_source_sha": "7175d9565040715551d5a10677b56689b183e26f",
+  "junit_file": "closure_preservation_red_7175d956_tests.xml",
+  "junit_sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e",
+  "network_attempts": [],
+  "new_guard_execution": {
+    "R19": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 1
+    },
+    "R74": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 3
+    },
+    "R78": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 1
+    }
+  },
+  "preservation_regression": {
+    "caller": "PaperBroker(PaperStore(path),require_supervisor=False).supervise_futures(CLOSE) after FUT OPEN/restart",
+    "fixture_assertions_weakened": false,
+    "native_nodes": [
+      "tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity"
+    ],
+    "signature": "sqlite3.OperationalError: no such table: paper_future_exit_intents",
+    "status": "REPORTED_TO_INTEGRATOR_PENDING_CORE_FIX",
+    "variants": 2
+  },
+  "pytest_exit_code": 1,
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "schema": "rc6.finance-closure-additive-review.v1",
+  "source_file_hashes_after": {
+    "be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
+    "rc6_audit_evidence/recompute.py": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+  },
+  "source_file_hashes_before": {
+    "be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
+    "rc6_audit_evidence/recompute.py": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+  },
+  "source_files_match_recorded_commit": {
+    "be_paper_engine.py": true,
+    "bs_instrument_contracts.py": true,
+    "rc6_audit_evidence/package.py": true,
+    "rc6_audit_evidence/recompute.py": true,
+    "rc6_paper_family_lifecycle.py": true,
+    "rc6_performance/costs.py": true
+  },
+  "source_root": "/workspace/porota_rc6_convergence",
+  "source_sha": "7175d9565040715551d5a10677b56689b183e26f",
+  "source_status": "INTEGRATED_INTERMEDIATE_SOURCE_NOT_FINAL_FROZEN_ARTIFACT",
+  "source_tree": "992d99d9af0384104c0f0bbe80fce106870fb3a6",
+  "source_unchanged": true,
+  "started_at": "2026-10-05T04:58:57.169301+00:00",
+  "status": "PRESERVATION_RED_MISSING_FUTURE_EXIT_SCHEMA; NEW_FINANCIAL_GUARDS_GREEN",
+  "test_file_hashes": {
+    "tests/test_rc6_convergence_finance_historical_review.py": "2fb38b4d5e5aea01f4256c21f9bcf3cfece0da6c71bd0c3b1cc96783340adfd8",
+    "tests/test_rc6_convergence_finance_review.py": "d5e89fdbd3404f9c89ee575bd6b936116d75a9f4375f26395f1b41dbc4b168df"
+  },
+  "test_source_root": "/workspace/porota_rc6_worktrees/finance"
+}

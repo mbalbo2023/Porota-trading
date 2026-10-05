@@ -6,7 +6,7 @@ sin nuevas familias/shorts, sin ruta de orden real y sin modificación del host.
 La matriz por campo está en [field_authority_matrix.md](field_authority_matrix.md).
 
 El [consolidado JSON](consolidated_finance_evidence.json) liga U09/U10/U22/U23,
-AUD-468-19, el lector financiero U18/I04, R75/R76 y el contrato de costos a RCA,
+AUD-468-19, el lector financiero U18/I04, R19/R74/R75/R76/R78 y el contrato de costos a RCA,
 paths, nodos pytest sin multiplicar parámetros y receipts. Conserva los66 IDs
 C-01…C-66 del original, su EXPECTED/OBSERVED/PATH/TEST/GAP/VERDICT y referencias
 nativas por capa. Un nodo referenciado no es un receipt de ejecución ni prueba
@@ -130,6 +130,32 @@ R76 prueba fill1µs antes entry con rehash completo. Se rechazan semánticamente
 preservando bytes de la fuente. Los dos nuevos nodos más duplicate raw fill y
 entry1µs antes cutoff existentes pasan4/4 en root integrado READ_ONLY; el
 [JUnit](historical_semantic_review_tests.xml) tampoco certifica el master real.
+
+La revisión por fuente del draft de cierre detectó tres referencias que
+no ejercitaban su ataque específico. Se agregaron guardas en los mismos
+tests financieros, sin modificar producción ni relajar aserciones existentes:
+
+| Caso | Ataque nativo y control | Límite conservado |
+| --- | --- | --- |
+| R18/R19 | Broker rechaza contrato ausente y multiplier2000 antes de OPEN; lifecycle directo también rechaza. Una posición válida alterada a multiplier2000 con raw snapshot SHA recalculado y dimensión de fila coherente falla en restore/risk/CLOSE, sin nuevas filas financieras; restaurar la autoridad original conserva exactamente su caja | Serie/cuenta real y custodia de la fuente siguen EXTERNAL_NO_VERIFICADO |
+| R74 | Costo ledger, cantidad opening y costo fill inconsistentes, con todos los hashes públicos y el pin recalculados, reciben LEDGER_COST_RECONCILIATION u OPENING_QUANTITY_MISMATCH; el paquete original válido conserva net3 ARS | QA contable sintético; no tarifa de cuenta autenticada |
+| R78 | Relabel coordinado ARS→USD_MEP y manifest coherente: el pin original recibe MANIFEST_DIGEST. Un pin nuevo permite RECOMPUTED, conservando el commitment opaco sin autenticarlo | TRUST_LIMIT explícito: source_authentication permanece EXTERNAL_EVIDENCE_PENDING; no prueba FX, moneda real ni edge |
+
+El [receipt de preservación RED](closure_preservation_red_7175d956_receipt.json)
+y su [JUnit](closure_preservation_red_7175d956_tests.xml) registran19 variantes
+sobre core integrado7175d956: los cinco controles nuevos pasan, más doce
+controles anteriores; dos guards U08 existentes fallan por la ausencia de
+paper_future_exit_intents al abrir/reiniciar un PaperBroker directo con
+require_supervisor=False y luego supervise_futures. Se reportó al dueño del
+core para corregir bootstrap; no se añadió DDL al fixture para ocultarlo.
+Archivos productivos iguales antes/después, coincidentes con el commit
+registrado, sin intentos de red. Esta partición es intermedia y explícitamente
+RED para preservación; no sustituye el rerun final congelado pendiente.
+
+Los parámetros R74 prueban tres inconsistencias del mismo control; no se
+cuentan como escenarios económicos independientes. El índice de receipts
+excluye su propio JSON para evitar una autoafirmación circular; el manifest
+separado liga el consolidado a bytes/SHA256.
 
 La [revisión independiente de persistencia](persistence_independent_review.md)
 retiene otro RED→GREEN sobre SIGKILL antes de ACK1, archive2 y retry1: la cadena
