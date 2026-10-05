@@ -9,6 +9,9 @@ from types import SimpleNamespace
 import tarfile
 import time
 import subprocess
+import signal
+import shutil
+import sys
 import urllib.request
 
 import pytest
@@ -20,6 +23,7 @@ from scripts.porota_artifact_http import (
 from scripts.porota_artifact_provenance import canonical_bytes, sha256_file, validate_image_archive
 from scripts.porota_predeploy_binding import artifact_name, validate_binding, verify_frozen_payload
 from scripts import rc6_archive_v3_image_smoke as codec_smoke
+from scripts import porota_published_artifact_evidence as published_replay
 from scripts.porota_published_artifact_evidence import (
     MAX_EVIDENCE_BYTES, MAX_SECONDARY_ARTIFACT_BYTES, current_primary_binding, main,
     replay_remaining,
@@ -367,6 +371,103 @@ def test_failed_or_boolean_import_cleanup_cannot_claim_container_termination(fro
             run=docker, clock=clock)
     assert len(calls) == 4 and calls[-1][-1] == calls[-2][calls[-2].index("--name")+1]
     assert not any("scripts.rc6_archive_v3_image_smoke" in argv or argv[1] == "build" for argv in calls)
+
+
+@pytest.fixture
+def replay_main_tail_control(frozen_payload, tmp_path, monkeypatch):
+    """Real receipt/file checks with controlled download/container/time adapters."""
+    c, output, original_binding, frozen = frozen_payload
+    clock = ReplayClock(); clock.now = time.monotonic()
+    private = tmp_path / "private-transfer"
+    evidence = tmp_path / "evidence"
+    state = {"cleanup_delay":0, "cleanup_calls":0}
+    raw_zip = b"controlled primary transfer raw"
+    binding = {**original_binding, "artifact_size_bytes":len(raw_zip),
+               "artifact_digest":"sha256:"+hashlib.sha256(raw_zip).hexdigest()}
+    class Directory:
+        def __enter__(self): private.mkdir(); return str(private)
+        def __exit__(self, *_arguments):
+            state["cleanup_calls"] += 1
+            # Preserve this controlled raw fixture: no real removal/sleep.
+            clock.advance(state["cleanup_delay"])
+    def download(_artifact, target, **kwargs):
+        target.write_bytes(raw_zip)
+        return {"status":"GREEN", "bytes":len(raw_zip), "digest":binding["artifact_digest"]}
+    def extract(_archive, target, _binding, **_kwargs): shutil.copytree(output, target)
+    def execute(_extracted, **kwargs):
+        assert kwargs["clock"] is clock
+        return {"loaded_image_id":frozen["image_id"],
+                "fixture_scope":"CONTROLLED_RESPONSE_NO_ACTUAL_DOCKER_OR_IMAGE_EXECUTION"}
+    monkeypatch.setattr(published_replay, "current_primary_binding", lambda *_args, **_kwargs:binding)
+    monkeypatch.setattr(published_replay, "download_artifact", download)
+    monkeypatch.setattr(published_replay, "safe_extract", extract)
+    monkeypatch.setattr(published_replay, "verify_loaded_image_and_imports", execute)
+    monkeypatch.setattr(published_replay, "tempfile", SimpleNamespace(TemporaryDirectory=lambda **_kwargs:Directory()))
+    arguments = ["--candidate-sha",binding["candidate_sha"],"--tree-sha",frozen["candidate_tree_sha"],
+        "--artifact-id","303","--upload-digest",binding["artifact_digest"],
+        "--image-ref","porota-predeploy-v2:"+binding["candidate_sha"],"--repo-root",str(c["repo"]),
+        "--evidence-root",str(evidence),"--deadline-seconds","600"]
+    return clock, state, arguments, private, evidence, raw_zip
+
+
+def test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw(
+        replay_main_tail_control, capsys):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    state["cleanup_delay"] = 600
+    assert main(arguments, clock=clock) == 1
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" in result
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" not in result
+    assert state["cleanup_calls"] == 1 and (private / "primary.zip").read_bytes() == raw_zip
+    assert (evidence / "evidence-inventory.json").is_file()
+    assert (evidence / "porota-governed-tests.xml").read_bytes()
+
+
+def test_main_completes_cleanup_and_flushed_result_within_original_total_budget(replay_main_tail_control, capsys):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    assert main(arguments, clock=clock) == 0
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" in result
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" not in result
+    assert state["cleanup_calls"] == 1 and (private / "primary.zip").read_bytes() == raw_zip
+    assert json.loads((evidence / "evidence-inventory.json").read_bytes())["promotable"] is False
+
+
+@pytest.mark.parametrize("delay_at", ["json_write","json_flush","green_write","green_flush"])
+def test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active(
+        replay_main_tail_control, monkeypatch, capsys, delay_at):
+    clock, state, arguments, private, evidence, raw_zip = replay_main_tail_control
+    original = sys.stdout
+    class DelayedOutput:
+        phase = None
+        delayed = False
+        def __getattr__(self, name): return getattr(original, name)
+        def delay(self, event):
+            if not self.delayed and self.phase+"_"+event == delay_at:
+                assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+                self.delayed = True
+                clock.advance(600)
+        def write(self, data):
+            if data.startswith("{"): self.phase = "json"
+            elif data.startswith("POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN"): self.phase = "green"
+            elif data.startswith("POROTA_PUBLISHED_PRIMARY_REPLAY=RED"): self.phase = "red"
+            result = original.write(data)
+            if self.phase is not None: self.delay("write")
+            return result
+        def flush(self):
+            original.flush()
+            if self.phase is not None: self.delay("flush")
+    sink = DelayedOutput()
+    with monkeypatch.context() as output_patch:
+        output_patch.setattr(sys, "stdout", sink)
+        assert main(arguments, clock=clock) == 1
+    assert sink.delayed and state["cleanup_calls"] == 1
+    result = capsys.readouterr().out
+    assert "POROTA_PUBLISHED_PRIMARY_REPLAY=RED" in result
+    assert (private / "primary.zip").read_bytes() == raw_zip
+    assert (evidence / "evidence-inventory.json").is_file()
+    # A partially emitted GREEN marker cannot replace the final nonzero exit.
+    if delay_at.startswith("json_"): assert "POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN" not in result
 
 
 @pytest.mark.parametrize("mutation", ["nonzero", "missing_json", "red", "foreign_image", "source_drift", "oversize", "timeout"])

@@ -279,7 +279,7 @@ print('POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN')
             "execution_scope": "GITHUB_ACTIONS_RUNNER_EPHEMERAL_OFFLINE_CONTAINER"}
 
 
-def main(argv=None):
+def main(argv=None, *, clock=time.monotonic):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--tree-sha", required=True)
@@ -291,7 +291,7 @@ def main(argv=None):
     parser.add_argument("--deadline-seconds", type=int, default=600)
     args = parser.parse_args(argv)
     if not 60 <= args.deadline_seconds <= 900: parser.error("bounded deadline must be 60..900 seconds")
-    deadline = time.monotonic() + args.deadline_seconds
+    deadline = clock() + args.deadline_seconds
     previous_alarm = signal.getsignal(signal.SIGALRM)
     def deadline_expired(signum, frame):
         raise ValueError("PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED")
@@ -305,21 +305,28 @@ def main(argv=None):
                 expected_digest=binding["artifact_digest"], deadline=deadline)
             extracted = root / "extracted"
             safe_extract(archive, extracted, binding, extra_required=PUBLISHED_EXTRA_RECEIPTS)
-            replay_remaining(deadline)
+            replay_remaining(deadline, clock=clock)
             receipt = verify_frozen_payload(args.repo_root, extracted, binding, args.tree_sha)
             receipt["extra_receipt_files"] = {name: {"sha256": sha256_file(extracted / name),
                 "bytes": (extracted / name).stat().st_size} for name in PUBLISHED_EXTRA_RECEIPTS}
-            replay_remaining(deadline)
+            replay_remaining(deadline, clock=clock)
             source = decode_json((extracted / "porota-source-provenance.json").read_bytes())
             rootfs = verify_saved_app_rootfs(extracted / "porota-predeploy-image.tar.gz", source, deadline=deadline)
-            replay_remaining(deadline)
+            replay_remaining(deadline, clock=clock)
             execution = verify_loaded_image_and_imports(extracted, candidate_sha=args.candidate_sha,
-                image_ref=args.image_ref, deadline=deadline)
+                image_ref=args.image_ref, deadline=deadline, clock=clock)
             result = write_evidence(args.evidence_root, binding=binding,
                 payload={"extracted_root": extracted, "receipt": receipt, "actual_image_execution": execution,
                          "extra_receipts": PUBLISHED_EXTRA_RECEIPTS}, rootfs=rootfs,
                 download=download, loaded_image_id=execution["loaded_image_id"])
-            replay_remaining(deadline)
+            replay_remaining(deadline, clock=clock)
+        # The same total deadline includes private context cleanup and stdout.
+        replay_remaining(deadline, clock=clock)
+        print(json.dumps(result, sort_keys=True), flush=True)
+        replay_remaining(deadline, clock=clock)
+        print('POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN|secondary=EVIDENCE_ONLY|production_actions=NOT_CALLED', flush=True)
+        replay_remaining(deadline, clock=clock)
+        return 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError, tarfile.TarError, EOFError,
             urllib.error.URLError, subprocess.SubprocessError):
         # Redirect URLs may contain signed credentials. No exception text,
@@ -329,9 +336,6 @@ def main(argv=None):
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous_alarm)
-    print(json.dumps(result, sort_keys=True))
-    print('POROTA_PUBLISHED_PRIMARY_REPLAY=GREEN|secondary=EVIDENCE_ONLY|production_actions=NOT_CALLED')
-    return 0
 
 
 if __name__ == "__main__":

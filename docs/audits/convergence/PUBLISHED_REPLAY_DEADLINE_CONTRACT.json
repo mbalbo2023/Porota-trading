@@ -12,6 +12,9 @@
   "codec_output_cap_bytes": 65536,
   "failure_private_container_teardown_seconds": 5,
   "failure_teardown_extends_green_deadline": false,
+  "end_to_end_deadline_includes_context_cleanup_and_result_emission_flush": true,
+  "alarm_cancelled_before_result_emission": false,
+  "inherited_tail_fix_previous_source_checkpoint": "76d37d8ca394b01b0cfc08e8cd683db0c7d54998",
   "deadline_renewed_by_each_command": false,
   "installed_packages_modified": false,
   "docker_or_remote_api_executed": false,
@@ -24,9 +27,13 @@
     "tests/test_rc6_convergence_sre_published_evidence.py::test_completed_load_past_total_deadline_cannot_start_image_or_emit_green",
     "tests/test_rc6_convergence_sre_published_evidence.py::test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container",
     "tests/test_rc6_convergence_sre_published_evidence.py::test_import_timeout_cleans_only_its_private_container_without_starting_codec",
-    "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination"
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_main_completes_cleanup_and_flushed_result_within_original_total_budget",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active"
   ],
   "original_independent_requirement_or_market_attack_count_added": 0,
   "fixture_scope": "CONTROLLED_CLOCK_AND_SUBPROCESS_ON_EXPLICIT_SYNTHETIC_METADATA_NO_IMAGE_EXECUTION",
+  "required_focal_harness": "FRESH_WHOLE_OWN_GIT_SOURCE_WITH_RAW_GIT_PHYSICAL_NAMESPACE_157_LOCK_IMPORT_NETWORK_SQLITE_RECEIPTS",
   "assertion_scope": "SOURCE_ONLY_DEADLINE_SEPARATION_AND_PERMANENT_GUARD_DECLARATIONS"
 }
