@@ -3980,6 +3980,16 @@
         "U24"
       ]
     },
+    "docs/audits/convergence/evidence/original-budget-c27/INVALIDATED_BUDGET_REPLAY_HARNESS.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
     "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_A_F01_F02.md": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -8670,7 +8680,7 @@
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
       "id": "AUD-468-20",
-      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "native_caller": "ba_data912_history._normalize and _get_json -> cw_data912_history_v2_sink.refresh_identities -> native HistoryStore; row rejection, partial-batch accounting, full-key selection and controlled retry failures. No full SHADOW preopen.tick execution is claimed by these guards.",
       "original_requirement": {
         "closure": "Endurecer adaptador y sink com\u00fan; NaN/inf/futuro/high<low/OHLC parcial, razones precisas, retry429/timeout sin falsa completitud.",
         "condition": "Persiste: Data912 normaliza sin validar de manera uniforme.",
@@ -8698,7 +8708,7 @@
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
       "id": "AUD-468-21",
-      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "native_caller": "cu_history_store_v2_hf6.coverage_inventory plus dated marker/history progress helpers; exact cohort, currency, session, consumer and as-of diagnostics. These guards do not execute a full SHADOW tick or replay the unavailable original full-database JOIN.",
       "original_requirement": {
         "closure": "M\u00e9trica full-key/currency/session por consumidor y corte; no trasladar5739/7728 del1/10 al presente ni exigir history global a estrategias que no lo consumen.",
         "condition": "Gap de cobertura/observabilidad; no es por s\u00ed mismo un bug READY.",
