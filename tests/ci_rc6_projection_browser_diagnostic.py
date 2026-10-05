@@ -177,69 +177,16 @@ def cgroup_cpu():
         return {}
 
 
-def run(args):
-    sys.dont_write_bytecode = True
-    index = json.loads(args.index.read_text())
-    root = Path(index["extracted_root"]).resolve()
-    database, native_root = args.database.resolve(), args.root.resolve()
-    runner = Path(__file__).resolve()
-    assert index.get("overlays") == []
-    source_members = {Path(str(database) + suffix) for suffix in ("", "-wal", "-shm", "-journal")}
-    output = args.output.resolve()
-    if (args.output.exists() or any(path.is_symlink() for path in (args.output, *args.output.parents))
-            or output.is_relative_to(root) or output.is_relative_to(native_root)
-            or output.is_relative_to(Path(str(native_root) + ".authority")) or output in source_members):
-        raise ValueError("NEW_DIAGNOSTIC_OUTPUT_OUTSIDE_SOURCE_REQUIRED")
-    hashes = lambda: {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in sorted(root.rglob("*")) if path.is_file()}
-    before = hashes()
-    assert before == index["source_file_hashes"]
-    network, source_sqlite = [], []
-    original_connect = sqlite3.connect
 
-    def no_network(*_args, **_kwargs):
-        network.append("BLOCKED")
-        raise AssertionError("NETWORK_FORBIDDEN")
-
-    def private_connect(value, *positional, **keywords):
-        raw = os.fsdecode(value)
-        raw = unquote(urlsplit(raw).path) if raw.startswith("file:") else raw
-        path = Path(raw).resolve() if raw != ":memory:" else None
-        same = path in source_members if path is not None else False
-        if path is not None and path.exists():
-            same = same or any(member.exists() and path.samefile(member) for member in source_members)
-        if same:
-            source_sqlite.append("BLOCKED")
-            raise AssertionError("SOURCE_SQLITE_FORBIDDEN")
-        return original_connect(value, *positional, **keywords)
-
-    with ExitStack() as guards:
-        guards.enter_context(patch.object(socket.socket, "connect", no_network))
-        guards.enter_context(patch.object(socket, "create_connection", no_network))
-        guards.enter_context(patch.object(sqlite3, "connect", private_connect))
-        previous_path = sys.path[:]
-        sys.path.insert(0, str(root))
-        try:
-            return run_archived(args, index, root, database, native_root, runner,
-                                before, hashes, network, source_sqlite)
-        finally:
-            sys.path[:] = previous_path
-
-
-def run_archived(args, index, root, database, native_root, runner, before, hashes, network, source_sqlite):
-    output = args.output.resolve()
-    from tests import ci_rc6_projection_large_browser as browser
+@contextmanager
+def observe_product(product):
+    """Instrument only the locked native child; driver never imports the product."""
     from rc6_shadow_runtime import packed_storage, persistence, serialization
     import rc6_audit_evidence.sqlite_snapshot as snapshot
-
-    custody_before = browser.custody_inventory(database, native_root)
-    pointer = json.loads(protected_bytes(native_root / "CURRENT.json"))
-    manifest = json.loads(protected_bytes(native_root / ("gen-" + pointer["generation_id"]) / "manifest.json"))
-    digest_roles = {record["payload_digest"]: role for role, record in manifest["files"].items()}
+    digest_roles = {record["payload_digest"]: role for role, record in product.manifest["files"].items()}
     renders = []
-    state = {"render": None, "end": None}
+    state = {"render": None, "renders": renders, "end": product.diagnostic_deadline or monotonic()+60}
     trace = DiagnosticTrace(digest_roles, state)
-
     original_copy = snapshot.readonly_copy
 
     @contextmanager
@@ -262,7 +209,7 @@ def run_archived(args, index, root, database, native_root, runner, before, hashe
         else:
             trace.timed("source_capture_exit", context.__exit__)(None, None, None)
 
-    original_build = browser.build_page
+    original_build = product.build_page
 
     def traced_build(*positional, **keywords):
         render = len(renders)
@@ -283,7 +230,7 @@ def run_archived(args, index, root, database, native_root, runner, before, hashe
                             "cgroup_delta_all_container_processes": {key: value - group_before[key] for key, value in group_after.items() if key in group_before}})
             state["render"] = None
 
-    original_require = browser.require
+    original_require = product.require
 
     def bounded_require(value, gate, details=None):
         return require_then_window_end(original_require, value, gate, details, end=state["end"])
@@ -299,63 +246,105 @@ def run_archived(args, index, root, database, native_root, runner, before, hashe
                                                         member_roles=member_roles)),
         (persistence.EvidenceFiles, "_wire_generation", trace.timed("wire_generation", persistence.EvidenceFiles._wire_generation)),
         (persistence, "read_committed_projection", trace.timed("canonical_query", persistence.read_committed_projection)),
-        (browser, "build_page", traced_build), (browser, "require", bounded_require)])
-    result, error_class, details = "NO_FAILURE_OBSERVED_WITHIN_DIAGNOSTIC_WINDOW", None, {}
+        (product, "build_page", traced_build), (product, "require", bounded_require),
+        (product, "readonly_copy", traced_copy)])
     with ExitStack() as instrumentation:
         for owner, name, replacement in replacements:
             instrumentation.enter_context(patch.object(owner, name, replacement))
         gc.callbacks.append(trace.collect)
         try:
-            state["end"] = monotonic() + 60
-            browser.run(database, native_root, output / "browser")
-        except DiagnosticWindowEnded:
-            pass
-        except BaseException as error:
-            result, error_class = "NATIVE_OR_BROWSER_FAILURE_RETAINED", type(error).__name__
-            details = {"gate": str(error) if isinstance(error, browser.GateFailure) else "DIAGNOSTIC_CALL_FAILED",
-                       "native_details": error.details if isinstance(error, browser.GateFailure) else {}}
+            yield trace
         finally:
             gc.callbacks.remove(trace.collect)
-    custody_after, after = browser.custody_inventory(database, native_root), hashes()
-    closure, unexpected = [], []
-    for name, module in sorted(sys.modules.items()):
-        file = getattr(module, "__file__", None)
-        if not file:
-            continue
-        path = Path(file).resolve()
-        if path.is_relative_to(root):
-            relative = str(path.relative_to(root))
-            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
-            closure.append({"module": name, "path": relative, "sha256": checksum,
-                            "matches_archived_blob": checksum == index["source_file_hashes"].get(relative)})
-        elif str(path).startswith("/workspace/porota_") and path != runner:
-            unexpected.append(str(path))
-    proof = before == after and custody_before == custody_after and not network and not source_sqlite and not unexpected
-    proof = proof and all(record["matches_archived_blob"] for record in closure)
-    receipt = {"schema": "rc6.native-browser-components-diagnostic.v2", "status": "DIAGNOSTIC_ONLY_" + result,
-               "acceptance_complete": False, "native_gate_acceptance_claim": False, "source_sha": index["source_sha"],
-               "candidate_tree_sha": index["candidate_tree_sha"], "archive_sha256": index["archive_sha256"], "overlays": [],
-               "runtime_instrumentation": "TIMING_WRAPPERS_AND_GC_CALLBACK_ONLY; ORIGINAL_NATIVE_RETURNS_DEADLINE_AND_GC_STATE_UNCHANGED",
-               "runner_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(), "error_class": error_class,
-               "details": details, "renders": renders, "stage_aggregates": trace.records(), "gc_aggregates": trace.gc_records(),
-               "source_proof_pass": proof, "tracked_source_files": len(before), "tracked_source_hashes_unchanged": before == after,
-               "custody_inventory_before": custody_before, "custody_inventory_after": custody_after,
-               "native_custody_unchanged": custody_before == custody_after, "imported_product_modules": closure,
-               "unexpected_product_imports": unexpected, "network_attempts": len(network), "source_sqlite_attempts": len(source_sqlite),
-               "scope_limits": ["60s diagnostic window, no acceptance even if no failure was observed.",
-                                "Nested and overlapping stage elapsed/CPU totals cannot be added; thread CPU excludes other workers.",
-                                "Codec counts are declarations captured before native verification; completed_calls and errors are reported separately.",
-                                "Member read counts observe calls, not an independent proof of cache absence or logical semantics.",
-                                "cgroup counters include all processes in this container; timing wrappers add diagnostic overhead."]}
-    output.mkdir(parents=True, exist_ok=True)
-    with (output / "diagnostic.json").open("x") as stream:
-        stream.write(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
-    print(json.dumps({"status": receipt["status"], "acceptance_complete": False, "renders": len(renders), "source_proof_pass": proof}))
-    return 0 if proof else 1
+
+
+def run(args):
+    sys.dont_write_bytecode = True
+    index = json.loads(args.index.read_text())
+    root = Path(index.get("extracted_root", Path(__file__).resolve().parents[1])).resolve()
+    database, native_root = args.database.resolve(), args.root.resolve()
+    runner = Path(__file__).resolve()
+    output = args.output.resolve()
+    previous_path = sys.path[:]
+    sys.path.insert(0, str(root))
+    try:
+        from tests.rc6_browser_ipc import (GateFailure, ProductDiagnosticWindowEnded, imported_source,
+            output_guard, read_source_index, source_inventory)
+        try:
+            output_guard(args.output, database, native_root, source_root=root, gate="NEW_DIAGNOSTIC_OUTPUT_OUTSIDE_SOURCE_REQUIRED")
+        except GateFailure as error:
+            raise ValueError(str(error)) from error
+        index = read_source_index(args.index, root)
+        assert index.get("overlays") == []
+        before = source_inventory(root)
+        assert {key:value["sha256"] for key,value in before.items()} == index["source_file_hashes"]
+        from tests import ci_rc6_projection_large_browser as browser
+        clients, network = [], []
+        end = monotonic()+60
+        original_require = browser.require
+        def bounded_require(value, gate, details=None):
+            return require_then_window_end(original_require, value, gate, details, end=end)
+        def no_network(*_args, **_kwargs):
+            network.append("BLOCKED")
+            raise GateFailure("PROVIDER_OR_NETWORK_CALLED")
+        result, error_class, details = "NO_FAILURE_OBSERVED_WITHIN_DIAGNOSTIC_WINDOW", None, {}
+        with ExitStack() as guards:
+            guards.enter_context(patch.object(browser, "require", bounded_require))
+            guards.enter_context(patch.object(socket.socket, "connect", no_network))
+            guards.enter_context(patch.object(socket, "create_connection", no_network))
+            try:
+                browser.run(database, native_root, output/"browser",
+                    product_python=getattr(args, "product_python", sys.executable), index=args.index, diagnostic=True,
+                    product_python_version=getattr(args, "product_python_version", None),
+                    client_sink=clients, diagnostic_deadline=end)
+            except (DiagnosticWindowEnded, ProductDiagnosticWindowEnded):
+                pass
+            except BaseException as error:
+                result, error_class = "NATIVE_OR_BROWSER_FAILURE_RETAINED", type(error).__name__
+                details = {"gate": str(error) if isinstance(error, GateFailure) else "DIAGNOSTIC_CALL_FAILED",
+                    "native_details": error.details if isinstance(error, GateFailure) else {}}
+        client = clients[0] if clients else None
+        native = client.finish_receipt if client and client.finish_receipt else {}
+        after = source_inventory(root)
+        closure, unexpected = imported_source(root, before)
+        proof = before == after and native.get("source_proof_pass") is True and not network and not unexpected
+        proof = proof and all(row["matches_archived_blob"] for row in closure)
+        receipt = {"schema": "rc6.native-browser-components-diagnostic.v2", "status": "DIAGNOSTIC_ONLY_"+result,
+            "acceptance_complete": False, "native_gate_acceptance_claim": False, "source_sha": index["source_sha"],
+            "candidate_tree_sha": index["candidate_tree_sha"], "archive_sha256": index["archive_sha256"], "overlays": [],
+            "runtime_instrumentation": "TIMING_WRAPPERS_AND_GC_CALLBACK_IN_LOCKED_PRODUCT_CHILD_ONLY",
+            "runner_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(), "error_class": error_class, "details": details,
+            "renders": native.get("renders", []), "stage_aggregates": native.get("stage_aggregates", []),
+            "gc_aggregates": native.get("gc_aggregates", []), "source_proof_pass": proof,
+            "tracked_source_files": len(before), "tracked_source_hashes_unchanged": before == after,
+            "tracked_source_hashes_and_modes_unchanged": before == after,
+            "custody_inventory_before": native.get("custody_inventory_before"), "custody_inventory_after": native.get("custody_inventory_after"),
+            "native_custody_unchanged": native.get("native_custody_unchanged", False),
+            "imported_product_modules": native.get("imported_product_modules", []), "driver_imported_source": closure,
+            "unexpected_product_imports": native.get("unexpected_product_imports", [])+unexpected,
+            "network_attempts": native.get("network_attempts", 0)+len(network), "source_sqlite_attempts": native.get("source_sqlite_attempts", 0),
+            "product_environment": client.product_environment if client else None,
+            "driver_environment": client.driver_environment if client else None,
+            "scope_limits": ["60s diagnostic window, no acceptance even if no failure was observed.",
+                "Native product is locked child157; Playwright driver158 cannot import financial/dashboard modules.",
+                "Native stages exclude stdio; acceptance wall includes IPC, snapshot/render and HTML/JSON.",
+                "Nested/overlapping elapsed and CPU totals cannot be added; declared codec counts are not validation.",
+                "Member read counts are observations, not independent cache-absence or full logical proof.",
+                "cgroup includes every process in the container; instrumentation adds overhead."]}
+        output.mkdir(parents=True, exist_ok=True)
+        with (output/"diagnostic.json").open("x") as stream:
+            stream.write(json.dumps(receipt, sort_keys=True, indent=2)+"\n")
+        print(json.dumps({"status": receipt["status"], "acceptance_complete": False,
+                         "renders": len(receipt["renders"]), "source_proof_pass": proof}))
+        return 0 if proof else 1
+    finally:
+        sys.path[:] = previous_path
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--product-python", type=Path, required=True)
+    parser.add_argument("--product-python-version", choices=("3.11", "3.12"), default="3.11")
     parser.add_argument("--index", required=True, type=Path)
     parser.add_argument("--database", required=True, type=Path)
     parser.add_argument("--root", required=True, type=Path)

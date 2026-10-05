@@ -28,17 +28,7 @@ from rc6_trader_dashboard.datasets import shadow_rows
 from rc6_trader_dashboard.projected_generation import VERIFICATION_LEVEL
 from rc6_trader_dashboard.projection import Projection, Store, funnel_cohort_id
 from rc6_trader_dashboard.routes import build_page
-
-
-class GateFailure(AssertionError):
-    def __init__(self, gate, details=None):
-        super().__init__(gate)
-        self.details = details or {}
-
-
-def require(value, gate, details=None):
-    if not value:
-        raise GateFailure(gate, details)
+from tests.rc6_browser_ipc import GateFailure, require
 
 
 def protected_bytes(path):

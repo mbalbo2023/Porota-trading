@@ -23,7 +23,7 @@ from tests.ci_rc6_projection_large_reader import GateFailure, custody_inventory,
 from tests.rc6_dashboard_native_fixture import native_fixture
 
 REPOSITORY = Path(__file__).resolve().parents[1]
-BASE_SHA = "003dccb5"
+BASE_SHA = "HEAD"
 LIMITS = {"durable_limit": 64 * 1024**2, "expansion_limit": 512 * 1024**2}
 
 
@@ -205,9 +205,12 @@ def test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_a
     index = tmp_path/"index.json"
     index.write_text(json.dumps({"source_sha": source_sha, "candidate_tree_sha": tree_sha,
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "source_file_hashes": hashes,
+        "source_file_modes": {str(path.relative_to(extracted)): path.stat().st_mode & 0o777
+                              for path in extracted.rglob("*") if path.is_file()},
         "extracted_root": str(extracted), "overlays": []}))
     output = tmp_path/"diagnostic"
     command = [sys.executable, "-I", str(REPOSITORY/"tests/ci_rc6_projection_browser_diagnostic.py"),
+               "--product-python", sys.executable, "--product-python-version", f"{sys.version_info.major}.{sys.version_info.minor}",
                "--index", str(index), "--database", str(fixture.database), "--root", str(fixture.root),
                "--output", str(output)]
     result = subprocess.run(command, capture_output=True, text=True, timeout=30)

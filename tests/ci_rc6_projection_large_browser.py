@@ -5,99 +5,37 @@ writer. It receives the external synthetic DB/root and checks their custody
 before and after the browser. All render timings include the source snapshot.
 """
 import argparse
-from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-import socket
-import sqlite3
 import sys
-from time import monotonic, perf_counter, process_time
-from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from rc6_audit_evidence.sqlite_snapshot import readonly_copy
-from rc6_shadow_runtime import persistence
-from rc6_trader_dashboard.datasets import shadow_rows
-from rc6_trader_dashboard.navigation import CANONICAL_PATHS, LEGACY
-from rc6_trader_dashboard.projected_generation import VERIFICATION_LEVEL
-from rc6_trader_dashboard.projection import Projection, Store
-from rc6_trader_dashboard.routes import build_page
-from tests.ci_rc6_projection_large_reader import (
-    GateFailure, custody_inventory, protected_bytes, require,
-    require_native_large_cut, source_sqlite_guard,
+from tests.rc6_browser_ipc import (
+    GateFailure, ProductClient, imported_source, output_guard, require,
 )
 
 
-def run(database, root, output):
-    require(not any(member.is_symlink() for path in (database, root) for member in (path, *path.parents)),
-            "SOURCE_ALIAS_FORBIDDEN")
+def run(database, root, output, *, product_python=None, index=None, diagnostic=False, product_python_version=None,
+        client_sink=None, diagnostic_deadline=None):
+    output_guard(output, database, root)
     database, root = database.resolve(), root.resolve()
     require(database.is_file() and root.is_dir(), "COMPLETED_NATIVE_FIXTURE_REQUIRED")
-    require(not output.is_symlink() and not output.resolve().is_relative_to(root)
-            and not output.resolve().is_relative_to(Path(str(root)+".authority"))
-            and output.resolve() not in {Path(str(database)+suffix) for suffix in ("", "-wal", "-shm", "-journal")}
-            and not output.exists(), "OUTPUT_MUST_BE_NEW_AND_OUTSIDE_SOURCES")
-    before = custody_inventory(database, root)
-    pointer = json.loads(protected_bytes(root/"CURRENT.json"))
-    manifest = json.loads(protected_bytes(root/("gen-"+pointer["generation_id"])/"manifest.json"))
-    require(set(manifest["files"]) == {"report", "checkpoint", "status", "projection"}, "FOUR_ROLES_REQUIRED")
-    cut_at = datetime.fromisoformat(manifest["as_of"].replace("Z", "+00:00"))
-    forbidden = {manifest["files"][role]["payload_digest"] for role in ("report", "checkpoint")}
-    original_decode = persistence.decode_storage
-    network, source_calls, browser_requests, renders = [], [], [], []
-
-    def no_network(*_args, **_kwargs):
-        network.append("BLOCKED")
-        raise GateFailure("PROVIDER_OR_NETWORK_CALLED")
-
-    def bounded_decode(value, *args, **kwargs):
-        if isinstance(value, dict):
-            require(value.get("logical_sha256") not in forbidden, "ORIGINAL_REPORT_OR_CHECKPOINT_DECODED")
-        return original_decode(value, *args, **kwargs)
-
-    with ExitStack() as guards:
-        guards.enter_context(patch.dict("os.environ", {"POROTA_DYNAMIC_SHADOW_ROOT": str(root),
-                                                      "POROTA_SHADOW_RUNTIME_ROOT": str(root)}))
-        guards.enter_context(patch.object(socket.socket, "connect", no_network))
-        guards.enter_context(patch.object(socket, "create_connection", no_network))
-        guards.enter_context(patch.object(sqlite3, "connect", source_sqlite_guard(database, sqlite3.connect, source_calls)))
-        guards.enter_context(patch.object(persistence, "decode_storage", bounded_decode))
-        with readonly_copy(database, validate=False, deadline=monotonic()+2) as copied:
-            catalog_count = copied.execute("SELECT count(*) FROM financial_instrument_catalog").fetchone()[0]
-            observation_count = copied.execute("SELECT count(*) FROM ppi_intraday_points").fetchone()[0]
-            last_identity = tuple(copied.execute("SELECT ticker,instrument_type,market,currency,settlement "
-                                                "FROM financial_instrument_catalog ORDER BY ticker DESC LIMIT 1").fetchone())
-        preflight_begin = perf_counter()
-        with Store(database, now=cut_at) as store:
-            projection = Projection(store)
-            cut = projection.shadow
-            require(cut["state"] == "COMMITTED_COHERENT_SHADOW", "PROJECTED_CUT_UNAVAILABLE",
-                    {"state": cut["state"], "reason": cut["reason"], "error_class": cut.get("error_class"),
-                     "elapsed_seconds": perf_counter()-preflight_begin, "scope": "default"})
-            require(cut["pointer"] == pointer and cut["verification_level"] == VERIFICATION_LEVEL,
-                    "BROWSER_PREFLIGHT_CUT_OR_VERIFICATION_MISMATCH")
-            require_native_large_cut(cut, catalog_count=catalog_count, observation_count=observation_count)
-            planner = shadow_rows(projection, "opportunities")
-            require(planner.state == "AVAILABLE" and planner.total == 2*catalog_count, "PLANNER_DENOMINATOR_INCOMPLETE")
-        require(not store.errors, "SOURCE_SNAPSHOT_REJECTED")
-        preflight_begin = perf_counter()
-        with Store(database, now=cut_at) as store:
-            scoped_projection = Projection(store, {"family": last_identity[1]})
-            scoped_cut = scoped_projection.shadow
-            require(scoped_cut["state"] == "COMMITTED_COHERENT_SHADOW", "PROJECTED_CUT_UNAVAILABLE",
-                    {"state": scoped_cut["state"], "reason": scoped_cut["reason"], "error_class": scoped_cut.get("error_class"),
-                     "elapsed_seconds": perf_counter()-preflight_begin, "scope": "family"})
-            scoped = scoped_projection.funnel_scope
-            require(scoped_cut["pointer"] == pointer, "SCOPED_PREFLIGHT_CHANGED_CUT")
-            require(scoped["state"] == "AVAILABLE" and scoped["total_groups"] >= 2*catalog_count,
-                    "COMPLETE_COHORT_POPULATION_UNAVAILABLE")
-        require(not store.errors, "SOURCE_SNAPSHOT_REJECTED")
-
+    browser_requests, renders = [], []
+    with ProductClient(product_python or sys.executable, index=index, diagnostic=diagnostic,
+                       python_version=product_python_version, diagnostic_deadline=diagnostic_deadline) as product:
+        if client_sink is not None:
+            client_sink.append(product)
+        preflight = product.request("initialize", mode="LARGE", database=str(database), root=str(root))
+        pointer, cut_at = preflight["pointer"], preflight["source_cut"]
+        CANONICAL_PATHS, LEGACY = preflight["canonical_paths"], preflight["legacy"]
+        VERIFICATION_LEVEL = preflight["verification_level"]
+        catalog_count, observation_count = preflight["catalog_full_identities"], preflight["observations"]
+        last_identity, total_groups = preflight["last_identity"], preflight["funnel_groups"]
         # Import/launch occurs only after the large/OPEN gates passed. Small
         # self-tests can prove rejection without starting a browser or writer.
         from playwright.sync_api import sync_playwright
@@ -123,16 +61,24 @@ def run(database, root, output):
                         route.fulfill(status=204)
                         return
                     params = {key: values[-1] for key, values in parse_qs(parts.query).items()}
-                    begin = perf_counter()
-                    begin_cpu = process_time()
-                    html, headers = build_page(parts.path, params, database, now=cut_at)
-                    elapsed = perf_counter()-begin
+                    try:
+                        response = product.render(parts.path, params)
+                    except GateFailure as failure:
+                        findings.append({"gate": str(failure), "path": parts.path, "filters": params,
+                            "width": page.viewport_size["width"], "details": failure.details})
+                        route.fulfill(status=503, content_type="text/html", body="Native request rejected.")
+                        return
+                    html, headers = response["html"], response["headers"]
+                    require(response["pointer"] == pointer and response["source_cut"] == cut_at, "RENDER_CHANGED_COMMITTED_CUT")
+                    elapsed = response["request_wall_seconds_including_ipc_html_json"]
                     record = {"path": parts.path, "filters": params, "width": page.viewport_size["width"],
-                              "elapsed_seconds": elapsed, "html_bytes": len(html.encode()),
-                              "process_cpu_seconds": process_time()-begin_cpu,
+                              "elapsed_seconds": elapsed, "html_bytes": response["html_bytes"],
+                              "response_json_bytes": response["response_json_bytes"],
+                              "native_elapsed_seconds": response["native_elapsed_seconds"],
+                              "process_cpu_seconds": response["native_process_cpu_seconds"],
                               "queries": int(headers["X-Porota-Read-Queries"]), "server_timing": headers["Server-Timing"]}
                     renders.append(record)
-                    if elapsed > 1 or record["html_bytes"] >= 4*1024**2:
+                    if elapsed > 1 or max(record["html_bytes"], record["response_json_bytes"]) >= 4*1024**2:
                         findings.append({"gate": "RENDER_EXCEEDS_REQUEST_BUDGET", **record})
                     if any(reason in html for reason in ("SOURCE_SNAPSHOT_REJECTED", "COMMITTED_PROJECTION_REJECTED",
                             "COMMITTED_GENERATION_REJECTED", "PROJECTED_NATIVE_ROW_CONTRACT_REJECTED",
@@ -207,7 +153,7 @@ def run(database, root, output):
                         "COHORT_PAGE_CHANGED_SELECTED_AGGREGATES")
                 require(page.locator("nav[aria-label='Grupos del embudo'] a[href*='cohort=']").first.get_attribute("href") != first_group,
                         "COHORT_PAGES_OVERLAP")
-                page.goto("http://terminal.test/en-vivo?"+urlencode({**family_query, "funnel_offset": scoped["total_groups"]-10}))
+                page.goto("http://terminal.test/en-vivo?"+urlencode({**family_query, "funnel_offset": total_groups-10}))
                 require(page.locator("ol.funnel").inner_text() == first_counts, "LAST_COHORT_PAGE_CHANGED_SELECTED_AGGREGATES")
                 page.locator("nav[aria-label='Grupos del embudo'] a[href*='cohort=']").last.click()
                 require("cohort=" in page.url and "funnel_offset=" not in page.url and
@@ -218,25 +164,39 @@ def run(database, root, output):
                 require(VERIFICATION_LEVEL in page.locator(".data-panel .source-line").inner_text(), "FALSE_BROWSER_VERIFICATION_SCOPE")
                 require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings,
                         "canonical_viewport_checks_completed": checks, "renders_measured": renders})
+            except Exception:
+                if findings:
+                    raise GateFailure("BROWSER_RENDER_FAILED", {"findings": findings,
+                        "canonical_viewport_checks_completed": checks, "renders_measured": renders})
+                raise
             finally:
                 browser.close()
-    after = custody_inventory(database, root)
-    require(before == after, "SOURCE_OR_CUSTODY_MUTATED")
-    require(not network and "SOURCE_BLOCKED" not in source_calls, "NETWORK_OR_SOURCE_SQLITE_ATTEMPTED")
+    native_proof = product.finish_receipt
+    closure, unexpected = imported_source(product.root, product.source_before)
+    require(not unexpected and all(row["matches_archived_blob"] for row in closure), "DRIVER_SOURCE_IMPORT_PROOF_FAILED")
+    require(not any(name.startswith(("rc6_trader_dashboard", "rc6_shadow_runtime", "be_paper_engine",
+        "rc6_paper_family_lifecycle")) for name in sys.modules), "DRIVER_EXECUTED_PRODUCT_MODULE")
     return {"schema": "rc6.dashboard-native-large-browser-proof.v1", "status": "GREEN",
         "recorded_at": datetime.now(timezone.utc).isoformat(), "runner_source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        "pointer": pointer, "source_cut": cut_at.isoformat(), "native_generation_roles": sorted(manifest["files"]),
-        "verification_level": VERIFICATION_LEVEL, "custody": cut["export_contract"]["custody"],
-        "catalog_full_identities": catalog_count, "observations": observation_count, "planner_rows": planner.total,
-        "funnel_groups": scoped["total_groups"], "widths": widths, "canonical_viewport_checks": checks,
+        "pointer": pointer, "source_cut": cut_at, "native_generation_roles": preflight["native_generation_roles"],
+        "verification_level": VERIFICATION_LEVEL, "custody": preflight["custody"],
+        "catalog_full_identities": catalog_count, "observations": observation_count, "planner_rows": preflight["planner_rows"],
+        "funnel_groups": total_groups, "widths": widths, "canonical_viewport_checks": checks,
         "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs",
             "interaction during outstanding read", "auto refresh pause", "menu Escape", "cohort pagination and final selection", "last catalog identity"],
         "network_attempts": 0, "provider_requests": 0, "source_sqlite_opens": 0,
-        "source_custody_inventory_unchanged": True, "source_inventory": before, "renders": renders}
+        "source_custody_inventory_unchanged": True, "source_inventory": native_proof["custody_inventory_before"], "renders": renders,
+        "product_proof": native_proof, "product_environment": product.product_environment,
+        "driver_environment": product.driver_environment, "driver_imported_source": closure,
+        "tracked_source_hashes_and_modes_unchanged": product.source_before == product.source_after,
+        "request_timing_scope": "DRIVER_ROUNDTRIP_INCLUDES_IPC_NATIVE_SNAPSHOT_RENDER_HTML_JSON"}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--product-python", type=Path, required=True)
+    parser.add_argument("--product-python-version", choices=("3.11", "3.12"), default="3.11")
+    parser.add_argument("--index", type=Path, required=True)
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -247,7 +207,8 @@ if __name__ == "__main__":
             or args.output.exists()):
         parser.error("Output must be a new directory outside the database, sidecars and SHADOW custody")
     try:
-        result = run(args.database, args.root, args.output)
+        result = run(args.database, args.root, args.output, product_python=args.product_python,
+                     index=args.index, product_python_version=args.product_python_version)
     except Exception as error:
         result = {"schema": "rc6.dashboard-native-large-browser-proof.v1", "status": "RED",
             "recorded_at": datetime.now(timezone.utc).isoformat(), "error_class": type(error).__name__,
