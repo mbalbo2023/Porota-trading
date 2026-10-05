@@ -135,6 +135,17 @@ el RED, los 1380 hashes de fuente y los 15 miembros de custodia intactos en
 `native-large-intermediate-40f-local-receipt.json`. No se declara browser GREEN,
 294 checks ni freeze raíz final a partir de ese viewport parcial.
 
+El solapamiento por solicitud `4c92a002` se midió después en el archivo intermedio
+íntegro `88df8503`, con las mismas dependencias canónicas y el mismo OPEN sequence
+2. El lector pasó sus doce solicitudes con máximo 0,878393 s. Chromium completó
+55 comprobaciones canónicas y registró 57 renders antes de rechazar
+`/en-vivo/capacidad` a 1280 px: 1,014564 s de pared y 1,737568 s de CPU del proceso.
+La traza conserva CPU y pared de todos esos renders; el cuerpo vencido fue
+descartado. Los 1391 archivos y 15 miembros de DB/custodia permanecieron
+idénticos, con cero aperturas SQLite fuente y cero red. El receipt
+`native-large-request-overlap-local-receipt.json` conserva ese nuevo RED y los
+anteriores. Esta mejora medida todavía no completa el gate grande.
+
 El gate grande sigue abierto hasta obtener navegación y render completos dentro
 de ≤4 MiB por solicitud y ≤1 s. Los tiempos del fixture pequeño y el deadline
 de falla no prueban esa capacidad. La validación

@@ -57,12 +57,14 @@
         "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.",
-        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
       ]
     },
     {
@@ -143,12 +145,14 @@
         "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.",
-        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
       ]
     },
     {
@@ -256,7 +260,8 @@
         "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
       ],
       "pending_gates": [
         "Browser grande:40f mejora reader(max0.811644s), pero af71ff9e intermedio falla1.181601s en1280/trading/equity-spot tras49views1440GREEN. Corregir costo, ejecutar49×6/22/interacciones sin aumentar1s.",
@@ -268,7 +273,8 @@
         "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales.",
         "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados.",
         "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN.",
-        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
       ]
     },
     {
