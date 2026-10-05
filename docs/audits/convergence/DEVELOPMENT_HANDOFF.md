@@ -525,3 +525,11 @@ permanecen dentro de límites. GC/deadlines/cuotas intactos, sin sampler. RAW
 byteexactos/lossless en evidence/native-big-9d32d326-157; imports no auditados
 por ese wrapper externo no se declaran verificados. Continúa RCA sólo de
 fuente para mejora material, sin nueva atribución del SIGSEGV previo.
+
+El original UX65PASS/7ERROR de6d2a9 quedó preservado lossless en
+docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311.
+Incluye XML/log/start/receipt/preflight/índice1776/rawcommit/driver exactos,
+sin atribuirlo al nuevo productor PREPARED_SMALL ni al ROOT actual. Los7errores
+son setup20s antes del render1s; la etapa interna del productor no aparece en
+el RAW original. Health10PASS no convierte la tranche en GREEN;312/Chrome/BIG
+no se lanzaron. El Sourcefix del productor separado permanece en revisión.

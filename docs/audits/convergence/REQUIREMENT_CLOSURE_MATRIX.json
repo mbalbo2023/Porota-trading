@@ -12569,6 +12569,174 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/README.md": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311-original-failure-summary.json": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311-receipt.json.gz": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311-started.json.gz": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311.stderr": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311.stdout.gz": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/family-health-311.xml.gz": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/functional-run.py": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/manifest.json": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/preparation.json": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/source.commit.raw": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/family-health-original-6d2a9f14-311/source.index.json.gz": {
+      "reason": "Preserve ten exact original Source6d2a9/frozen311157 XML/stdout/stderr/start/receipt/preflight/full1776-file index/rawcommit/driver/failure-summary records losslessly with both compressed and original hashes. One72-case functional execution is65PASS/7ERROR with zero skip/failure: original55 plus10health controls passed, while7 family cases share initialize20s setup timeout before their consumer1s renders. Original internal producer stage was not observed, so no specific capture/GC/fastpath cause is asserted. All Source Git bytes/modes/blobs stayed unchanged and children are gone.312/Chrome/BIG were not started; no overallGREEN or attribution to new prepared producer/currentRoot source.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "U24",
+        "U29",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/funnel-pagination-native.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
