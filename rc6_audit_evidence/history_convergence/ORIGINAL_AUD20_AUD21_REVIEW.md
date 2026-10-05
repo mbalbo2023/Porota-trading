@@ -19,7 +19,10 @@ archive's actual adapter, sink, `HistoricalStore`, and native schema initializer
 Only the provider seam is synthetic. There is no probe DDL, source overlay,
 runtime database, provider network call or financial route. Repository imports,
 complete archive member hashes, and extracted source inventories are bound in
-the replay receipt. Extended original NaN/Infinity JSON bytes are retained
+the replay receipt. SQLite permits only memory or the explicitly created,
+ephemeral fixture directory; every connection attempt is recorded. Empty,
+URI and other filesystem paths are rejected before SQLite opens them.
+Extended original NaN/Infinity JSON bytes are retained
 literally as `.json.source`; interpreted observations use explicit nonfinite
 tags in the strict JSON binder and new replay.
 

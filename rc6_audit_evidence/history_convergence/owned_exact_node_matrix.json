@@ -525,9 +525,9 @@
       ],
       "extra": {
         "original_native_replay": {
-          "bytes": 556210,
+          "bytes": 560184,
           "path": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json",
-          "sha256": "8503bf64c103d6d12c119432c1f38e0ebd72ddaea6e9f18613cbc1f1774933bf"
+          "sha256": "4bd873ecd92be5fe599fc545a7d56817cd4117490a03966027d4304f2997c1b9"
         },
         "original_prior_evidence_binding": "rc6_audit_evidence/history_convergence/original_prior_evidence_binding.json#findings.AUD-468-20",
         "original_prior_evidence_status": "SPECIFIC_PRIOR_NATIVE_VALIDATION_RED_CONFIRMED_WITH_CLAUSE_SPECIFIC_SUCCESSFUL_CONTROLS"

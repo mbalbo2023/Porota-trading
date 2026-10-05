@@ -699,12 +699,13 @@
       "tests/test_rc6_shadow_preopen_runtime.py": "b62f9a1f0706e5de7b51d1c2f69f96f7edf7408147e201393e24e77ebf0492a6",
       "tests/test_rc6_sqlite_disk_scratch.py": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a"
     },
-    "owner_code_base_sha": "2022bf94296f609fe1d84d3ed05efbee79559c37",
+    "owner_code_base_sha": "6feeb5efa0dac96426d0bdb39c9a9395feded845",
     "scope": "SOURCE_HASH_COMPARISON_ONLY; NOT_A_NEW_CI_OR_RUNTIME_EXECUTION"
   },
   "native_replay": {
     "alien_repo_modules": {},
     "all_imported_file_origins_bound_in_receipt": true,
+    "all_sqlite_attempts_authorized_ephemeral_fixture_or_memory": true,
     "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
     "classified_observed_cases": {
       "H_DATA912_VALIDATION": {
@@ -806,16 +807,24 @@
       "scope": "INTERMEDIATE_RUNNER_VERSION; NOT_THE_FINAL_RUNNER_BINDING; NOT_ADDED_TO_EXECUTION_COUNTS",
       "sha256": "adb91255e9bc91abdb594fb23f76f2f7e28c9c91391d5175f9740fd680ad61ee"
     },
-    "provider_seam": "FakeClient replaces native _session only; transport/normalizer/sink and installed requests dependency are real",
-    "receipt": {
-      "bytes": 556210,
+    "previous_published_replay": {
+      "commit": "6feeb5efa0dac96426d0bdb39c9a9395feded845",
+      "completed_native_invocations": 16,
       "path": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json",
+      "scope": "SUPERSEDED_RUNNER_BEFORE_EXPLICIT_SQLITE_FIXTURE_ONLY_GUARD; RETAINED_IN_GIT_COMMIT; NOT_ADDED_TO_PYTEST_SCENARIO_COUNTS",
       "sha256": "8503bf64c103d6d12c119432c1f38e0ebd72ddaea6e9f18613cbc1f1774933bf"
     },
+    "provider_seam": "FakeClient replaces native _session only; transport/normalizer/sink and installed requests dependency are real",
+    "receipt": {
+      "bytes": 560184,
+      "path": "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json",
+      "sha256": "4bd873ecd92be5fe599fc545a7d56817cd4117490a03966027d4304f2997c1b9"
+    },
+    "replay_execution_lineage_scope": "Three runner executions recorded: 16 invocations each, 48 execution invocations total, with this final receipt describing 16. Repeated invocations are not additional distinct scenarios, requirement IDs or pytest guard nodes.",
     "runner": {
-      "bytes": 14396,
+      "bytes": 15265,
       "path": "rc6_audit_evidence/history_convergence/probes/original_data912_archive_probe.py",
-      "sha256": "c6daafd88395ed9b7265e08b842fcb4afb0a7ef820ebeaeb1de38b7132f72efd"
+      "sha256": "af04e89a6d34f9c39c4aeb265e5fc28fa91901000e4eec8641e1fd9e3c1b442a"
     },
     "source_files_verified": 1109,
     "source_fixture_databases": "EPHEMERAL_OUTSIDE_SOURCE_ARCHIVE; NATIVE_INITIALIZERS_ONLY; NO_PROBE_DDL_OR_CODE_OVERLAY",
@@ -825,6 +834,8 @@
     "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
     "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
     "source_unchanged": true,
+    "sqlite_connection_attempts": 30,
+    "sqlite_connection_scope": "ONLY_IN_MEMORY_OR_EXPLICIT_EPHEMERAL_FIXTURE_ROOT; SOURCE_AND_RUNTIME_PATHS_FORBIDDEN",
     "unchanged_original_driver": {
       "bytes": 26816,
       "path": "rc6_audit_evidence/history_convergence/original_issue468/adversarial_harness.py.source",

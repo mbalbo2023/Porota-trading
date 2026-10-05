@@ -268,7 +268,7 @@
   "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
   "complete_archive_member_bytes_verified": true,
   "current_full_history_coverage": "NO_VERIFICADO",
-  "finished_at": "2026-10-05T07:52:18.360921+00:00",
+  "finished_at": "2026-10-05T07:58:38.328119+00:00",
   "harness_errors": [],
   "imported_repo_modules": {
     "ak_byma_calendar": {
@@ -518,7 +518,7 @@
           "canonical_updates": 0,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.102169+00:00",
+          "finished_at": "2026-10-05T07:58:38.255269+00:00",
           "ok": false,
           "protected_rows": 0,
           "results": [
@@ -535,7 +535,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.102078+00:00",
+          "started_at": "2026-10-05T07:58:38.255227+00:00",
           "successful": 0,
           "versions_appended": 0,
           "without_history": 1
@@ -559,7 +559,7 @@
             "instrument_type": "ACCIONES",
             "low": 98.0,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.042143+00:00",
+            "observed_at": "2026-10-05T07:58:38.242197+00:00",
             "open": 100.0,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -573,7 +573,7 @@
           "canonical_updates": 1,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.044213+00:00",
+          "finished_at": "2026-10-05T07:58:38.243037+00:00",
           "ok": true,
           "protected_rows": 0,
           "results": [
@@ -590,7 +590,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.038110+00:00",
+          "started_at": "2026-10-05T07:58:38.241602+00:00",
           "successful": 1,
           "versions_appended": 1,
           "without_history": 0
@@ -619,7 +619,7 @@
           "canonical_updates": 0,
           "execution_allowed": false,
           "failed": 1,
-          "finished_at": "2026-10-05T07:52:18.061758+00:00",
+          "finished_at": "2026-10-05T07:58:38.248039+00:00",
           "ok": false,
           "protected_rows": 0,
           "results": [
@@ -638,7 +638,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.061637+00:00",
+          "started_at": "2026-10-05T07:58:38.247637+00:00",
           "successful": 0,
           "versions_appended": 0,
           "without_history": 0
@@ -673,7 +673,7 @@
             "instrument_type": "ACCIONES",
             "low": null,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.045323+00:00",
+            "observed_at": "2026-10-05T07:58:38.244004+00:00",
             "open": null,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -687,7 +687,7 @@
           "canonical_updates": 1,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.047235+00:00",
+          "finished_at": "2026-10-05T07:58:38.244736+00:00",
           "ok": true,
           "protected_rows": 0,
           "results": [
@@ -704,7 +704,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.045281+00:00",
+          "started_at": "2026-10-05T07:58:38.243963+00:00",
           "successful": 1,
           "versions_appended": 1,
           "without_history": 0
@@ -732,7 +732,7 @@
           "canonical_updates": 0,
           "execution_allowed": false,
           "failed": 1,
-          "finished_at": "2026-10-05T07:52:18.053146+00:00",
+          "finished_at": "2026-10-05T07:58:38.246632+00:00",
           "ok": false,
           "protected_rows": 0,
           "results": [
@@ -751,7 +751,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.048533+00:00",
+          "started_at": "2026-10-05T07:58:38.245731+00:00",
           "successful": 0,
           "versions_appended": 0,
           "without_history": 0
@@ -784,7 +784,7 @@
             "instrument_type": "ACCIONES",
             "low": 98.0,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.062940+00:00",
+            "observed_at": "2026-10-05T07:58:38.249228+00:00",
             "open": null,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -798,7 +798,7 @@
           "canonical_updates": 1,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.066696+00:00",
+          "finished_at": "2026-10-05T07:58:38.250658+00:00",
           "ok": true,
           "protected_rows": 0,
           "results": [
@@ -815,7 +815,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.062890+00:00",
+          "started_at": "2026-10-05T07:58:38.249188+00:00",
           "successful": 1,
           "versions_appended": 1,
           "without_history": 0
@@ -848,7 +848,7 @@
             "instrument_type": "ACCIONES",
             "low": 98.0,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.035506+00:00",
+            "observed_at": "2026-10-05T07:58:38.239353+00:00",
             "open": 100.0,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -862,7 +862,7 @@
           "canonical_updates": 1,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.037111+00:00",
+          "finished_at": "2026-10-05T07:58:38.240426+00:00",
           "ok": true,
           "protected_rows": 0,
           "results": [
@@ -879,7 +879,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.035450+00:00",
+          "started_at": "2026-10-05T07:58:38.239166+00:00",
           "successful": 1,
           "versions_appended": 1,
           "without_history": 0
@@ -912,7 +912,7 @@
             "instrument_type": "ACCIONES",
             "low": 98.0,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.082121+00:00",
+            "observed_at": "2026-10-05T07:58:38.252293+00:00",
             "open": 100.0,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -929,7 +929,7 @@
             "instrument_type": "ACCIONES",
             "low": 98.0,
             "market": "BYMA",
-            "observed_at": "2026-10-05T07:52:18.082121+00:00",
+            "observed_at": "2026-10-05T07:58:38.252293+00:00",
             "open": 100.0,
             "settlement": "A-24HS",
             "source": "DATA912_POROTA_BATCH",
@@ -943,7 +943,7 @@
           "canonical_updates": 2,
           "execution_allowed": false,
           "failed": 0,
-          "finished_at": "2026-10-05T07:52:18.091765+00:00",
+          "finished_at": "2026-10-05T07:58:38.253964+00:00",
           "ok": true,
           "protected_rows": 0,
           "results": [
@@ -960,7 +960,7 @@
           ],
           "selected": 1,
           "source": "DATA912_HISTORICAL_BATCH_V2",
-          "started_at": "2026-10-05T07:52:18.082057+00:00",
+          "started_at": "2026-10-05T07:58:38.252246+00:00",
           "successful": 1,
           "versions_appended": 2,
           "without_history": 0
@@ -990,7 +990,7 @@
       }
     }
   },
-  "runner_sha256": "c6daafd88395ed9b7265e08b842fcb4afb0a7ef820ebeaeb1de38b7132f72efd",
+  "runner_sha256": "af04e89a6d34f9c39c4aeb265e5fc28fa91901000e4eec8641e1fd9e3c1b442a",
   "runtime_verified": false,
   "schema": "rc6.original-history-data912-archive-replay.v1",
   "scope": "INDEPENDENT_OFFLINE_ORIGINAL_SOURCE_NATIVE_REPLAY; NOT_CURRENT_PROVIDER_OR_RUNTIME_AUTHORITY",
@@ -14316,6 +14316,159 @@
   "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
   "source_unchanged": true,
   "sqlite": "3.53.1",
-  "started_at": "2026-10-05T07:52:17.860053+00:00",
+  "sqlite_connection_attempts": [
+    {
+      "authorized": true,
+      "fixture_file": "valid_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "infinite_close_only.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "infinite_close_only.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "infinite_close_only.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "infinite_close_only.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "nan_close.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "nan_close.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "nan_close.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "nan_close.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "inconsistent_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "inconsistent_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "partial_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "partial_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "partial_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "partial_ohlc.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "valid_plus_future.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "empty_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    },
+    {
+      "authorized": true,
+      "fixture_file": "empty_control.sqlite",
+      "scope": "EPHEMERAL_NATIVE_FIXTURE"
+    }
+  ],
+  "sqlite_connection_scope": "ONLY_IN_MEMORY_OR_EXPLICIT_EPHEMERAL_FIXTURE_ROOT; SOURCE_AND_RUNTIME_PATHS_FORBIDDEN",
+  "started_at": "2026-10-05T07:58:38.111318+00:00",
   "unchanged_original_d912_bad_definition_sha256": "3b32778253bd116536e17ca1fcbfe574aa4ab0c69b13711da4aa3295815286ab"
 }

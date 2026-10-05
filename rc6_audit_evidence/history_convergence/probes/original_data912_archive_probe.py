@@ -22,7 +22,6 @@ import sys
 import tarfile
 import tempfile
 import traceback
-from urllib.parse import unquote
 import zipfile
 
 
@@ -119,13 +118,22 @@ def main():
     socket.create_connection = socket.socket.connect = socket.socket.connect_ex = deny
     socket.getaddrinfo = deny
     native_sqlite_connect = sqlite3.connect
+    sqlite_fixture_root = None
+    sqlite_attempts = []
 
     def guarded_connect(database, *arguments, **options):
-        if isinstance(database, (str, os.PathLike)) and str(database) not in {"", ":memory:"}:
-            text = str(database)
-            if text.startswith("file:"):
-                text = unquote(text[5:].split("?", 1)[0])
-            assert not Path(text).resolve().is_relative_to(root), "SOURCE_ARCHIVE_SQLITE_WRITE_FORBIDDEN"
+        assert isinstance(database, (str, bytes, os.PathLike)), "OFFLINE_SQLITE_PATH_TYPE_FORBIDDEN"
+        text = os.fsdecode(database)
+        if text == ":memory:":
+            sqlite_attempts.append({"scope": "IN_MEMORY", "authorized": True})
+        else:
+            path = Path(text).resolve()
+            allowed = (bool(text) and not text.startswith("file:") and
+                       sqlite_fixture_root is not None and path.is_relative_to(sqlite_fixture_root))
+            sqlite_attempts.append({"scope": "EPHEMERAL_NATIVE_FIXTURE" if allowed else "FORBIDDEN_NONFIXTURE_PATH",
+                "fixture_file": str(path.relative_to(sqlite_fixture_root)) if allowed else None,
+                "authorized": bool(allowed)})
+            assert allowed, "OFFLINE_SQLITE_OUTSIDE_AUTHORIZED_FIXTURE_FORBIDDEN"
         return native_sqlite_connect(database, *arguments, **options)
 
     sqlite3.connect = guarded_connect
@@ -202,6 +210,7 @@ def main():
             record("NATIVE_PROVIDER:" + kind, provider_case)
 
         with tempfile.TemporaryDirectory(prefix="rc6-original-history-fixtures-") as directory:
+            sqlite_fixture_root = Path(directory).resolve(strict=True)
             original_session = data912._session
             try:
                 payloads = {"valid_control": [valid],
@@ -232,6 +241,7 @@ def main():
                     record("NATIVE_SINK:" + name, sink_case)
             finally:
                 data912._session = original_session
+                sqlite_fixture_root = None
     finally:
         data912.time.sleep = original_sleep
 
@@ -253,7 +263,8 @@ def main():
             alien[name] = str(path)
     after = {name: sha(root / name) for name in expected}
     after_members = members(root)
-    assert not network_attempts and not alien and before == after and before_members == after_members
+    assert (not network_attempts and not alien and before == after and before_members == after_members
+            and all(item["authorized"] for item in sqlite_attempts))
     receipt = {"schema": "rc6.original-history-data912-archive-replay.v1",
         "scope": "INDEPENDENT_OFFLINE_ORIGINAL_SOURCE_NATIVE_REPLAY; NOT_CURRENT_PROVIDER_OR_RUNTIME_AUTHORITY",
         "source_sha": index["source_sha"], "source_tree": index["source_tree"],
@@ -266,6 +277,8 @@ def main():
         "started_at": started, "finished_at": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(), "sqlite": sqlite3.sqlite_version,
         "requests_version": requests.__version__, "network_attempts": network_attempts,
+        "sqlite_connection_attempts": sqlite_attempts,
+        "sqlite_connection_scope": "ONLY_IN_MEMORY_OR_EXPLICIT_EPHEMERAL_FIXTURE_ROOT; SOURCE_AND_RUNTIME_PATHS_FORBIDDEN",
         "source_files_before": before, "source_files_after": after,
         "source_member_inventory_before": before_members, "source_member_inventory_after": after_members,
         "source_unchanged": before == after and before_members == after_members,
