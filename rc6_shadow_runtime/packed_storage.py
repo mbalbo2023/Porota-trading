@@ -381,6 +381,10 @@ class _CaptureBuilder:
                 child = value[key]
                 if _root_volatile(key):
                     buffer.bind(self._binding_scalar(child))
+                elif type(child) in (type(None), bool, int, float, str):
+                    # This is the same terminal token as the recursive path.
+                    # Keep every buffer append/cut and the existing typed cache.
+                    buffer.append(self._scalar(child))
                 else:
                     self._append(child, key, buffer)
             buffer.append(b"}")
@@ -389,7 +393,10 @@ class _CaptureBuilder:
             for ordinal, child in enumerate(value):
                 if ordinal:
                     buffer.append(b",")
-                self._append(child, name, buffer)
+                if type(child) in (type(None), bool, int, float, str):
+                    buffer.append(self._scalar(child))
+                else:
+                    self._append(child, name, buffer)
             buffer.append(b"]")
         else:
             buffer.append(self._scalar(value))
