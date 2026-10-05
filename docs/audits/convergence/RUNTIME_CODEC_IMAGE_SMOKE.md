@@ -81,6 +81,50 @@ replacement-ref rejection run before and after. Generic source-format fixtures
 without this versioned handoff receive `NOT_APPLICABLE`; they never claim final
 convergence or governed execution.
 
+Gov's exclusion list must also equal the original governed policy exactly. The
+binder reads the candidate's committed handoff with raw Git, checks its source
+row and the verifier's immutable original digest, and derives PR466's source
+SHA/tree and matrix blob from that handoff. It validates the original matrix's
+Git mode/blob, bounded size, raw blob-object hash and SHA256. It obtains the
+list from `docs/audits/ISSUE465_REAUDIT.json` at that original source, rather
+than from Gov itself or an evolved candidate matrix. The returned receipt
+binds this original policy authority and contains its exact exclusion list.
+
+The original matrix is source `c27dfd963c4fe83465c0f2105347e974fbbe6356`,
+tree `bf3cf193434641aa89e4c746b26c77aec5d1d2b2`, mode100644, Git blob
+`c6046d306c31df9eae6e80cac05d77b1b4364aef`, 221873 bytes, SHA256
+`e5a991729eadbf6f2673f90cfdf6ebe0e4d17492f1da6a89417bfd31860bb16c`.
+These recorded values explain the source evidence; the exclusion list is
+derived from the verified Git bytes at execution and is not hardcoded.
+
+The additional missing-comparison finding was identified by read-only source
+review. It is not a demonstrated bypass of an old full artifact. New native
+controls change only Gov's exclusions to empty, extra, another path, or a
+duplicate while retaining the raw FIP and JUnit bytes. An exact original
+policy control passes the comparator while its deliberately self-asserted FIP
+still fails full recomputation. Coordinated handoff rebinding, wrong source
+digest and Git replacement refs also fail. Earlier 140/202 receipts retain
+their historical scope and do not attest this later source change.
+
+The exclusion follow-up focal passed 107/107 cases in 17.664 seconds, with zero
+failures, errors or skips: `/tmp/porota-sre-governed-exclusion-authority-native.xml`,
+SHA256 `a70b4fabe1d14b58806681e2d039285dc3c8b2e3779b912e9a52a2f8692429ba`.
+It uses the complete root `071be607` source as its base and changes no workflow.
+This is a native source/policy guard receipt; it grants no final artifact,
+Docker execution, material-capacity closure or runtime approval.
+
+That checkout initially inherited umask077, so some source files had physical
+mode0600 although their Git modes were100644. The 107-case test fixtures
+explicitly normalized their private candidates to0644; the recorded source
+snapshot retains its actual physical modes. All 1523 tracked worktree files
+were subsequently normalized to their Git modes without changing bytes.
+The eight new controls then passed again in 4.756 seconds with the canonical
+physical modes, zero skips/errors/failures:
+`/tmp/porota-sre-governed-exclusion-canonical-eight.xml`, SHA256
+`e1d2dab3ed1ab33dfe27e11e5aa01803e46eec3b51e45513d9d1c40c82340a05`.
+The JSON records the exact 107-case and 8-case commands separately; neither
+receipt is relabeled as a final artifact or a governed whole-repository run.
+
 `porota_published_artifact_evidence.py` downloads the exact immutable primary,
 verifies it, loads its saved image, and rejects any actual loaded-ID mismatch
 before executing containers. It runs the same CLI again on that loaded ID with

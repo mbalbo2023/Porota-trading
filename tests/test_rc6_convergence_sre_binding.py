@@ -21,11 +21,12 @@ from scripts.porota_predeploy_binding import (
     REQUIRED_FILES, REPOSITORY, TRAILERS, WORKFLOW_PATH,
     CONVERGENCE_HANDOFF, CONVERGENCE_VERIFIER,
     artifact_name, parse_merge_approval, safe_extract, validate_binding, verify_frozen_payload,
-    verify_final_input_provenance,
+    verify_final_input_provenance, verify_governed_exclusions,
 )
 from scripts.porota_artifact_provenance import canonical_bytes, create_source_manifest, sha256_file
 from scripts.porota_build_deploy_bundle_v2 import build_bundle
 from scripts import rc6_archive_v3_image_smoke as codec_smoke
+from scripts import rc6_convergence_provenance as convergence_verifier
 from tests.test_rc6_archive_v3_image_smoke import synthetic_receipt
 from scripts.porota_host_manifest_v2 import build_manifest
 from scripts.porota_host_policy_v2 import validate_policy
@@ -247,6 +248,102 @@ def test_self_asserted_green_final_fip_must_recompute_actual_original_git_closur
     c, output, frozen, source, _fip, _gov = self_asserted_final_receipts
     with pytest.raises(ValueError, match="GIT_SOURCE_UNAVAILABLE|ORIGINAL_INPUT"):
         verify_final_input_provenance(c["repo"], output, frozen, source)
+
+
+@pytest.fixture
+def original_governed_exclusion_receipts(self_asserted_final_receipts):
+    """Native original Git policy; other final-closure metadata remains attack-only."""
+    c, output, frozen, _source, fip, gov = self_asserted_final_receipts
+    root = Path(__file__).resolve().parents[1]
+    original_handoff = subprocess.check_output(
+        ["git", "--no-replace-objects", "-C", str(root), "show", "HEAD:" + CONVERGENCE_HANDOFF])
+    manifest = json.loads(original_handoff)
+    anchor = next(row["head_sha"] for row in manifest["sources"] if row["pr"] == 466)
+    original_matrix = subprocess.check_output(
+        ["git", "--no-replace-objects", "-C", str(root), "show",
+         anchor + ":" + convergence_verifier.PRIOR_AUDIT_MATRIX])
+    # Private Git uses the existing read-only object pool, never fabricating an
+    # original commit or fetching from a network. Candidate writes stay private.
+    objects = subprocess.check_output(
+        ["git", "--no-replace-objects", "-C", str(root), "rev-parse", "--git-path", "objects"],
+        text=True).strip()
+    objects = (root / objects).resolve()
+    write(c["repo"], ".git/objects/info/alternates", (str(objects) + "\n").encode())
+    write(c["repo"], CONVERGENCE_HANDOFF, original_handoff)
+    # A conflicting evolved candidate matrix cannot change the original policy.
+    write(c["repo"], convergence_verifier.PRIOR_AUDIT_MATRIX,
+          b'{"governed_exclusions":[],"fixture":"ATTACK_EVOLVED_CANDIDATE_POLICY"}\n')
+    git(c["repo"], "add", "."); git(c["repo"], "commit", "-qm", "private original exclusion authority fixture")
+    source = create_source_manifest(c["repo"])
+    (output / "porota-source-provenance.json").write_bytes(canonical_bytes(source))
+    frozen.update(candidate_sha=source["candidate_sha"], candidate_tree_sha=source["candidate_tree_sha"],
+                  source_manifest_sha256=sha256_file(output / "porota-source-provenance.json"))
+    fip.update(candidate_sha=source["candidate_sha"], candidate_tree=source["candidate_tree_sha"])
+    gov.update(candidate_sha=source["candidate_sha"], candidate_tree=source["candidate_tree_sha"],
+               exclusions=json.loads(original_matrix)["governed_exclusions"])
+    for name, report in (("porota-final-input-provenance.json", fip), ("porota-governed-tests.json", gov)):
+        (output / name).write_bytes(canonical_bytes(report))
+    frozen["final_input_provenance_sha256"] = sha256_file(output / "porota-final-input-provenance.json")
+    return c, output, frozen, source, fip, gov, original_matrix
+
+
+def test_governed_exclusion_control_uses_exact_original_git_blob_and_ignores_evolved_candidate_policy(original_governed_exclusion_receipts):
+    c, output, frozen, source, _fip, gov, original_matrix = original_governed_exclusion_receipts
+    captured = {name: (output / name).read_bytes() for name in (
+        "porota-final-input-provenance.json", "porota-governed-tests.xml", "porota-governed-tests.json")}
+    verified = verify_governed_exclusions(c["repo"], frozen["candidate_sha"], source,
+                                          convergence_verifier, gov["exclusions"])
+    assert verified["source_pr"] == 466
+    assert verified["source_blob"] == hashlib.sha1(
+        b"blob " + str(len(original_matrix)).encode() + b"\0" + original_matrix).hexdigest()
+    assert verified["raw_matrix_sha256"] == hashlib.sha256(original_matrix).hexdigest()
+    assert verified["governed_exclusions"] == json.loads(original_matrix)["governed_exclusions"]
+    assert verified["verification_scope"] == "EXACT_POLICY_FROM_IMMUTABLE_ORIGINAL_GIT_BLOB_NOT_GOV_SELF_ASSERTION"
+    # This control closes policy comparison only. Its self-asserted FIP is still
+    # rejected by native recomputation because the other original inputs are absent.
+    with pytest.raises(ValueError, match="GIT_SOURCE_UNAVAILABLE|ORIGINAL_INPUT"):
+        verify_final_input_provenance(c["repo"], output, frozen, source)
+    assert captured == {name: (output / name).read_bytes() for name in captured}
+
+
+@pytest.mark.parametrize("mutation", ["empty", "extra", "different_path", "duplicate"])
+def test_governed_exclusion_drift_rejects_when_raw_fip_and_junit_stay_unchanged(original_governed_exclusion_receipts, mutation):
+    c, output, frozen, source, _fip, gov, _matrix = original_governed_exclusion_receipts
+    fip_bytes = (output / "porota-final-input-provenance.json").read_bytes()
+    junit_bytes = (output / "porota-governed-tests.xml").read_bytes()
+    if mutation == "empty": gov["exclusions"] = []
+    elif mutation == "extra": gov["exclusions"].append("test_fixture_extra.py|EXPLICIT_ATTACK|tests/test_fixture_extra.py")
+    elif mutation == "different_path":
+        gov["exclusions"] = [value.replace("tests/", "tests/foreign/") for value in gov["exclusions"]]
+    else: gov["exclusions"] += gov["exclusions"][:1]
+    (output / "porota-governed-tests.json").write_bytes(canonical_bytes(gov))
+    with pytest.raises(BindingRejected, match="^FINAL_GOVERNED_EXCLUSIONS_MISMATCH$"):
+        verify_final_input_provenance(c["repo"], output, frozen, source)
+    assert (output / "porota-final-input-provenance.json").read_bytes() == fip_bytes
+    assert (output / "porota-governed-tests.xml").read_bytes() == junit_bytes
+    assert frozen["final_input_provenance_sha256"] == hashlib.sha256(fip_bytes).hexdigest()
+
+
+@pytest.mark.parametrize("mutation", ["wrong_source_digest", "rebound_handoff", "replacement_ref"])
+def test_governed_exclusion_authority_cannot_be_rebound_to_another_original_source(original_governed_exclusion_receipts, mutation):
+    c, _output, frozen, source, _fip, gov, _matrix = original_governed_exclusion_receipts
+    if mutation == "wrong_source_digest":
+        row = next(row for row in source["files"] if row["path"] == CONVERGENCE_HANDOFF)
+        row["sha256"] = "f" * 64
+    elif mutation == "rebound_handoff":
+        handoff = json.loads((c["repo"] / CONVERGENCE_HANDOFF).read_bytes())
+        next(row for row in handoff["sources"] if row["pr"] == 466)["head_sha"] = frozen["candidate_sha"]
+        write(c["repo"], CONVERGENCE_HANDOFF, canonical_bytes(handoff))
+        git(c["repo"], "add", "."); git(c["repo"], "commit", "-qm", "private coordinated authority rebound attack")
+        source = create_source_manifest(c["repo"])
+        frozen["candidate_sha"] = source["candidate_sha"]
+    else:
+        handoff = json.loads((c["repo"] / CONVERGENCE_HANDOFF).read_bytes())
+        anchor = next(row["head_sha"] for row in handoff["sources"] if row["pr"] == 466)
+        git(c["repo"], "replace", anchor, frozen["candidate_sha"])
+    with pytest.raises(BindingRejected, match="ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID|GIT_REPLACE_REFS_FORBIDDEN"):
+        verify_governed_exclusions(c["repo"], frozen["candidate_sha"], source,
+                                   convergence_verifier, gov["exclusions"])
 
 
 @pytest.mark.parametrize("mutation,signature", [("raw_hash", "DIGEST_MISMATCH"),

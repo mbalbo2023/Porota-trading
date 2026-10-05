@@ -247,6 +247,60 @@ def captured_final_file(extracted, name, limit):
     return raw
 
 
+def verify_governed_exclusions(repo_root, candidate_sha, source, verifier, exclusions):
+    """Read exclusion authority from the pinned original source Git blob."""
+    reject_git_replacements(repo_root)
+    rows = {row["path"]: row for row in source["files"]}
+    handoff = verifier.committed_input(repo_root, candidate_sha, verifier.MANIFEST)
+    handoff_row = rows.get(CONVERGENCE_HANDOFF)
+    if (type(handoff_row) is not dict or handoff_row.get("git_mode") != "100644"
+            or handoff_row.get("bytes") != len(handoff)
+            or codec_smoke.sha(handoff) != handoff_row.get("sha256")
+            or codec_smoke.sha(handoff) != verifier.ORIGINAL_DIGESTS.get(verifier.MANIFEST)):
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    manifest = verifier.read_json(handoff)
+    sources = manifest.get("sources")
+    anchors = [row for row in sources if type(row) is dict and type(row.get("pr")) is int
+               and row["pr"] == 466] if type(sources) is list else []
+    path = verifier.PRIOR_AUDIT_MATRIX
+    originals = manifest.get("expected_source_paths", {}).get("466")
+    candidates = [row for row in originals if type(row) is dict and row.get("path") == path] \
+        if type(originals) is list else []
+    if len(anchors) != 1 or len(candidates) != 1:
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    anchor, expected_blob = anchors[0].get("head_sha"), candidates[0].get("blob")
+    if (type(anchor) is not str or SHA.fullmatch(anchor) is None
+            or type(expected_blob) is not str or SHA.fullmatch(expected_blob) is None
+            or verifier.git(repo_root, "rev-parse", anchor + "^{tree}") != anchors[0].get("tree")):
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    entries = verifier.git(repo_root, "ls-tree", "-z", anchor, "--", path, binary=True).split(b"\0")
+    expected_entry = ("100644 blob " + expected_blob + "\t" + path).encode()
+    if entries != [expected_entry, b""]:
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    size = verifier.git(repo_root, "cat-file", "-s", expected_blob)
+    if re.fullmatch(r"[1-9][0-9]*", size) is None or int(size) > 8 * 1024**2:
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    matrix_raw = verifier.git(repo_root, "cat-file", "blob", expected_blob, binary=True)
+    actual_blob = hashlib.sha1(b"blob " + str(len(matrix_raw)).encode() + b"\0" + matrix_raw).hexdigest()
+    if len(matrix_raw) != int(size) or actual_blob != expected_blob:
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    original_exclusions = verifier.read_json(matrix_raw).get("governed_exclusions")
+    if (type(original_exclusions) is not list or not original_exclusions
+            or any(type(value) is not str for value in original_exclusions)
+            or len(set(original_exclusions)) != len(original_exclusions)):
+        raise BindingRejected("ORIGINAL_INPUT_EXCLUSION_AUTHORITY_INVALID")
+    if (type(exclusions) is not list or any(type(value) is not str for value in exclusions)
+            or exclusions != original_exclusions):
+        raise BindingRejected("FINAL_GOVERNED_EXCLUSIONS_MISMATCH")
+    reject_git_replacements(repo_root)
+    return {"schema": "rc6.governed-exclusion-original-git-authority.v1", "source_pr": 466,
+        "source_sha": anchor, "source_tree": anchors[0]["tree"], "source_path": path,
+        "source_blob": expected_blob, "raw_matrix_sha256": codec_smoke.sha(matrix_raw),
+        "raw_matrix_bytes": len(matrix_raw), "original_handoff_sha256": codec_smoke.sha(handoff),
+        "governed_exclusions": original_exclusions,
+        "verification_scope": "EXACT_POLICY_FROM_IMMUTABLE_ORIGINAL_GIT_BLOB_NOT_GOV_SELF_ASSERTION"}
+
+
 def verify_final_input_provenance(repo_root, extracted_root, frozen, source):
     """Recompute final source closure from Git and one immutable JUnit capture."""
     rows = {row["path"]: row for row in source["files"]}
@@ -310,6 +364,8 @@ def verify_final_input_provenance(repo_root, extracted_root, frozen, source):
         _nodes, actual_count = module.executed_cases(receipt)
         if actual_count != execution["executed_unique_cases"]:
             raise BindingRejected("FINAL_GOVERNED_JUNIT_COUNT_MISMATCH")
+        exclusion_authority = verify_governed_exclusions(
+            Path(repo_root), frozen["candidate_sha"], source, module, gov["exclusions"])
         recomputed = module.verify(Path(repo_root), frozen["candidate_sha"], receipt, fetch_source_refs=False)
         if codec_smoke.canonical(recomputed) != codec_smoke.canonical(fip):
             raise BindingRejected("FINAL_INPUT_PROVENANCE_RECOMPUTATION_MISMATCH")
@@ -324,6 +380,7 @@ def verify_final_input_provenance(repo_root, extracted_root, frozen, source):
         "raw_fip_sha256": codec_smoke.sha(fip_raw), "raw_governed_sha256": codec_smoke.sha(gov_raw),
         "raw_junit_sha256": codec_smoke.sha(junit_raw), "raw_junit_bytes": len(junit_raw),
         "executed_unique_cases": actual_count, "verifier_source_sha256": codec_smoke.sha(verifier_raw),
+        "governed_exclusions_authority": exclusion_authority,
         "candidate_sha": frozen["candidate_sha"], "candidate_tree": frozen["candidate_tree_sha"],
         "verification_scope": "RECOMPUTED_SOURCE_CLOSURE_BOUND_TO_DOWNLOADED_GOVERNED_AND_JUNIT_BYTES",
         "runtime_approval": False}

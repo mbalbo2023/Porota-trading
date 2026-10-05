@@ -75,6 +75,140 @@
   },
   "executed_input_files_scope": "SNAPSHOT_AT_THE_202_CASE_EXECUTION_BEFORE_SOURCE_ONLY_WORKFLOW_GUARD_ADAPTATION",
   "final_candidate_approval": false,
+  "governed_exclusion_authority_follow_up": {
+    "assertion_scope": "NATIVE_GIT_POLICY_AND_METADATA_CONTROLS_ONLY",
+    "canonical_mode_guard_receipt": {
+      "actual_testcases": 8,
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_rc6_convergence_sre_binding.py::test_governed_exclusion_control_uses_exact_original_git_blob_and_ignores_evolved_candidate_policy",
+        "tests/test_rc6_convergence_sre_binding.py::test_governed_exclusion_drift_rejects_when_raw_fip_and_junit_stay_unchanged",
+        "tests/test_rc6_convergence_sre_binding.py::test_governed_exclusion_authority_cannot_be_rebound_to_another_original_source",
+        "--junitxml=/tmp/porota-sre-governed-exclusion-canonical-eight.xml"
+      ],
+      "command_environment": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "cwd": "/workspace/porota_rc6_worktrees/sre_gov_exclusions",
+        "umask": "022"
+      },
+      "errors": 0,
+      "failures": 0,
+      "input_files": {
+        "scripts/porota_predeploy_binding.py": {
+          "bytes": 31183,
+          "physical_mode": "0644",
+          "sha256": "0b89a14b4f845d90064c57d48c3dfdcb568677442fffd34925b70cc9c8c02c62"
+        },
+        "tests/test_rc6_convergence_sre_binding.py": {
+          "bytes": 37784,
+          "physical_mode": "0644",
+          "sha256": "fffc1dba3d4ab0fa7a5a77d945012036ca868738a823fb53048b85f923994e84"
+        }
+      },
+      "local_raw_path": "/tmp/porota-sre-governed-exclusion-canonical-eight.xml",
+      "normalization_scope": "1523_TRACKED_OWN_FILES_TO_EXACT_GIT_644_755_NO_BYTE_CHANGES",
+      "raw_bytes": 1647,
+      "raw_sha256": "e1d2dab3ed1ab33dfe27e11e5aa01803e46eec3b51e45513d9d1c40c82340a05",
+      "skipped": 0,
+      "suite_summaries": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "8",
+          "time": "4.756",
+          "timestamp": "2026-10-05T13:25:25.918508+00:00"
+        }
+      ]
+    },
+    "docker_executed": false,
+    "final_artifact_approval": false,
+    "finding_origin": "READ_ONLY_STATIC_MISSING_COMPARISON_FINDING_NOT_OLD_FULL_ARTIFACT_BYPASS_PROOF",
+    "input_files": {
+      "scripts/porota_predeploy_binding.py": {
+        "bytes": 31183,
+        "physical_mode": "0600",
+        "sha256": "0b89a14b4f845d90064c57d48c3dfdcb568677442fffd34925b70cc9c8c02c62"
+      },
+      "tests/test_rc6_convergence_sre_binding.py": {
+        "bytes": 37784,
+        "physical_mode": "0600",
+        "sha256": "fffc1dba3d4ab0fa7a5a77d945012036ca868738a823fb53048b85f923994e84"
+      }
+    },
+    "input_files_scope": "ACTUAL_BYTE_AND_MODE_SNAPSHOT_AT_THE_107_CASE_EXECUTION_BEFORE_PHYSICAL_MODE_NORMALIZATION",
+    "native_receipt": {
+      "actual_testcases": 107,
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_rc6_convergence_sre_binding.py",
+        "--junitxml=/tmp/porota-sre-governed-exclusion-authority-native.xml"
+      ],
+      "command_environment": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "cwd": "/workspace/porota_rc6_worktrees/sre_gov_exclusions",
+        "umask": "022"
+      },
+      "errors": 0,
+      "failures": 0,
+      "local_raw_path": "/tmp/porota-sre-governed-exclusion-authority-native.xml",
+      "raw_bytes": 18729,
+      "raw_sha256": "a70b4fabe1d14b58806681e2d039285dc3c8b2e3779b912e9a52a2f8692429ba",
+      "skipped": 0,
+      "suite_summaries": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "107",
+          "time": "17.664",
+          "timestamp": "2026-10-05T13:19:52.547271+00:00"
+        }
+      ]
+    },
+    "negative_controls": [
+      "EMPTY_GOV_EXCLUSIONS",
+      "EXTRA_GOV_EXCLUSION",
+      "DIFFERENT_GOV_EXCLUSION_PATH",
+      "DUPLICATE_GOV_EXCLUSION",
+      "WRONG_SOURCE_MANIFEST_DIGEST",
+      "COORDINATED_SOURCE_HANDOFF_REBOUND",
+      "NATIVE_GIT_REPLACEMENT_REF"
+    ],
+    "original_authority": {
+      "git_blob": "c6046d306c31df9eae6e80cac05d77b1b4364aef",
+      "git_mode": "100644",
+      "list_origin": "DERIVED_FROM_PINNED_ORIGINAL_MANIFEST_AND_NATIVE_RAW_GIT_BLOB_NOT_HARDCODED",
+      "path": "docs/audits/ISSUE465_REAUDIT.json",
+      "raw_bytes": 221873,
+      "raw_sha256": "e5a991729eadbf6f2673f90cfdf6ebe0e4d17492f1da6a89417bfd31860bb16c",
+      "source_pr": 466,
+      "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+      "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2"
+    },
+    "positive_control": "EXACT_ORIGINAL_POLICY_ACCEPTED_BY_COMPARATOR_WHILE_SELF_ASSERTED_FINAL_FIP_STILL_REJECTS",
+    "raw_fip_and_junit_unchanged_for_gov_drift": true,
+    "runtime_approval": false,
+    "source_base_sha": "071be6079a1f8ac093660f59bb8e3613c15ed6dd",
+    "status": "GREEN",
+    "workflow_edited": false
+  },
   "latest_native_cli": {
     "authority_limit": "IMAGE_ID_ARGUMENT_IS_UNTRUSTED_NO_DOCKER_EXECUTION",
     "local_raw_path": "/tmp/pytest-of-agent/pytest-316/native-codec-source0/native-cli.json",
