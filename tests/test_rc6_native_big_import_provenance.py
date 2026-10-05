@@ -62,6 +62,37 @@ elif case=='snapshot_failure':
     else: raise AssertionError('snapshot fault lost')
     assert observer.active is False
     observer.snapshot=lambda: initial['boundary_before']
+elif case in ('child_initial_abort','child_queue_abort'):
+    from scripts import rc6_issue465_stress as stress
+    created=[]
+    original=proof.NativeImportObserver
+    proof.environment_qualification=lambda *a: {'test_scope':'CONTROLLED_CHILD_STARTUP_NOT_ACTUAL157'}
+    def owned(*args,**kwargs):
+        owned_observer=original(*args,**kwargs); created.append(owned_observer)
+        if case=='child_initial_abort':
+            owned_observer.initial_receipt=lambda: (_ for _ in ()).throw(SystemExit('initial abort'))
+        return owned_observer
+    proof.NativeImportObserver=owned
+    class Signal:
+        def set(self): pass
+    class Queue:
+        def put(self,message):
+            if case=='child_queue_abort': raise SystemExit('queue abort')
+            raise AssertionError('unexpected startup message')
+    try:
+        stress._shadow_child(str(private/'absent.db'),str(private/'absent-output'),
+            Signal(),Signal(),Queue(),False,128*1024**2,True,None,
+            dict(binding,prepared_by_pid=os.getppid()))
+    except SystemExit: pass
+    else: raise AssertionError('startup BaseException not propagated')
+    assert len(created)==1 and created[0].active is False
+    prior=dict(created[0].counts)
+    exec(compile('VALUE=5','<string>','exec'),{})
+    assert created[0].counts==prior
+    next_observer=original(binding,role='AFTER_CHILD_STARTUP_ABORT')
+    exec(compile('VALUE=6','<string>','exec'),{})
+    assert next_observer.finish()['event_counts']['opaque_exec']>=1
+    assert not (private/'absent.db').exists() and not (private/'absent-output').exists()
 elif case in ('root_abort','fixture_abort'):
     from scripts import rc6_issue465_stress as stress
     created=[]
@@ -154,6 +185,11 @@ def test_stress_early_failure_deactivates_hook_before_next_observer(tmp_path,cas
     _actual_control(tmp_path,case)
 
 
+@pytest.mark.parametrize('case',['child_initial_abort','child_queue_abort'])
+def test_child_startup_base_exception_deactivates_owned_hook(tmp_path,case):
+    _actual_control(tmp_path,case)
+
+
 def test_partial_source_cli_is_rejected_before_fixture_or_business_import(tmp_path):
     completed=subprocess.run([sys.executable,'-I','-B',str(ROOT/'scripts/rc6_issue465_stress.py'),
         '--root',str(tmp_path/'must-stay-absent'),'--out',str(tmp_path/'result.json'),
@@ -194,6 +230,54 @@ def test_wrong_actual_parent_pid_reports_incomplete_before_product_startup(tmp_p
     assert result['import_provenance']['native_pid']==os.getpid()
     assert result['import_provenance']['transient_closure_verified'] is False
     assert not (tmp_path/'absent.db').exists() and not (tmp_path/'absent-output').exists()
+
+
+class _ActualSubprocessView:
+    """Actual subprocess state adapted to the observer, not a fake RSS value."""
+    def __init__(self,process): self.process,self.pid=process,process.pid
+    def is_alive(self): return self.process.poll() is None
+    @property
+    def exitcode(self): return self.process.returncode
+
+
+def test_late_proof_allocation_is_covered_by_actual_reaped_children_peak():
+    from scripts import rc6_issue465_stress as stress
+    late = (
+        "import json,resource\n"
+        "before=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
+        "proof_payload=bytearray(96*1024**2)\n"
+        "after=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
+        "print(json.dumps({'reported_before_proof':before,'after_proof':after}))\n"
+    )
+    process=subprocess.Popen([sys.executable,'-I','-B','-c',late],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        stdout,stderr=process.communicate(timeout=15)
+        assert process.returncode==0,stderr
+        peaks=json.loads(stdout)
+        assert peaks['after_proof']>peaks['reported_before_proof']+64*1024**2
+        result=stress._reaped_child_lifetime_rss(_ActualSubprocessView(process))
+        assert result['worker_reaped_before_observation'] is True
+        assert result['status']=='VERIFIED_REAPED_CHILDREN_MAXIMUM'
+        assert result['peak_rss_bytes']>=peaks['after_proof']
+        assert result['isolated_worker_wait4'] is False
+        assert result['scope']=='PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT'
+    finally:
+        if process.poll() is None:
+            process.kill(); process.communicate(timeout=5)
+
+
+def test_unreaped_child_does_not_claim_a_lifetime_rss(monkeypatch):
+    from scripts import rc6_issue465_stress as stress
+    process=subprocess.Popen([sys.executable,'-I','-B','-c',"import time; time.sleep(5)"])
+    try:
+        monkeypatch.setattr(stress.resource,'getrusage',lambda *a: pytest.fail('unreaped child is absent from RUSAGE_CHILDREN'))
+        result=stress._reaped_child_lifetime_rss(_ActualSubprocessView(process))
+        assert result['status']=='UNVERIFIED_UNREAPED'
+        assert result['worker_reaped_before_observation'] is False
+        assert result['peak_rss_bytes'] is None
+    finally:
+        if process.poll() is None: process.kill()
+        process.communicate(timeout=5)
 
 
 def test_callback_source_has_no_hash_io_profile_or_gc_operation():

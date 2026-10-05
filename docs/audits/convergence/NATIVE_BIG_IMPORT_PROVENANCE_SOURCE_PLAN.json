@@ -57,10 +57,11 @@
     "filename_none": "Original None counts retained. A named event may be resolved only through the actual final retained-module origin; missing/unresolved names remain UNVERIFIED.",
     "opaque": "Generic <string>, frozen-looking exec filenames and other unknown code locations remain opaque/UNVERIFIED. No generic allowlist is used to turn them GREEN.",
     "closure_limit": "Bootstrap before installation and postboundary IPC/emission/process teardown are outside the observed window. Local module paths/code.co_filename are interpreter metadata, not cryptographic authentication of executed code or installed binaries.",
-    "cleanup": "Owner wrappers unconditionally deactivate audit hooks on every exit, including root/fixture/spawn/import/setup failures. Python audit hooks cannot be uninstalled; inactive hooks return without changing counters."
+    "cleanup": "Owner wrappers unconditionally deactivate audit hooks on every exit, including root/fixture/spawn/import/setup failures and BaseException during child initial receipt or queue startup. A single outer child ownership finally covers startup and work. Python audit hooks cannot be uninstalled; inactive hooks return without changing counters."
   },
   "pid_and_acceptance": {
     "worker_binding": "Both initial/final worker payloads must match ctx.Process.pid, os.getppid==launcherPID and sourceSHA/tree/indexRAWsha. Actual child.join/exitcode/cleanup and final receipt are required. No manual wait4 is added to multiprocessing's own waitpid.",
+    "late_worker_rss": "Opt-in mode captures parent RUSAGE_CHILDREN after existing joins/cleanup, covering worker final proof serialization and IPC. This is explicitly the maximum of ALL reaped children including local Git preflight, not isolated worker-only wait4. The original strict RSS<2GiB threshold is unchanged; resource actual_rss is the maximum of original worker self-report and this actual reaped-children maximum. Unreaped/unavailable observation keeps actual_rss unknown and the RSS gate false. The external wrapper still measures native launcher lifetime resources separately.",
     "external_wrapper": "Future wrapper must bind native launcher os.getpid to external Popen.pid and actual wait4/reap/returncode. Its own sys.modules cannot substitute for the spawned worker proof.",
     "result_fields": [
       "business_resource_complete",
@@ -84,9 +85,12 @@
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer", "kind": "ACTUAL_EVENT_AFTER_DEACTIVATION_AND_NEXT_OBSERVER"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook", "kind": "EXPLICIT_SNAPSHOT_FAILURE_CONTROL"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer", "variants": ["root_abort", "fixture_abort"], "kind": "ACTUAL_ABORT_OWNER_CLEANUP_WITH_CONTROLLED_PREPARED_BINDING_NOT_RAW_GIT_PASS"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook", "variants": ["child_initial_abort", "child_queue_abort"], "kind": "ACTUAL_CHILD_TARGET_STARTUP_BASEEXCEPTION_WITH_REAL_OBSERVER_AND_CONTROLLED_QUALIFICATION_NOT_ACTUAL157"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import", "kind": "ACTUAL_CLI_PARTIAL_BINDING_REJECTION"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture", "kind": "CONTROLLED_INVALID_INDEX_BINDING_FAILS_BEFORE_ENVIRONMENT_OR_FIXTURE_NOT_RAW_GIT_SUCCESS"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup", "kind": "ACTUAL_TARGET_ENTRY_PID_BINDING_REJECTION_NO_PRODUCT_IMPORT_OR_FIXTURE"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak", "kind": "ACTUAL_FRESH_CHILD_LATE96MIB_ALLOCATION_AND_PARENT_REAPED_CHILDREN_RUSAGE_NOT_WORKER_ONLY_WAIT4"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss", "kind": "ACTUAL_LIVE_CHILD_REFUSES_RUSAGE_CHILDREN_LIFETIME_CLAIM"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation", "kind": "DECLARATIVE_AST_CONTRACT_NOT_NATIVE_IMPORT_PROOF"}
   ],
   "phase": {

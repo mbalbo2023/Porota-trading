@@ -47,6 +47,26 @@ class StressImportProofLimit(AssertionError):
         super().__init__("NATIVE_IMPORT_PROVENANCE_NOT_VERIFIED")
 
 
+def _reaped_child_lifetime_rss(child):
+    """An actual reaped-children maximum, not isolated worker-only wait4."""
+    result = {"status":"UNVERIFIED_UNREAPED", "worker_pid":child.pid,
+        "worker_reaped_before_observation":False, "peak_rss_bytes":None,
+        "scope":"PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+        "isolated_worker_wait4":False}
+    if child.is_alive() or type(child.exitcode) is not int:
+        return result
+    result["worker_reaped_before_observation"] = True
+    result["worker_exitcode"] = child.exitcode
+    try:
+        peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+        if type(peak) not in (int,float) or peak < 0 or not float(peak).is_integer():
+            raise ValueError("NATIVE_IMPORT_REAPED_CHILDREN_RSS_INVALID")
+        result.update(status="VERIFIED_REAPED_CHILDREN_MAXIMUM",peak_rss_bytes=int(peak)*1024)
+    except Exception as error:
+        result.update(status="UNVERIFIED_RUSAGE",error_class=type(error).__name__,reason=str(error))
+    return result
+
+
 def source_file_custody(path):
     """Capture owned source bytes and metadata without changing access time."""
     path = Path(path)
@@ -152,31 +172,31 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
 def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes,
                   canonical_runtime=False, diagnostic_stacks=None, source_binding=None):
     import_observer = None
-    if source_binding is not None:
-        try:
-            from scripts.rc6_native_import_provenance import NativeImportObserver, environment_qualification
-            if source_binding["prepared_by_pid"] != os.getppid() or source_binding["source_root"] != str(ROOT):
-                raise ValueError("NATIVE_IMPORT_CHILD_PARENT_OR_SOURCE_ROOT_MISMATCH")
-            child_qualification = environment_qualification(ROOT)
-            import_observer = NativeImportObserver(source_binding, role="SPAWNED_SHADOW_WORKER")
-            initial = import_observer.initial_receipt()
-            initial.update(environment_before_product_imports=child_qualification,
-                           primary_fixture_created_by_parent=True)
-            queue.put({"_probe_event":"IMPORT_PROVENANCE", "phase":"BEFORE_PRODUCT_IMPORTS", "import_provenance":initial})
-        except Exception as error:
-            if import_observer is not None:
-                import_observer.deactivate()
-            started.set()
-            queue.put({"_probe_event":"FINAL", "status":"SHADOW_FAIL_CLOSED", "cycle_completion":False,
-                "cycle_handled":True, "reason":"NATIVE_IMPORT_PROVENANCE_STARTUP_UNVERIFIED", "handler_resources":{},
-                "phases":[], "elapsed_seconds":0., "cpu_seconds":0., "peak_rss_bytes":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
-                "fsync":{"fsync_entered":False,"fsync_completed":False,"scope":"ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
-                "import_provenance":{"status":"UNVERIFIED_STARTUP","native_pid":os.getpid(),"parent_pid":os.getppid(),
-                    "source_sha":source_binding.get("source_sha"),"source_tree":source_binding.get("source_tree"),
-                    "source_index_sha256":source_binding.get("source_index_sha256"),"transient_closure_verified":False,
-                    "error_class":type(error).__name__,"reason":str(error)}})
-            return
     try:
+        if source_binding is not None:
+            try:
+                from scripts.rc6_native_import_provenance import NativeImportObserver, environment_qualification
+                if source_binding["prepared_by_pid"] != os.getppid() or source_binding["source_root"] != str(ROOT):
+                    raise ValueError("NATIVE_IMPORT_CHILD_PARENT_OR_SOURCE_ROOT_MISMATCH")
+                child_qualification = environment_qualification(ROOT)
+                import_observer = NativeImportObserver(source_binding, role="SPAWNED_SHADOW_WORKER")
+                initial = import_observer.initial_receipt()
+                initial.update(environment_before_product_imports=child_qualification,
+                               primary_fixture_created_by_parent=True)
+                queue.put({"_probe_event":"IMPORT_PROVENANCE", "phase":"BEFORE_PRODUCT_IMPORTS", "import_provenance":initial})
+            except Exception as error:
+                if import_observer is not None:
+                    import_observer.deactivate()
+                started.set()
+                queue.put({"_probe_event":"FINAL", "status":"SHADOW_FAIL_CLOSED", "cycle_completion":False,
+                    "cycle_handled":True, "reason":"NATIVE_IMPORT_PROVENANCE_STARTUP_UNVERIFIED", "handler_resources":{},
+                    "phases":[], "elapsed_seconds":0., "cpu_seconds":0., "peak_rss_bytes":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                    "fsync":{"fsync_entered":False,"fsync_completed":False,"scope":"ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
+                    "import_provenance":{"status":"UNVERIFIED_STARTUP","native_pid":os.getpid(),"parent_pid":os.getppid(),
+                        "source_sha":source_binding.get("source_sha"),"source_tree":source_binding.get("source_tree"),
+                        "source_index_sha256":source_binding.get("source_index_sha256"),"transient_closure_verified":False,
+                        "error_class":type(error).__name__,"reason":str(error)}})
+                return
         return _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
             canonical_runtime,diagnostic_stacks,import_observer,
             child_qualification if source_binding is not None else None)
@@ -661,6 +681,7 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             child.join(5)
         queue.close()
         queue.join_thread()
+    lifetime_rss = _reaped_child_lifetime_rss(child) if binding is not None else None
     shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
     shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
@@ -699,6 +720,14 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
         "actual_slow_fsync_exit_isolation": not slow_disk or allow_fail_closed or slow_proven,
         "maximum_rss_bytes": 2 * 1024**3, "actual_rss_bytes": shadow["peak_rss_bytes"],
         "maximum_evidence_bytes": maximum_bytes, "actual_evidence_bytes": shadow["evidence_bytes"]}
+    if lifetime_rss is not None:
+        shadow["lifetime_resource_observation"] = lifetime_rss
+        verified_rss = lifetime_rss["status"] == "VERIFIED_REAPED_CHILDREN_MAXIMUM"
+        actual_rss = max(shadow["peak_rss_bytes"],lifetime_rss["peak_rss_bytes"]) if verified_rss else None
+        result["resource_gates"].update(actual_rss_bytes=actual_rss,
+            reported_worker_rss_bytes=shadow["peak_rss_bytes"],
+            rss_within_two_gib=verified_rss and actual_rss < 2 * 1024**3,
+            rss_scope=lifetime_rss["scope"])
     if binding is None:
         result["import_provenance"] = {"requested":False,"status":"NOT_AUDITED","transient_closure_verified":False}
     else:
