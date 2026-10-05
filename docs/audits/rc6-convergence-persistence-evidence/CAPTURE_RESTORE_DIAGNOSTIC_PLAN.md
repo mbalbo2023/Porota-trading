@@ -5,7 +5,8 @@ guards on frozen311157. Its restore diagnostic completed; its report decode
 terminated with SIGSEGV before preparation. The explicit sampling-selector
 driver `dc817b73` has 21/21 native guards. Its single NONE control decoded the
 sealed report and entered preparation but was stopped by its 60-second
-watchdog. The subsequent receipt/default-NONE guards are execution-pending.
+watchdog. Receipt/default-NONE driver `8d57319c` has 34/34 native guards on the
+same frozen311157 environment. None of these guards replays a large decode.
 This diagnostic does not
 modify product code and does not establish acceptance of the 90-second runtime
 pipeline.
