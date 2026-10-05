@@ -184,7 +184,10 @@ def test_u06_positive_binding_fill_costs_each_leg_once_and_retains_atomic_decisi
             "FROM decision_evidence_snapshots WHERE decision_key=?", ("PAPER_FILL:" + paper_id,)).fetchone()
     assert snapshot[0] == hashlib.sha256(snapshot[1].encode()).hexdigest()
     evidence = json.loads(snapshot[1])
-    assert evidence["decision_at"] == evidence["entry_fill_committed_at"] == OPEN
+    assert evidence["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
+    assert evidence["admission_at"] == evidence["entry_fill_recorded_at"] == evidence["captured_at"] == OPEN
+    assert evidence["entry_fill_committed_at"] is None
+    assert evidence["runtime"].get("entry_fill_committed_at") is None
     assert evidence["inputs_used"]["economics"]["passed"] is True
     assert (evidence["inputs_used"]["economics"]["cost_contract"]["policy_sha256"]
             == features["economics"]["cost_contract"]["policy_sha256"])
@@ -219,6 +222,7 @@ def test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits(t
     clock = [OPEN]
     engine = broker(tmp_path / "paper.sqlite", clock, economics_mode="SHADOW" if future else "BINDING")
     key = "SYNTHETIC:NATIVE-ONCE"
+    receipt_key = "PAPER_ADMISSION:"+key
     entry = quote() if future else quote(bid="107.5", ask="107.55", future=False)
     first = engine.admit_paper_candidate(entry, D(".8"), {"native_decision_key": key})
     assert first[0], first[1]
@@ -229,7 +233,11 @@ def test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits(t
             else engine._close(position, close, "CONTROL"))
     with engine.store.connect() as connection:
         original = tuple(connection.execute("SELECT payload_sha256,payload_json "
-            "FROM decision_evidence_snapshots WHERE decision_key=?", (key,)).fetchone())
+            "FROM decision_evidence_snapshots WHERE decision_key=?", (receipt_key,)).fetchone())
+        evidence = json.loads(original[1])
+        assert evidence["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
+        assert evidence["native_decision_key"] == key
+        assert evidence["entry_fill_committed_at"] is None
     later = (datetime.fromisoformat(CLOSE) + timedelta(minutes=1)).isoformat()
     clock[0] = later
     next_entry = (quote(later, bid="1500.5", ask="1501") if future
@@ -244,11 +252,13 @@ def test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits(t
     with engine.store.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] == 1
         assert tuple(connection.execute("SELECT payload_sha256,payload_json "
-            "FROM decision_evidence_snapshots WHERE decision_key=?", (key,)).fetchone()) == original
+            "FROM decision_evidence_snapshots WHERE decision_key=?", (receipt_key,)).fetchone()) == original
     fresh_key = key + ":NEXT"
     control = engine.admit_paper_candidate(next_entry, D(".8"), {"native_decision_key": fresh_key})
     assert control[0], control[1]
     with engine.store.connect() as connection:
         current = json.loads(connection.execute("SELECT payload_json FROM decision_evidence_snapshots "
-            "WHERE decision_key=?", (fresh_key,)).fetchone()[0])
+            "WHERE decision_key=?", ("PAPER_ADMISSION:"+fresh_key,)).fetchone()[0])
+    assert current["native_decision_key"] == fresh_key
+    assert current["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
     assert current["decision"]["paper_id"] == control[2] != first[2]

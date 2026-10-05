@@ -27,7 +27,7 @@ from rc6_performance.costs import FeeModel, ledger_leg_cost, paper_fee_model
 from rc6_performance.replay import ExitPolicy, ExitReplay
 from rc6_performance.shadow import fit_movement, forward_labels, usable_book
 
-SCHEMA = "rc6.runtime-shadow-lab.v1"
+SCHEMA = "rc6.runtime-shadow-lab.v2"
 QUERY_SECONDS = .25
 MAX_ACTIVE = 16
 MAX_ARCHIVED = 64
@@ -154,6 +154,57 @@ def _read(database, at, previous, row_limit):
         connection.close()
 
 
+def _known_input_policy(policy, admission):
+    if policy is None:
+        return
+    if not isinstance(policy, dict):
+        raise ValueError("ENTRY_INPUT_POLICY_INVALID")
+    clocks = [stamp(policy[key]) for key in
+              ("effective_at", "known_at", "available_at", "registered_at", "checked_at")
+              if policy.get(key) is not None]
+    if any(clock > admission for clock in clocks):
+        raise ValueError("ENTRY_INPUT_POLICY_NOT_KNOWN_AT_ADMISSION")
+    return max(clocks) if clocks else None
+
+
+def _signal_vector(inputs, quote, signal, admission, *, required):
+    vector = inputs.get("entry_signal_inputs")
+    if vector is None and not required:
+        return "LEGACY_VECTOR_UNAVAILABLE", None
+    if not isinstance(vector, dict):
+        raise ValueError("ENTRY_NATIVE_SIGNAL_VECTOR_UNAVAILABLE")
+    samples = vector.get("price_samples")
+    count = vector.get("samples")
+    if (vector.get("schema") != "rc6.native-entry-signal-input.v1"
+            or vector.get("price_sample_status") not in {None, "NATIVE_EXACT_VECTOR"}
+            or not isinstance(samples, list) or not samples
+            or isinstance(count, bool) or not isinstance(count, int) or count != len(samples)):
+        raise ValueError("ENTRY_NATIVE_SIGNAL_VECTOR_INVALID")
+    if vector.get("available_at") is not None and stamp(vector["available_at"]) > signal:
+        raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+    prior = None
+    ident = identity(quote)
+    for sample in samples:
+        if not isinstance(sample, dict) or not isinstance(sample.get("source"), str) or not sample["source"]:
+            raise ValueError("ENTRY_NATIVE_SIGNAL_SOURCE_UNAVAILABLE")
+        number(sample.get("price"), positive=True)
+        source, received = stamp(sample["source_at"]), stamp(sample["received_at"])
+        known = stamp(sample.get("known_at") or sample["received_at"])
+        first = stamp(sample.get("first_received_at") or sample["received_at"])
+        if not source <= first <= received <= known <= signal:
+            raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+        if prior is not None and source <= prior:
+            raise ValueError("ENTRY_NATIVE_SIGNAL_EVENTS_NOT_DISTINCT")
+        prior = source
+        if any(key in sample for key in ("symbol", "asset_class", "settlement", "currency", "market")):
+            if identity(sample) != ident:
+                raise ValueError("ENTRY_SIGNAL_IDENTITY_MISMATCH")
+    for name in ("temporal_contract", "volume_contract"):
+        _known_input_policy(vector.get(name), signal)
+    _known_input_policy(vector.get("eod_policy"), admission)
+    return "NATIVE_EXACT_VECTOR", digest(vector)
+
+
 def _native_evidence(row, at):
     text = row["payload_json"]
     if not isinstance(text, str) or len(text.encode()) > MAX_ROW_BYTES:
@@ -161,27 +212,125 @@ def _native_evidence(row, at):
     if hashlib.sha256(text.encode()).hexdigest() != row["payload_sha256"]:
         raise ValueError("IMMUTABLE_DECISION_HASH_MISMATCH")
     value = json.loads(text)
-    decision, runtime = value.get("decision") or {}, value.get("runtime") or {}
+    if not isinstance(value, dict):
+        raise ValueError("IMMUTABLE_ENTRY_EVIDENCE_INVALID")
+    decision, runtime, inputs = (value.get(key) or {} for key in ("decision", "runtime", "inputs_used"))
+    if not all(isinstance(item, dict) for item in (decision, runtime, inputs)):
+        raise ValueError("IMMUTABLE_ENTRY_EVIDENCE_INVALID")
+    phase = value.get("capture_phase")
+    if phase == "ATOMIC_PAPER_ADMISSION":
+        from rc6_performance.common import decision_snapshot_phase
+        decision_snapshot_phase(value)
+    elif phase not in {None, "NATIVE_DECISION"}:
+        raise ValueError("IMMUTABLE_DECISION_CAPTURE_PHASE_INVALID")
     paper_id = decision.get("paper_id")
     if not paper_id or decision.get("final_result") != "OPENED_SIMULATED":
         return None
+    key = value.get("decision_key")
+    key_limit = 1024 + (len("PAPER_ADMISSION:") if phase == "ATOMIC_PAPER_ADMISSION" else 0)
+    if (not isinstance(key, str) or not key or len(key.encode()) > key_limit
+            or key != row.get("decision_key")):
+        raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+    if not isinstance(paper_id, str):
+        raise ValueError("IMMUTABLE_ENTRY_PAPER_ID_INVALID")
+    captured = stamp(value["captured_at"])
+    if captured != stamp(row["captured_at"]):
+        raise ValueError("IMMUTABLE_DECISION_CAPTURE_MISMATCH")
+    frozen_inputs = {name: inputs.get(name) for name in
+                     ("exit_policy", "execution_style", "scalping_max_hold_minutes",
+                      "contract_cash_multiplier", "contract_quantity_step")}
     clocks = {key: value.get(key) or runtime.get(key) for key in
               ("signal_at", "decision_at", "intent_at", "entry_fill_committed_at")}
+    if phase == "ATOMIC_PAPER_ADMISSION":
+        admission, recorded = stamp(value["admission_at"]), stamp(value["entry_fill_recorded_at"])
+        native_key = value.get("native_decision_key")
+        if (recorded != captured or not admission <= recorded <= at
+                or value.get("entry_fill_committed_at") is not None
+                or (native_key is not None and inputs.get("native_decision_key") != native_key)):
+            raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_INVALID")
+        present = [stamp(clocks[name]) for name in ("signal_at", "decision_at", "intent_at") if clocks[name]]
+        if present != sorted(present) or any(clock > recorded for clock in present):
+            raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+        quote = _book(value.get("quote_used") or {})
+        vector = inputs.get("entry_signal_inputs")
+        return {"capture_phase": phase, "paper_id": paper_id, "decision_key": key,
+                "native_decision_key": native_key, "payload_sha256": row["payload_sha256"],
+                "admission_at": value["admission_at"], "entry_fill_recorded_at": value["entry_fill_recorded_at"],
+                "captured_at": value["captured_at"], "clocks": clocks,
+                "quote_sha256": digest(quote), "signal_input_sha256": digest(vector) if vector is not None else None,
+                "inputs_used": frozen_inputs}
+    if inputs.get("native_decision_key") is not None and inputs["native_decision_key"] != key:
+        raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
     if runtime.get("clock_mode") != "NATIVE" or any(not clocks[key] for key in clocks):
         raise ValueError("ENTRY_NATIVE_CLOCKS_UNAVAILABLE")
     parsed = [stamp(clocks[key]) for key in clocks]
-    if parsed != sorted(parsed) or parsed[-1] > at or stamp(value["captured_at"]) > parsed[0]:
+    # Capture is receipt of the immutable decision, not the native signal's
+    # source time. Atomic admission captures it under the fill transaction.
+    # The typed atomic phase has a recorded clock, never a fabricated commit
+    # clock. A native decision is registered only after its actual commit.
+    if parsed != sorted(parsed) or parsed[-1] > at or captured > parsed[-1]:
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if runtime.get("signal_at") and stamp(runtime["signal_at"]) != parsed[0]:
+        raise ValueError("ENTRY_SIGNAL_CLOCK_MISMATCH")
+    if runtime.get("signal_started_at") and stamp(runtime["signal_started_at"]) > parsed[0]:
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if runtime.get("decision_at") and stamp(runtime["decision_at"]) > parsed[1]:
         raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
     quote = _book(value.get("quote_used") or {})
     error = usable_book(quote, parsed[1])
     if error:
         raise ValueError("ENTRY_BOOK_" + error.upper())
-    return {"paper_id": str(paper_id), "clocks": clocks, "quote": quote,
+    if any(stamp(quote[name]) > parsed[0] for name in ("observed_at", "book_at", "trade_at")):
+        raise ValueError("ENTRY_SIGNAL_INPUT_NOT_KNOWN_AT_SIGNAL")
+    late_capture = captured > parsed[0]
+    if late_capture and inputs.get("native_decision_key") != key:
+        raise ValueError("IMMUTABLE_DECISION_KEY_UNAVAILABLE")
+    vector_status, vector_hash = _signal_vector(inputs, quote, parsed[0], parsed[-1], required=late_capture or phase == "NATIVE_DECISION")
+    economics = inputs.get("economics") or {}
+    if not isinstance(economics, dict):
+        raise ValueError("ENTRY_INPUT_POLICY_INVALID")
+    vector = inputs.get("entry_signal_inputs") or {}
+    known = [_known_input_policy(policy, parsed[-1]) for policy in
+             (economics.get("cost_contract"), inputs.get("financial_contract"), inputs.get("exit_policy"), vector.get("eod_policy"))]
+    policy_cut = max((clock for clock in known if clock is not None), default=None)
+    admission_key, admission_hash = (inputs.get(name) for name in
+                                    ("financial_admission_snapshot_key", "financial_admission_snapshot_sha256"))
+    if phase == "NATIVE_DECISION" and (admission_key != "PAPER_ADMISSION:"+key
+            or not isinstance(admission_hash, str) or len(admission_hash) != 64):
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_LINK_INVALID")
+    return {"capture_phase": phase or "LEGACY_NATIVE_DECISION", "paper_id": str(paper_id), "clocks": clocks, "quote": quote,
             "score": decision.get("score"), "strategy_id": runtime.get("strategy_id"),
-            "decision_key": value.get("decision_key"), "payload_sha256": row["payload_sha256"],
+            "decision_key": key, "captured_at": value["captured_at"], "payload_sha256": row["payload_sha256"],
+            "signal_vector_status": vector_status, "signal_input_sha256": vector_hash,
+            "financial_admission_snapshot_key": admission_key, "financial_admission_snapshot_hash": admission_hash,
+            "policy_clock_upper_bound": policy_cut.isoformat() if policy_cut else None,
             "configuration_fingerprint": runtime.get("configuration_fingerprint"),
-            "inputs_used": {key: value.get("inputs_used", {}).get(key) for key in
-                            ("exit_policy", "execution_style", "scalping_max_hold_minutes")}}
+            "inputs_used": frozen_inputs}
+
+
+def _linked_admission(evidence, admissions):
+    key = evidence.get("financial_admission_snapshot_key")
+    if not key:
+        return None
+    admission = admissions.get(key)
+    if admission is None:
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_UNAVAILABLE")
+    if (admission["payload_sha256"] != evidence["financial_admission_snapshot_hash"]
+            or admission["paper_id"] != evidence["paper_id"]
+            or admission["native_decision_key"] != evidence["decision_key"]
+            or admission["quote_sha256"] != digest(evidence["quote"])
+            or admission["signal_input_sha256"] != evidence["signal_input_sha256"]
+            or admission["inputs_used"] != evidence["inputs_used"]):
+        raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH")
+    for name in ("signal_at", "decision_at", "intent_at"):
+        if not admission["clocks"][name] or stamp(admission["clocks"][name]) != stamp(evidence["clocks"][name]):
+            raise ValueError("IMMUTABLE_FINANCIAL_ADMISSION_CLOCK_MISMATCH")
+    if stamp(admission["entry_fill_recorded_at"]) > stamp(evidence["clocks"]["entry_fill_committed_at"]):
+        raise ValueError("ENTRY_FUTURE_OR_REVERSED_CLOCKS")
+    if (evidence["policy_clock_upper_bound"]
+            and stamp(evidence["policy_clock_upper_bound"]) > stamp(admission["admission_at"])):
+        raise ValueError("ENTRY_INPUT_POLICY_NOT_KNOWN_AT_ADMISSION")
+    return admission
 
 
 def _volatility(history, entry, decision_at):
@@ -260,7 +409,8 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
     features_text = row.get("features_json") or "{}"
     if len(features_text.encode()) > MAX_ROW_BYTES:
         raise ValueError("ENTRY_FEATURES_OVERSIZE")
-    features = json.loads(features_text)
+    # Factual policy and sizing inputs come from the sealed decision below;
+    # mutable position features cannot replace that first capture.
     ident = identity(row)
     if ident[1] not in {"ACCIONES", "CEDEARS", "ETFS"}:
         raise ValueError("SPECIALIZED_LIFECYCLE_OUTSIDE_EXIT_LAB")
@@ -271,11 +421,15 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
         raise ValueError("ENTRY_BEFORE_WATERMARK_OR_IN_FUTURE")
     if evidence is None:
         raise ValueError("IMMUTABLE_NATIVE_ENTRY_EVIDENCE_UNAVAILABLE")
+    if evidence["paper_id"] != row["paper_id"]:
+        raise ValueError("ENTRY_PAPER_ID_MISMATCH")
+    admission = _linked_admission(evidence, checkpoint.get("pending_admissions", {}))
     if identity(evidence["quote"]) != ident:
         raise ValueError("ENTRY_IDENTITY_MISMATCH")
     if not opened <= stamp(evidence["clocks"]["intent_at"]) <= stamp(evidence["clocks"]["entry_fill_committed_at"]):
         raise ValueError("ENTRY_LEDGER_CLOCK_MISMATCH")
-    exit_policy = features.get("exit_policy") or evidence["inputs_used"].get("exit_policy") or {}
+    frozen_inputs = evidence["inputs_used"]
+    exit_policy = frozen_inputs.get("exit_policy") or {}
     if exit_policy.get("mode") != "SIMULATED" or not exit_policy.get("end_of_day"):
         raise ValueError("FACTUAL_EOD_POLICY_UNAVAILABLE")
     if settings["eod_policy"] != "FORCE_CLOSE" or not session_policy.close_at_eod:
@@ -300,16 +454,16 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
         raise ValueError("FACTUAL_MAX_HOLD_UNAVAILABLE")
     # The live supervisor takes the effective minimum for scalping.
     hold = min(int(hold), settings["max_hold_minutes"])
-    if features.get("execution_style") == "SCALPING_PAPER":
-        limit = features.get("scalping_max_hold_minutes")
+    if frozen_inputs.get("execution_style") == "SCALPING_PAPER":
+        limit = frozen_inputs.get("scalping_max_hold_minutes")
         if limit is None or isinstance(limit, bool) or number(limit, positive=True) != int(limit):
             raise ValueError("FACTUAL_SCALPING_MAX_HOLD_UNAVAILABLE")
         hold = min(hold, int(limit))
     entry = {key: row[key] for key in ("symbol", "asset_class", "settlement", "currency", "market",
                                      "opened_at", "entry_price", "quantity")}
     entry.update(id=row["paper_id"], paper_id=row["paper_id"],
-                 contract_cash_multiplier=str(number(features.get("contract_cash_multiplier", 1), positive=True)),
-                 quantity_step=str(number(features.get("contract_quantity_step", 1), positive=True)),
+                 contract_cash_multiplier=str(number(frozen_inputs.get("contract_cash_multiplier") or 1, positive=True)),
+                 quantity_step=str(number(frozen_inputs.get("contract_quantity_step") or 1, positive=True)),
                  score=evidence["score"], strategy_id=evidence["strategy_id"],
                  decision_at=evidence["clocks"]["decision_at"], intent_at=evidence["clocks"]["intent_at"])
     if number(entry["contract_cash_multiplier"]) != 1:
@@ -343,6 +497,12 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
               "unverified_reasons": [missing] if missing else [], "economics_shadow": _json(economics),
               "economics_input_sha256": digest(evidence["quote"]),
               "entry_evidence_sha256": evidence["payload_sha256"], "native_clocks": evidence["clocks"],
+              "native_decision_key": evidence["decision_key"], "evidence_captured_at": evidence["captured_at"],
+              "signal_vector_status": evidence["signal_vector_status"], "signal_input_sha256": evidence["signal_input_sha256"],
+              "financial_admission_snapshot_key": evidence["financial_admission_snapshot_key"],
+              "financial_admission_snapshot_hash": evidence["financial_admission_snapshot_hash"],
+              "admission_at": admission["admission_at"] if admission else None,
+              "entry_fill_recorded_at": admission["entry_fill_recorded_at"] if admission else None,
               "entry_configuration_fingerprint": evidence["configuration_fingerprint"],
               "configuration_fingerprint": fingerprint, "hypotheses": hypotheses,
               "score_calibration_oos": "NO_VERIFICADO", "labels": {}, "last_rejection": None}
@@ -440,7 +600,9 @@ def _summary(record, at):
                 {"coverage": label["status"], "continuous_hit_probability": "NO_VERIFICADO"}})
     return {key: record[key] for key in ("entry", "registered_at", "baseline", "volatility",
         "unverified_reasons", "economics_shadow", "economics_input_sha256", "native_clocks",
-        "entry_evidence_sha256", "entry_configuration_fingerprint", "configuration_fingerprint",
+        "entry_evidence_sha256", "native_decision_key", "evidence_captured_at", "signal_vector_status",
+        "signal_input_sha256", "entry_configuration_fingerprint", "configuration_fingerprint",
+        "financial_admission_snapshot_key", "financial_admission_snapshot_hash", "admission_at", "entry_fill_recorded_at",
         "hypotheses", "path_observations", "path_sha256", "last_rejection")} | {
             "forward_label": label, "movement_label": _forward_label(record, "movement", at), "variants": variants}
 
@@ -506,7 +668,7 @@ def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runti
             invalidated = "SOURCE_CHANGED_OR_CURSORS_REVERSED"
         checkpoint = {"schema": SCHEMA, "source_key": source_key, "started_at": at.isoformat(),
             "last_as_of": at.isoformat(), "configuration_fingerprint": fingerprint, "cursors": tails,
-            "history": {}, "active": {}, "archive": [], "pending_positions": {}, "pending_evidence": {},
+            "history": {}, "active": {}, "archive": [], "pending_positions": {}, "pending_evidence": {}, "pending_admissions": {},
             "retired_entries": 0, "dropped_entries": 0, "existing_open_entries_unverified": existing}
         report = {"status": "START_AT_CURRENT_TAIL", "unverified_reason": "EXISTING_ENTRIES_NOT_RECONSTRUCTED",
                   "existing_open_entries_unverified": existing, "entries": [], "entry_hour_cohorts": []}
@@ -522,7 +684,10 @@ def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runti
                 if table == "decision_evidence_snapshots":
                     try:
                         evidence = _native_evidence(row, at)
-                        if evidence and stamp(evidence["clocks"]["intent_at"]) > stamp(checkpoint["started_at"]):
+                        if evidence and evidence["capture_phase"] == "ATOMIC_PAPER_ADMISSION":
+                            if stamp(evidence["entry_fill_recorded_at"]) > stamp(checkpoint["started_at"]):
+                                checkpoint["pending_admissions"][evidence["decision_key"]] = evidence
+                        elif evidence and stamp(evidence["clocks"]["intent_at"]) > stamp(checkpoint["started_at"]):
                             checkpoint["pending_evidence"][evidence["paper_id"]] = evidence
                     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
                         rejections[str(exc) if isinstance(exc, ValueError) else "IMMUTABLE_ENTRY_EVIDENCE_INVALID"] += 1
@@ -552,13 +717,15 @@ def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runti
                                                            checkpoint, settings, session_policy, at)
                 registered += 1
                 del checkpoint["pending_positions"][paper_id]
-                checkpoint["pending_evidence"].pop(paper_id, None)
+                used = checkpoint["pending_evidence"].pop(paper_id, None)
+                if used and used.get("financial_admission_snapshot_key"):
+                    checkpoint["pending_admissions"].pop(used["financial_admission_snapshot_key"], None)
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
                 reason = str(exc) if isinstance(exc, ValueError) else "FACTUAL_ENTRY_INPUTS_INVALID"
                 rejections[reason] += 1
                 # Gate persistence can lag the ledger transaction by one tick.
                 # Missing immutable evidence may retry within the bounded window.
-                if reason != "IMMUTABLE_NATIVE_ENTRY_EVIDENCE_UNAVAILABLE" or (at-stamp(row["opened_at"])).total_seconds() > 120:
+                if reason not in {"IMMUTABLE_NATIVE_ENTRY_EVIDENCE_UNAVAILABLE", "IMMUTABLE_FINANCIAL_ADMISSION_UNAVAILABLE"} or (at-stamp(row["opened_at"])).total_seconds() > 120:
                     checkpoint["dropped_entries"] += 1
                     del checkpoint["pending_positions"][paper_id]
         books = []
@@ -602,7 +769,7 @@ def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runti
             if value and (at-stamp(value[-1]["available_at"])).total_seconds() <= 5400}
         ordered = sorted(checkpoint["history"], key=lambda key: checkpoint["history"][key][-1]["available_at"], reverse=True)
         checkpoint["history"] = {key: checkpoint["history"][key] for key in ordered[:MAX_IDENTITIES]}
-        for name in ("pending_positions", "pending_evidence"):
+        for name in ("pending_positions", "pending_evidence", "pending_admissions"):
             while len(checkpoint[name]) > MAX_ACTIVE*2:
                 del checkpoint[name][next(iter(checkpoint[name]))]
                 rejections["PENDING_ENTRY_CAPACITY_CENSORED"] += 1
