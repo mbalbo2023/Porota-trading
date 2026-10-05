@@ -212,3 +212,43 @@ def test_u06_positive_binding_fill_costs_each_leg_once_and_retains_atomic_decisi
             == engine.initial_cash - entry * qty - entry_cost)
     assert engine._cash(as_of=release, currency="ARS") == engine.initial_cash + net
     assert engine._cash(as_of=release, currency="USD_MEP") == 0
+
+
+@pytest.mark.parametrize("future", [False, True])
+def test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits(tmp_path, future):
+    clock = [OPEN]
+    engine = broker(tmp_path / "paper.sqlite", clock, economics_mode="SHADOW" if future else "BINDING")
+    key = "SYNTHETIC:NATIVE-ONCE"
+    entry = quote() if future else quote(bid="107.5", ask="107.55", future=False)
+    first = engine.admit_paper_candidate(entry, D(".8"), {"native_decision_key": key})
+    assert first[0], first[1]
+    position = (engine.store.active_future_positions() if future else engine.store.open_positions())[0]
+    clock[0] = CLOSE
+    close = quote(CLOSE) if future else quote(CLOSE, bid="108", ask="108.05", future=False)
+    assert (engine._close_future(close, position, "CONTROL") if future
+            else engine._close(position, close, "CONTROL"))
+    with engine.store.connect() as connection:
+        original = tuple(connection.execute("SELECT payload_sha256,payload_json "
+            "FROM decision_evidence_snapshots WHERE decision_key=?", (key,)).fetchone())
+    later = (datetime.fromisoformat(CLOSE) + timedelta(minutes=1)).isoformat()
+    clock[0] = later
+    next_entry = (quote(later, bid="1500.5", ask="1501") if future
+                  else quote(later, bid="109", ask="109.05", future=False))
+    try:
+        duplicate = engine.admit_paper_candidate(next_entry, D(".8"), {"native_decision_key": key})
+        assert duplicate[0] is False and duplicate[1]
+    except ValueError as error:
+        assert str(error)
+    assert not (engine.store.active_future_positions() if future else engine.store.open_positions())
+    table = "paper_future_positions" if future else "paper_positions"
+    with engine.store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] == 1
+        assert tuple(connection.execute("SELECT payload_sha256,payload_json "
+            "FROM decision_evidence_snapshots WHERE decision_key=?", (key,)).fetchone()) == original
+    fresh_key = key + ":NEXT"
+    control = engine.admit_paper_candidate(next_entry, D(".8"), {"native_decision_key": fresh_key})
+    assert control[0], control[1]
+    with engine.store.connect() as connection:
+        current = json.loads(connection.execute("SELECT payload_json FROM decision_evidence_snapshots "
+            "WHERE decision_key=?", (fresh_key,)).fetchone()[0])
+    assert current["decision"]["paper_id"] == control[2] != first[2]
