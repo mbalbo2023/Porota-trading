@@ -45,6 +45,16 @@ adapter rechaza deadlines no finitos o booleanos y limita el resultado a
 la generación. `readonly_copy(validate=False)` conserva la fuente SQLite y
 sus sidecars; el índice derivado abre bytes verificados sólo en memoria.
 
+Para el render, la captura de SQLite y la lectura canónica del corte empiezan
+en paralelo dentro de ese mismo deadline. Se crea un solo worker por solicitud;
+la conexión SQLite pertenece al hilo que renderiza y el lector comprometido
+verifica sus cuatro miembros por separado. El resultado de ese worker sirve
+sólo para los filtros normalizados exactos de la solicitud. Otro offset, selección
+de embudo o reader explícito conserva su lectura propia. El cierre espera al
+worker tanto ante errores de captura/render como ante un resultado válido;
+un plazo vencido sigue descartando el cuerpo. Este solapamiento no agrega
+persistencia, cache entre solicitudes ni una excepción a los guards de custodia.
+
 La revisión financiera independiente añadió un caso importante: un índice SQL
 con currency diferente de la identidad del payload podría seleccionar la fila
 equivocada si su derivación no liga esos campos. El productor `99bcd846` liga las

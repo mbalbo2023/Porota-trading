@@ -4,6 +4,7 @@ One read transaction, named columns, parameterized filters, ten rows and no
 provider calls. Missing data never becomes a measured zero or new authority.
 """
 from contextlib import AbstractContextManager
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
@@ -216,7 +217,7 @@ TABLE_FIELDS = {
 
 
 class Store(AbstractContextManager):
-    def __init__(self, path, *, now=None, trace=None):
+    def __init__(self, path, *, now=None, trace=None, shadow_filters=None):
         self.path = Path(path)
         self.now = now or datetime.now(timezone.utc)
         self.connection = None
@@ -226,12 +227,23 @@ class Store(AbstractContextManager):
         self.trace = trace
         self.snapshot = None
         self.deadline = None
+        self._shadow_filters = dict(shadow_filters) if shadow_filters is not None else None
+        self._shadow_executor = None
+        self._shadow_future = None
 
     def __enter__(self):
+        self.deadline = monotonic() + 1.0
         try:
             from rc6_audit_evidence.sqlite_snapshot import readonly_copy
             from bs_instrument_contracts import register_exact_time_sql
-            self.deadline = monotonic() + 1.0
+            if self._shadow_filters is not None:
+                # The sealed generation reader never touches the source SQLite
+                # connection. Overlap these two independent captures, retaining
+                # one request deadline and the exact normalized selection.
+                shadow = Projection(self, self._shadow_filters)
+                self._shadow_filters = dict(shadow.filters)
+                self._shadow_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rc6-dashboard-shadow")
+                self._shadow_future = self._shadow_executor.submit(shadow._read_shadow)
             self.snapshot = readonly_copy(self.path, validate=False, deadline=self.deadline)
             self.connection = self.snapshot.__enter__()
             self.connection.row_factory = sqlite3.Row
@@ -253,17 +265,35 @@ class Store(AbstractContextManager):
                     pass
                 self.snapshot = None
             self.connection = None
+        except BaseException as error:
+            self.__exit__(type(error), error, error.__traceback__)
+            raise
         return self
 
+    def _join_shadow(self):
+        executor, self._shadow_executor = self._shadow_executor, None
+        if executor is not None:
+            executor.shutdown(wait=True)
+
     def __exit__(self, *args):
-        if self.snapshot:
+        try:
+            # Even a rejected snapshot or an exception while rendering must
+            # join the bounded reader before the request releases its resources.
+            self._join_shadow()
+        finally:
             try:
-                self.snapshot.__exit__(*args)
-            except (ValueError, OSError, sqlite3.Error):
-                self.errors.append("SOURCE_SNAPSHOT_REJECTED")
-        elif self.connection:
-            self.connection.close()
-        self.connection = None
+                if self.snapshot:
+                    try:
+                        self.snapshot.__exit__(*args)
+                    except (ValueError, OSError, sqlite3.Error):
+                        self.errors.append("SOURCE_SNAPSHOT_REJECTED")
+                elif self.connection:
+                    self.connection.close()
+            finally:
+                self.connection = None
+                if self.deadline is not None and monotonic() >= self.deadline:
+                    if "SOURCE_SNAPSHOT_REJECTED" not in self.errors:
+                        self.errors.append("SOURCE_SNAPSHOT_REJECTED")
 
     def query(self, sql, params=()):
         self.query_count += 1
@@ -352,6 +382,12 @@ class Projection:
 
     @cached_property
     def shadow(self):
+        if (self.generation_reader is None and self.store._shadow_future is not None
+                and self.filters == self.store._shadow_filters):
+            return self.store._shadow_future.result()
+        return self._read_shadow()
+
+    def _read_shadow(self):
         try:
             from rc6_shadow_runtime.persistence import shadow_evidence_root
             root = shadow_evidence_root(self.store.path)

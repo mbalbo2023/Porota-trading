@@ -28,7 +28,7 @@ def build_page(path, params, database_path, *, now=None):
         raise HTTPException(404, "Subview no disponible")
     filters = {k: str(v)[:(512 if k == "identity" else 80)] for k, v in params.items() if k in FILTERS}
     start = perf_counter()
-    with Store(database_path, now=now) as store:
+    with Store(database_path, now=now, shadow_filters=filters) as store:
         projection = Projection(store, filters)
         content = VIEWS[destination.key].render(projection, destination, tab)
         if path in {"/observacion", "/testing"}:

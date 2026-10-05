@@ -1,7 +1,9 @@
 """Native four-member committed projections and bounded caller contracts."""
 from copy import deepcopy
+from contextlib import contextmanager
 import json
 import sqlite3
+from threading import Event, get_ident, enumerate as threads
 from time import monotonic
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from rc6_trader_dashboard.datasets import shadow_rows
 from rc6_trader_dashboard.projected_generation import read_projected, VERIFICATION_LEVEL
 from rc6_trader_dashboard.projection import Projection, Store
+from rc6_trader_dashboard.routes import build_page
 from tests.rc6_dashboard_native_fixture import native_fixture
 from tests.test_rc6_dashboard_convergence import inventory
 
@@ -179,3 +182,148 @@ def test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback(
     cut = read_projected(fixture.root, fails)
     assert cut["state"] == "NO_VERIFICADO" and cut["report"] == {}
     assert "SYNTHETIC_PRIVATE_MARKER" not in json.dumps(cut)
+
+
+def test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline(projected_native, monkeypatch):
+    import rc6_audit_evidence.sqlite_snapshot as snapshot
+    import rc6_shadow_runtime.persistence as persistence
+    fixture, native = projected_native
+    before = inventory(fixture.database)
+    copy_started, reader_started = Event(), Event()
+    original_copy, original_reader = snapshot.readonly_copy, persistence.read_committed_projection
+    captures = []
+
+    @contextmanager
+    def counted_copy(*args, **kwargs):
+        copy_started.set()
+        assert reader_started.wait(.5), "The canonical reader did not start during source capture"
+        captures.append(("source", get_ident(), kwargs["deadline"]))
+        with original_copy(*args, **kwargs) as connection:
+            yield connection
+
+    def counted_reader(*args, **kwargs):
+        reader_started.set()
+        assert copy_started.wait(.5), "Source capture did not overlap the reader"
+        captures.append(("projection", get_ident(), kwargs["deadline"], kwargs["filters"], kwargs["offset"]))
+        cut = original_reader(*args, **kwargs)
+        assert cut["pointer"] == native["pointer"]
+        return cut
+
+    monkeypatch.setattr(snapshot, "readonly_copy", counted_copy)
+    monkeypatch.setattr(persistence, "read_committed_projection", counted_reader)
+    html, _ = build_page("/en-vivo/oportunidades", {"q": "T024", "currency": "ARS", "offset": "invalid", "funnel_offset": "-2"},
+                         fixture.database, now=fixture.as_of)
+    assert VERIFICATION_LEVEL in html and "T024" in html
+    source, projected = sorted(captures, key=lambda row: row[0], reverse=True)
+    assert source[0] == "source" and projected[0] == "projection"
+    assert source[1] != projected[1] and source[2] == projected[2]
+    assert projected[3] == {"q": "T024", "currency": "ARS", "funnel_offset": "0"} and projected[4] == 0
+    assert not any(thread.name.startswith("rc6-dashboard-shadow") for thread in threads())
+    assert inventory(fixture.database) == before
+
+
+@pytest.mark.parametrize("different", ({"currency": "USD"}, {"offset": "10"}, {"funnel_offset": "10"}))
+def test_request_prefetch_never_reuses_a_different_projection_selection(projected_native, monkeypatch, different):
+    import rc6_shadow_runtime.persistence as persistence
+    fixture, native = projected_native
+    original_reader = persistence.read_committed_projection
+    calls = []
+
+    def counted_reader(*args, **kwargs):
+        calls.append((kwargs["filters"], kwargs["offset"], kwargs["deadline"]))
+        return original_reader(*args, **kwargs)
+
+    monkeypatch.setattr(persistence, "read_committed_projection", counted_reader)
+    with Store(fixture.database, now=fixture.as_of, shadow_filters={"currency": "ARS"}) as store:
+        first = Projection(store, {"currency": "ARS"}).shadow
+        assert first["pointer"] == native["pointer"]
+        assert Projection(store, {"currency": "ARS"}).shadow is first
+        other = Projection(store, {**{"currency": "ARS"}, **different}).shadow
+        assert other["state"] == "COMMITTED_COHERENT_SHADOW" and other["pointer"] == native["pointer"]
+        assert len(calls) == 2 and calls[0][:2] != calls[1][:2]
+        assert all(call[2] == store.deadline for call in calls)
+    assert not any(thread.name.startswith("rc6-dashboard-shadow") for thread in threads())
+
+
+def test_request_prefetch_does_not_override_an_explicit_generation_reader(projected_native):
+    fixture, _ = projected_native
+    calls = []
+    def explicit_reader(*_args, **_kwargs):
+        calls.append(1)
+        return fixture.cut
+    with Store(fixture.database, now=fixture.as_of, shadow_filters={}) as store:
+        selected = Projection(store, generation_reader=explicit_reader).shadow
+        assert selected["state"] == "COMMITTED_COHERENT_SHADOW"
+        assert calls == [1] and "dataset_pages" not in selected
+    assert store._shadow_future.done()
+    assert not any(thread.name.startswith("rc6-dashboard-shadow") for thread in threads())
+
+
+@pytest.mark.parametrize("failure", ("source_capture", "view"))
+def test_request_joins_the_native_reader_on_capture_or_render_failure(projected_native, monkeypatch, failure):
+    import rc6_audit_evidence.sqlite_snapshot as snapshot
+    import rc6_shadow_runtime.persistence as persistence
+    fixture, native = projected_native
+    before = inventory(fixture.database)
+    started, released, finished = Event(), Event(), Event()
+    original_reader = persistence.read_committed_projection
+
+    def held_reader(*args, **kwargs):
+        started.set()
+        assert released.wait(.5)
+        try:
+            cut = original_reader(*args, **kwargs)
+            assert cut["pointer"] == native["pointer"]
+            return cut
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(persistence, "read_committed_projection", held_reader)
+    if failure == "source_capture":
+        @contextmanager
+        def rejected_copy(*_args, **_kwargs):
+            assert started.wait(.5)
+            raise snapshot.SnapshotError("SOURCE_SNAPSHOT_BUSY")
+            yield  # Context manager rejects before opening any connection.
+        monkeypatch.setattr(snapshot, "readonly_copy", rejected_copy)
+        with Store(fixture.database, now=fixture.as_of, shadow_filters={}) as store:
+            assert store.connection is None and "DATABASE_READ_UNAVAILABLE" in store.errors
+            released.set()
+    else:
+        with pytest.raises(LookupError, match="RENDER_ABORTED"):
+            with Store(fixture.database, now=fixture.as_of, shadow_filters={}):
+                assert started.wait(.5)
+                released.set()
+                raise LookupError("RENDER_ABORTED")
+    assert finished.is_set()
+    assert not any(thread.name.startswith("rc6-dashboard-shadow") for thread in threads())
+    assert inventory(fixture.database) == before
+
+
+def test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline(projected_native, monkeypatch):
+    from bs4 import BeautifulSoup
+    import rc6_shadow_runtime.persistence as persistence
+    import rc6_trader_dashboard.shell as shell
+    fixture, native = projected_native
+    before = inventory(fixture.database)
+    original_reader = persistence.read_committed_projection
+    finished, calls = Event(), []
+
+    def held_reader(*args, **kwargs):
+        calls.append(kwargs["deadline"])
+        cut = original_reader(*args, **kwargs)
+        assert cut["pointer"] == native["pointer"]
+        # Deliberate negative scheduling: retain a real result past this same
+        # request's deadline; the view below never consumes its shadow property.
+        Event().wait(max(0, kwargs["deadline"] - monotonic()) + .02)
+        finished.set()
+        return cut
+
+    monkeypatch.setattr(persistence, "read_committed_projection", held_reader)
+    monkeypatch.setattr(shell, "policy_state", lambda _projection: "NO_VERIFICADO")
+    html, _ = build_page("/instrumentos", {}, fixture.database, now=fixture.as_of)
+    assert len(calls) == 1 and finished.is_set() and monotonic() >= calls[0]
+    assert "Corte de lectura no disponible dentro del presupuesto" in html
+    assert not BeautifulSoup(html, "html.parser").select("tr[data-row]")
+    assert not any(thread.name.startswith("rc6-dashboard-shadow") for thread in threads())
+    assert inventory(fixture.database) == before

@@ -42,18 +42,27 @@
         "tests/test_ws_dash_trader_terminal_08.py::test_missing_canonical_reader_preserves_awaiting_reconciliation",
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
-        "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback"
+        "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
       ],
       "receipts": [
         "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
-        "Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido."
+        "Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
       ]
     },
     {
@@ -116,7 +125,12 @@
         "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_pagination_preserves_selection_and_full_population",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
-        "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected"
+        "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
       ],
       "receipts": [
         "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
@@ -126,11 +140,15 @@
         "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
         "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
-        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml"
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
-        "SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort."
+        "SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
       ]
     },
     {
@@ -213,7 +231,12 @@
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
-        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite"
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
       ],
       "receipts": [
         "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
@@ -230,7 +253,10 @@
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json",
         "docs/dashboard/evidence/rc6-convergence-ux/native-large-first-cut-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json",
-        "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml"
       ],
       "pending_gates": [
         "Browser grande:40f mejora reader(max0.811644s), pero af71ff9e intermedio falla1.181601s en1280/trading/equity-spot tras49views1440GREEN. Corregir costo, ejecutar49×6/22/interacciones sin aumentar1s.",
@@ -241,7 +267,8 @@
         "El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
         "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales.",
         "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados.",
-        "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN."
+        "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved."
       ]
     },
     {

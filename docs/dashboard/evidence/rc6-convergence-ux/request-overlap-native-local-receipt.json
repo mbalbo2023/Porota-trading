@@ -1,0 +1,70 @@
+{
+  "acceptance_complete": false,
+  "distinct_tests_passed": 47,
+  "independent_review": {
+    "agent": "finance_review",
+    "execution_claim": false,
+    "finding": "No cross-connection, selection-reuse or financial-authority gap found in this delta; recommended unused-reader deadline guard added and passed.",
+    "scope": "SOURCE_READ_ONLY"
+  },
+  "large_temporal_acceptance_claim": false,
+  "negative_fault_injection": [
+    "SOURCE_SNAPSHOT_BUSY before native source connection",
+    "View exception while canonical read is pending",
+    "Retain a real canonical query result until this same deadline plus20ms; force only shell policy label toNO_VERIFICADO so the real catalog view does not consume the pending shadow property."
+  ],
+  "positive_shape_source": "NATIVE_PAPER_CALLER_AND_SHADOW_WRITER_READER_ONLY",
+  "ppi_watch_touched": false,
+  "prior_large_reds_retained": [
+    "native-large-first-cut-local-receipt.json",
+    "native-large-intermediate-40f-local-receipt.json"
+  ],
+  "projection_limit_bytes": 4194304,
+  "protected_344_owned_changes": 0,
+  "request_deadline_seconds": 1,
+  "request_workers": 1,
+  "runs": [
+    {
+      "command_scope": "MODULE_PROJECTION_PLUS_EXPIRED_BODY",
+      "elapsed_seconds": 7.984,
+      "errors": 0,
+      "failures": 0,
+      "receipt": "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+      "sha256": "d1e2b306857aa3024ce40050757d2d3c7c4951311153b15c5c4cb9474d021bca",
+      "skipped": 0,
+      "tests": 45
+    },
+    {
+      "command_scope": "TWO_ADDITIONAL_NATIVE_NODES",
+      "elapsed_seconds": 5.355,
+      "errors": 0,
+      "failures": 0,
+      "receipt": "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+      "sha256": "61882157152743f660baf74f60570cce2a30937d10e6d670a9814411ac60cbe5",
+      "skipped": 0,
+      "tests": 2
+    }
+  ],
+  "runtime_actions": "NOT_CALLED",
+  "schema": "rc6.dashboard-request-overlap-native-guards.v1",
+  "semantics": [
+    "SQLite source capture and canonical four-role read are independent and start together within one absolute deadline.",
+    "The source copy connection remains on the rendering thread.",
+    "A result is shared only within that request and only for identical normalized selectors with the default canonical reader.",
+    "Different filters/offset/funnel offset or an explicit generation reader retain their own read.",
+    "Worker is joined before closing capture resources on success, capture failure, view failure and BaseException.",
+    "An expired request discards the body and does not reopen generation or fall back."
+  ],
+  "source_files_sha256": {
+    "rc6_trader_dashboard/projection.py": "1579d2d82ac6724d1b08a9f5667e69d189d1389d4dfe7a1c8ba9d0e1f7bd9425",
+    "rc6_trader_dashboard/routes.py": "fe5de1bb7322810eaa698fa11a45a1aca473c06e4c1b981777cb2d5212cd0309",
+    "tests/rc6_dashboard_native_fixture.py": "440e72c65cd4f2ef971e20c38749ebdf96ebfe54e3ac507271bbd5fc47a3bd5d",
+    "tests/test_rc6_dashboard_projection.py": "bae9d4f4dd06925178f350493f68b76bc089de8c6c07bb7c4f55dcb1e8af0df0"
+  },
+  "source_overlays": [],
+  "source_parent_sha": "d7c134b9de2345be09ace1253e188b38c5bf8c04",
+  "source_pin_final": false,
+  "source_scope": "OWNED_PRODUCT_BLOBS_ON_LOCAL_WORKTREE_NOT_FINAL_ROOT_FREEZE",
+  "status": "LOCAL_NATIVE_GUARDS_GREEN_LARGE_BROWSER_PENDING",
+  "storage_core_owned_changes": 0
+}
