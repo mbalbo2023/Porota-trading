@@ -2963,6 +2963,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
@@ -3140,6 +3141,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -3354,6 +3356,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
@@ -3410,6 +3413,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
@@ -5496,6 +5500,32 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/native-contract-transition.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -7186,6 +7216,13 @@
       "requirement_ids": [
         "AUD-468-16",
         "UX470-I04"
+      ]
+    },
+    "tests/ci_rc6_projection_browser_diagnostic.py": {
+      "reason": "Measure native request components, GC and process/container CPU under Chromium on an intact archived large OPEN cut, preserving deadlines and all before-after source/custody checks. This diagnostic always declares acceptance_complete=false and cannot replace the canonical49-route/six-resolution/alias/focus gate.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I05"
       ]
     },
     "tests/ci_rc6_projection_large_browser.py": {
@@ -9140,6 +9177,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
@@ -9184,6 +9222,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
@@ -9287,6 +9326,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -9645,6 +9685,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
@@ -12502,6 +12543,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -12589,6 +12631,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
@@ -12644,6 +12687,7 @@
         "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
         "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
