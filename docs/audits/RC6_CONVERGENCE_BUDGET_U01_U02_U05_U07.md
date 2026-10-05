@@ -75,7 +75,7 @@ X1/X2 and R29–R36/R45/R64–R66 to exact executed test nodes and receipt hashe
 It distinguishes SDK fake-wire, native SQL with modeled sends and actual
 process interruption; parametrizations never become independent attack counts.
 
-The final combined run used:
+The combined run preceding the retained-capacity followup used:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
@@ -136,3 +136,82 @@ body remains owned by the transport; the deadline alarm suspends lower activity
 and records degradation without claiming to cancel that body. Capacity approval
 still requires factual evidence from the canonical promotion path. No deployment
 authorization follows from this document.
+
+## Retained receipt capacity followup: U02/U05
+
+The additional native SQL reproduction found a material gap after the earlier
+green runs. Twenty thousand synthetic, already-used LOWER receipts remained
+within the one-hour binding horizon. None belonged to the current30s rate
+window. The75-per-endpoint/global225 envelope reserved EXITbook30 but rejected
+EXIT with `PPI_BUDGET_ROW_LIMIT`. Rate reserves alone did not protect the
+retained receipt table. The earlier six-scopes/second load generated denials,
+so it did not exercise this admitted-wire growth.
+
+The [versioned RED probe](convergence/evidence/rc6-budget-retention-red-probe.json)
+records the exact SQL counts/denial and explicitly identifies its synthetic
+historic debt and parameter-only position count. The new native regression
+independently obtains75/225 through the actual offline SDK benchmark,
+recommendation/approval/controller and a real five-position PAPER ledger.
+Its HTTP adapter remains fake; this is no evidence of actual PPI quota.
+
+Commit `1637289f61d15a5ae6c6eb2e62ad6cbd289a6885` reserves future retained
+EXIT growth before LOWER acquire and START. It compares future critical sweeps
+with every historic receipt's exact legal expiration, rather than treating
+previously used EXIT rows as spare capacity. The same checks reserve physical
+pages for fixed-size receipts, permitted critical book caches, binding state
+and bounded telemetry under the existing DB+DELETE-journal quota. Static
+activation rejects a critical stream that cannot fit20k retained rows or the
+configured physical budget. Twenty-eight positions at5s need20,188 retained
+receipts at the strict boundary; that cannot become READY even with otherwise
+sufficient endpoint/global rate limits. No cap, quota or20k ceiling is raised.
+
+The old tracking fixture claiming64 identities/5s READY was incompatible with
+the retained table. It now isolates the tracking limit with an explicit60s
+cadence and32MiB quota; the separate retained-capacity tests reject the
+impossible5s configuration. Position/intent data and valid old authority are
+preserved. Warm EXIT can use only its existing policy, debt, expiry and cadence.
+
+The public API is
+`exit_retention_preflight(database, state, *, opened_count, as_of)`. It reads
+the canonical sidecar with `mode=ro`/`query_only`, performs no bootstrap,
+maintenance, clock update or permission change, and returns sanitized
+`READY`/`ACTIVATION_BLOCKED_EXIT_CAPACITY` plus source and space evidence.
+The root controller consumes this as `exit_receipt_capacity`, outside the
+static `exit_capacity` fingerprint; merely fluctuating occupancy must not
+change a healthy configuration fingerprint.
+
+Commit `51318d8ab1a2ec22c01ed51820f5abbeb623d1ab` distinguishes binding
+`retained_receipts`, `physically_stored_receipts` and
+`legally_expired_receipts`. A readonly probe may credit only the legal pruning
+that native admission executes before all growth. It never credits hypothetical
+free pages or any receipt held by an inflight token, including an old used
+token with an uncertain outcome. A physically full sidecar remains blocked.
+
+The independent review found one further edge: a missing main file was
+reported ABSENT before checking orphan companion files. Commit
+`9bbc0a9f5303e3752d8025755a97da957cc0e46b` checks companions first in both
+readonly APIs. Missing main plus journal/WAL/SHM, a degradation marker or known
+lock companions is UNVERIFIED/BLOCKED. None are deleted or repaired. A truly
+empty cold allocation is the positive control and produces exactly one native
+SDK market send; all seven orphan conditions produce zero market sends and
+leave bytes/permissions unchanged.
+
+The new guards are in
+[test_rc6_budget_receipt_retention.py](../../tests/test_rc6_budget_receipt_retention.py).
+They cover native20k rejection before wire,90 actual uncoalesced SDK EXIT sends
+plus actual LOWER probes over18 manually scheduled rounds/three30s windows and
+two restarts, real binding-table SQLITE_FULL, preserved live debt, legal aging,
+START revalidation, recent bunched EXIT debt, small quota, readonly unknown
+state and orphan companions. These manual rounds verify retained capacity;
+the existing native EXIT-worker tests separately verify producer cadence and
+coalescing. Synthetic history does not become historical provider evidence.
+
+The [213-case compatibility receipt](convergence/evidence/rc6-budget-retention-native.xml),
+[98-case interop receipt](convergence/evidence/rc6-budget-retention-interop.xml),
+[55-case aging/producer/promotion receipt](convergence/evidence/rc6-budget-retention-aging.xml)
+and [final15-case receipt guards](convergence/evidence/rc6-budget-retention-orphan.xml)
+all have zero failures, errors and skips. Each receipt retains its source-state
+boundary in the JSON register. The15-case final guard SHA-256 is
+`cd16dcb7f30b4c864b0058422c4824861ac501abbe3db50b0c047978314cdec8`.
+The integrator still owns the complete frozen candidate/artifact execution;
+these intersecting receipts are never summed as independent scenarios.
