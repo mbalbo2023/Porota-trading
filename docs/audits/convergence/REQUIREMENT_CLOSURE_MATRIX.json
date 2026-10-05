@@ -74,9 +74,38 @@
     },
     {
       "code_paths": [
+        "cv_history_store_adapter_hf6.py",
+        "cu_history_store_v2_hf6.py",
+        "ea_history_close_series_hf2.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Validate a bounded coherent private source copy before opening the source, negotiating WAL or issuing DDL. Bind the successful preflight to the native Store and source inode, close owned connections and reject incompatible FULL/CLOSE_ONLY schemas without automatic migration.",
+      "id": "NEW_LEGACY_INIT_PRE_WAL_MUTATION",
+      "linked_requirement_ids": [
+        "AUD-468-07",
+        "U24"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "HistoricalStore opened source SQLite and changed journal mode before required legacy-schema rejection. MAIN/header/atime and source sidecars changed, and close-only legacy could receive FULL DDL before its own rejection.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Currency migration requires an explicit reviewed mapping or actual row currency.; Data912 absent reported currency remains REQUESTED_IDENTITY_ONLY.; No complete current catalog/history snapshot was authorized.",
+      "test_nodes": [
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_new_native_writer_validates_initializes_commits_then_negotiates_wal"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
         "bf_production_paper_observer.py",
+        "cu_history_store_v2_hf6.py",
+        "cv_history_store_adapter_hf6.py",
+        "ea_history_close_series_hf2.py",
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_shadow_runtime/preopen.py"
       ],
@@ -88,8 +117,8 @@
         "U24",
         "AUD-468-18"
       ],
-      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
-      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "native_caller": "bf_production_paper_observer._history_cutoff_repair_complete -> readonly_copy; historical marker is advisory only.",
+      "owner_mapping": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
       "rca": "A native dated read-only marker query used the writer adapter and changed source metadata or created a missing dataset.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
       "test_nodes": [
@@ -97,7 +126,7 @@
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source"
       ],
-      "workstream": "HISTORY"
+      "workstream": "CORE"
     },
     {
       "code_paths": [
@@ -179,6 +208,39 @@
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
       "test_nodes": [
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_audit_evidence/sqlite_scratch.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Use private disk-backed scratch under the primary artifact root with the complete512MiB allocation quota, residual2GiB reserve,10percent free-inode guard and nonblocking owner lease. Count identified crash residue and check custody before cleanup; preserve source metadata and reject unknown or aliased content.",
+      "id": "NEW_RUNTIME_DISK_SCRATCH_QUOTA_CUSTODY",
+      "linked_requirement_ids": [
+        "U24",
+        "AUD-468-18",
+        "AUD-468-21"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "The default copy directory could use the observer32MiB /tmp tmpfs, which cannot hold the73,646,080-byte native fixture. It lacked total scratch/residue/reserve custody accounting.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
+      "test_nodes": [
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -3433,7 +3495,15 @@
         "AUD-468-13",
         "AUD-468-17",
         "AUD-468-18",
-        "AUD-468-21"
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "cv_history_store_adapter_hf6.py": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-07",
+        "U24"
       ]
     },
     "cw_data912_history_v2_sink.py": {
@@ -4121,6 +4191,28 @@
         "U23"
       ]
     },
+    "docs/audits/rc6_convergence_finance/original_core_audit_replay_review.md": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/original_core_c27dfd9_replay_receipt.json": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
     "docs/audits/rc6_convergence_finance/persistence_independent_review.md": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -4559,6 +4651,58 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-browser-preparation-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-browser-small-rejection.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/large-harness-small-rejection-strict.json": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -4852,7 +4996,8 @@
         "AUD-468-09",
         "AUD-468-10",
         "AUD-468-17",
-        "AUD-468-18"
+        "AUD-468-18",
+        "U24"
       ]
     },
     "ew_a3_history_rc6.py": {
@@ -4951,6 +5096,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/canonical_initialization_native.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/disk_scratch_native.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -4981,6 +5141,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/dry_run_canonical_initialization.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/dry_run_exact_index.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -4997,6 +5172,21 @@
       ]
     },
     "rc6_audit_evidence/history_convergence/dry_run_semantic_metadata.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/future_deploy_history_plan.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
         "AUD-468-06",
@@ -5120,6 +5310,7 @@
         "AUD-468-11",
         "AUD-468-12",
         "AUD-468-18",
+        "AUD-468-21",
         "U24"
       ]
     },
@@ -5129,6 +5320,7 @@
         "AUD-468-11",
         "AUD-468-12",
         "AUD-468-18",
+        "AUD-468-21",
         "U24"
       ]
     },
@@ -5706,6 +5898,15 @@
         "AUD-468-21"
       ]
     },
+    "tests/ci_rc6_projection_large_browser.py": {
+      "reason": "Execute the independent read-only browser gate for the canonical12000/60000 monofamily OPEN producer cut, with four-role custody and the complete route/alias/resolution/focus/pagination checks. Native small/PRE cuts are rejected; source review is not a positive browser execution.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I05"
+      ]
+    },
     "tests/ci_rc6_projection_large_reader.py": {
       "reason": "Provide the independent read-only acceptance runner for an actually completed12000/60000 native producer cut; small fixtures are rejected and large proof remains pending until that runner executes on the frozen candidate.",
       "requirement_ids": [
@@ -5720,6 +5921,28 @@
         "UX470-I05"
       ]
     },
+    "tests/probes/fixtures/original_core_audits/issue468_adversarial_harness.py": {
+      "reason": "Preserve exact supplied original issue468 adversarial driver bytes; the independent replay receipt records its original hash, actual native caller results and explicit evidence boundary.",
+      "requirement_ids": [
+        "AUD-468-01",
+        "AUD-468-02",
+        "AUD-468-03",
+        "AUD-468-04",
+        "AUD-468-05"
+      ]
+    },
+    "tests/probes/fixtures/original_core_audits/issue469_f01_f02_probes.py": {
+      "reason": "Preserve exact supplied original F01/F02 probe bytes for the independent pinned-archive recovery replay; no new scenario or assertion replacement.",
+      "requirement_ids": [
+        "U03"
+      ]
+    },
+    "tests/probes/fixtures/original_core_audits/issue469_scalping_economics_probe.py": {
+      "reason": "Preserve exact supplied original economics driver bytes for the independent pinned-archive binding-admission replay; no new scenario or assertion replacement.",
+      "requirement_ids": [
+        "U06"
+      ]
+    },
     "tests/probes/rc6_convergence_finance_probe.py": {
       "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
       "requirement_ids": [
@@ -5729,6 +5952,19 @@
         "U10",
         "U22",
         "U23"
+      ]
+    },
+    "tests/probes/rc6_original_core_archive_probe.py": {
+      "reason": "Replay preserved original core drivers against an intact pinned original archive with repository-import and no-network proof; distinguish actual native failures from controls, source-contract uncertainty and event-count model limits. Current guards still require final frozen execution.",
+      "requirement_ids": [
+        "AUD-468-01",
+        "AUD-468-02",
+        "AUD-468-03",
+        "AUD-468-04",
+        "AUD-468-05",
+        "U03",
+        "U06",
+        "U08"
       ]
     },
     "tests/probes/rc6_projection_index_derivation_probe.py": {
@@ -6071,7 +6307,8 @@
     "tests/test_rc6_convergence_sre_launcher.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
-        "U04"
+        "U04",
+        "U13"
       ]
     },
     "tests/test_rc6_convergence_sre_modes.py": {
@@ -6238,11 +6475,20 @@
         "AUD-468-21"
       ]
     },
+    "tests/test_rc6_history_initialization_copy.py": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-07",
+        "U24"
+      ]
+    },
     "tests/test_rc6_history_large_preopen.py": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
         "AUD-468-11",
         "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-21",
         "U24"
       ]
     },
@@ -6300,6 +6546,15 @@
         "U27"
       ]
     },
+    "tests/test_rc6_projection_large_browser.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I05"
+      ]
+    },
     "tests/test_rc6_projection_source_guard.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -6341,6 +6596,7 @@
         "AUD-468-11",
         "AUD-468-12",
         "AUD-468-18",
+        "AUD-468-21",
         "U24"
       ]
     },
@@ -6524,6 +6780,7 @@
       "code_paths": [
         "cr_data912_reconcile_hf6.py",
         "cu_history_store_v2_hf6.py",
+        "cv_history_store_adapter_hf6.py",
         "cw_data912_history_v2_sink.py",
         "db_a3_cem_normalizer_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -6552,6 +6809,10 @@
         "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_currency",
         "tests/test_rc6_history_convergence.py::test_AUD07_currency_identity_is_exact_and_missing_currency_is_rejected",
         "tests/test_rc6_history_convergence.py::test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_new_native_writer_validates_initializes_commits_then_negotiates_wal",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_microsecond_known_cut_and_currency_conflict_are_not_backdated",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_native_currency_provider_clock_and_unknown_quantity_kind_are_explicit"
       ],
@@ -6685,6 +6946,7 @@
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_append_only_raw_history_survives_later_mutable_production_revision",
         "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
@@ -6734,6 +6996,7 @@
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
@@ -6951,11 +7214,14 @@
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
         "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
@@ -7032,7 +7298,9 @@
     },
     {
       "code_paths": [
-        "cu_history_store_v2_hf6.py"
+        "cu_history_store_v2_hf6.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
+        "rc6_audit_evidence/sqlite_snapshot.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -7051,7 +7319,19 @@
       "test_nodes": [
         "test_hf6_history_data912_v2.py::test_history_collection_does_not_equal_ready_paper",
         "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
-        "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready"
+        "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -7171,6 +7451,7 @@
       "test_nodes": [
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
+        "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
         "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values",
         "tests/test_rc6_convergence_sre_launcher.py::test_shipped_configuration_and_missing_inputs_never_autoactivate",
         "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller",
@@ -7465,6 +7746,7 @@
         "tests/test_rc6_convergence_sre_health.py::test_observable_restart_can_recover_after_two_cadences_and_current_progress",
         "tests/test_rc6_convergence_sre_health.py::test_real_producer_health_is_green_without_provider_or_source_writes",
         "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence",
+        "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
         "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
         "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
         "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
@@ -7773,6 +8055,9 @@
     {
       "code_paths": [
         "bf_production_paper_observer.py",
+        "cu_history_store_v2_hf6.py",
+        "cv_history_store_adapter_hf6.py",
+        "ea_history_close_series_hf2.py",
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
         "rc6_audit_evidence/sqlite_scratch.py",
@@ -7794,9 +8079,15 @@
       "rca": "SQLite mode=ro on a main+WAL source without SHM could create source SHM and change filesystem metadata.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
       "test_nodes": [
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
+        "tests/test_rc6_history_initialization_copy.py::test_NEW_new_native_writer_validates_initializes_commits_then_negotiates_wal",
         "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
         "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
         "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
@@ -7812,6 +8103,7 @@
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
@@ -8003,6 +8295,8 @@
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/projection.py",
+        "tests/ci_rc6_projection_large_browser.py",
+        "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -8027,6 +8321,8 @@
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
         "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
@@ -8044,6 +8340,8 @@
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/views_universe.py",
+        "tests/ci_rc6_projection_large_browser.py",
+        "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -8068,6 +8366,8 @@
         "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
         "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect"
@@ -8083,6 +8383,8 @@
         "rc6_trader_dashboard/view_common.py",
         "rc6_trader_dashboard/views_analytics.py",
         "rc6_trader_dashboard/views_home.py",
+        "tests/ci_rc6_projection_large_browser.py",
+        "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -8109,6 +8411,8 @@
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
         "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
@@ -8152,11 +8456,13 @@
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "scripts/rc6_dashboard_route_inventory.py",
+        "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/ci_trader_terminal_browser.py",
         "tests/rc6_dashboard_native_fixture.py",
         "tests/test_rc6_dashboard_convergence.py",
         "tests/test_rc6_dashboard_projection.py",
+        "tests/test_rc6_projection_large_browser.py",
         "tests/test_rc6_projection_source_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -8172,7 +8478,7 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "GREEN de #470 y su truth matrix aislada usaban un contrato sint\u00e9tico; no probaban el productor\u2192reader\u2192UI real ni igualdad del hook, paquete e imagen. Un checkpoint l\u00f3gico grande tambi\u00e9n exige lectura verificada acotada y medici\u00f3n real.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.; El artefacto nativo completo 12000/60000 y render/consulta \u22641 s, salida \u22644 MiB siguen pendientes; fixture peque\u00f1o y SQL aislado no los cierran.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.; El artefacto nativo completo 12000/60000 y render/consulta \u22641 s, salida \u22644 MiB siguen pendientes; fixture peque\u00f1o y SQL aislado no los cierran.; El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica cat\u00e1logos mixtos generales.",
       "test_nodes": [
         "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
@@ -8181,6 +8487,8 @@
         "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
         "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
         "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
         "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
@@ -8197,6 +8505,7 @@
       "code_paths": [
         "cr_data912_reconcile_hf6.py",
         "cu_history_store_v2_hf6.py",
+        "cv_history_store_adapter_hf6.py",
         "cw_data912_history_v2_sink.py",
         "db_a3_cem_normalizer_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -10383,6 +10692,7 @@
       "test_nodes": [
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
+        "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
         "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values",
         "tests/test_rc6_convergence_sre_launcher.py::test_shipped_configuration_and_missing_inputs_never_autoactivate",
         "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller",
@@ -10442,6 +10752,7 @@
         "tests/test_rc6_convergence_sre_health.py::test_observable_restart_can_recover_after_two_cadences_and_current_progress",
         "tests/test_rc6_convergence_sre_health.py::test_real_producer_health_is_green_without_provider_or_source_writes",
         "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence",
+        "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
         "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
         "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
         "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
