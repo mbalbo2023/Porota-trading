@@ -13,8 +13,8 @@
   ],
   "field_authority_matrix": "field_authority_matrix.md",
   "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
-  "finance_head": "bed9dc6b424b752f084866340a8d5929db9a11e6",
-  "generated_at": "2026-10-05T03:11:05.506800+00:00",
+  "finance_head": "a0961dee37906a5be94ab3d263466de3d6c59475",
+  "generated_at": "2026-10-05T03:24:26.389557+00:00",
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -455,7 +455,7 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_rc6_final_shared_risk.py::test_emergency_position_cap_counts_both_ledgers_for_each_executor"
+        "tests/test_rc6_convergence_budget_liveness.py::test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart"
       ],
       "id": "C-30",
       "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
@@ -470,7 +470,7 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_rc6_ppi_global_budget.py::test_exit_reserve_cannot_be_consumed_by_discovery"
+        "tests/test_rc6_convergence_budget_liveness.py::test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart"
       ],
       "id": "C-31",
       "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
@@ -485,7 +485,7 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_rc6_ppi_global_budget.py::test_approved_envelope_reserves_actual_opened_demand_once"
+        "tests/test_rc6_convergence_budget_liveness.py::test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart"
       ],
       "id": "C-32",
       "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
@@ -755,7 +755,7 @@
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
       "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
       "current_native_nodes": [
-        "tests/test_issue465_historical_package.py::test_actual_sqlite_readonly_query_only_authorizer_and_no_source_change"
+        "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata"
       ],
       "id": "C-50",
       "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
@@ -1017,7 +1017,7 @@
   "real_orders_sent": 0,
   "real_routes_used": [],
   "receipt_hashes": {
-    "consolidated_finance_evidence.json": "be4d160629a17465ad02f7ac68643bb45f4e4c2d4e27022649e65d2a601d6a72",
+    "consolidated_finance_evidence.json": "cc52aad90b892ce41972c8d7ad2af065ae23513d451206597861d8da93c9c578",
     "core_finance_review_receipt.json": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00",
     "core_finance_review_tests.xml": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267",
     "finance_focused_receipt.json": "a0ebdde8d10e3befc0df796105ee3b9515cb07eedbaffbf758120696289858cf",
@@ -1033,7 +1033,7 @@
     "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",
     "retention_ack_resume_red_2fb29369.json": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
   },
-  "reference_root_sha": "edc20c74dae2b3dd9095edba3dd3d8e95d0b4625",
+  "reference_root_sha": "6e50048abe016e3b6c1116c09ec8e8bd1b304aef",
   "requirements": [
     {
       "aliases": [

@@ -8,8 +8,8 @@
       "sha256": "2edf155d3aa53110501f74e831cd0058f5764fbf56fe5fb06748ffc0a2bd599c"
     },
     "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
-      "bytes": 73228,
-      "sha256": "cc52aad90b892ce41972c8d7ad2af065ae23513d451206597861d8da93c9c578"
+      "bytes": 73352,
+      "sha256": "b4bfebeeea5d2efdeeaed4763711e8ea1343939fd5b8afb50e599aacbea99bbb"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -100,5 +100,5 @@
   "producer": "FINANCE_REVIEW_AGENT_OFFLINE",
   "schema": "rc6.finance-evidence-manifest.v1",
   "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY",
-  "updated_at": "2026-10-05T03:11:05.566502+00:00"
+  "updated_at": "2026-10-05T03:24:26.507180+00:00"
 }
