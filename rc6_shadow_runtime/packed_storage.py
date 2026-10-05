@@ -6,12 +6,15 @@ expanded canonical stream, including every repeated instance, has a distinct
 length and SHA256. Verified bytes never become mutable shared JSON objects.
 """
 from dataclasses import dataclass
+from contextvars import ContextVar
 import base64
 import gzip
 import hashlib
 import json
 import re
 import struct
+import sys
+import threading
 import time
 import zlib
 
@@ -45,6 +48,7 @@ _BINDING_SCALAR_ENTRIES = 4096
 _BINDING_SCALAR_BYTES = 1024 * 1024
 _BINDING_SCALAR_STRING = 256
 _BINDING_SCALAR_INTEGER_BITS = 4096
+_PUBLICATION_CONSTRUCTION = ContextVar("rc6_private_publication_construction", default=None)
 
 
 def _canonical(value, *, ascii=True):
@@ -299,7 +303,13 @@ class _CaptureBuilder:
         # Binding bytes belong to one capture call, never the named-capture
         # cache or another cut/publication. Direct append calls keep fallback.
         self._binding_scalars, self._binding_bytes = None, 0
+        self._publication_scope = None
+        grant = _PUBLICATION_CONSTRUCTION.get()
+        if type(grant) is _PublicationGrant:
+            self._publication_scope = grant.claim(self, value, self.cache, sys._getframe(1))
         self._count(value)
+        if self._publication_scope is not None and not self._publication_scope.eligible_role(self, value):
+            self._publication_scope = None
 
     def _count(self, value):
         if not isinstance(value, (dict, list, tuple)):
@@ -358,6 +368,8 @@ class _CaptureBuilder:
         if container and not root and (
                 self.incoming.get(id(value), 0) >= 2 or name in _FIELDS):
             cached = self.cache.get(id(value))
+            if self._publication_scope is not None:
+                self._publication_scope.record_dependency(id(value), cached)
             fresh = cached is None or cached[0] is not value
             if fresh:
                 capture = self._named(value)
@@ -374,6 +386,10 @@ class _CaptureBuilder:
             # token also fits. Append once without moving any legacy cut.
             if len(raw) <= PACK_TARGET-len(buffer.template):
                 buffer.append(raw); return
+        if (self._publication_scope is not None and type(value) in (dict, list, tuple)
+                and len(value) >= self._publication_scope.minimum_items
+                and self._publication_scope.append(self, value, name, buffer, root=root)):
+            return
         if isinstance(value, dict):
             buffer.append(b"{")
             for ordinal, key in enumerate(sorted(value)):
@@ -402,6 +418,11 @@ class _CaptureBuilder:
             buffer.append(self._scalar(value))
 
     def capture(self, value, name=""):
+        if self._publication_scope is not None:
+            return self._publication_scope.capture(self, value, name)
+        return self._capture_original(value, name)
+
+    def _capture_original(self, value, name=""):
         previous = self._binding_scalars, self._binding_bytes
         self._binding_scalars, self._binding_bytes = {}, 0
         try:
@@ -415,6 +436,30 @@ class _CaptureBuilder:
             # Reentrant default=str keeps the surrounding capture's private
             # context, while top-level calls leave no cache behind.
             self._binding_scalars, self._binding_bytes = previous
+
+
+class _PublicationGrant:
+    """A single private constructor capability, never supplied by a caller."""
+    def __init__(self, prepared, value, cache, scope):
+        self.prepared, self.value, self.cache, self.scope = prepared, value, cache, scope
+        self.thread = threading.get_ident()
+        self.builder = None
+
+    def claim(self, builder, value, cache, caller):
+        if (self.builder is not None or threading.get_ident() != self.thread
+                or type(builder) is not _CaptureBuilder or type(cache) is not dict
+                or value is not self.value or cache is not self.cache
+                or type(self.prepared) is not PreparedPackedStorage
+                or caller.f_code is not _PREPARED_CONSTRUCTOR_CODE
+                or caller.f_locals.get("self") is not self.prepared):
+            return None
+        # Count may encounter subclass callbacks. Consume this capability
+        # before entering it, even if the whole-role eligibility then fails.
+        self.builder = builder
+        return self.scope
+
+    def close(self):
+        self.prepared = self.value = self.cache = self.scope = self.builder = None
 
 
 class PreparedPackedStorage:
@@ -470,6 +515,11 @@ class PreparedPackedStorage:
         result = _encode_captures(captures, logical_sha=logical_sha, logical_bytes=logical_bytes,
                                   durable_limit=self.durable_limit, expansion_limit=self.expansion_limit)
         return result, logical_sha
+
+
+# The stress harness wraps __init__. Its original execution frame still has
+# this code identity, and a nested public constructor has a different self.
+_PREPARED_CONSTRUCTOR_CODE = PreparedPackedStorage.__init__.__code__
 
 
 def _encode_captures(captures, *, logical_sha, logical_bytes, durable_limit, expansion_limit):

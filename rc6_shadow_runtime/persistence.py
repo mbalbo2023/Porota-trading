@@ -814,9 +814,14 @@ class EvidenceFiles:
         mutable = {"cross_payload_hashes", "evidence_retention", "status", "observation_status",
                    "report_digest", "checkpoint_digest"}
         cache, shape_memo = {}, {}
-        prepared = {role: PreparedStorage(value, mutable=mutable, durable_limit=self.payload_limit-128,
-                                         expansion_limit=EXPANDED_PAYLOAD_LIMIT, cache=cache, shape_memo=shape_memo) for role, value in values.items()}
-        shape_memo.clear()
+        if _take_payloads:
+            from .publication_storage import prepare_publication_storage
+            prepared, cache = prepare_publication_storage(values, mutable=mutable,
+                durable_limit=self.payload_limit-128, expansion_limit=EXPANDED_PAYLOAD_LIMIT)
+        else:
+            prepared = {role: PreparedStorage(value, mutable=mutable, durable_limit=self.payload_limit-128,
+                                             expansion_limit=EXPANDED_PAYLOAD_LIMIT, cache=cache, shape_memo=shape_memo) for role, value in values.items()}
+            shape_memo.clear()
         from .projection import PreparedProjection
         projection_builder = PreparedProjection(values["report"])
         def pack():
