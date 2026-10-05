@@ -20,7 +20,7 @@
     "token": "2026-10-05T02:11:06.701Z-contingency-qzlp79jbk",
     "holder": "SUPERVISOR_SETUP_CONTINGENCY_AUDIT",
     "acquired_at": "2026-10-05T02:11:06.701Z",
-    "expires_at": "2026-10-05T02:31:06.701Z"
+    "expires_at": "2026-10-05T02:32:54.262Z"
   },
   "pending_action": {
     "type": "PERSIST_VERIFIED_CONTINGENCIES_AND_UPDATE_PROMPT",
@@ -64,7 +64,7 @@
   "setup_capability_limits": {
     "model_selection": "NOT_EXPOSED",
     "branch_protection_details": "403 Resource not accessible by integration",
-    "large_artifact_transfer": "32 MiB transfer cap; signed URL HTTP403 error code1010; verified runner evidence path not yet implemented"
+    "large_artifact_transfer": "32 MiB executor transfer cap; large signed URL HTTP403 error code1010. Small evidence ZIP transport/bytes/digests VERIFIED; complete final-candidate Actions evidence path still PENDING."
   },
   "schedule": {
     "timezone": "America/Buenos_Aires",
@@ -107,5 +107,27 @@
     "created_at": "2026-10-05T01:54:44Z",
     "control_commit": "d19f49a058427cd52bfae2b4febf257277927353"
   },
-  "last_setup_verified_at": "2026-10-05T01:55:13.037Z"
+  "last_setup_verified_at": "2026-10-05T01:55:13.037Z",
+  "contingency_audit": {
+    "observed_at": "2026-10-05T02:12:54.262Z",
+    "small_artifact_transfer": "VERIFIED_BYTES_AND_GITHUB_DIGEST",
+    "verified_artifacts": [
+      {
+        "id": 11277627152,
+        "size_bytes": 7757,
+        "sha256": "a4bf46ea04860448e349483d8fe96f870efacb10cf376725dd42e63af032c99d"
+      },
+      {
+        "id": 11277236383,
+        "size_bytes": 48450,
+        "sha256": "4a5f6d0a2d1824fcdfad2e32d64ca7e2ee7d9c5f7b51b528683302c9fda8428c"
+      }
+    ],
+    "historical_resume_run": 37131712187,
+    "historical_resume_observed_at": "2026-10-03T15:16:36.701864Z",
+    "final_candidate_artifact": "PENDING",
+    "generic_resume_ready": false,
+    "independent_executor_armed": false,
+    "document_path": "docs/automation/rc6-night-20261005/CONTINGENCIES.md"
+  }
 }
