@@ -16,8 +16,18 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T02:11:06.701Z-contingency-qzlp79jbk",
+    "holder": "SUPERVISOR_SETUP_CONTINGENCY_AUDIT",
+    "acquired_at": "2026-10-05T02:11:06.701Z",
+    "expires_at": "2026-10-05T02:31:06.701Z"
+  },
+  "pending_action": {
+    "type": "PERSIST_VERIFIED_CONTINGENCIES_AND_UPDATE_PROMPT",
+    "started_at": "2026-10-05T02:11:06.701Z",
+    "scope": "CONTROL_BRANCH_AND_SUPERVISOR_PROMPT_ONLY",
+    "receipt_marker": "NIGHT_CONTINGENCY_EVIDENCE=WS-RC6-NIGHT-CONVERGENCE-20261005"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
