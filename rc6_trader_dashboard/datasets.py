@@ -103,11 +103,124 @@ def filtered_rows(p, rows):
         yield row
 
 
+def _planner_row(p, raw, engine, kind):
+    identity = raw.get("identity")
+    if (not isinstance(identity, (tuple, list)) or len(identity) != 5
+            or not all(isinstance(value, str) and value for value in identity)
+            or (raw.get("rank") is not None and type(raw["rank"]) is not int)
+            or not isinstance(raw.get("rejection_reason", []), list)
+            or any(not isinstance(reason, str) for reason in raw.get("rejection_reason", []))):
+        raise ValueError("PLANNER_IDENTITY_OR_RANK_CONTRACT_INVALID")
+    symbol, family, market, currency, settlement = identity
+    row = {**raw, "symbol": symbol, "family": family, "market": market, "currency": currency,
+           "settlement": settlement, "identity": json.dumps(identity, separators=(",", ":")),
+           "engine": engine, "entry_authority": False,
+           "as_of": raw.get("strategy_source_at") or raw.get("last_useful_observation_at"),
+           "signal": raw.get("signal_result", "NO_EVAL"), "economics": raw.get("economics_result", "NO_EVAL"),
+           "risk": raw.get("risk_result", "NOT_CALLED"), "warmup": raw.get("warmup_progress"),
+           "tradeability": raw.get("tradeability_score"), "reason": " · ".join(raw.get("rejection_reason", [])),
+           "generation_id": p.shadow["pointer"]["generation_id"],
+           "configuration_fingerprint": p.shadow["manifest"]["configuration_fingerprint"]}
+    row["freshness"] = freshness(row["as_of"], p.now)
+    if kind == "events":
+        from bs_instrument_contracts import utc_microseconds
+        clocks = [value for value in (raw.get("promoted_at"), raw.get("demoted_at")) if value]
+        if not clocks or any(age(value, p.now) is None for value in clocks):
+            raise ValueError("PLANNER_EVENT_CLOCK_INVALID")
+        row["as_of"] = max(clocks, key=utc_microseconds)
+    return row
+
+
+def _capacity_row(p, engine, plan):
+    report = p.shadow["report"]
+    if not all(isinstance(plan.get(field), dict) for field in ("discovery", "capacity")):
+        raise ValueError("CAPACITY_PLAN_SCHEMA_UNSUPPORTED")
+    policy = report.get("capacity_policy")
+    if not isinstance(policy, dict) or not isinstance(policy.get("baseline_limits"), dict):
+        raise ValueError("CAPACITY_POLICY_SCHEMA_UNSUPPORTED")
+    telemetry = plan.get("telemetry", [])
+    if not isinstance(telemetry, list) or any(not isinstance(row, dict) for row in telemetry):
+        raise ValueError("PLANNER_TELEMETRY_SCHEMA_UNSUPPORTED")
+    discovery, capacity = plan["discovery"], plan["capacity"]
+    open_verified = report.get("capacity_open_status") == "OPEN_EVIDENCE_VERIFIED" and freshness(report.get("as_of"), p.now, 30) == "FRESH"
+    revisits = [{"identity": value.get("identity"), "state": value.get("state"),
+                 "planned_seconds": value.get("revisit_seconds"),
+                 "achieved_seconds": value.get("achieved_revisit_seconds")}
+                for value in islice(telemetry, 10)]
+    return {**discovery, "engine": engine, "source": "committed SHADOW · engines.capacity",
+            "state": capacity.get("status", UNKNOWN), "as_of": report.get("as_of"),
+            "policy_state": policy_state(p), "policy_status": policy.get("status"),
+            "open_evidence": "OPEN_EVIDENCE_VERIFIED" if open_verified else UNKNOWN,
+            "safe_capacity": capacity.get("safe_limit") if open_verified else None,
+            "recommended_capacity": capacity.get("safe_limit"),
+            "baseline": policy["baseline_limits"].get(engine),
+            "endpoint_budgets": capacity.get("slots_by_endpoint"),
+            "opened_priority": plan.get("opened_priority"), "capacity": capacity,
+            "planned_revisit": discovery.get("revisit_seconds", revisits),
+            "achieved_revisit": discovery.get("achieved_revisit_seconds", revisits),
+            "exit_capacity": plan.get("exit_capacity_contract") or policy.get("exit_capacity_contract"),
+            "hot": plan.get("hot_count"), "warm": plan.get("warm_count"), "discovery": plan.get("discovery_count"),
+            "reason": "Capacidad OPEN no certificada al corte fresco" if not open_verified else None}
+
+
+def _projected_shadow_rows(p, kind):
+    cut = p.shadow
+    native = cut["dataset_pages"][kind]
+    source = "CURRENT.json · " + native["source_path"] + " · " + cut["verification_level"]
+    if native["state"] != "AVAILABLE":
+        reason = native["reason"]
+        population = native.get("source_population_total")
+        if type(population) is int and population >= 0:
+            reason += f" · población publicada sin ese filtro: {population}"
+        return Page(source, total=None, state=native["state"], offset=p.offset,
+                    as_of=native.get("as_of"), reason=reason)
+    rows = []
+    try:
+        for raw in native["rows"]:
+            if kind in {"opportunities", "discovery", "tradeability", "exclusions", "events", "capacity"}:
+                engine = raw.get("engine")
+                if not isinstance(engine, str) or not engine or engine not in cut["report"].get("engines", {}):
+                    raise ValueError("PROJECTED_ENGINE_IDENTITY_INVALID")
+                row = _capacity_row(p, engine, raw) if kind == "capacity" else _planner_row(p, raw, engine, kind)
+            elif kind in {"signals", "experiments", "exits"}:
+                name = "economic_exit_lab" if kind == "exits" else "entry_signal_lab"
+                schema = "rc6.runtime-shadow-lab.v2" if kind == "exits" else "rc6.runtime-entry-signals.v1"
+                header = cut["report"].get(name)
+                if (not isinstance(header, dict) or header.get("schema") != schema
+                        or native["source_schema"] != schema):
+                    raise ValueError("PROJECTED_LAB_SCHEMA_UNSUPPORTED")
+                row = scoped_lab_row(raw, header, name, p)
+            elif kind in {"families", "strategies"}:
+                if native["source_schema"] != "RC6_SHADOW_FAMILY_RUNTIME_V2" or not raw.get("family"):
+                    raise ValueError("PROJECTED_FAMILY_ROUTING_SCHEMA_UNSUPPORTED")
+                row = {**raw, "state": raw.get("status"), "entry_authority": False,
+                       "as_of": native["as_of"], "source": "committed SHADOW · family_routing", "mode": "SHADOW"}
+            else:
+                row = {**raw, "entry_authority": False, "as_of": raw.get("as_of") or native["as_of"],
+                       "source": "committed SHADOW · event_risk", "mode": "SHADOW"}
+            if not next(filtered_rows(p, (row,)), None):
+                raise ValueError("PROJECTED_NATIVE_ROW_QUERY_SCOPE_MISMATCH")
+            if (kind in {"opportunities", "discovery", "tradeability", "exclusions", "events"}
+                    and p.filters.get("state") and str(row.get("state") or "").upper() != str(p.filters["state"]).upper()):
+                raise ValueError("PROJECTED_PLANNER_STATE_SCOPE_MISMATCH")
+            if p.filters.get("identity"):
+                from .projected_generation import requested_identity
+                if requested_identity(row.get("identity")) != requested_identity(p.filters["identity"]):
+                    raise ValueError("PROJECTED_FULL_IDENTITY_SCOPE_MISMATCH")
+            rows.append(row)
+    except (KeyError, TypeError, ValueError):
+        return Page(source, state="CONTRACT_ERROR", offset=p.offset, reason="PROJECTED_NATIVE_ROW_CONTRACT_REJECTED")
+    return Page(source, rows, native["total"], "AVAILABLE", p.offset, native["as_of"],
+                native["reason"] or "SHADOW; entry_authority=false; " + cut["verification_level"])
+
+
 def shadow_rows(p, kind):
     cut = p.shadow
     report = cut["report"]
     if not report:
         return Page("CURRENT.json → read_committed_generation (#466)", state=cut["state"], reason=cut["reason"])
+    if "dataset_pages" in cut:
+        return _projected_shadow_rows(p, kind)
     rows = []
     if kind in {"opportunities", "discovery", "tradeability", "exclusions", "events", "capacity"}:
         if kind != "capacity":

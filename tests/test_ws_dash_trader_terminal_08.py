@@ -176,7 +176,7 @@ def test_missing_candidate_contract_and_database_fail_closed(database, tmp_path)
         assert p.catalog().rows[0]["readiness"] == "NO_VERIFICADO"
         assert "READY" not in p.counts()
         assert p.shadow["state"] == "NO_VERIFICADO"
-        assert p.shadow["reason"] == "COMMITTED_GENERATION_REJECTED"
+        assert p.shadow["reason"] == "COMMITTED_PROJECTION_REJECTED"
         assert p.shadow["report"] == {}
     missing = tmp_path / "never-create.db"
     html, _ = build_page("/", {}, missing)

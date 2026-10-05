@@ -18,7 +18,7 @@
         "paper_future_positions",
         "paper_future_marks",
         "paper_family_lifecycle_events",
-        "read_committed_generation V2: operational_funnel"
+        "read_committed_projection V2 four roles: operational_funnel"
       ],
       "endpoint": "o_dashboard.dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -59,7 +59,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "o_dashboard.ai_decisions_dashboard",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -94,7 +94,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.annual_analysis",
       "family_dimension": "NOT_APPLICABLE",
@@ -129,7 +129,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -164,7 +164,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -199,7 +199,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -234,7 +234,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -269,7 +269,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -304,7 +304,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -339,7 +339,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -1006,7 +1006,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "o_dashboard.blog_de_aprendizaje",
       "family_dimension": "NOT_APPLICABLE",
@@ -1042,7 +1042,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.config_editor",
       "family_dimension": "NOT_APPLICABLE",
@@ -1078,7 +1078,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.config_save",
       "family_dimension": "NOT_APPLICABLE",
@@ -1114,7 +1114,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.logs_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -1209,7 +1209,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "bg_paper_dashboard.en_vivo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1250,7 +1250,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1291,7 +1291,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1332,7 +1332,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1373,7 +1373,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1414,7 +1414,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1455,7 +1455,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1496,7 +1496,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1559,7 +1559,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "o_dashboard.datos_historicos",
       "family_dimension": "NOT_APPLICABLE",
@@ -1629,7 +1629,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.infra_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -1665,7 +1665,7 @@
         "paper_future_positions",
         "paper_future_marks",
         "paper_family_lifecycle_events",
-        "read_committed_generation V2: operational_funnel"
+        "read_committed_projection V2 four roles: operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -1962,7 +1962,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2024,7 +2024,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.reports",
       "family_dimension": "NOT_APPLICABLE",
@@ -2119,7 +2119,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "zz_wave8_dashboard_live_rc6.riesgo",
       "family_dimension": "NOT_APPLICABLE",
@@ -2156,7 +2156,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2193,7 +2193,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2230,7 +2230,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2267,7 +2267,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2304,7 +2304,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2341,7 +2341,7 @@
         "paper_family_lifecycle_events",
         "paper_exit_intents",
         "paper_future_exit_intents",
-        "read_committed_generation V2: event_risk if published"
+        "read_committed_projection V2 four roles: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2377,7 +2377,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.salud_apis",
       "family_dimension": "NOT_APPLICABLE",
@@ -2446,7 +2446,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2482,7 +2482,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "bg_paper_dashboard.sistema",
       "family_dimension": "NOT_APPLICABLE",
@@ -2518,7 +2518,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2554,7 +2554,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2590,7 +2590,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2626,7 +2626,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2662,7 +2662,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2698,7 +2698,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2734,7 +2734,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2770,7 +2770,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2806,7 +2806,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.sre_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -2842,7 +2842,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "bc_dashboard_v163.telegram",
       "family_dimension": "NOT_APPLICABLE",
@@ -2878,7 +2878,7 @@
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "read_committed_generation V2: independent generation integrity/freshness"
+        "read_committed_projection V2 four roles: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.solapa_testing",
       "family_dimension": "NOT_APPLICABLE",
@@ -3369,7 +3369,7 @@
         "history_versions_v2",
         "history_checks_v2",
         "report_registry",
-        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
+        "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
@@ -3410,7 +3410,7 @@
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
         "runtime-health.json",
-        "read_committed_generation V2: operational_funnel/engines"
+        "read_committed_projection V2 four roles: operational_funnel/engines"
       ],
       "endpoint": "o_dashboard.actividad_en_vivo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -3435,13 +3435,16 @@
   "terminal_contracts": {
     "annual_fixed_income": "price variation excludes coupon/amortization/accrual/reinvestment; total return/TIR NO_VERIFICADO",
     "capacity": "native OFF/SHADOW/APPROVED/BASELINE_FAIL_CLOSED policy separate from measured OPEN evidence",
-    "funnel": "rc6.prospective-operational-funnel.v1; one currency/channel/native cohort for widget and stage cards",
-    "generation": "rc6.shadow-evidence-generation.v2; pointer/manifest/members, safety and canonical reader",
+    "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION; projection derivation links all three original logical digests",
+    "funnel": "rc6.prospective-operational-funnel.v1; complete matching counts/denominators; one currency/channel/native cohort for widget and stage cards; independent ten-group pagination does not change selection",
+    "generation": "rc6.shadow-evidence-generation.v2; same CURRENT/manifest/custody for report/checkpoint/status/derived projection",
     "greeks": "European Black-Scholes-Merton orientative; explicit exercise/dividend/rate contract; entry_authority=false",
     "history": "immutable versions selected by known_at/source authority; currency/price_basis/adjustment_basis isolated",
     "labs": "rc6.runtime-entry-signals.v1 experiments/cohorts; rc6.runtime-shadow-lab.v2 entries; entry_authority=false",
     "positions": "Spot OPEN and future ACTIVE at exact UTC microsecond cut; full identity, family ledger and currency preserved",
     "ppi_budget": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1; read-only observed counters/EXIT pressure, never capacity certification",
+    "projection": "read_committed_projection; rc6.shadow-ui-committed-projection.v1; WIRE_AND_PROJECTION_SEMANTICS; all four wire members verified without materializing original report/checkpoint",
+    "projection_budget": "4 MiB query output; at most ten visible rows/groups; one shared absolute 1-second render deadline; measured resource gates are separate evidence",
     "shadow_root": "shadow_evidence_root(db): artifact_root(db)/dynamic-shadow; matching frozen overrides only",
     "source_closure": "o_dashboard.py and rc6_trader_dashboard Python package must belong to the same frozen SHA/tree/image",
     "sqlite": "readonly_copy(validate=False); coherent private main+WAL copy; source is never opened by SQLite",

@@ -99,14 +99,14 @@ def classify(path: str) -> tuple[list[str], list[str], str, str]:
 
 
 TERMINAL_DATASETS = {
-    "inicio": (["runtime", "safety"], ["observer_state", "paper_equity_by_currency", "paper_daily_risk", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "read_committed_generation V2: operational_funnel"]),
-    "en-vivo": (["runtime", "strategy_eligibility", "readiness"], ["observer_state", "candidate_identity_v2", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_future_exit_intents", "paper_decisions", "decision_evidence_snapshots", "trade_gate_evaluations", "runtime-health.json", "read_committed_generation V2: operational_funnel/engines"]),
+    "inicio": (["runtime", "safety"], ["observer_state", "paper_equity_by_currency", "paper_daily_risk", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "read_committed_projection V2 four roles: operational_funnel"]),
+    "en-vivo": (["runtime", "strategy_eligibility", "readiness"], ["observer_state", "candidate_identity_v2", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_future_exit_intents", "paper_decisions", "decision_evidence_snapshots", "trade_gate_evaluations", "runtime-health.json", "read_committed_projection V2 four roles: operational_funnel/engines"]),
     "trading": (["readiness", "strategy_eligibility", "contract"], ["candidate_identity_v2", "financial_instrument_catalog", "contract_evidence_v2_current", "committed SHADOW generation adapter"]),
     "universo": (["readiness", "strategy_eligibility", "catalog"], ["candidate_identity_v2", "financial_instrument_catalog", "committed SHADOW generation adapter"]),
     "instrumentos": (["catalog", "readiness", "contract"], ["financial_instrument_catalog", "candidate_identity_v2", "contract_evidence_v2_current", "contract_evidence_v2_snapshots", "market_snapshots"]),
-    "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_exit_intents", "paper_future_exit_intents", "read_committed_generation V2: event_risk if published"]),
-    "analitica": (["history", "learning_history"], ["paper_positions", "paper_future_positions", "paper_family_lifecycle_events", "history_versions_v2", "history_checks_v2", "report_registry", "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"]),
-    "sistema": (["runtime", "timers"], ["observer_state", "api_health", "runtime-health.json: child liveness and runtime_budget_snapshot", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "read_committed_generation V2: independent generation integrity/freshness"]),
+    "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_exit_intents", "paper_future_exit_intents", "read_committed_projection V2 four roles: event_risk if published"]),
+    "analitica": (["history", "learning_history"], ["paper_positions", "paper_future_positions", "paper_family_lifecycle_events", "history_versions_v2", "history_checks_v2", "report_registry", "read_committed_projection V2 four roles: entry_signal_lab/economic_exit_lab/operational_funnel"]),
+    "sistema": (["runtime", "timers"], ["observer_state", "api_health", "runtime-health.json: child liveness and runtime_budget_snapshot", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "read_committed_projection V2 four roles: independent generation integrity/freshness"]),
 }
 
 
@@ -147,11 +147,14 @@ def inventory() -> dict[str, Any]:
         "registered_paths": len({row["path"] for row in routes}),
         "routes": routes,
         "terminal_contracts": {
-            "generation": "rc6.shadow-evidence-generation.v2; pointer/manifest/members, safety and canonical reader",
+            "generation": "rc6.shadow-evidence-generation.v2; same CURRENT/manifest/custody for report/checkpoint/status/derived projection",
+            "projection": "read_committed_projection; rc6.shadow-ui-committed-projection.v1; WIRE_AND_PROJECTION_SEMANTICS; all four wire members verified without materializing original report/checkpoint",
+            "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION; projection derivation links all three original logical digests",
+            "projection_budget": "4 MiB query output; at most ten visible rows/groups; one shared absolute 1-second render deadline; measured resource gates are separate evidence",
             "shadow_root": "shadow_evidence_root(db): artifact_root(db)/dynamic-shadow; matching frozen overrides only",
             "sqlite": "readonly_copy(validate=False); coherent private main+WAL copy; source is never opened by SQLite",
             "positions": "Spot OPEN and future ACTIVE at exact UTC microsecond cut; full identity, family ledger and currency preserved",
-            "funnel": "rc6.prospective-operational-funnel.v1; one currency/channel/native cohort for widget and stage cards",
+            "funnel": "rc6.prospective-operational-funnel.v1; complete matching counts/denominators; one currency/channel/native cohort for widget and stage cards; independent ten-group pagination does not change selection",
             "labs": "rc6.runtime-entry-signals.v1 experiments/cohorts; rc6.runtime-shadow-lab.v2 entries; entry_authority=false",
             "history": "immutable versions selected by known_at/source authority; currency/price_basis/adjustment_basis isolated",
             "annual_fixed_income": "price variation excludes coupon/amortization/accrual/reinvestment; total return/TIR NO_VERIFICADO",

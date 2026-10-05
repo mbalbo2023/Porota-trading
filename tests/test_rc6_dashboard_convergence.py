@@ -128,9 +128,29 @@ def test_native_funnel_cohort_selection_is_exact_and_cards_match_widget(native):
         assert selected["symbol"] in projection.funnel_scope["label"]
         wrong = Projection(store, {**filters, "cohort": "f"*64})
         assert not wrong.funnel_scope.get("selected") and wrong.funnel_scope["counts"] == {}
-        assert wrong.funnel_scope["reason"] == "FUNNEL_SCOPE_NOT_PUBLISHED"
+        assert wrong.funnel_scope["reason"] == "NO_MATCHING_COHORT"
         wrong_currency = Projection(store, {**filters, "currency": "USD_CCL"})
         assert wrong_currency.funnel_scope["counts"] == {}
+
+
+def test_native_funnel_pagination_preserves_selection_and_full_population(native):
+    before = inventory(native.database)
+    with Store(native.database, now=native.as_of) as store:
+        first = Projection(store, {"family": "ACCIONES"}).funnel_scope
+        later_projection = Projection(store, {"family": "ACCIONES", "funnel_offset": "10"})
+        later = later_projection.funnel_scope
+        assert first["total_groups"] > 10 and later["total_groups"] == first["total_groups"]
+        assert len(first["groups"]) == 10 and 0 < len(later["groups"]) <= 10
+        assert later["groups_offset"] == 10
+        assert later["selected"] == first["selected"] and later["counts"] == first["counts"]
+        assert not {funnel_cohort_id(row) for row in first["groups"]} & {funnel_cohort_id(row) for row in later["groups"]}
+        chosen = later["groups"][-1]
+        exact = Projection(store, {"family": "ACCIONES", "cohort": funnel_cohort_id(chosen)}).funnel_scope
+        assert exact["total_groups"] == 1 and exact["selected"] == chosen
+        html = committed_funnel(later_projection)
+        assert "Grupos anteriores" in html and "funnel_offset=0" in html
+        assert f"de {later['total_groups']}" in html
+    assert inventory(native.database) == before
 
 
 def test_active_future_with_zero_spot_is_visible_in_every_risk_surface(tmp_path):
@@ -289,7 +309,8 @@ def test_expired_read_discards_body_and_never_reopens_generation_for_error_shell
     import rc6_audit_evidence.sqlite_snapshot as snapshot
     import rc6_shadow_runtime.persistence as persistence
     before = inventory(native.database)
-    original_copy, original_reader = snapshot.readonly_copy, persistence.read_committed_generation
+    reader_name = "read_committed_projection" if hasattr(persistence, "read_committed_projection") else "read_committed_generation"
+    original_copy, original_reader = snapshot.readonly_copy, getattr(persistence, reader_name)
     calls = []
     @contextmanager
     def expires_on_exit(*args, **kwargs):
@@ -300,7 +321,7 @@ def test_expired_read_discards_body_and_never_reopens_generation_for_error_shell
         calls.append(1)
         return original_reader(*args, **kwargs)
     monkeypatch.setattr(snapshot, "readonly_copy", expires_on_exit)
-    monkeypatch.setattr(persistence, "read_committed_generation", counted_reader)
+    monkeypatch.setattr(persistence, reader_name, counted_reader)
     html, _ = build_page("/instrumentos", {}, native.database, now=native.as_of)
     assert calls == [1]
     assert "Corte de lectura no disponible dentro del presupuesto" in html

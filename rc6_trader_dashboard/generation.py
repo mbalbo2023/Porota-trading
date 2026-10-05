@@ -13,11 +13,16 @@ PAYLOAD_LIMIT = 4 * 1024 * 1024
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
 
 
-def read_shadow(root: Path, reader=None):
+def read_shadow(root: Path, reader=None, *, filters=None, offset=0, deadline=None):
     missing = {"state": AWAITING, "reason": "CANONICAL_GENERATION_READER_NOT_AVAILABLE", "report": {}}
     if reader is None:
         try:
-            reader = import_module("rc6_shadow_runtime.persistence").read_committed_generation
+            persistence = import_module("rc6_shadow_runtime.persistence")
+            projection_reader = getattr(persistence, "read_committed_projection", None)
+            if projection_reader is not None:
+                from .projected_generation import read_projected
+                return read_projected(root, projection_reader, filters=filters, offset=offset, deadline=deadline)
+            reader = persistence.read_committed_generation
         except (ImportError, AttributeError):
             return missing
     try:

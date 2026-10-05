@@ -19,7 +19,7 @@ from . import views_home, views_live, views_trading, views_universe, views_instr
 VIEWS = {"inicio": views_home, "en-vivo": views_live, "trading": views_trading,
          "universo": views_universe, "instrumentos": views_instruments,
          "riesgo": views_risk, "analitica": views_analytics, "sistema": views_system}
-FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "channel", "session", "cohort", "lab", "price_basis", "adjustment_basis"}
+FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "funnel_offset", "channel", "session", "cohort", "lab", "price_basis", "adjustment_basis"}
 
 
 def build_page(path, params, database_path, *, now=None):

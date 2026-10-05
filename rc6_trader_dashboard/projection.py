@@ -225,12 +225,14 @@ class Store(AbstractContextManager):
         self.query_count = 0
         self.trace = trace
         self.snapshot = None
+        self.deadline = None
 
     def __enter__(self):
         try:
             from rc6_audit_evidence.sqlite_snapshot import readonly_copy
             from bs_instrument_contracts import register_exact_time_sql
-            self.snapshot = readonly_copy(self.path, validate=False, deadline=monotonic() + 1.0)
+            self.deadline = monotonic() + 1.0
+            self.snapshot = readonly_copy(self.path, validate=False, deadline=self.deadline)
             self.connection = self.snapshot.__enter__()
             self.connection.row_factory = sqlite3.Row
             register_exact_time_sql(self.connection)
@@ -328,6 +330,9 @@ class Projection:
         self.filters = dict(filters or {})
         self.now = store.now
         self.offset = max(0, min(100000, self.integer(self.filters.get("offset"), 0)))
+        self.funnel_offset = max(0, min(100000, self.integer(self.filters.get("funnel_offset"), 0)))
+        if "funnel_offset" in self.filters:
+            self.filters["funnel_offset"] = str(self.funnel_offset)
         self.generation_reader = generation_reader
 
     @staticmethod
@@ -354,11 +359,14 @@ class Projection:
             return {"state": UNKNOWN, "reason": "CANONICAL_SHADOW_ROOT_CONTRACT_UNAVAILABLE", "report": {}}
         except (OSError, ValueError):
             return {"state": UNKNOWN, "reason": "CANONICAL_SHADOW_ROOT_REJECTED", "report": {}}
-        return read_shadow(root, self.generation_reader)
+        return read_shadow(root, self.generation_reader, filters=self.filters, offset=self.offset,
+                           deadline=self.store.deadline)
 
     @cached_property
     def funnel_scope(self):
         """Cards and funnel consume one native selection; explicit filters never fall back."""
+        if "funnel_scope" in self.shadow:
+            return self.shadow["funnel_scope"]
         report = self.shadow["report"].get("operational_funnel")
         if not isinstance(report, dict):
             return {"state": UNKNOWN, "reason": "FUNNEL_NOT_PUBLISHED", "counts": {}, "groups": []}
@@ -414,7 +422,8 @@ class Projection:
         else:
             label += " · sesiones " + ", ".join(report.get("sessions_retained", []))
         return {"state": "AVAILABLE", "reason": "", "counts": counts, "selected": selected,
-                "groups": candidates, "label": label, "as_of": report.get("as_of"),
+                "groups": candidates[self.funnel_offset:self.funnel_offset + 10], "total_groups": len(candidates),
+                "groups_offset": self.funnel_offset, "groups_limit": 10, "label": label, "as_of": report.get("as_of"),
                 "generation_id": self.shadow["pointer"]["generation_id"]}
 
     def daily_where(self, column):
@@ -859,6 +868,7 @@ class Projection:
                      "last_error": child.get("last_error"), "generation_state": self.shadow["state"],
                      "generation_as_of": status.get("as_of"), "generation_freshness": gen_fresh,
                      "generation_id": self.shadow.get("pointer", {}).get("generation_id"),
+                     "verification_level": self.shadow.get("verification_level", UNKNOWN),
                      "source_sha": health.get("source_sha") if provenance_valid else None,
                      "candidate_tree_sha": health.get("candidate_tree_sha") if provenance_valid else None,
                      "age_seconds": age(health.get("recorded_at"), self.now) if valid_health else None,

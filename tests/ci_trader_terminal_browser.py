@@ -121,6 +121,19 @@ def run(output):
             for path in LEGACY:
                 page.goto("http://terminal.test" + path)
                 assert page.locator("#terminal-content").get_attribute("data-view") == "/".join(LEGACY[path])
+            page.goto("http://terminal.test/en-vivo?family=ACCIONES")
+            before_funnel = page.locator("ol.funnel").inner_text()
+            first_group = page.locator("nav[aria-label='Grupos del embudo'] a[href*='cohort=']").first.get_attribute("href")
+            page.get_by_role("link", name="Mostrar 10 grupos más", exact=True).click()
+            assert "funnel_offset=10" in page.url
+            assert page.locator("ol.funnel").inner_text() == before_funnel
+            assert page.get_by_role("link", name="Grupos anteriores", exact=True).count() == 1
+            later_group = page.locator("nav[aria-label='Grupos del embudo'] a[href*='cohort=']").first
+            assert later_group.get_attribute("href") != first_group
+            later_group.click()
+            assert "cohort=" in page.url and "funnel_offset=" not in page.url
+            assert page.locator("nav[aria-label='Grupos del embudo'] a[href*='cohort=']").count() == 1
+            assert "grupos 1–1 de 1" in page.locator("section.panel:has(ol.funnel)").inner_text()
             page.goto("http://terminal.test/en-vivo/posiciones?family=FUTUROS")
             assert page.locator("tr[data-row]").count() == 1
             assert "DLR/OCT26" in page.locator("tr[data-row]").inner_text()
@@ -133,14 +146,18 @@ def run(output):
             page.goto("http://terminal.test/en-vivo/capacidad")
             assert page.locator("tr[data-row]").count() == 2
             assert page.locator("tr[data-row] > td:nth-child(2) [data-status='OFF']").count() == 2
+            assert "WIRE_AND_PROJECTION_SEMANTICS" in page.locator(".data-panel .source-line").inner_text()
+            assert set(fixture.cut["manifest"]["files"]) == {"report", "checkpoint", "status", "projection"}
             page.screenshot(path=str(output / "native-capacity-off.png"), full_page=False)
             browser.close()
     result = {"schema": "rc6.trader-terminal-browser-gate.v1", "status": "GREEN" if not findings else "RED",
               "widths": [1440, 1280, 1024, 800, 600, 360], "canonical_viewport_checks": checks,
-              "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs", "interaction during outstanding read", "auto refresh pause", "menu Escape"],
+              "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs", "interaction during outstanding read", "auto refresh pause", "menu Escape", "cohort pagination and exact selection"],
               "network": "all HTTP intercepted; native offline PAPER/SHADOW writers; provider_requests=0", "findings": findings, "renders": renders,
               "native_generation_schema": fixture.cut["pointer"]["schema"], "generation_id": fixture.cut["pointer"]["generation_id"],
-              "source_cut": fixture.as_of.isoformat(), "native_contract_checks": ["FUT ACTIVE visible", "FUT native supervision intent visible", "same-entry exit lab nonempty", "entry experiment nonempty", "OFF policy separate from OPEN evidence", "unique element IDs"],
+              "native_generation_roles": sorted(fixture.cut["manifest"]["files"]),
+              "native_generation_verification": "WIRE_AND_PROJECTION_SEMANTICS",
+              "source_cut": fixture.as_of.isoformat(), "native_contract_checks": ["FUT ACTIVE visible", "FUT native supervision intent visible", "same-entry exit lab nonempty", "entry experiment nonempty", "OFF policy separate from OPEN evidence", "unique element IDs", "same four-role sealed generation", "explicit projected verification scope"],
               "as_of": datetime.now(timezone.utc).isoformat()}
     (output / "browser-gate.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     assert not findings, json.dumps(findings)

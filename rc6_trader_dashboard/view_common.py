@@ -14,7 +14,7 @@ CATALOG_DETAIL = fields("description|Descripción;status|Estado del catálogo|st
 CAPACITY = fields("engine|Engine;policy_state|Selector / política|status;open_evidence|Evidencia OPEN|status;safe_capacity|Capacidad OPEN demostrada|number;recommended_capacity|Recomendación SHADOW|number;baseline|Baseline|number")
 CAPACITY_DETAIL = fields("discovery|DISCOVERY|number;p50_age_seconds|Discovery age p50 (s)|number;p95_age_seconds|Discovery age p95 (s)|number;max_discovery_age|Discovery age max (s)|number;touched_fraction_in_window|Touched fraction;fresh_useful_fraction|Useful observation fraction;distinct_observation_fraction|Distinct observation fraction;planned_revisit|Revisit planificado por identidad (s);achieved_revisit|Revisit logrado por identidad (s);scanner_capacity_rejects|Scanner capacity rejects|number;endpoint_budgets|Endpoint budgets;opened_priority|Prioridad OPENED / EXIT;latency_p50|Latencia p50 (ms)|number;latency_p95|Latencia p95 (ms)|number;capacity|Evidencia de capacidad;exit_capacity|Demanda / capacidad EXIT canónica;by_family_source|Coverage por familia/fuente;missed_late_discovery|Late/missed discovery causal")
 WORKERS = fields("worker|Worker;state|Estado|status;as_of|Heartbeat|time;age_seconds|Age (s)|number;freshness|Freshness|status")
-WORKER_DETAIL = fields("pid|PID child|number;restarts|Reinicios|number;spawn_failures|Fallos de spawn|number;generation_state|Generación comprometida|status;generation_freshness|Frescura generación|status;generation_as_of|Generación as_of|time;operational_readiness|Readiness operacional|status;source_sha|Fuente SHA;candidate_tree_sha|Candidate tree;global_counters|Contadores globales PPI;exit_service|Demanda / presión de salidas;telemetry_retention|Ventana / pérdidas de telemetría;open_capacity|Capacidad OPEN|status;last_success_at|Último éxito|time;last_error|Último error;supervised_positions|Posiciones supervisadas;coverage_exception|Excepción de coverage;detail|Detalle técnico")
+WORKER_DETAIL = fields("pid|PID child|number;restarts|Reinicios|number;spawn_failures|Fallos de spawn|number;generation_state|Generación comprometida|status;verification_level|Alcance de verificación del corte;generation_freshness|Frescura generación|status;generation_as_of|Generación as_of|time;operational_readiness|Readiness operacional|status;source_sha|Fuente SHA;candidate_tree_sha|Candidate tree;global_counters|Contadores globales PPI;exit_service|Demanda / presión de salidas;telemetry_retention|Ventana / pérdidas de telemetría;open_capacity|Capacidad OPEN|status;last_success_at|Último éxito|time;last_error|Último error;supervised_positions|Posiciones supervisadas;coverage_exception|Excepción de coverage;detail|Detalle técnico")
 SOURCES = fields("component|Fuente / scope;state|Estado|status;role|Autoridad;freshness|Freshness|status;as_of|Chequeo|time")
 SOURCE_DETAIL = fields("provider_clock|Provider / event clock|time;receipt_clock|Receipt / capture clock|time;lkg|Last Known Good|time;scope|Campos/familias afectados;conflicts|Conflictos;detail|Diagnóstico scoped")
 BALANCES = fields("currency|Moneda;equity|Patrimonio PAPER|money;valuation_state|Calidad de valuación|status;cash|Caja disponible|money;exposure|Exposición|money;unrealized_pnl|PnL no realizado|money")
@@ -43,11 +43,18 @@ def committed_funnel(p):
     scope = f"{scoped['label']} · {clock(scoped.get('as_of'))} · CURRENT.json"
     links = []
     for row in scoped["groups"][:10]:
-        filters = {k: v for k, v in p.filters.items() if k not in {"offset", "cohort"}}
+        filters = {k: v for k, v in p.filters.items() if k not in {"offset", "cohort", "funnel_offset"}}
         filters.update(currency=row.get("currency"), channel=row.get("channel"))
         label = f"{row.get('currency')} / {row.get('channel')}"
         if "identity" in row:
             filters["cohort"] = funnel_cohort_id(row)
             label += f" · {row.get('symbol')} · {row.get('strategy_id')} · {row.get('hour_art')} ART · {filters['cohort'][:8]}"
         links.append(f"<a class='button' href='?{e(urlencode(filters))}'>{e(label)}</a>")
-    return f"<nav class='pager' aria-label='Scope del embudo'>{''.join(links)}</nav>" + funnel(scoped["counts"], scope)
+    offset, total = scoped.get("groups_offset", 0), scoped.get("total_groups", len(scoped["groups"]))
+    params = {k: v for k, v in p.filters.items() if k not in {"offset", "funnel_offset"}}
+    if offset:
+        links.append(f"<a class='button' href='?{e(urlencode({**params, 'funnel_offset': max(0, offset - 10)}))}'>Grupos anteriores</a>")
+    if offset + len(scoped["groups"]) < total:
+        links.append(f"<a class='button' href='?{e(urlencode({**params, 'funnel_offset': offset + 10}))}'>Mostrar 10 grupos más</a>")
+    scope += f" · grupos {offset + 1 if scoped['groups'] else 0}–{offset + len(scoped['groups'])} de {total}"
+    return f"<nav class='pager' aria-label='Grupos del embudo'>{''.join(links)}</nav>" + funnel(scoped["counts"], scope)
