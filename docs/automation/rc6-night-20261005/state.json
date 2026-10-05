@@ -16,8 +16,18 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T01:49:18.627Z-bec4a0e74b201",
+    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "purpose": "BOOTSTRAP_ONLY",
+    "acquired_at": "2026-10-05T01:49:18.627Z",
+    "expires_at": "2026-10-05T02:09:18.627Z"
+  },
+  "pending_action": {
+    "kind": "BOOTSTRAP_RECEIPT",
+    "marker": "NIGHT_SUPERVISOR_BOOT_RECEIPT=WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "issue": 473
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": null,
@@ -44,5 +54,28 @@
     "frequency": "HOURLY",
     "count": 12
   },
-  "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa"
+  "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
+  "last_observed_at": "2026-10-05T01:49:18.627Z",
+  "bootstrap_observation": {
+    "candidate_prs_found": 0,
+    "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "integration_owner": "Codex root",
+    "integration_owner_status": "ACTIVE_NOT_RELEASED",
+    "ownership_comment_id": 5986480121,
+    "latest_coordination_comment_id": 5986721421,
+    "bootstrap_mode": "READ_GITHUB_WRITE_CONTROL_ONLY",
+    "runbook_pin": "e51876cdebaa6f198a4912ffb0289479d27253fa",
+    "model_identity": "PLATFORM_DEFAULT_NOT_EXPOSED_BY_AUTOMATIONS_API",
+    "app_declared_permissions": {
+      "actions": "write",
+      "checks": "read",
+      "contents": "write",
+      "issues": "write",
+      "pull_requests": "write",
+      "statuses": "read",
+      "workflows": "write"
+    },
+    "permissions_note": "GitHub app metadata observed; not an independent execution test of merge/deploy/workflow mutation"
+  }
 }
