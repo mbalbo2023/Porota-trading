@@ -219,7 +219,8 @@
         "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-preparation-local-receipt.json",
-        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml"
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json"
       ],
       "pending_gates": [
         "Corte canónico nativo 12k catálogo/60k observaciones: bytes, reader/proyección, RSS, tiempo y contenido disponible.",
@@ -228,7 +229,8 @@
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
-        "El artefacto nativo completo 12000/60000 y render/consulta ≤1 s, salida ≤4 MiB siguen pendientes; fixture pequeño y SQL aislado no los cierran."
+        "El artefacto nativo completo 12000/60000 y render/consulta ≤1 s, salida ≤4 MiB siguen pendientes; fixture pequeño y SQL aislado no los cierran.",
+        "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales."
       ]
     },
     {

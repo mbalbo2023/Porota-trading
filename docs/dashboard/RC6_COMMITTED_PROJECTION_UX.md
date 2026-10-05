@@ -90,6 +90,13 @@ de importar Playwright y de destinos inseguros antes de SQLite. El receipt
 `large-browser-preparation-local-receipt.json` marca explícitamente que
 Chromium todavía no fue ejecutado sobre el artefacto grande.
 
+Este gate grande corresponde al fixture de `scripts/rc6_issue465_stress.py`:
+S00000–S11999 son identidades ACCIONES/BYMA/ARS/A-24HS. La comparación de grupos
+contra dos veces el catálogo dentro de esa familia presupone ese fixture
+monofamilia; no constituye aceptación general de un catálogo mixto. La revisión
+financiera independiente del runner fue sólo de fuente y mantuvo la ejecución
+positiva grande pendiente.
+
 El gate grande sigue abierto hasta ejecutar ese harness sobre el productor
 final y obtener ≤4 MiB por solicitud y ≤1 s por consulta/render. Los tiempos
 del fixture pequeño y el deadline de falla no prueban esa capacidad. La validación
