@@ -6,7 +6,7 @@
     "maintenance": "No additional worker/GC/restore/SQLite/pin calls. Positive rotations/ACKcompaction required by native full contract; zero GCdeleted/intent is explicitly no positive deletion proof.",
     "process": "New process session, native PID, actual wait4 status/user+systemCPU/lifetimeRSS/input+outputblocks/reap. Completion must be observed by wait4 strictly before the management deadline; polling cannot infer an earlier exit. Lifetime wait4 RSS must remain within the existing2GiB limit. Watchdog makes one TERM/KILL termination attempt with separately declared grace; unreaped process prevents acceptance and all postcaptures of source/index/tar/database/log.",
     "progress": "Only native stdout/result.json are producers. Driver reports elapsed/remain/log bytes/PID without interpreting an in-progress result as complete.",
-    "result": "Lossless native JSON/log retained after actual reap. Green requires exact actual1202 cuts and all flags/metadata/custody/source checks, final CURRENT clock+sequence equal the last cut, normal child exit0 observed before the management deadline, existing2GiB lifetimeRSS, no management timeout/errors and actual reap.",
+    "result": "Lossless native JSON/log retained after actual reap. Green requires exact actual1202 cuts with each Source read clock joined to its cut, all flags/metadata/custody/source checks, final CURRENT clock+sequence equal the last cut, normal child exit0 observed before the management deadline, existing2GiB lifetimeRSS, no management timeout/errors and actual reap.",
     "source": "Independent stdlib raw Git/whole namespace and SHA/mode/blob verification before/after, original index/tar rehash, driver bytes bound to the Git member."
   },
   "future_command": "/workspace/venv_rc6_frozen311/bin/python -I -B \"$PREPARED_DRIVER\" --source-repo \"$RC6_HORIZON_REPO\" --source-root \"$RC6_HORIZON_WHOLE\" --source-sha \"$RC6_HORIZON_SHA\" --source-tree \"$RC6_HORIZON_TREE\" --source-index \"$RC6_HORIZON_PREPARED/source.index.json\" --raw-root \"$RC6_HORIZON_RAW_NEW\" --data-root \"$RC6_HORIZON_DATA_NEW\" --python /workspace/venv_rc6_frozen311/bin/python --python-version 3.11.16 --watchdog-seconds \"$RC6_HORIZON_MANAGEMENT_WATCHDOG\"",
@@ -26,7 +26,7 @@
   "management_cli": {
     "--progress-poll-seconds": 5,
     "--terminate-grace-seconds": 2,
-    "scope": "Watchdog applies to child supervision. Native30s postPRE full-cycle gate remains unchanged. Preflight/capture/file IO and final custody are outside this child-management timer; signal/reap cannot guarantee kernel I/O latency.",
+    "scope": "Watchdog applies to child supervision through observed wait4 completion. Native30s postPRE full-cycle gate remains unchanged. Preflight/capture/file IO and final custody/receipt emission are outside this child-management timer; signal/reap cannot guarantee kernel I/O latency. native_completion_observation_elapsed_seconds is the child-supervision clock; supervisor_elapsed_before_final_custody_seconds is explicitly partial and excludes the final Source/log/proof/receipt tail.",
     "watchdog": "Explicit finite positive caller value; no default borrowed from the historical300s NORMAL4 wrapper."
   },
   "namespaces": {
@@ -119,10 +119,10 @@
   "schema": "rc6.full1201-external-driver-source-plan.v1",
   "source_driver": {
     "authority": "Future Source S must contain this exact .py.source member; external executed bytes are checked against its wholeSource Git binding before fixtures.",
-    "bytes": 35110,
+    "bytes": 35226,
     "mode": "100644",
     "path": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source",
-    "sha256": "c75351acfe681012d120b6b265e3541da984fa27213f588bb3f91b26ae1f4593"
+    "sha256": "a74215491110d1a2e862cab496d3aaeeec24018db963825a394223f145957d74"
   },
   "source_review_corrections": [
     {
@@ -147,6 +147,18 @@
       "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
       "finding": "Native RSS was captured before its final JSON serialization.",
       "fix": "Require actual wait4 lifetime peak_rss_bytes to satisfy the same existing2GiB limit after reap.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Source read clocks were not bound to corresponding actual native cuts, so a fixed read clock could preserve apparent freshness at late cuts.",
+      "fix": "Strictly join all1202 Source reads to cuts/clocks by index and as_of; derive staleness from each actual cut clock.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_SCOPE_PRECISION_CORRECTED_BEFORE_NATIVE",
+      "finding": "The management_elapsed_wall_seconds field excluded the final Source/log/proof/receipt tail.",
+      "fix": "Rename to supervisor_elapsed_before_final_custody_seconds and explicitly declare the partial scope; retain observed child completion as a separate clock without adding a new deadline.",
       "native_reproduction": false
     }
   ],

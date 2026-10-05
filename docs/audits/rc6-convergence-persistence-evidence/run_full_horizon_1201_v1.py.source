@@ -299,8 +299,9 @@ def inspect_native(native, source, pin, qualification, database, errors):
             and cut["real_routes"] == "NOT_CALLED","CUT_CARDINALITY_AND_NO_AUTHORITY")
     reads = native.get("native_input_reads",[])
     require(len(reads) == 1202,"ACTUAL_NATIVE_SOURCE_READS")
-    for read in reads:
-        after_stale = (datetime.fromisoformat(read["as_of"])-clocks[1]).total_seconds() > 120
+    for cut,clock,read in zip(cuts,clocks,reads,strict=True):
+        require(read["as_of"] == cut["as_of"],"SOURCE_READ_CLOCK_MATCHES_ACTUAL_NATIVE_CUT")
+        after_stale = (clock-clocks[1]).total_seconds() > 120
         require(read["fixed_source_contract_must_be_stale"] is after_stale and (not after_stale or read["intraday_confirmed_observations"] == 0)
             and read["entry_authorized_observations"] == 0 and read["source_database_effect"] == "READ_ONLY","FIXED_SOURCE_STALE_AND_NO_DATA_REWRITE")
     require(native.get("archive_restore_count") == 1202 and native.get("first_restored_tick_index") == 1
@@ -520,7 +521,7 @@ def main():
             result.update(wait4=completion,process_reaped=completion["reaped"])
     finally:
         if started is not None:
-            result["management_elapsed_wall_seconds"] = time.monotonic()-started
+            result["supervisor_elapsed_before_final_custody_seconds"] = time.monotonic()-started
         try:
             safe_to_capture = child is None or result["process_reaped"]
             if not safe_to_capture:
