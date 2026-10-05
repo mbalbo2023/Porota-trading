@@ -1,26 +1,19 @@
 {
-  "schema": "rc6.published-primary-replay-deadline-source-contract.v1",
-  "status": "SOURCE_IMPLEMENTED_NATIVE_FOCAL_PENDING",
-  "finding_classification": "INFERRED_FROM_COMMITTED_SOURCE_NOT_NATIVE_DOCKER_RED",
+  "alarm_cancelled_before_result_emission": false,
+  "assertion_scope": "SOURCE_AND_CONTROLLED_NATIVE_PYTHON_DEADLINE_GUARDS; NO_DOCKER_FULL_GOV_OR_ARTIFACT_ACCEPTANCE",
+  "baseline_published_helper_git_blob": "43f49f00099952457481ab298ace490cba7c14f0",
   "baseline_sha": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
   "baseline_tree": "316ad539f2690842e2fb1df4637811826897d6a0",
-  "baseline_published_helper_git_blob": "43f49f00099952457481ab298ace490cba7c14f0",
-  "unchanged_http_git_blob": "ebc2b470611eef6c7b97daff26fa340677dd9db7",
   "canonical_replay_total_seconds": 600,
-  "http_request_cap_seconds": 30,
   "codec_cap_seconds": 30,
   "codec_output_cap_bytes": 65536,
+  "deadline_renewed_by_each_command": false,
+  "docker_or_remote_api_executed": false,
+  "end_to_end_deadline_includes_context_cleanup_and_result_emission_flush": true,
   "failure_private_container_teardown_seconds": 5,
   "failure_teardown_extends_green_deadline": false,
-  "end_to_end_deadline_includes_context_cleanup_and_result_emission_flush": true,
-  "alarm_cancelled_before_result_emission": false,
-  "inherited_tail_fix_previous_source_checkpoint": "76d37d8ca394b01b0cfc08e8cd683db0c7d54998",
-  "deadline_renewed_by_each_command": false,
-  "installed_packages_modified": false,
-  "docker_or_remote_api_executed": false,
-  "image_id_or_primary_source_binding_changed": false,
-  "workflow_modified": false,
-  "test_execution": null,
+  "finding_classification": "INFERRED_FROM_COMMITTED_SOURCE_NOT_NATIVE_DOCKER_RED",
+  "fixture_scope": "CONTROLLED_CLOCK_AND_SUBPROCESS_ON_EXPLICIT_SYNTHETIC_METADATA_NO_IMAGE_EXECUTION",
   "guard_declarations": [
     "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds",
     "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load",
@@ -32,8 +25,74 @@
     "tests/test_rc6_convergence_sre_published_evidence.py::test_main_completes_cleanup_and_flushed_result_within_original_total_budget",
     "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active"
   ],
+  "http_request_cap_seconds": 30,
+  "image_id_or_primary_source_binding_changed": false,
+  "inherited_tail_fix_previous_source_checkpoint": "76d37d8ca394b01b0cfc08e8cd683db0c7d54998",
+  "installed_packages_modified": false,
   "original_independent_requirement_or_market_attack_count_added": 0,
-  "fixture_scope": "CONTROLLED_CLOCK_AND_SUBPROCESS_ON_EXPLICIT_SYNTHETIC_METADATA_NO_IMAGE_EXECUTION",
   "required_focal_harness": "FRESH_WHOLE_OWN_GIT_SOURCE_WITH_RAW_GIT_PHYSICAL_NAMESPACE_157_LOCK_IMPORT_NETWORK_SQLITE_RECEIPTS",
-  "assertion_scope": "SOURCE_ONLY_DEADLINE_SEPARATION_AND_PERMANENT_GUARD_DECLARATIONS"
+  "schema": "rc6.published-primary-replay-deadline-source-contract.v1",
+  "status": "SOURCE_IMPLEMENTED_CONTROLLED_NATIVE_FOCAL_GREEN",
+  "test_execution": {
+    "dossier_manifest": "docs/audits/convergence/published-replay-deadline-native/MANIFEST.json",
+    "dossier_manifest_sha256": "c00a69e4158d7353e08f79cb14e216ce3fb2b17413bba2575f4ae52fd170f140",
+    "execution_id": "2afaadf83346467ba60b4a58842341ac",
+    "forbidden_executable_attempts": 0,
+    "imports": {
+      "external_infrastructure": 2,
+      "libraries": 328,
+      "no_physical_origin": 69,
+      "source": 16,
+      "unexpected": 0
+    },
+    "inet_attempts": 0,
+    "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+    "native_resources": {
+      "cpu_system_seconds": 2.876365,
+      "cpu_user_seconds": 11.205023,
+      "elapsed_wall_seconds": 14.24155033500574,
+      "peak_rss_bytes": 96149504,
+      "scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+      "timed_out": false
+    },
+    "observations_scope": "THIS_PYTHON_PROCESS_PLUS_KNOWN_CLIENT_EXECUTABLES; NOT_KERNEL_OR_TRANSITIVE",
+    "pid": 215623,
+    "pytest": {
+      "collected": 45,
+      "duplicates": 0,
+      "errors": 0,
+      "executed": 45,
+      "exit_code": 0,
+      "failures": 0,
+      "invocations": 1,
+      "junit_bytes": 11063,
+      "junit_sha256": "5f165ceeb7ef3c6090b978357d8863d3ece273b52ea824aa2617828f5ee501e9",
+      "module": "tests/test_rc6_convergence_sre_published_evidence.py",
+      "skipped": 0
+    },
+    "python_version": [
+      3,
+      11,
+      16
+    ],
+    "source_atime_changes": [
+      {
+        "after": 1791229492572429847,
+        "before": 1791229490361182766,
+        "kind": "directory",
+        "path": "tests"
+      }
+    ],
+    "source_atime_claim": "OBSERVED_SEPARATELY; NOT_ALL_STAT_FIELDS_UNCHANGED",
+    "source_byte_mode_blob_and_stable_custody_unchanged": true,
+    "source_data_db_all_stat_custody_claimed": false,
+    "source_overlay_count": 0,
+    "source_physical_namespace_exact": true,
+    "source_sha": "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+    "source_tree": "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+    "sqlite_attempts": 0,
+    "uid": 1000
+  },
+  "unchanged_http_git_blob": "ebc2b470611eef6c7b97daff26fa340677dd9db7",
+  "workflow_modified": false
 }

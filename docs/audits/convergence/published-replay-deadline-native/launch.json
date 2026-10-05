@@ -1,0 +1,52 @@
+{
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/runner.py",
+    "--child",
+    "--git-repo",
+    "/workspace/porota_rc6_worktrees/sre_replay_deadline",
+    "--source-root",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/source",
+    "--source-sha",
+    "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+    "--source-tree",
+    "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+    "--output-root",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a",
+    "--support",
+    "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/source_support.py",
+    "--timeout-seconds",
+    "180"
+  ],
+  "euid": 1000,
+  "execution_id": "2afaadf83346467ba60b4a58842341ac",
+  "infrastructure": [
+    {
+      "bytes": 16999,
+      "path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/runner.py",
+      "sha256": "82488085c74b3827ea29ab18d685ef5e7cefa85cb7b0c4b7247765df6b7af9c2"
+    },
+    {
+      "bytes": 31518,
+      "path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/source_support.py",
+      "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+    }
+  ],
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "native_fixture_started": false,
+  "preflight157_status": "GREEN",
+  "python_version": [
+    3,
+    11,
+    16
+  ],
+  "schema": "rc6.published-replay-deadline-focal-launch.v1",
+  "scope": "SELECTED_MODULE_CONTROLLED_CLOCK_SUBPROCESS; NO_DOCKER_REMOTE_API_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "source_files": 1868,
+  "source_sha": "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+  "source_tree": "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+  "timeout_seconds": 180,
+  "uid": 1000
+}
