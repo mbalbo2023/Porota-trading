@@ -1,0 +1,1246 @@
+{
+  "alien_imports": [],
+  "all_git_blob_bytes_modes_verified": true,
+  "classification": "OLD_NATIVE_PRIMARY_CUSTODY_RED_WITH_PRESERVED_MATH_CONTROLS",
+  "environment_metadata_closure": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "missing": [],
+    "schema": "rc6.installed-distribution-closure.v1",
+    "status": "GREEN",
+    "unexpected": [],
+    "version_mismatch": []
+  },
+  "harness_error": null,
+  "imports": [
+    {
+      "module": "_version",
+      "path": "_version.py",
+      "sha256": "17a594100f02a0f4e7a36b8bb95ae88d2b85c21b93f68678da60c687d4a691b4"
+    },
+    {
+      "module": "ak_byma_calendar",
+      "path": "ak_byma_calendar.py",
+      "sha256": "0b8aefc432fd05431bf44b4f419ca5f902ca64136518700ede018cdddb88d02a"
+    },
+    {
+      "module": "am_us_equity_calendar_rc6",
+      "path": "am_us_equity_calendar_rc6.py",
+      "sha256": "dfe64bcd4a90a77c510aa71fa7a08f92cdde32ded86e9317de3c521b84e3a612"
+    },
+    {
+      "module": "au_fee_schedule",
+      "path": "au_fee_schedule.py",
+      "sha256": "836912ad4c6a68fdbc7f8ef6bfe750ab13834c9220829dc7ad7a9937764a7acb"
+    },
+    {
+      "module": "bd_ppi_readonly_guard",
+      "path": "bd_ppi_readonly_guard.py",
+      "sha256": "2714fe2da2c026ac1cae60cc956a8a2c310ec2c237b4afcf629d4ddc1e2fccf3"
+    },
+    {
+      "module": "be_paper_engine",
+      "path": "be_paper_engine.py",
+      "sha256": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283"
+    },
+    {
+      "module": "bf_production_paper_observer",
+      "path": "bf_production_paper_observer.py",
+      "sha256": "29b08bf1d5853e51c722913f7dae25dfb27ae92ca343eb93531084f7d3c463d7"
+    },
+    {
+      "module": "bh_paper_gemini",
+      "path": "bh_paper_gemini.py",
+      "sha256": "9d11d906a25d004fca671495244da80663052f24f4c4b66297c22fd40f408a61"
+    },
+    {
+      "module": "bi_operational_services",
+      "path": "bi_operational_services.py",
+      "sha256": "4be7d696eb4c4292a44535fb0bf6e64b8abb2ac37c009e94192f72b989a66c8f"
+    },
+    {
+      "module": "bl_candle_engine",
+      "path": "bl_candle_engine.py",
+      "sha256": "bc2f3ae2b743847acc979896b97197584756ae16e5bb62171064f60944697750"
+    },
+    {
+      "module": "bm_exit_supervisor",
+      "path": "bm_exit_supervisor.py",
+      "sha256": "77a9964f865aa528340f9a6f20a5e5c3f78094e583bd94670f58ed7e79ad2c20"
+    },
+    {
+      "module": "bn_telegram_bus",
+      "path": "bn_telegram_bus.py",
+      "sha256": "3e64b7641999aff82f31b7a6ebbf7a101fc29f04d9c0e4b5157083d316369d66"
+    },
+    {
+      "module": "bq_exit_policy",
+      "path": "bq_exit_policy.py",
+      "sha256": "fa57a5fe456c1c7c2d20282365c343632bac00808624312da4805f249cf4eb11"
+    },
+    {
+      "module": "bs_instrument_contracts",
+      "path": "bs_instrument_contracts.py",
+      "sha256": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff"
+    },
+    {
+      "module": "bt_caucion_paper",
+      "path": "bt_caucion_paper.py",
+      "sha256": "d552755ec8330c026d4e6d2698ef003e8cec14c67eb092940508e829e879b942"
+    },
+    {
+      "module": "bu_instrument_catalog",
+      "path": "bu_instrument_catalog.py",
+      "sha256": "e1a2961ad6f1ed2b39a24cc68c35f0389078d5599ba15cdd357a4095f79ffa3c"
+    },
+    {
+      "module": "bv_paper_runtime",
+      "path": "bv_paper_runtime.py",
+      "sha256": "2851b78efb7b8ec9cf8b785a6a523588b02d5ef66adeda232c514c72cb04c17b"
+    },
+    {
+      "module": "bw_daily_risk",
+      "path": "bw_daily_risk.py",
+      "sha256": "7f652f5c14ac16c849a19a9864826070437341be26f5d09a5c23ba1421fe16a2"
+    },
+    {
+      "module": "ca_caucion_allocator",
+      "path": "ca_caucion_allocator.py",
+      "sha256": "635684ee3566dc23daa93805d4de19616c8fb7e04b2575e3114c27b276f7ecd4"
+    },
+    {
+      "module": "cc_spot_liquidity",
+      "path": "cc_spot_liquidity.py",
+      "sha256": "fecaf8ecbe31fea5091bdf328ac96d1fb22782441c89fa8395ed3f25a050c3e0"
+    },
+    {
+      "module": "cd_spot_ledger",
+      "path": "cd_spot_ledger.py",
+      "sha256": "e90b5a1c5964f987f8cea6ef0b9ff38e4bec0f9632ca985a2129f0f3bf5329b2"
+    },
+    {
+      "module": "cf_intraday_scalping",
+      "path": "cf_intraday_scalping.py",
+      "sha256": "b9ab0e1bb42083f80743b0dcc71028cbdd808bfc3e902f627c09795f04680e8c"
+    },
+    {
+      "module": "cf_sale_settlement",
+      "path": "cf_sale_settlement.py",
+      "sha256": "45ecfa70351d86bab486947406bd896f96c1c5db5049aa0ee8e536f9a2e85655"
+    },
+    {
+      "module": "cg_paper_workspace",
+      "path": "cg_paper_workspace.py",
+      "sha256": "722bfffe99c39667b435eb7f642bd167cea04fa3716f736f6aee19e8aae216fa"
+    },
+    {
+      "module": "ch_empirical_learning",
+      "path": "ch_empirical_learning.py",
+      "sha256": "fa80da0cbb597aeccca5aa12d5cb1be1437278557cf0426bad9d63ad0b01d0c4"
+    },
+    {
+      "module": "ci_operational_context",
+      "path": "ci_operational_context.py",
+      "sha256": "9e9d55337859f5fec5ceafda879ce8dc5c7b7e3599b5fe06d6e80da8799911b8"
+    },
+    {
+      "module": "ck_policy_gate_hf6",
+      "path": "ck_policy_gate_hf6.py",
+      "sha256": "8fd3073938929f8b2c6f94bedbd2ad98d3b03ed7355499b4296c7369084d6bcc"
+    },
+    {
+      "module": "co_market_sessions_hf6",
+      "path": "co_market_sessions_hf6.py",
+      "sha256": "2531dab976afbba98cb9c2f5f1d98697b4f8a8dae125b1735caa26d0d22cac8e"
+    },
+    {
+      "module": "cp_contract_evidence_v2_hf6",
+      "path": "cp_contract_evidence_v2_hf6.py",
+      "sha256": "6364a9d58060bddc2a777d5433df680046950607cff578da0e86f6a05698e02f"
+    },
+    {
+      "module": "de_concurrent_risk_capacity_hf6",
+      "path": "de_concurrent_risk_capacity_hf6.py",
+      "sha256": "dc1e21eef3172ec031f86bc3dd86c2df404bced17daa9dbcc73804dbf4329945"
+    },
+    {
+      "module": "dh_paper_dynamic_risk_gate_hf6",
+      "path": "dh_paper_dynamic_risk_gate_hf6.py",
+      "sha256": "c1b1af0f2a060ff62ed3f1d61620fb30818fac75072e98cf045bb0985adcd576"
+    },
+    {
+      "module": "es_policy_context_rc6",
+      "path": "es_policy_context_rc6.py",
+      "sha256": "40787d382716fc2df04e4244349cbe6c14fb71178b37e9ad12067acae702723a"
+    },
+    {
+      "module": "eu_telegram_policy_rc6",
+      "path": "eu_telegram_policy_rc6.py",
+      "sha256": "37511844ded2927ee6ce25e7e409ecdc755cc455ee14a9e2cf4193e337f40d24"
+    },
+    {
+      "module": "fg_intraday_contract_policy_rc6",
+      "path": "fg_intraday_contract_policy_rc6.py",
+      "sha256": "2099d323fa19ea1c4be76306245dbc06d8ca10ae653834d7b6dfd2c30a42b83d"
+    },
+    {
+      "module": "rc6_audit_evidence",
+      "path": "rc6_audit_evidence/__init__.py",
+      "sha256": "13e421a4ba86a9adef3bc4706128096c59d59694837f0cd01a66742875944498"
+    },
+    {
+      "module": "rc6_audit_evidence.package",
+      "path": "rc6_audit_evidence/package.py",
+      "sha256": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7"
+    },
+    {
+      "module": "rc6_audit_evidence.recompute",
+      "path": "rc6_audit_evidence/recompute.py",
+      "sha256": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b"
+    },
+    {
+      "module": "rc6_audit_evidence.sqlite_scratch",
+      "path": "rc6_audit_evidence/sqlite_scratch.py",
+      "sha256": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8"
+    },
+    {
+      "module": "rc6_audit_evidence.sqlite_snapshot",
+      "path": "rc6_audit_evidence/sqlite_snapshot.py",
+      "sha256": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46"
+    },
+    {
+      "module": "rc6_contract_bridge",
+      "path": "rc6_contract_bridge.py",
+      "sha256": "9018ac1501a3d81bae2ff6dce98cab289ee39678caacf4361f22066e733bcb8e"
+    },
+    {
+      "module": "rc6_cost_settlement_takeprofit_shadow",
+      "path": "rc6_cost_settlement_takeprofit_shadow.py",
+      "sha256": "51523dae2eb19e3e239e8366196ec822e58c5d6d44f24982dfef213e680bfb7f"
+    },
+    {
+      "module": "rc6_dynamic_universe",
+      "path": "rc6_dynamic_universe/__init__.py",
+      "sha256": "509d7cc6e5378e62e80f19e7cb91090eb2c1395766697fbe28342e0d0a4b7b0d"
+    },
+    {
+      "module": "rc6_dynamic_universe.benchmark",
+      "path": "rc6_dynamic_universe/benchmark.py",
+      "sha256": "2573f5b50e6f4e51ba3df2a0f61dd03b6ffdb06a9fe2178a42e7f701fbdde3c5"
+    },
+    {
+      "module": "rc6_dynamic_universe.capacity",
+      "path": "rc6_dynamic_universe/capacity.py",
+      "sha256": "1babc3215dcd2138f813620da1d4e746f0cceb62d23b6e58d2ae61c519e84850"
+    },
+    {
+      "module": "rc6_dynamic_universe.common",
+      "path": "rc6_dynamic_universe/common.py",
+      "sha256": "c825d64bde0d1814536dfd82d45bb1d39987918d16dc6aa8df063d0a12adb21f"
+    },
+    {
+      "module": "rc6_dynamic_universe.live",
+      "path": "rc6_dynamic_universe/live.py",
+      "sha256": "0b6f3ceb51fd565f4343e03c06b5a1c73443d09ed6c3444db185ac9c59dd1f94"
+    },
+    {
+      "module": "rc6_dynamic_universe.orchestrator",
+      "path": "rc6_dynamic_universe/orchestrator.py",
+      "sha256": "3fb552c3768a43c673c2d3f0d4194048a8d79b8ffe147639e1ca34d3906ae3f1"
+    },
+    {
+      "module": "rc6_dynamic_universe.promotion",
+      "path": "rc6_dynamic_universe/promotion.py",
+      "sha256": "baca6590e5adbd1ddd86ffdeb9e0b42e4480ac61bd8aa862baae0b3f47a09b2b"
+    },
+    {
+      "module": "rc6_dynamic_universe.routing",
+      "path": "rc6_dynamic_universe/routing.py",
+      "sha256": "cbc83dbcaaee20b207fd76cf8fa0cb0ec354515eba05d6a761efb9a906965487"
+    },
+    {
+      "module": "rc6_dynamic_universe.runtime",
+      "path": "rc6_dynamic_universe/runtime.py",
+      "sha256": "2083df31f6c03848f4bfa70abb90e6dbdd04b44e4b0a84779b119b305e25b07f"
+    },
+    {
+      "module": "rc6_dynamic_universe.sources",
+      "path": "rc6_dynamic_universe/sources.py",
+      "sha256": "9f472b9b96f333c9db4d84daf6f2922298c16a52c5c53b6e814b297029f35cd6"
+    },
+    {
+      "module": "rc6_dynamic_universe.tradeability",
+      "path": "rc6_dynamic_universe/tradeability.py",
+      "sha256": "56dac75865748ca2051183a7333977cca1faf446f98aa9be0db2b41a3968a776"
+    },
+    {
+      "module": "rc6_multisource_discovery",
+      "path": "rc6_multisource_discovery.py",
+      "sha256": "562ad536751316068e03ade030d529fd0692a9f6b33971dc8f4598c39bb0aa68"
+    },
+    {
+      "module": "rc6_paper_family_lifecycle",
+      "path": "rc6_paper_family_lifecycle.py",
+      "sha256": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44"
+    },
+    {
+      "module": "rc6_performance",
+      "path": "rc6_performance/__init__.py",
+      "sha256": "f14e98aad51984f3ac156a60d200e0eb2ac728367e48b1ec58e9ccbbfed2dcd0"
+    },
+    {
+      "module": "rc6_performance.common",
+      "path": "rc6_performance/common.py",
+      "sha256": "d0f2a1f69e441ae260511e57f147d8edd6b797217afcd04cff2bfb281934cc3e"
+    },
+    {
+      "module": "rc6_performance.costs",
+      "path": "rc6_performance/costs.py",
+      "sha256": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+    },
+    {
+      "module": "rc6_performance.lineage",
+      "path": "rc6_performance/lineage.py",
+      "sha256": "065328c196ada5792af428a1f5f6b40e890154292b350d92e7df2c0879c8e1f8"
+    },
+    {
+      "module": "rc6_ppi_future_contract_policy",
+      "path": "rc6_ppi_future_contract_policy.py",
+      "sha256": "f8783dd04ada1ce486d5cae1ae921c0bc6eb4dd52ebcebaa90133acb1ad0c6db"
+    },
+    {
+      "module": "rc6_ppi_global_budget",
+      "path": "rc6_ppi_global_budget.py",
+      "sha256": "f4109344794f02ef0bec511af8f41042069aaee48226acfb5d96f677da987dc8"
+    },
+    {
+      "module": "rc6_shadow_runtime",
+      "path": "rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "module": "rc6_shadow_runtime.source_authority",
+      "path": "rc6_shadow_runtime/source_authority.py",
+      "sha256": "b9277923784464adf61b9f78cd1f7952bcba97e7e6fe6a4bfcdc4f724eadfe35"
+    },
+    {
+      "module": "rc6_shadow_runtime.source_reads",
+      "path": "rc6_shadow_runtime/source_reads.py",
+      "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+    },
+    {
+      "module": "rc6_signal_contracts",
+      "path": "rc6_signal_contracts.py",
+      "sha256": "b53481cd898ea14b2fab2a9c91388e4e86d158a1423f608174b0b8bb80a01230"
+    },
+    {
+      "module": "rc6_source_consolidation",
+      "path": "rc6_source_consolidation.py",
+      "sha256": "77374e57706ee490d36c3ab8111274b8129a3e1847d6a8d6dba87cfcbcbeb9c4"
+    },
+    {
+      "module": "scripts.porota_dependency_repro_audit",
+      "path": "scripts/porota_dependency_repro_audit.py",
+      "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+    },
+    {
+      "module": "scripts.rc6_dynamic_universe_shadow",
+      "path": "scripts/rc6_dynamic_universe_shadow.py",
+      "sha256": "1de5520bcea53799a94bbab57cb287dba8227c830351851e96b31f781fd7f484"
+    },
+    {
+      "module": "scripts.rc6_issue465_stress",
+      "path": "scripts/rc6_issue465_stress.py",
+      "sha256": "d339465c3c6699496f18ed6caf1ec61abbae5d61b6a3d18a4d91a8696ba7a54a"
+    },
+    {
+      "module": "tests.test_issue465_budget_adversarial",
+      "path": "tests/test_issue465_budget_adversarial.py",
+      "sha256": "26659ee6f56cf7124deec242eaf05a1ac8be89a5a81ea76428ac57e4c770c6c0"
+    },
+    {
+      "module": "tests.test_production_paper_v1634",
+      "path": "tests/test_production_paper_v1634.py",
+      "sha256": "2b80f982f05b33c3ce92e9c77fc1a9302fb6fcb0770a8101e835c08ad96caf23"
+    },
+    {
+      "module": "tests.test_rc6_capacity_promotion",
+      "path": "tests/test_rc6_capacity_promotion.py",
+      "sha256": "6b53daf984d7348258e23145a26d091ab17166b1aba6ae573d9e5fc23d1e99de"
+    },
+    {
+      "module": "tests.test_rc6_convergence_budget_liveness",
+      "path": "tests/test_rc6_convergence_budget_liveness.py",
+      "sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a"
+    },
+    {
+      "module": "tests.test_rc6_dynamic_orchestrator",
+      "path": "tests/test_rc6_dynamic_orchestrator.py",
+      "sha256": "0ec8cfb875046e675ab7ff9d4408c6437aba030210cef24741379e1255e89585"
+    },
+    {
+      "module": "tests.test_rc6_dynamic_tradeability",
+      "path": "tests/test_rc6_dynamic_tradeability.py",
+      "sha256": "d05ee8bc8503a7f5fb7cdab77888d4582b70b904d1e2d889f3ccbe718f7c0d13"
+    },
+    {
+      "module": "tests.test_rc6_future_paper_lifecycle",
+      "path": "tests/test_rc6_future_paper_lifecycle.py",
+      "sha256": "92934156b75aec7892f4de8f1fc5c07ed53b0f9c833f3d0ec2c9a9e4e18548bc"
+    },
+    {
+      "module": "tests.test_rc6_ppi_capacity_benchmark",
+      "path": "tests/test_rc6_ppi_capacity_benchmark.py",
+      "sha256": "bb0389545401f08723ed22ac431c36abf9b39712c74fa9b12977f39d6e0f67ab"
+    },
+    {
+      "module": "tests.test_rc6_ppi_global_budget",
+      "path": "tests/test_rc6_ppi_global_budget.py",
+      "sha256": "738ae1b47b6cf1a1ca6fbe784cb3808e16971c88af3ed50119428ef1efabb5bc"
+    }
+  ],
+  "limits": [
+    "No PPI Watch assets inspected or modified.",
+    "No provider capacity, commercial terms or external latency demonstrated.",
+    "Two reader invocations and their math controls are not new requirements or pytest totals.",
+    "SQL/NoAtime custody is tested on a synthetic native PAPER ledger; deployment/final artifact/FIP remain separate."
+  ],
+  "phase": "PRIOR",
+  "provider_attempts": [],
+  "python_version": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "results": [
+    {
+      "after": {
+        "": {
+          "sha256": "3bb92c639a1c2fa99a9a49cefeb33e98790c6cf8aaf529eaf526402961067d94",
+          "st_atime_ns": 1791210623560029320,
+          "st_ctime_ns": 1791210623558843916,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660198,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623548981653,
+          "st_nlink": 1,
+          "st_size": 692224,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660200,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623558843916,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623558843916,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623552981627,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "before": {
+        "": {
+          "sha256": "3bb92c639a1c2fa99a9a49cefeb33e98790c6cf8aaf529eaf526402961067d94",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623558843916,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660198,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623548981653,
+          "st_nlink": 1,
+          "st_size": 692224,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660200,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623558843916,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623558843916,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623552981627,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "caller": "count",
+      "changes": {
+        "": {
+          "st_atime_ns": {
+            "after": 1791210623560029320,
+            "before": 0
+          }
+        }
+      },
+      "elapsed_seconds": 0.0010476050010765903,
+      "observed_count": 10,
+      "positive_math_control": true,
+      "source_custody_preserved": false
+    },
+    {
+      "after": {
+        "": {
+          "sha256": "3bb92c639a1c2fa99a9a49cefeb33e98790c6cf8aaf529eaf526402961067d94",
+          "st_atime_ns": 1791210623563480606,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660198,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623548981653,
+          "st_nlink": 1,
+          "st_size": 692224,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623563480606,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660200,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623558843916,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623552981627,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "before": {
+        "": {
+          "sha256": "3bb92c639a1c2fa99a9a49cefeb33e98790c6cf8aaf529eaf526402961067d94",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660198,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623548981653,
+          "st_nlink": 1,
+          "st_size": 692224,
+          "st_uid": 1000
+        },
+        "-shm": {
+          "sha256": "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623563480606,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660200,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623558843916,
+          "st_nlink": 1,
+          "st_size": 32768,
+          "st_uid": 1000
+        },
+        "-wal": {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "st_atime_ns": 0,
+          "st_ctime_ns": 1791210623560029320,
+          "st_dev": 27,
+          "st_gid": 1000,
+          "st_ino": 660199,
+          "st_mode": 33188,
+          "st_mtime_ns": 1791210623552981627,
+          "st_nlink": 1,
+          "st_size": 0,
+          "st_uid": 1000
+        }
+      },
+      "caller": "digests",
+      "changes": {
+        "": {
+          "st_atime_ns": {
+            "after": 1791210623563480606,
+            "before": 0
+          }
+        }
+      },
+      "elapsed_seconds": 0.0015600309998262674,
+      "observed_count": 10,
+      "positive_math_control": true,
+      "source_custody_preserved": false
+    }
+  ],
+  "schema": "rc6.budget-primary-custody-native-replay.v1",
+  "scope": "OFFLINE_SYNTHETIC_NATIVE_PAPER_LEDGER_PRIVATE_FIXTURES_NO_PROVIDER_NO_RUNTIME",
+  "source_bytes": 32094625,
+  "source_files": 1553,
+  "source_inventory_sha256": "caa95cd7e800ee2c0481d33bf67e512dd1bc78c7ca016f80cf3d98743fe2cf24",
+  "source_root": "/workspace/rc6_budget_primary_custody_replays/original-b26",
+  "source_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+  "source_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080",
+  "source_unchanged": true,
+  "sqlite_opens": [
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_FIXTURE_SETUP"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_BUDGET_COUNT"
+    },
+    {
+      "path": "ledger/paper.sqlite",
+      "stage": "NATIVE_BUDGET_DIGESTS"
+    }
+  ]
+}

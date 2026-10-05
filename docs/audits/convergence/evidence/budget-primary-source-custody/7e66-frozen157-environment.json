@@ -1,0 +1,23 @@
+{
+  "audit": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "missing": [],
+    "schema": "rc6.installed-distribution-closure.v1",
+    "status": "GREEN",
+    "unexpected": [],
+    "version_mismatch": []
+  },
+  "executable": "/workspace/venv_rc6_frozen311/bin/python",
+  "literal_environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "policy_sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "schema": "rc6.budget-pretest-environment.v1",
+  "source_sha": "7e66f757754252be408249c6124cda5a3ba9cd7c",
+  "source_tree": "70e6df5ac13c5e7dd941b6124291c9262cc35997"
+}
