@@ -227,9 +227,16 @@ class FamilyPaperExecutor:
     def open_future(self, contract, *, lifecycle_id, event_id, entry_price,
                     quantity, entry_cost="0", occurred_at=None, side="LONG",
                     detail=None, cash_guard=None, admission_guard=None,
-                    book_at=None, max_mark_age_seconds=120):
-        """Reserve collateral and persist one simulated future atomically."""
+                    book_at=None, max_mark_age_seconds=120, commit_evidence=None):
+        """Reserve collateral, position and optional evidence in one transaction.
+
+        ``commit_evidence(connection, result)`` runs once for a new fill, after
+        all financial rows exist and before commit. Exceptions roll back the
+        entire fill. A valid retry never recaptures its original evidence.
+        """
         _validate_future_contract(contract)
+        if commit_evidence is not None and not callable(commit_evidence):
+            raise ValueError("FUTURES_COMMIT_EVIDENCE_CALLABLE_REQUIRED")
         if str(side).upper() != "LONG":
             raise ValueError("FUTURES_PAPER_LONG_ONLY")
         stamp = aware_datetime(occurred_at or _now())
@@ -342,7 +349,10 @@ class FamilyPaperExecutor:
             row = dict(connection.execute(
                 "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
                 (str(lifecycle_id),)).fetchone())
-        return _future_result(row, idempotent=False)
+            result = _future_result(row, idempotent=False)
+            if commit_evidence is not None:
+                commit_evidence(connection, result)
+        return result
 
     def mark_future(self, contract, *, lifecycle_id, event_id, mark_price,
                     book_at, occurred_at=None, settlement=False, detail=None,

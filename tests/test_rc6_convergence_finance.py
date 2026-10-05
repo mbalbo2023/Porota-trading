@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from be_paper_engine import PaperBroker, PaperStore
+from be_paper_engine import PaperBroker, PaperStore, _insert_evidence_snapshot
 from bs_instrument_contracts import InstrumentContract, register_exact_time_sql, utc_microseconds
 from dh_paper_dynamic_risk_gate_hf6 import portfolio_capacity
 from rc6_paper_family_lifecycle import (FamilyPaperExecutor, PaperFundTerms,
@@ -191,6 +191,40 @@ def test_u18_future_projection_rejects_oversized_json_at_each_loaded_boundary(tm
         connection.execute("UPDATE " + table + " SET " + column + "=?", (oversized,))
     with pytest.raises(ValueError, match="FUTURES_PROJECTION_JSON_BUDGET_EXHAUSTED"):
         future_positions(store, as_of=CUT, lifecycle_ids=["FUT-1"])
+
+
+def test_aud19_future_commit_evidence_failure_rolls_back_financial_rows_and_valid_retry_captures_once(tmp_path):
+    store = PaperStore(str(tmp_path / "atomic.sqlite"))
+    executor = FamilyPaperExecutor(store)
+    requests = dict(lifecycle_id="FUT-1", event_id="OPEN", entry_price="1500",
+        quantity="1", entry_cost="100", occurred_at=OPEN, book_at=OPEN)
+    seen = []
+
+    def capture(connection, result):
+        assert connection.in_transaction
+        assert result["lifecycle_id"] == "FUT-1" and result["state"] == "ACTIVE"
+        assert connection.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM paper_future_positions").fetchone()[0] == 1
+        _insert_evidence_snapshot(connection, {"decision_key": "FUT-1:FILL", "captured_at": OPEN,
+            "decision_at": OPEN, "financial_result": result, "signal_vector": ["1500"]})
+        seen.append(result["lifecycle_id"])
+
+    def failing_capture(connection, result):
+        capture(connection, result)
+        raise RuntimeError("EVIDENCE_STORAGE_FAILURE")
+
+    with pytest.raises(RuntimeError, match="EVIDENCE_STORAGE_FAILURE"):
+        executor.open_future(dlr(), **requests, commit_evidence=failing_capture)
+    with store.connect() as connection:
+        for table in ("paper_family_lifecycle", "paper_family_lifecycle_events",
+                      "paper_future_positions", "decision_evidence_snapshots"):
+            assert connection.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] == 0
+    executor.open_future(dlr(), **requests, commit_evidence=capture)
+    assert executor.open_future(dlr(), **requests, commit_evidence=capture)["idempotent"]
+    assert seen == ["FUT-1", "FUT-1"]
+    with store.connect() as connection:
+        rows = connection.execute("SELECT payload_sha256,payload_json FROM decision_evidence_snapshots").fetchall()
+    assert len(rows) == 1 and rows[0][0] == hashlib.sha256(rows[0][1].encode()).hexdigest()
 
 
 def test_future_nested_decimal_diagnostics_persist_and_exact_retry_survives_expiry(tmp_path, monkeypatch):
