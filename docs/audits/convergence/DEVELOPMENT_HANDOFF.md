@@ -614,3 +614,24 @@ f4 es estática intermedia, no Gov final. Runtime29MB y stderr con URLs firmadas
 quedan externos; su BLOCKED histórico y descargasForbidden/0bytes no se
 convierten en runtime/artifact/DockerGREEN. El atime durante copia se acredita
 por11stats; no implica custodia desde una ejecución anterior ni permiso deploy.
+
+WholeROOT8764/frozen311157 BIG tras scalar dispatch365 volvió RED:
+PREOPEN85.034s, sin OPEN completo dentro90; CLI1/cleanupFalse.2145 blobs/modos/
+índice/TAR y MAIN11stats+SHA intactos,RSS1,606,672,384B/evidencia36,883,757B
+bajo caps,cinco EXIT PAPER0.103169s dentrofsync real. Prepare39.597/publication
+52.588/encode8.531/metrics3.875/restore8.266 son inclusivos solapados; la
+compatibilidad del fastpath no acredita ahorro ni cierra el fullcycle. Diez
+RAW exactos/lossless están en native-big-8764e934-157. Importclosure del child
+no auditado por el driver externo se informa como tal. Se continúa RCA de
+trabajo repetido de secciones, sin GC/quota/deadline ni autoridad caller nuevos.
+
+Antes de esa corrida se eliminaron únicamente17 copias Git regenerables UX,
+revalidadas contra bytes/modos/blobs y con hijos ya cerrados. Se recuperaron
+1,200,381,952B; /tmp pasó de1,436,762,112 a2,637,144,064B libres.1,366 elementos
+protegidos conservaron metadata/atime; ningún DB leído/eliminado, ni RAW/TAR/
+índices/proofs/parents/siblings borrados. Propuesta y recibo permanecen externos
+SHA6c0f5db5f8b22ed864e53f3b3fc5156203191308921940102305a097f7d3b17e y
+0580f2602e0615b46cadfac3657a47e74b3fbcdac9c0e766057940b8c9f58d3c.
+Se preservan los pins Git/TAR/índice que permiten regenerar esas copias;
+los inodes temporales originales no se presentan como recreados. BIG sigue
+RED; horizonte1201,Gov final,Chrome,artefacto ydeploy no se acreditan.
