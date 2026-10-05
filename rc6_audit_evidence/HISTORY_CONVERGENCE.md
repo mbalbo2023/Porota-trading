@@ -82,6 +82,17 @@ contract volume require a contract multiplier; unknowns do not produce cash.
 All new cases use temporary stores and forbid network connections. Test names
 below refer to `tests/test_rc6_history_convergence.py` except U24.
 
+`history_convergence/owned_exact_node_matrix.json` gives each owned finding's
+RCA, final fix paths, exact collected pytest node IDs (including each parameter
+case), PASS receipts and external limits. It contains thirteen assigned
+findings, two separately declared preopen autocorrections and the three
+restored owned scenario IDs. Its 75 distinct native guard nodes are verified
+against the 249-test receipt; they are not interchangeable with scenario or
+finding counts. The matrix includes verified seed/current hashes for all
+twelve #344 paths from the independent UX preservation receipt. The core
+phase review's exact integration HEAD at test start was not recorded, so its
+41 PASS checks must not be presented as exact-candidate CI.
+
 | Finding | Current regression/control |
 | --- | --- |
 | AUD-468-06 | test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate |
