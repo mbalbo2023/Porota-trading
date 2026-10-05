@@ -1,0 +1,52 @@
+{
+  "archive_sha256": "32d28cbf5fd051f1357e06f774dc86a49610fa01b18f61a75ad343d0df98f606",
+  "candidate_tree_sha": "764229fb8807d15022834fc422f9d6baf56437ad",
+  "cases": [
+    {
+      "classification": "PRODUCT_RED",
+      "id": "UX470-I04",
+      "native_writer": "FamilyPaperExecutor.open_future + mark_future",
+      "scope": "ACTIVE_FUTURE_VISIBILITY"
+    },
+    {
+      "classification": "PRODUCT_RED",
+      "id": "AUD-468-16",
+      "native_writer": "cu_history_store_v2_hf6.append_candle",
+      "scope": "HISTORY_PRESENTATION_SOURCE_CUT_IDENTITY_SUBCLAUSE"
+    }
+  ],
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6/bin/python -I /workspace/porota_rc6_worktrees/ux/tests/ci_rc6_original_ux_product_red.py --source-index /tmp/rc6-ux-original-seed-0f810c16.index.json --output /tmp/rc6-ux-original-product-red-0f810c16",
+  "exact_product_imports": 53,
+  "frozen_source_sqlite_attempts": 0,
+  "limits": [
+    "AUD16 is the history presentation source/cut/identity subclause. This RED does not independently reproduce all five concept surfaces.",
+    "Annual calendar date cutoff is not an observation or decision cut. The probe does not claim binding lookahead or broker impact.",
+    "I04 is attributed to the exact initial combined seed, not isolated #470.",
+    "These original RED observations do not replace final integrated GREEN guards."
+  ],
+  "network_attempts": 0,
+  "overlays": [],
+  "parents": [
+    "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "4a5fc6384260b31f9a07e791093add6ee83102a1"
+  ],
+  "ppi_watch_touched": false,
+  "probe": "tests/ci_rc6_original_ux_product_red.py",
+  "probe_sha256": "67539f012201cdf27d4b4ba733fe8966ee902cfbbcf5d1c74bc9c24f91d0ee7d",
+  "raw_evidence_sha256": {
+    "original-product-red-0f810c16.json": "67918c8ff64b582f0d38be98002fa98ecedc085a4bf4e26f7d8562a42b90eab9",
+    "original-product-red-index-0f810c16.json": "d542c7e9cf6969a31885fc5b74e0ff56d853f3fd094558ef12e699508162fe13",
+    "original-product-red-source-0f810c16.json": "e5495cb8a60ac5d61c92263830e377395e9784c3f742f055544e2e3a94f2e696"
+  },
+  "receipts": [
+    "original-product-red-0f810c16.json",
+    "original-product-red-source-0f810c16.json",
+    "original-product-red-index-0f810c16.json"
+  ],
+  "runtime_touched": false,
+  "schema": "rc6.original-ux-native-product-red-local-receipt.v1",
+  "source_custody_unchanged": true,
+  "source_files_unchanged": 1136,
+  "source_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "status": "PRODUCT_RED_REPRODUCED"
+}

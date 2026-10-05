@@ -97,9 +97,27 @@ monofamilia; no constituye aceptación general de un catálogo mixto. La revisi�
 financiera independiente del runner fue sólo de fuente y mantuvo la ejecución
 positiva grande pendiente.
 
-El gate grande sigue abierto hasta ejecutar ese harness sobre el productor
-final y obtener ≤4 MiB por solicitud y ≤1 s por consulta/render. Los tiempos
-del fixture pequeño y el deadline de falla no prueban esa capacidad. La validación
+El productor nativo `18e9716d` completó PRE+OPEN en 87,099 s con 12000 identidades,
+60000 registros de entrada, fsync real y cinco salidas PAPER. Publicó 20000
+observaciones consumidas con truncación explícita; los 60000 no se presentan
+como procesados íntegramente. El lector sobre el archivo integrado exacto
+`59481b3e` pasó nueve consultas y tres renders del mismo CURRENT sequence 2:
+máximo 0,993331 s y 249011 bytes por proyección. Comparó las 12000 identidades
+del índice completo y accedió a páginas, identidad y cohorte finales; no afirma
+recorrer todas las páginas. El report lógico mide 292783805 bytes.
+
+El browser posterior sobre ese mismo archivo rechazó el preflight antes de
+iniciar Chromium. El diagnóstico conservado midió 0,129738 s para la copia
+SQLite y 0,981923 s en la verificación wire, que agotó el presupuesto antes de
+abrir o consultar el índice. El total fue 1,118113 s. Los 1339 archivos de fuente
+y los 15 miembros de DB/custodia conservaron bytes/hash/stat/atime. El receipt
+`native-large-first-cut-local-receipt.json` registra ambos resultados, sin
+elegir el positivo ni ampliar el deadline. La navegación grande sigue pendiente
+de corregir ese costo y ejecutar lector y browser en el próximo archivo íntegro.
+
+El gate grande sigue abierto hasta obtener navegación y render completos dentro
+de ≤4 MiB por solicitud y ≤1 s. Los tiempos del fixture pequeño y el deadline
+de falla no prueban esa capacidad. La validación
 integrada ejecutará además imports, mounts/imagen y navegador sobre un único SHA/tree y
 artefacto congelados. Este incremento no modifica los doce tests protegidos
 de #344, el enganche o_dashboard, fuentes de PPI Watch/#107 ni runtime productivo.

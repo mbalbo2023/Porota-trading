@@ -1,0 +1,89 @@
+{
+  "acceptance_complete": false,
+  "archive_sha256": "db3672d6945a7d918d2ebd6e8697f5157f5a03c22ef1d02860bc84750956340a",
+  "browser": {
+    "canonical_viewport_checks": 0,
+    "chromium_launched": false,
+    "gate": "PROJECTED_CUT_UNAVAILABLE",
+    "interaction_checks": 0,
+    "legacy_checks": 0,
+    "status": "RED"
+  },
+  "candidate_tree_sha": "a17f1008a4e14643d9081dd794b9050b13144c2c",
+  "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+  "diagnostic": {
+    "acceptance_claim": false,
+    "code": "SHADOW_PROJECTION_QUERY_DEADLINE",
+    "snapshot_elapsed_seconds": 0.12973751400204492,
+    "stage": "BEFORE_OPEN_PROJECTION_OR_QUERY",
+    "total_elapsed_seconds": 1.1181131320008717,
+    "wire_elapsed_seconds": 0.9819227620027959
+  },
+  "followup_wrapper": "tests/ci_rc6_exact_archive_gate.py",
+  "followup_wrapper_limits": "Restricts gates to large reader/browser, requires a new proof outside source archive/database/custody, and excludes its own external runner from product imports.",
+  "followup_wrapper_negative_receipt": "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json",
+  "generation_pointer": {
+    "digest": "1560041b1daa861314cf3beef68e56e1102d1e8391419a3867e7bb95f346c1ef",
+    "generation_id": "8fca0b4616da43f1b96a475f2efaad3c",
+    "manifest_sha256": "7d922004c9d4e03341c9fe96f942eb6755e1c4101004cc2e5bb5d367fb855043",
+    "schema": "rc6.shadow-evidence-generation.v2",
+    "sequence": 2
+  },
+  "native_inputs": {
+    "catalog_full_identities": 12000,
+    "funnel_groups": 24000,
+    "observation_read_truncated": true,
+    "observations_materialized": 60000,
+    "observations_returned": 20000,
+    "planner_rows": 24000,
+    "report_logical_bytes": 292783805
+  },
+  "overlays": [],
+  "ppi_watch_touched": false,
+  "provider_requests": 0,
+  "raw_evidence_sha256": {
+    "native-large-browser-red-59481b3e.json": "25d9bccf0a248beee8e5228d1ec6069b1a719dc2a2676fddf1b7eeb76a9985f6",
+    "native-large-browser-source-59481b3e.json": "d672a2ce627fe038317e600531756a18d583005947a08b0d02f28aa372dd5477",
+    "native-large-post-custody-59481b3e.json": "a2015daddb997ef997fa7bcfdc967374abf63983e9f95901d3d302568b83d6f3",
+    "native-large-preflight-diagnostic-59481b3e.json": "f989ad61dd7183c56d0fe68b8565b1c96cd5b2e358a6550b3a4e8b9c37b67029",
+    "native-large-producer-18e9716d.json": "45ba7fc5236006f788f90e5d1a1b591e98722639d16da26ca954a9991e690ced",
+    "native-large-reader-59481b3e.json": "c4e77063233e3ba6fc8e14f999ab1e23ebd9ac1bedbd14fa483c9770d4a3d4ab",
+    "native-large-reader-source-59481b3e.json": "dd624089a6d86ffe471e9402fcbe493ead6c552149c45678f74d75a4eaa71478",
+    "native-large-source-index-59481b3e.json": "55870fcef6509b0ac5719b50e6cc3740c5c9b8ad98aff70d4c17e96740a5f74a"
+  },
+  "reader": {
+    "complete_index_population_checked": true,
+    "full_page_traversal_claimed": false,
+    "maximum_elapsed_seconds": 0.9933306519997132,
+    "maximum_projection_bytes": 249011,
+    "requests_measured": 12,
+    "status": "GREEN"
+  },
+  "receipts": [
+    "native-large-reader-59481b3e.json",
+    "native-large-reader-source-59481b3e.json",
+    "native-large-browser-red-59481b3e.json",
+    "native-large-browser-source-59481b3e.json",
+    "native-large-preflight-diagnostic-59481b3e.json",
+    "native-large-post-custody-59481b3e.json",
+    "native-large-source-index-59481b3e.json",
+    "native-large-producer-18e9716d.json"
+  ],
+  "requirements_remaining": [
+    "Correct verification cost within the unchanged absolute 1 second Store budget.",
+    "Execute large reader then browser on the next exact integrated source archive.",
+    "Complete 49 subviews \u00d7 6 widths, 22 aliases and all native large interactions.",
+    "Final frozen artifact/import/mount gates belong to the parent integration."
+  ],
+  "runtime_touched": false,
+  "schema": "rc6.dashboard-native-large-first-cut-local-receipt.v1",
+  "source_and_custody_members_unchanged": 15,
+  "source_cut": "2026-10-05T13:35:00+00:00",
+  "source_files": 1339,
+  "source_sha": "59481b3e9e0470850232fb78bbc1f583675e4c8a",
+  "source_sqlite_opens": 0,
+  "status": "READER_GREEN_BROWSER_RED_PREFLIGHT_DEADLINE",
+  "used_wrapper_archive": "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-gate-wrapper-59481b3e.py",
+  "used_wrapper_sha256": "7d8a2bd2632f2360d3bc0811b43b5a6071cbaba3b5d8c3449f8ab00a0537e382",
+  "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
+}

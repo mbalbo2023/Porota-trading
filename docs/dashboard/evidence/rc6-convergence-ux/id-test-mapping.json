@@ -2,7 +2,7 @@
   "schema": "rc6.ux-convergence-id-test-map.v1",
   "scope": "RC6-CONVERGENCE-UX",
   "seed_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
-  "status": "LOCAL_SMALL_PROJECTION_GREEN; NATIVE_LARGE_AND_FINAL_FREEZE_PENDING",
+  "status": "LOCAL_SMALL_PROJECTION_GREEN; ORIGINAL_I04_HISTORY_CONCEPT_RED_REPRODUCED; LARGE_READER_GREEN_BROWSER_RED; FINAL_FREEZE_PENDING",
   "protected_tests": {
     "pr": 344,
     "count": 12,
@@ -162,6 +162,11 @@
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "Reserva histórica full-notional PAPER no es margen broker ni costo/PnL. Sin quote ejecutable, conserva intent/cause/bloqueo; no inventa close."
+      ],
+      "red_baseline_receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/original-native-product-red-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-0f810c16.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-source-0f810c16.json"
       ]
     },
     {
@@ -180,7 +185,9 @@
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_projection_source_guard.py",
         "tests/ci_rc6_projection_large_browser.py",
-        "tests/test_rc6_projection_large_browser.py"
+        "tests/test_rc6_projection_large_browser.py",
+        "tests/ci_rc6_exact_archive_gate.py",
+        "tests/ci_rc6_original_ux_product_red.py"
       ],
       "upstream_contracts": [
         "PaperBroker.on_quote",
@@ -220,17 +227,19 @@
         "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-preparation-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-first-cut-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json"
       ],
       "pending_gates": [
-        "Corte canónico nativo 12k catálogo/60k observaciones: bytes, reader/proyección, RSS, tiempo y contenido disponible.",
+        "Browser grande: preflight RED en59481b3e por deadline wire; corregir costo sin aumentar1s y ejecutar reader→browser sobre nuevo archive íntegro.",
         "Reejecución final de navegador/import closure sobre SHA/tree/artifact congelado con implementación launcher del owner SRE."
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
-        "El artefacto nativo completo 12000/60000 y render/consulta ≤1 s, salida ≤4 MiB siguen pendientes; fixture pequeño y SQL aislado no los cierran.",
-        "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales."
+        "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales.",
+        "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados."
       ]
     },
     {
@@ -318,7 +327,13 @@
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
-        "Clocks fuente/known_at se verifican al signal, costos al admission, capture al recorded y commit posterior. Freshness del panel no prueba input usado por el motor."
+        "Clocks fuente/known_at se verifican al signal, costos al admission, capture al recorded y commit posterior. Freshness del panel no prueba input usado por el motor.",
+        "RED nativo original demuestra la subcláusula conceptual de presentación history; no atribuye lookahead binding ni reproduce todas las cinco superficies por sí solo. Calendar date no es cut de conocimiento."
+      ],
+      "red_baseline_receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/original-native-product-red-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-0f810c16.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-source-0f810c16.json"
       ]
     },
     {

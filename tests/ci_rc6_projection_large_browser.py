@@ -72,20 +72,28 @@ def run(database, root, output):
             observation_count = copied.execute("SELECT count(*) FROM ppi_intraday_points").fetchone()[0]
             last_identity = tuple(copied.execute("SELECT ticker,instrument_type,market,currency,settlement "
                                                 "FROM financial_instrument_catalog ORDER BY ticker DESC LIMIT 1").fetchone())
+        preflight_begin = perf_counter()
         with Store(database, now=cut_at) as store:
             projection = Projection(store)
             cut = projection.shadow
-            require(cut["state"] == "COMMITTED_COHERENT_SHADOW", "PROJECTED_CUT_UNAVAILABLE")
+            require(cut["state"] == "COMMITTED_COHERENT_SHADOW", "PROJECTED_CUT_UNAVAILABLE",
+                    {"state": cut["state"], "reason": cut["reason"], "error_class": cut.get("error_class"),
+                     "elapsed_seconds": perf_counter()-preflight_begin, "scope": "default"})
             require(cut["pointer"] == pointer and cut["verification_level"] == VERIFICATION_LEVEL,
                     "BROWSER_PREFLIGHT_CUT_OR_VERIFICATION_MISMATCH")
             require_native_large_cut(cut, catalog_count=catalog_count, observation_count=observation_count)
             planner = shadow_rows(projection, "opportunities")
             require(planner.state == "AVAILABLE" and planner.total == 2*catalog_count, "PLANNER_DENOMINATOR_INCOMPLETE")
         require(not store.errors, "SOURCE_SNAPSHOT_REJECTED")
+        preflight_begin = perf_counter()
         with Store(database, now=cut_at) as store:
             scoped_projection = Projection(store, {"family": last_identity[1]})
+            scoped_cut = scoped_projection.shadow
+            require(scoped_cut["state"] == "COMMITTED_COHERENT_SHADOW", "PROJECTED_CUT_UNAVAILABLE",
+                    {"state": scoped_cut["state"], "reason": scoped_cut["reason"], "error_class": scoped_cut.get("error_class"),
+                     "elapsed_seconds": perf_counter()-preflight_begin, "scope": "family"})
             scoped = scoped_projection.funnel_scope
-            require(scoped_projection.shadow["pointer"] == pointer, "SCOPED_PREFLIGHT_CHANGED_CUT")
+            require(scoped_cut["pointer"] == pointer, "SCOPED_PREFLIGHT_CHANGED_CUT")
             require(scoped["state"] == "AVAILABLE" and scoped["total_groups"] >= 2*catalog_count,
                     "COMPLETE_COHORT_POPULATION_UNAVAILABLE")
         require(not store.errors, "SOURCE_SNAPSHOT_REJECTED")
