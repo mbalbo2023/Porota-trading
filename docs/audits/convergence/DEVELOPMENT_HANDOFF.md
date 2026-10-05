@@ -340,5 +340,26 @@ evidence/native-big-400a677c-157; no es Gov, horizonte, browser o artefacto.
 
 La revisión estática independiente del nuevo IPC detectó cinco problemas de
 output/cleanup/deadline/procedencia. OWN881 se conserva como preparación sin
-ejecución: todavía no se inició pytest sobre esa fuente. La corrección y sus
-guards son obligatorios antes de cualquier aceptación funcional o navegador.
+ejecución: no se inició pytest sobre esa fuente. La corrección OWNb6fd pasó
+55/55 guards funcionales en311 y los mismos55/55 en312, ambos exact157 y
+whole1638 blobs/modos intactos, cero errors/failures/skips y sin huérfanos.
+Son dos ejecuciones del mismo conjunto; no110 ataques independientes. No
+incluyen Chrome, BIG OPEN ni el plazo de render del catálogo grande. La
+ejecución final de la integración y del navegador sigue obligatoria.
+
+El guard automático near64MiB/depth32 está integrado desde OWN81f6+3c41.
+Dos nodes compartirán una ejecución nueva de34 publicaciones/33 archivos/
+33 decodes con los cinco miembros originales, wait4 RSS real y wall total
+de300s desde launch hasta salida, incluidas custodia y emisión/fsync. El
+watchdog330 sólo termina y conserva diagnóstico; no autoriza PASS. La
+revisión estática corrigió la cola de deadline, cobertura UDP y la resolución
+dir_fd de observaciones antes de borrar. AST/compile no son ejecución nativa;
+la calificación de esta fuente integrada sigue pendiente. Gov debe conservar
+una autoridad Git íntegra del mismo HEAD; ausencia de Git falla cerrada.
+
+Los helpers externos de registro compacto/ref/gzip y sus30 controles privados
+documentales se preservaron byteexactos. No agregan tests nativos, financieros
+ni Gov; los recibos127/12/1 mantienen sus alcances OWN sin sumar ni relabel.
+El suplemento6737 permanece predecesor. Sólo la fuente estable S permite
+regenerar los seis bindings tipados ROOT y el documento D; Gov/FIP/imagen
+deben calificar C después de D. La generación compacta final sigue pendiente.
