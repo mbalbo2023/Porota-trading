@@ -147,3 +147,26 @@ def test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker(attac
         with pytest.raises(ValueError, match="SHADOW_"):
             serialization.verify_storage_wire(packed, **arguments, _pipeline_hash=True)
     assert not any(thread.name.startswith("rc6-shadow-sha") for thread in threading.enumerate())
+
+
+def test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    observed = []
+    class Captured(ThreadPoolExecutor):
+        def submit(self, operation, parts):
+            assert type(parts) is tuple and 0 < len(parts) <= 64
+            assert all(type(raw) is bytes for raw in parts)
+            assert sum(map(len, parts)) < 2 * 1024**2
+            observed.append((len(parts), sum(map(len, parts))))
+            return super().submit(operation, parts)
+    monkeypatch.setattr(serialization, "ThreadPoolExecutor", Captured)
+    body = {"rows": [{"identity": ["ÑANDÚ", "ACCIONES", "BYMA", "ARS", "A-24HS"],
+                     "literal/~key": "observación", "typed": [False, 0, None]}] * 20000}
+    packed = serialization.PreparedStorage(body, mutable=(), durable_limit=32 * 1024**2,
+        expansion_limit=64 * 1024**2).encode(body)[0]
+    expected = serialization.verify_storage_wire(packed, durable_limit=32 * 1024**2, expansion_limit=64 * 1024**2)
+    actual = serialization.verify_storage_wire(packed, durable_limit=32 * 1024**2,
+        expansion_limit=64 * 1024**2, _pipeline_hash=True)
+    assert actual == expected and len(observed) >= 2
+    assert not any(thread.name.startswith("rc6-shadow-sha") for thread in threading.enumerate())

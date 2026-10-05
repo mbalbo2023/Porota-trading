@@ -246,10 +246,11 @@ def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=No
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rc6-shadow-sha") if _pipeline_hash and not retain else None
     pending_hashes = deque()
     hash_parts, hash_size = [], 0
-    def hashed(raw):
-        if deadline is not None and time.monotonic() >= deadline:
-            raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
-        accumulator.update(raw)
+    def hashed(parts):
+        for raw in parts:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
+            accumulator.update(raw)
     try:
         cursor, pending = 0, b""
         stream = zlib.decompressobj(wbits=31)
@@ -276,14 +277,15 @@ def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=No
                 if hash_size >= 1024**2 or len(hash_parts) >= 64:
                     # Batch tiny framing members without changing stream
                     # order; no more than two two-MiB batches are in flight.
-                    combined = hash_parts[0] if len(hash_parts) == 1 else b"".join(hash_parts)
-                    pending_hashes.append(executor.submit(hashed, combined))
+                    # Hash the same immutable bytes in order without copying
+                    # the complete expanded stream into joined batch buffers.
+                    pending_hashes.append(executor.submit(hashed, tuple(hash_parts)))
                     hash_parts.clear(); hash_size = 0
                     if len(pending_hashes) >= 2:
                         pending_hashes.popleft().result()
             if output is not None: output.write(raw)
         if hash_parts:
-            pending_hashes.append(executor.submit(hashed, b"".join(hash_parts)))
+            pending_hashes.append(executor.submit(hashed, tuple(hash_parts)))
             hash_parts.clear()
         while pending_hashes:
             pending_hashes.popleft().result()
