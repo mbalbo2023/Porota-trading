@@ -76,6 +76,18 @@ def test_real_producer_health_is_green_without_provider_or_source_writes(real_cu
     assert before == {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
 
 
+def test_post_start_health_preserves_factual_child_health_access_metadata(real_cut):
+    database, _, _, _, path = real_cut
+    info = path.stat()
+    os.utime(path, ns=(info.st_mtime_ns - 10_000_000_000, info.st_mtime_ns))
+    before = path.stat()
+    result = read_health(database, source_sha=SOURCE, tree_sha=TREE, now=NOW)
+    after = path.stat()
+    assert result["status"] == "GREEN"
+    assert (after.st_atime_ns, after.st_mtime_ns, after.st_ctime_ns) == (
+        before.st_atime_ns, before.st_mtime_ns, before.st_ctime_ns)
+
+
 def test_health_reads_verified_codec_projection_without_decoding_report_or_checkpoint(real_cut, monkeypatch):
     database, worker, _, _, _ = real_cut
     # Exercise the real lossless codec for all roles with a small native

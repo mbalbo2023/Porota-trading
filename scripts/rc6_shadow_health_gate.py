@@ -49,7 +49,7 @@ def read_child_health(path):
     from scripts.porota_artifact_provenance import decode_json
     if path.parent.resolve() != path.parent:
         raise ShadowHealthRejected("SHADOW_CHILD_HEALTH_FILE_INVALID")
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOATIME)
     with os.fdopen(descriptor, "rb") as stream:
         before = os.fstat(stream.fileno())
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
