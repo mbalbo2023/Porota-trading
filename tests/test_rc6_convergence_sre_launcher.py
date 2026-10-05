@@ -6,6 +6,7 @@ from pathlib import Path
 import stat
 import subprocess
 import tempfile
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -203,3 +204,31 @@ def test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_chi
         assert f"type=bind,src={tmp_path}/ops/policy,dst=/app/ops/policy,readonly" in args
         assert f"type=bind,src={tmp_path}/data/rc6-capacity,dst=/app/data/rc6-capacity,readonly" in args
         assert f"{tmp_path}/data:/app/data" in args
+
+
+@pytest.mark.parametrize("configured,expected", [(None, "ENABLED"), (" enabled ", "ENABLED"),
+                                                ("OFF", "OFF"), ("disabled", "DISABLED")])
+def test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary(
+        tmp_path, monkeypatch, configured, expected):
+    inputs = {} if configured is None else {"POROTA_CONTRACT_EVIDENCE_MODE": configured}
+    prepare_launcher(tmp_path, monkeypatch, inputs)
+    values = read_env(manager.observer_runtime_env())
+    assert values.get("POROTA_CONTRACT_EVIDENCE_MODE") == expected
+    if expected == "ENABLED":
+        return  # Positive forwarding; this case never requests provider work.
+    program = '''
+import ck_contract_evidence_runner_hf6 as runner
+def forbidden(*args, **kwargs):
+    raise AssertionError("DISABLED_RUNNER_MUST_NOT_OPEN_SOURCE_OR_PROVIDER")
+runner.Store=forbidden
+runner.observer_state=forbidden
+runner.ProductionMarketReader=forbidden
+assert runner.CONTRACT_EVIDENCE_MODE in {"OFF","DISABLED"}
+assert runner.main() == 0
+'''
+    result = subprocess.run([sys.executable, "-c", program],
+        cwd=Path(__file__).resolve().parents[1], env={**os.environ, **values},
+        capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "STATUS=SKIPPED_SOURCE_UNAVAILABLE_BY_SCOPE" in result.stdout
+    assert "PROFILE_PRESERVED=YES" in result.stdout
