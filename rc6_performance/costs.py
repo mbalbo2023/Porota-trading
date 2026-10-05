@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_EVEN
 import hashlib
 import json
 
-from bs_instrument_contracts import aware_datetime, cash_currency, family_name
+from bs_instrument_contracts import aware_datetime, cash_currency, family_name, utc_microseconds
 
 from .common import number, identity
 
@@ -148,7 +148,7 @@ class VersionedPaperCostContract:
         if self.scope != "EXPLICIT_PAPER_ASSUMPTIONS" or not self.policy_version or not self.source:
             return "COST_POLICY_SCOPE_OR_PROVENANCE_REQUIRED"
         at = aware_datetime(decision_at)
-        if aware_datetime(self.effective_at) > at or aware_datetime(self.known_at) > at:
+        if utc_microseconds(self.effective_at) > utc_microseconds(at) or utc_microseconds(self.known_at) > utc_microseconds(at):
             return "COST_POLICY_NOT_KNOWN_OR_EFFECTIVE"
         required = ("commission", "rights", "clearing", "premium_rights", "vat",
                     "commission_vat", "rights_vat", "clearing_vat", "premium_rights_vat",
@@ -196,7 +196,9 @@ class VersionedPaperCostContract:
                   "minimum_commission", "rebate_policy", "fee_currency", "fx_rate", "fx_source",
                   "fee_quantum", "rounding")
         result = {"schema_version": 1, "policy_version": self.policy_version,
-                "scope": self.scope, "family": self.family, "currency": self.currency,
+                "scope": self.scope, "authority": self.scope,
+                "account_authority": self.account_terms,
+                "family": self.family, "currency": self.currency,
                 "effective_at": self.effective_at, "known_at": self.known_at,
                 "source": self.source, "account_terms": self.account_terms,
                 "components": {field: render(getattr(self, field)) for field in fields},

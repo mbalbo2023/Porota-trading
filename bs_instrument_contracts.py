@@ -220,7 +220,7 @@ class InstrumentContract:
                 raise ValueError("OFFICIAL_PRICE_RULE_REQUIRED")
             decision = aware_datetime(at)
             for clock in ("known_at", "effective_at"):
-                if not rule.get(clock) or aware_datetime(rule[clock]) > decision:
+                if not rule.get(clock) or utc_microseconds(rule[clock]) > utc_microseconds(decision):
                     raise ValueError("OFFICIAL_PRICE_RULE_NOT_KNOWN_OR_EFFECTIVE")
             quantum = decimal_value(rule.get("quantum"), "official_price_quantum", positive=True)
             if result % quantum:

@@ -30,6 +30,12 @@ def _number_text(value):
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+def _within_mark_age(stamp, source, maximum_seconds):
+    elapsed = utc_microseconds(stamp) - utc_microseconds(source)
+    maximum = decimal_value(maximum_seconds, "mark age", nonnegative=True) * Decimal("1000000")
+    return 0 <= elapsed <= maximum
+
+
 def _json_default(value):
     if isinstance(value, Decimal):
         return _number_text(value)
@@ -271,9 +277,9 @@ class FamilyPaperExecutor:
                     raise ValueError("FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
                 return _future_result(row, idempotent=True)
 
-            if not 0 <= (stamp - native_book).total_seconds() <= max_mark_age_seconds:
+            if not _within_mark_age(stamp, native_book, max_mark_age_seconds):
                 raise ValueError("FUTURES_OPEN_BOOK_STALE_OR_FUTURE")
-            if stamp >= aware_datetime(contract.expires_at, "vencimiento futuro"):
+            if utc_microseconds(stamp) >= utc_microseconds(contract.expires_at):
                 raise ValueError("FUTURE_EXPIRED")
 
             if connection.execute("""SELECT 1 FROM paper_future_positions
@@ -359,9 +365,9 @@ class FamilyPaperExecutor:
                 (str(event_id), str(lifecycle_id), utc_microseconds(source_at), int(settlement))).fetchone()
             if prior_mark and occurred_at is None:
                 stamp = aware_datetime(prior_mark["observed_at"])
-            if source_at > stamp:
+            if utc_microseconds(source_at) > utc_microseconds(stamp):
                 raise ValueError("FUTURES_BOOK_TIME_FUTURE")
-            if (stamp - source_at).total_seconds() > max_mark_age_seconds:
+            if not _within_mark_age(stamp, source_at, max_mark_age_seconds):
                 raise ValueError("FUTURES_BOOK_STALE")
             price = contract.price(mark_price, price_kind=kind, source=price_source,
                                    rule=price_rule, at=stamp)
@@ -400,10 +406,11 @@ class FamilyPaperExecutor:
                 raise ValueError("FUTURES_ACTIVE_POSITION_REQUIRED")
             row = dict(row)
             _future_row_matches_contract(row, contract)
-            if (stamp < aware_datetime(row["last_mark_at"])
-                    or source_at < aware_datetime(row["last_book_at"])):
+            if (utc_microseconds(stamp) < utc_microseconds(row["last_mark_at"])
+                    or utc_microseconds(source_at) < utc_microseconds(row["last_book_at"])):
                 raise ValueError("FUTURES_CLOCK_ROLLBACK")
-            if stamp < aware_datetime(row["opened_at"]) or source_at < aware_datetime(row["opened_at"]):
+            if (utc_microseconds(stamp) < utc_microseconds(row["opened_at"])
+                    or utc_microseconds(source_at) < utc_microseconds(row["opened_at"])):
                 raise ValueError("FUTURES_MARK_BEFORE_OPEN")
             qty = contract.quantity(row["quantity"])
             base = decimal_value(row["settlement_base_price"], "base futuro", positive=True)
@@ -487,9 +494,9 @@ class FamilyPaperExecutor:
             row = dict(row)
             if prior and occurred_at is None:
                 stamp = aware_datetime(prior["occurred_at"])
-            if source_at > stamp:
+            if utc_microseconds(source_at) > utc_microseconds(stamp):
                 raise ValueError("FUTURES_BOOK_TIME_FUTURE")
-            if (stamp - source_at).total_seconds() > max_mark_age_seconds:
+            if not _within_mark_age(stamp, source_at, max_mark_age_seconds):
                 raise ValueError("FUTURES_BOOK_STALE")
             price = contract.price(exit_price, price_kind=kind, source=price_source,
                                    rule=price_rule, at=stamp)
@@ -521,12 +528,13 @@ class FamilyPaperExecutor:
             if row["status"] != "ACTIVE":
                 raise ValueError("FUTURES_ACTIVE_POSITION_REQUIRED")
             _future_row_matches_contract(row, contract)
-            if (stamp < aware_datetime(row["last_mark_at"])
-                    or source_at < aware_datetime(row["last_book_at"])):
+            if (utc_microseconds(stamp) < utc_microseconds(row["last_mark_at"])
+                    or utc_microseconds(source_at) < utc_microseconds(row["last_book_at"])):
                 raise ValueError("FUTURES_CLOCK_ROLLBACK")
-            if expiry and stamp < aware_datetime(contract.expires_at):
+            if expiry and utc_microseconds(stamp) < utc_microseconds(contract.expires_at):
                 raise ValueError("FUTURES_EXPIRY_NOT_DUE")
-            if stamp < aware_datetime(row["opened_at"]) or source_at < aware_datetime(row["opened_at"]):
+            if (utc_microseconds(stamp) < utc_microseconds(row["opened_at"])
+                    or utc_microseconds(source_at) < utc_microseconds(row["opened_at"])):
                 raise ValueError("FUTURES_EXIT_BEFORE_OPEN")
             qty = contract.quantity(row["quantity"])
             base = decimal_value(row["settlement_base_price"], "base futuro", positive=True)
@@ -735,7 +743,7 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
         raise ValueError(f"PAPER_LIFECYCLE_INVALID_TRANSITION:{from_state}->{to_state}")
 
     previous = decimal_value(current["ledger_total"], "PAPER_LIFECYCLE_AMOUNT_INVALID") if current else Decimal("0")
-    if current and aware_datetime(current["updated_at"]) > aware_datetime(stamp):
+    if current and utc_microseconds(current["updated_at"]) > utc_microseconds(stamp):
         raise ValueError("PAPER_LIFECYCLE_CLOCK_ROLLBACK")
     total = previous + delta
     connection.execute("""INSERT INTO paper_family_lifecycle
@@ -921,7 +929,7 @@ def future_positions(store, currency=None, *, connection=None, active_only=False
     projected = []
     for row in rows:
         opened = aware_datetime(row["opened_at"])
-        if opened > point or (exclusive and opened == point):
+        if utc_microseconds(opened) > utc_microseconds(point) or (exclusive and utc_microseconds(opened) == utc_microseconds(point)):
             continue
         projected_row = _future_position_at(row, point, connection=connection, exclusive=exclusive)
         if not active_only or projected_row["status"] == "ACTIVE":
@@ -1031,7 +1039,7 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
     active_count, mark_timestamps = 0, []
     for row in future_positions(store, currency, connection=connection, as_of=point, exclusive=exclusive):
         opened = aware_datetime(row["opened_at"])
-        if opened > point or (exclusive and opened == point):
+        if utc_microseconds(opened) > utc_microseconds(point) or (exclusive and utc_microseconds(opened) == utc_microseconds(point)):
             continue
         closed = aware_datetime(row["closed_at"]) if row["closed_at"] else None
         if opened.astimezone(__import__("zoneinfo").ZoneInfo(
@@ -1046,8 +1054,8 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
         collateral += decimal_value(row["margin_reserved"], "garantía", positive=True)
         mark_at = aware_datetime(row["last_book_at"], "book futuro") if row["last_book_at"] else None
         marked_at = aware_datetime(row["last_mark_at"])
-        if (mark_at is None or mark_at > marked_at
-                or not 0 <= (point - mark_at).total_seconds() <= max_mark_age_seconds):
+        if (mark_at is None or utc_microseconds(mark_at) > utc_microseconds(marked_at)
+                or not _within_mark_age(point, mark_at, max_mark_age_seconds)):
             stale = True
         mark_timestamps.append(mark_at.isoformat() if mark_at else None)
         unrealized += decimal_value(row["unrealized_pnl"], "PnL futuro no realizado")

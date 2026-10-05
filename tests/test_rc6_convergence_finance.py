@@ -6,6 +6,7 @@ import hashlib
 import json
 import multiprocessing
 import sqlite3
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -34,10 +35,10 @@ class Store:
         return connection
 
 
-def dlr():
-    terms = standard_dlr_terms("DLR/OCT26")
+def dlr(symbol="DLR/OCT26"):
+    terms = standard_dlr_terms(symbol)
     return InstrumentContract(
-        "DLR/OCT26", "FUTUROS", "ARS", "A3", "INMEDIATA", D("1000"), D("1"),
+        symbol, "FUTUROS", "ARS", "A3", "INMEDIATA", D("1000"), D("1"),
         "PPI_PRIMARY+A3_OFFICIAL:OFFLINE_FIXTURE", expires_at=terms["expires_at"],
         minimum_quantity=D("1"), paper_margin_policy="CONSERVATIVE_NOTIONAL_RATE",
         paper_margin_rate=D("1"), underlying=terms["underlying"])
@@ -186,6 +187,25 @@ def test_known_corrupt_future_mark_cannot_resurrect_earlier_ready_mark(tmp_path)
         future_risk_snapshot(store, "ARS", CUT)
 
 
+def test_u10_dst_fold_instants_remain_distinct_at_writer_and_sql_boundaries(tmp_path):
+    zone = ZoneInfo("America/New_York")
+    first = datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=0)
+    second = datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=1)
+    # Python wall-time comparison on one ZoneInfo ignores fold; UTC instants do not.
+    assert utc_microseconds(second) - utc_microseconds(first) == 3600000000
+    executor = FamilyPaperExecutor(Store(tmp_path / "fold.sqlite"))
+    contract = dlr("DLR/NOV26")
+    with pytest.raises(ValueError, match="FUTURES_OPEN_BOOK_STALE_OR_FUTURE"):
+        executor.open_future(contract, lifecycle_id="BAD", event_id="BAD",
+            entry_price="1500", quantity="1", occurred_at=first, book_at=second)
+    executor.open_future(contract, lifecycle_id="FUT-1", event_id="OPEN",
+        entry_price="1500", quantity="1", occurred_at=first, book_at=first)
+    with pytest.raises(ValueError, match="FUTURES_BOOK_TIME_FUTURE"):
+        executor.mark_future(contract, lifecycle_id="FUT-1", event_id="MARK",
+            mark_price="1510", occurred_at=first, book_at=second)
+    assert future_risk_snapshot(executor.store, "ARS", first)["active_count"] == 1
+
+
 def test_u22_capacity_at_cut_is_unchanged_by_later_terminal_event(tmp_path, monkeypatch):
     monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
     monkeypatch.delenv("POROTA_RUNTIME_SCHEMA_READY", raising=False)
@@ -331,6 +351,8 @@ def test_cost_contract_is_versioned_paper_with_separate_unknown_account_terms():
     assert contract.binding_error(CUT) == ""
     diagnostic = contract.diagnostic()
     assert diagnostic["scope"] == "EXPLICIT_PAPER_ASSUMPTIONS"
+    assert diagnostic["authority"] == "EXPLICIT_PAPER_ASSUMPTIONS"
+    assert diagnostic["account_authority"] == "NO_VERIFICADO"
     assert diagnostic["account_terms"] == "NO_VERIFICADO"
     assert diagnostic["components"]["clearing"] == "0"
     assert diagnostic["price_tick_used_for_fee_rounding"] is False
