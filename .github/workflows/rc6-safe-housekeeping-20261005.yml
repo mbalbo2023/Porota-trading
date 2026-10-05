@@ -1,0 +1,235 @@
+name: RC6 safe canonical housekeeping 2026-10-05
+
+on:
+  push:
+    branches:
+      - ops/rc6-safe-housekeeping-20261005
+    paths:
+      - .github/workflows/rc6-safe-housekeeping-20261005.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  safe-housekeeping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      BASE_SHA: da697c6e6c2274579f9e4a112fabc4327475dd35
+      WORKSTREAM_ID: WS-OPS-DISK-CLEANUP-20261005
+
+    steps:
+      - name: Checkout governed baseline
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify governed housekeeping inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f scripts/rc6_disk_housekeeping.py
+          test -f ops/policy/rc6-disk-housekeeping-v1.json
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          python3 - <<'PY'
+          import json
+          p=json.load(open("ops/policy/rc6-disk-housekeeping-v1.json"))
+          assert p["mode"]=="PAPER_SHADOW_ONLY"
+          assert p["docker"]["cleanup_mode"]=="OBSERVE_ONLY"
+          assert p["docker"]["manual_containerd_mutation_allowed"] is False
+          assert p["sqlite"]["automatic_vacuum_allowed"] is False
+          assert p["sqlite"]["automatic_wal_delete_allowed"] is False
+          assert p["safety"]["required_runtime_mode"]=="PRODUCTION_PAPER"
+          assert int(p["safety"]["required_real_orders_sent"])==0
+          assert p["safety"]["ppi_watch_must_remain_untouched"] is True
+          assert p["safety"]["active_runtime_images_must_remain_untouched"] is True
+          print("HOUSEKEEPING_POLICY_GUARDS=GREEN")
+          PY
+          sha256sum scripts/rc6_disk_housekeeping.py ops/policy/rc6-disk-housekeeping-v1.json
+
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Stage exact housekeeping code outside repo
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          REMOTE_DIR="/tmp/rc6-safe-housekeeping-${GITHUB_RUN_ID}"
+          printf '%s\n' "$REMOTE_DIR" > /tmp/rc6-housekeeping-remote-dir
+          SSH=(ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          "${SSH[@]}" "$DO_USER@$DO_HOST" "mkdir -p '$REMOTE_DIR' && chmod 700 '$REMOTE_DIR'"
+          "${SCP[@]}" scripts/rc6_disk_housekeeping.py ops/policy/rc6-disk-housekeeping-v1.json "$DO_USER@$DO_HOST:$REMOTE_DIR/"
+          LOCAL_SCRIPT_SHA="$(sha256sum scripts/rc6_disk_housekeeping.py | awk '{print $1}')"
+          LOCAL_POLICY_SHA="$(sha256sum ops/policy/rc6-disk-housekeeping-v1.json | awk '{print $1}')"
+          REMOTE_HASHES="$("${SSH[@]}" "$DO_USER@$DO_HOST" "sha256sum '$REMOTE_DIR/rc6_disk_housekeeping.py' '$REMOTE_DIR/rc6-disk-housekeeping-v1.json'")"
+          echo "$REMOTE_HASHES"
+          grep -q "$LOCAL_SCRIPT_SHA" <<<"$REMOTE_HASHES"
+          grep -q "$LOCAL_POLICY_SHA" <<<"$REMOTE_HASHES"
+          echo "HOUSEKEEPING_STAGE_IDENTITY=GREEN"
+
+      - name: Execute canonical safe cleanup and validate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          REMOTE_DIR="$(cat /tmp/rc6-housekeeping-remote-dir)"
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" "REMOTE_DIR='$REMOTE_DIR' bash -s" <<'REMOTE' | tee evidence/housekeeping.txt
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          echo "WORKSTREAM_ID=WS-OPS-DISK-CLEANUP-20261005"
+          echo "UTC_BEFORE=$(date -u +%FT%TZ)"
+          echo "HOST_SHA_BEFORE=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          echo "DISK_BEFORE_HUMAN_BEGIN"
+          df -hT /
+          echo "DISK_BEFORE_HUMAN_END"
+          DISK_BEFORE="$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "DISK_BEFORE_BYTES=$DISK_BEFORE"
+          INODES_BEFORE="$(df -Pi / | awk 'NR==2{print $4"|"$5}')"
+          echo "INODES_BEFORE=$INODES_BEFORE"
+
+          echo "DOCKER_BEFORE_BEGIN"
+          sudo -n docker system df
+          echo "DOCKER_BEFORE_END"
+
+          ACTIVE_IMAGE="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          OBS_BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
+          DASH_BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          CRIT_BEFORE="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6)"
+          echo "ACTIVE_IMAGE_BEFORE=$ACTIVE_IMAGE"
+          echo "OBSERVER_BEFORE=$OBS_BEFORE"
+          echo "DASHBOARD_BEFORE=$DASH_BEFORE"
+          echo "CRITICAL_BEFORE=$CRIT_BEFORE"
+
+          PPI_BEFORE="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          printf 'PPI_WATCH_BEFORE=%s\n' "$PPI_BEFORE"
+
+          STATE_BEFORE="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          echo "STATE_BEFORE=$STATE_BEFORE"
+          test "$STATE_BEFORE" = "PRODUCTION_PAPER|0"
+
+          echo "HOUSEKEEPING_EXECUTION_BEGIN"
+          sudo -n python3 "$REMOTE_DIR/rc6_disk_housekeeping.py" \
+            --policy "$REMOTE_DIR/rc6-disk-housekeeping-v1.json" \
+            --mode cleanup \
+            --json-out "$REMOTE_DIR/housekeeping-result.json"
+          echo "HOUSEKEEPING_EXECUTION_END"
+          cat "$REMOTE_DIR/housekeeping-result.json"
+
+          DISK_AFTER="$(df -PB1 / | awk 'NR==2{print $4}')"
+          echo "UTC_AFTER=$(date -u +%FT%TZ)"
+          echo "DISK_AFTER_BYTES=$DISK_AFTER"
+          echo "SPACE_RECOVERED_BYTES=$((DISK_AFTER-DISK_BEFORE))"
+          echo "DISK_AFTER_HUMAN_BEGIN"
+          df -hT /
+          echo "DISK_AFTER_HUMAN_END"
+          INODES_AFTER="$(df -Pi / | awk 'NR==2{print $4"|"$5}')"
+          echo "INODES_AFTER=$INODES_AFTER"
+
+          ACTIVE_IMAGE_AFTER="$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer)"
+          OBS_AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_observer)"
+          DASH_AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_production_dashboard)"
+          CRIT_AFTER="$(sudo -n docker inspect -f '{{.State.Status}}|{{.State.OOMKilled}}|{{.RestartCount}}|{{.Image}}' porota_critical_approval_rc6)"
+          echo "ACTIVE_IMAGE_AFTER=$ACTIVE_IMAGE_AFTER"
+          echo "OBSERVER_AFTER=$OBS_AFTER"
+          echo "DASHBOARD_AFTER=$DASH_AFTER"
+          echo "CRITICAL_AFTER=$CRIT_AFTER"
+          test "$ACTIVE_IMAGE_AFTER" = "$ACTIVE_IMAGE"
+          test "$OBS_AFTER" = "$OBS_BEFORE"
+          test "$DASH_AFTER" = "$DASH_BEFORE"
+          test "$CRIT_AFTER" = "$CRIT_BEFORE"
+
+          STATE_AFTER="$(sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"{mode}|{orders}")
+          PY
+          )"
+          echo "STATE_AFTER=$STATE_AFTER"
+          test "$STATE_AFTER" = "PRODUCTION_PAPER|0"
+
+          PPI_AFTER="$(
+            for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+              printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+            done
+          )"
+          printf 'PPI_WATCH_AFTER=%s\n' "$PPI_AFTER"
+          test "$PPI_AFTER" = "$PPI_BEFORE"
+
+          echo "DOCKER_AFTER_BEGIN"
+          sudo -n docker system df
+          echo "DOCKER_AFTER_END"
+
+          GREEN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/rc6-disk-housekeeping-v1.json"))["disk"]["green_free_bytes"])')"
+          MIN_FREE="$(python3 -c 'import json; print(json.load(open("'"$REMOTE_DIR"'/rc6-disk-housekeeping-v1.json"))["disk"]["post_cleanup_min_free_bytes"])')"
+          echo "POLICY_GREEN_FREE_BYTES=$GREEN_FREE"
+          echo "POLICY_POST_CLEANUP_MIN_FREE_BYTES=$MIN_FREE"
+          test "$DISK_AFTER" -ge "$MIN_FREE"
+          if [ "$DISK_AFTER" -ge "$GREEN_FREE" ]; then
+            echo "DISK_BAND_AFTER=GREEN"
+          else
+            echo "DISK_BAND_AFTER=YELLOW"
+          fi
+
+          echo "DOCKER_MUTATION=NONE"
+          echo "DB_MUTATION_BY_HOUSEKEEPING=NONE"
+          echo "SYSTEMD_RESTARTS=NONE"
+          echo "PPI_WATCH_UNTOUCHED=GREEN"
+          echo "REAL_ORDERS_SENT=0"
+          echo "RC6_SAFE_HOUSEKEEPING=GREEN"
+          REMOTE
+
+      - name: Upload evidence receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-safe-housekeeping-20261005-${{ github.run_id }}
+          path: evidence/housekeeping.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup transient probe files
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f /tmp/rc6-housekeeping-remote-dir ]; then
+            REMOTE_DIR="$(cat /tmp/rc6-housekeeping-remote-dir)"
+            ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              "$DO_USER@$DO_HOST" "rm -rf '$REMOTE_DIR'" || true
+          fi
+          rm -f "$HOME/.ssh/key" /tmp/rc6-housekeeping-remote-dir
+          echo "TRANSIENT_CLEANUP=GREEN"
