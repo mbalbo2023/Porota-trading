@@ -1,7 +1,8 @@
 """Evidencia consolidada PPI -> IOL -> fuentes públicas para RC6.
 
 Los valores conservan su procedencia. IOL y BYMA sólo rellenan ausencias de la
-fuente anterior y la salida queda limitada a PAPER/SHADOW, sin rutas reales.
+fuente anterior para comparación. advisory_comparison_ready describe evidencia
+sin conflicto; no concede selección, promoción, entrada ni autoridad live.
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from urllib.request import Request, urlopen
 from rc6_dynamic_universe.common import digest, stamp
 from rc6_shadow_runtime.source_authority import (VERSION as AUTHORITY_VERSION, native_time, receipt_time, resolve_field, source_rank)
 
-SCHEMA = "rc6-consolidated-source-evidence-v1"
+SCHEMA = "rc6-consolidated-source-evidence-v2"
 MAX_BYTES = 2_000_000
 # These are references only until a documented technical endpoint with
 # credentials returns structured records. A3/MAE is separate from MATBA-ROFEX.
@@ -236,7 +237,7 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
             "source_authority_reviews": source_reviews,
             "review_status": "CONFLICT_REVIEW_REQUIRED" if review else "NO_CURRENT_CONFLICT",
             "freshness": {source: _age_status(native_time(value)) for source, value in folded.items()},
-            "decision_effect": "OBSERVE_ONLY", "shadow_promotion": not review,
+            "decision_effect": "OBSERVE_ONLY", "advisory_comparison_ready": not review,
             "selection_eligible": bool(primary_authoritative and not review and validated["last"]["value"] is not None
                                        and validated["last"]["value"] > 0),
             "live_decision_authority": False, "entry_authority": False, "real_money_authorized": False,

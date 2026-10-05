@@ -1,9 +1,10 @@
-"""Cascada PPI -> IOL -> BYMA para evidencia y promoción SHADOW RC6.
+"""Cascada PPI -> IOL -> BYMA para evidencia comparativa RC6.
 
 La prioridad conserva la trazabilidad: PPI aporta primero, IOL completa sólo
-ausencias y BYMA completa el remanente público. Una coincidencia consistente
-puede habilitar PAPER/SHADOW aun si PPI no entregó un campo. Nunca autoriza una
-orden real ni cambia rutas de broker.
+ausencias y BYMA completa el remanente público. advisory_comparison_ready
+identifica comparaciones consistentes, incluidas referencias sin PPI. Sólo
+selection_eligible evalúa identidad PPI exacta y evidencia fresca; ninguna
+salida concede promoción, entrada ni autoridad live.
 """
 from __future__ import annotations
 from datetime import datetime, timezone
@@ -12,7 +13,7 @@ from typing import Any
 from rc6_shadow_runtime.source_authority import (VERSION as AUTHORITY_VERSION, authority, native_time, receipt_time, source_rank)
 from rc6_dynamic_universe.sources import FAMILIES, MARKETS, TERMS, _canonical_identity
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FIELDS = ("last", "bid", "ask", "bid_size", "ask_size", "spread_pct",
           "variation_pct", "cash_volume", "volume", "vwap")
 CRITICAL_FIELDS = frozenset(("last", "bid", "ask"))
@@ -194,7 +195,8 @@ def reconcile(primary: Any, secondary: Any, public: Any | None = None, *, now: d
             "provider_available": {primary_source: None, secondary_source: None, public_source: None},
             "entry_authority": False, "selection_eligible": bool(selection_eligible),
             "fields": compared, "effective_fields": effective, "decision_effect": "OBSERVE_ONLY",
-            "shadow_promotion": contract_state.startswith("READY_SHADOW"), "live_decision_authority": False, "real_money_authorized": False}
+            "advisory_comparison_ready": contract_state.startswith("READY_SHADOW"),
+            "live_decision_authority": False, "real_money_authorized": False}
 
 def summarize_rows(symbols: list[str], rows: dict[str, Any],
                    primary_contract: dict[str, Any] | None = None) -> dict[str, Any]:
