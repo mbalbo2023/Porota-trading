@@ -36,6 +36,32 @@ def raw(path):
 
 FIELDS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
           "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+ORIGINAL_MEMBERS = frozenset(("report.json.gz", "checkpoint.json.gz", "status.json", "manifest.json", "projection.sqlite"))
+
+
+def start_cycle(worker, *, index, ticks, factory, restarts):
+    """The original30s cycle includes native factory/checkpoint recovery."""
+    wall, cpu = time.monotonic(), time.process_time()
+    if ticks == 1201 and index in (361, 841):
+        worker = factory()
+        restarts.append(index)
+    return worker, wall, cpu
+
+
+def completion_flags(result):
+    """Four descriptive cuts never constitute a measured full wheel."""
+    native_ticks = len(result["cuts"])
+    clean = bool(result["source_database_unchanged"] and result["code_source_unchanged"]
+                 and not result["provider_requests"] and "error" not in result)
+    execution = bool(result.get("execution_complete") and clean)
+    horizon = bool(execution and result["ticks_requested"] == 1201 and native_ticks == 1202)
+    return {"native_ticks_executed": native_ticks, "execution_complete": execution,
+            "horizon_complete": horizon, "complete": horizon, "acceptance_complete": horizon}
+
+
+def exact_original_members(members):
+    if not isinstance(members, dict) or set(members) != ORIGINAL_MEMBERS:
+        raise AssertionError("NATIVE_PROFILE_EXACT_FIVE_ORIGINAL_MEMBERS_REQUIRED")
 
 
 def signature(path):
@@ -213,7 +239,9 @@ def main():
         "source_file_count": len(code_before), "overlay_count": 0,
         "source_database_before": before, "source_database_changes": [],
         "peak_scratch_native_policy_occupied_bytes": 0, "native_scratch_measure_calls": 0,
-        "source_database": str(database), "complete": False, "acceptance_complete": False,
+        "source_database": str(database), "execution_complete": False, "horizon_complete": False,
+        "complete": False, "acceptance_complete": False,
+        "completion_contract": "DESCRIPTIVE_EXECUTION_IS_DISTINCT_FROM_ACTUAL1202_NATIVE_TICKS_FOR9H_PLUS1H_RECOVERY",
         "source_database_unchanged": False, "code_source_unchanged": False, "provider_requests": 0,
         "peak_archive": {"logical_bytes_including_directories": 0, "allocated_bytes_including_directories": 0, "files": 0,
                          "entries_excluding_root": 0, "pending_temporaries_or_intents": 0},
@@ -268,10 +296,9 @@ def main():
         clocks = ([PRE, AT, AT+timedelta(seconds=30), AT+timedelta(seconds=60)] if args.ticks == 4
                   else [PRE, *[AT+timedelta(seconds=30*index) for index in range(args.ticks)]])
         for index, as_of in enumerate(clocks):
-            if args.ticks > 4 and index in (361, 841):
-                worker = ShadowRuntime.from_environment(database); result["restarts"].append(index)
-            cycle_start = time.monotonic()
-            start, process = cycle_start, time.process_time()
+            worker, cycle_start, process = start_cycle(worker, index=index, ticks=args.ticks,
+                factory=lambda: ShadowRuntime.from_environment(database), restarts=result["restarts"])
+            start = cycle_start
             report = worker.tick(as_of)
             source_unchanged("pipeline_tick_" + str(index))
             node = {"tick_index": index, "preopen_seed": index == 0, "as_of": as_of.isoformat(), "generation_id": report["generation_id"],
@@ -285,6 +312,7 @@ def main():
             if (current["generation_id"], current["sequence"]) != (node["generation_id"], node["sequence"]):
                 raise AssertionError("NATIVE_PROFILE_RETURNED_WITHOUT_ACTUAL_CURRENT_COMMIT")
             originals = {path.name: raw(path) for path in paths_at(generation)}
+            exact_original_members(originals)
             original_custody = custody_at(generation)
             del report; gc.collect()
             archiver = EvidenceRetention(worker.root, archive_root=archive, archive_format=worker.files.archive_format,
@@ -295,6 +323,7 @@ def main():
             node.update(archive_wall_seconds=time.monotonic()-start, archive_cpu_seconds=time.process_time()-process,
                 recipe_bytes=(archive / (receipt["generation_id"] + ".recipe.gz")).stat().st_size)
             restored = archiver.restore_generation(receipt["generation_id"])
+            exact_original_members(restored["members"])
             if restored["members"] != originals:
                 raise AssertionError("NATIVE_PROFILE_ORIGINAL_MEMBER_RESTORE_MISMATCH")
             if original_custody != custody_at(generation):
@@ -303,9 +332,11 @@ def main():
             result["archive_restore_count"] += 1
             node.update(member_bytes={name: len(value) for name, value in originals.items()},
                         original_member_sha256={name: hashlib.sha256(value).hexdigest() for name, value in originals.items()},
-                        full_cycle_wall_seconds=time.monotonic()-cycle_start, archive_residence=residence(archive),
+                        archive_residence=residence(archive),
                         live_residence=residence(worker.root), archive_verification_level=restored["verification_level"])
+            del originals, restored; gc.collect()
             result["cuts"].append(node); peaks()
+            node["full_cycle_wall_seconds"] = time.monotonic()-cycle_start
             if any(node[key] != value for key, value in (("catalog_ready_count", args.catalog_count), ("provider_requests", 0),
                 ("real_orders_sent", 0), ("real_routes", "NOT_CALLED"))):
                 raise AssertionError("NATIVE_PROFILE_CARDINALITY_OR_SAFETY_MISMATCH")
@@ -327,13 +358,13 @@ def main():
                 print(json.dumps({"tick": index, "sequence": node["sequence"], "phase": node["phase"],
                     "pipeline_seconds": node["pipeline_wall_seconds"], "archive_seconds": node["archive_wall_seconds"],
                     "archive_allocated_bytes": node["archive_residence"]["allocated_bytes_including_directories"]}), flush=True)
-            del originals, restored; gc.collect()
         final = read_committed_projection(worker.root, limit=1)
         # The measured OPEN horizon is ten hours inclusive. Its first OPEN is
         # exactly at the GC cutoff; the preceding PRE seed is separately charged
         # and may correctly expire. Every measured cut/receipt remains distinct.
         retained_index = 0 if args.ticks == 4 else 1
         first = archiver.restore_generation(result["cuts"][retained_index]["generation_id"])
+        exact_original_members(first["members"])
         if ({name: hashlib.sha256(value).hexdigest() for name, value in first["members"].items()}
                 != result["cuts"][retained_index]["original_member_sha256"]):
             raise AssertionError("NATIVE_PROFILE_FULL_WHEEL_FIRST_ORIGINAL_CUT_UNAVAILABLE_OR_CHANGED")
@@ -347,7 +378,7 @@ def main():
         horizon_seconds = (clocks[-1] - clocks[retained_index]).total_seconds()
         if args.ticks == 1201 and horizon_seconds != 10*60*60:
             raise AssertionError("NATIVE_PROFILE_FULL_WHEEL_ACTUAL_CLOCK_HORIZON_MISMATCH")
-        result.update(complete=True, final_sequence=final["pointer"]["sequence"], final_as_of=final["manifest"]["as_of"],
+        result.update(execution_complete=True, final_sequence=final["pointer"]["sequence"], final_as_of=final["manifest"]["as_of"],
             final_configuration_fingerprint=worker.configuration_fingerprint(clocks[-1]), archive_admission=inspect_archive(archive),
             archive_final=residence(archive), live_final=residence(worker.root),
             measured_horizon_seconds=horizon_seconds, first_restored_tick_index=retained_index)
@@ -368,15 +399,14 @@ def main():
             scratch_final=sqlite_scratch.inspect_scratch(scratch))
         result["source_database_changes"].extend(inventory_changes(before, result["source_database_after"], "final"))
         if not result["source_database_unchanged"] or not result["code_source_unchanged"] or provider_calls:
-            result["complete"] = False
+            result["execution_complete"] = False
             result.setdefault("error", {"class": "AssertionError", "reason": "NATIVE_PROFILE_FINAL_SOURCE_OR_SAFETY_CHANGED"})
-        result["native_ticks_executed"] = len(result["cuts"])
-        result["acceptance_complete"] = bool(args.ticks == 1201 and result["complete"]
-            and result["source_database_unchanged"] and result["code_source_unchanged"] and not provider_calls)
+        result.update(completion_flags(result))
         destination.write_text(json.dumps(result, sort_keys=True, indent=2)+"\n")
-        print(json.dumps({"path": str(destination), "complete": result["complete"], "acceptance_complete": result["acceptance_complete"],
+        print(json.dumps({"path": str(destination), "execution_complete": result["execution_complete"],
+                         "complete": result["complete"], "acceptance_complete": result["acceptance_complete"],
                          "wall_seconds": result["elapsed_wall_seconds"], "peak_rss_bytes": result["peak_rss_bytes"]}), flush=True)
-    if not result["complete"]:
+    if not result["execution_complete"]:
         raise AssertionError("NATIVE_PROFILE_FINAL_SOURCE_OR_SAFETY_CHANGED")
 
 
