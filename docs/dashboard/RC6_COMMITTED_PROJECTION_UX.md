@@ -36,6 +36,8 @@ Las tarjetas y el widget utilizan la misma selección. Etapas ausentes en una
 cohorte factual permanecen desconocidas: por ejemplo, una decisión nativa puede
 publicar PAPER_OPENED sin publicar CATALOG_READY. El guard no convierte esa
 ausencia en cero ni infiere READY de una señal o una ejecución histórica.
+Un offset fuera de la población muestra grupos 0–0, conserva el total real y
+mantiene las tarjetas de la selección.
 
 Store y la API comparten un deadline monotónico absoluto de un segundo; el
 adapter rechaza deadlines no finitos o booleanos y limita el resultado a
@@ -45,8 +47,8 @@ sus sidecars; el índice derivado abre bytes verificados sólo en memoria.
 
 La revisión financiera independiente añadió un caso importante: un índice SQL
 con currency diferente de la identidad del payload podría seleccionar la fila
-equivocada si su derivación no liga esos campos. La corrección del productor debe
-ligar también esas columnas al digest lógico; UX agrega rechazo acotado para las filas visibles y
+equivocada si su derivación no liga esos campos. El productor `99bcd846` liga las
+17 columnas del índice mediante el digest Merkle; UX agrega rechazo acotado para las filas visibles y
 selected/groups del embudo. Este guard UX no sustituye la corrección del
 productor ni autentica externamente la custodia local.
 
@@ -66,6 +68,16 @@ selección de la última cohorte. Mide consultas y render completo, bloquea red 
 decode lógico de report/checkpoint, y compara bytes/hash/metadata/atime de DB y
 custodia antes/después. Distingue población completa de consultas UI muestreadas;
 no afirma haber medido todas las páginas secuencialmente.
+
+El harness rechaza un corte cuya fase publicada no sea OPEN y exige al menos
+12000 identidades y 60000 observaciones para una conclusión positiva. Su guard
+SQLite bloquea la ruta fuente, URIs con parámetros o escapes, enlaces y sidecars;
+las conexiones a copias privadas y memoria siguen habilitadas. Una apertura
+fuente bloqueada también invalida la conclusión aunque el caller capture la
+excepción. El receipt `harness-source-guard-local-receipt.json` identifica las
+24 pruebas focales y el rechazo esperado del fixture pequeño, cuya DB y custodia
+permanecieron idénticas. Es un control negativo del harness, no evidencia de
+capacidad del productor grande.
 
 El gate grande sigue abierto hasta ejecutar ese harness sobre el productor
 final y obtener ≤4 MiB por solicitud y ≤1 s por consulta/render. Los tiempos

@@ -56,5 +56,6 @@ def committed_funnel(p):
         links.append(f"<a class='button' href='?{e(urlencode({**params, 'funnel_offset': max(0, offset - 10)}))}'>Grupos anteriores</a>")
     if offset + len(scoped["groups"]) < total:
         links.append(f"<a class='button' href='?{e(urlencode({**params, 'funnel_offset': offset + 10}))}'>Mostrar 10 grupos más</a>")
-    scope += f" · grupos {offset + 1 if scoped['groups'] else 0}–{offset + len(scoped['groups'])} de {total}"
+    end = offset + len(scoped["groups"]) if scoped["groups"] else 0
+    scope += f" · grupos {offset + 1 if scoped['groups'] else 0}–{end} de {total}"
     return f"<nav class='pager' aria-label='Grupos del embudo'>{''.join(links)}</nav>" + funnel(scoped["counts"], scope)

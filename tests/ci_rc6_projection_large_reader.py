@@ -16,6 +16,7 @@ import sqlite3
 import sys
 from time import monotonic, perf_counter
 from unittest.mock import patch
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -44,6 +45,31 @@ def protected_bytes(path):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOATIME | os.O_NOFOLLOW)
     with os.fdopen(descriptor, "rb") as stream:
         return stream.read()
+
+
+def source_sqlite_guard(database, connect, calls):
+    """Reject source paths, SQLite URI spellings, symlinks and hardlink aliases."""
+    members = [Path(str(database.resolve())+suffix) for suffix in ("", "-wal", "-shm", "-journal")]
+    def guarded(database_arg, *args, **kwargs):
+        raw = os.fsdecode(database_arg)
+        raw = unquote(urlsplit(raw).path) if raw.startswith("file:") else raw
+        path = Path(raw).resolve() if raw != ":memory:" else None
+        same = path in members if path is not None else False
+        if path is not None and path.exists():
+            same = same or any(member.exists() and path.samefile(member) for member in members)
+        if same:
+            calls.append("SOURCE_BLOCKED")
+            raise GateFailure("SQLITE_OPENED_SOURCE")
+        calls.append("PRIVATE_COPY_OR_MEMORY")
+        return connect(database_arg, *args, **kwargs)
+    return guarded
+
+
+def require_native_large_cut(cut, *, catalog_count, observation_count):
+    require(cut["export_contract"]["verified_payloads"]["report"]["logical_bytes"] > 4*1024**2,
+            "NATIVE_LARGE_REPORT_NOT_EXERCISED")
+    require(cut["report"].get("phase") == "OPEN", "NATIVE_COMPLETED_OPEN_CUT_REQUIRED")
+    require(catalog_count >= 12000 and observation_count >= 60000, "NATIVE_LARGE_POPULATION_REQUIRED")
 
 
 def custody_inventory(database, root):
@@ -83,10 +109,7 @@ def run(database, root, *, catalog_count, observation_count, receipt):
         network.append("BLOCKED")
         raise GateFailure("PROVIDER_OR_NETWORK_CALLED")
 
-    def no_source(database_arg, *args, **kwargs):
-        require(str(database_arg).split("?", 1)[0] not in {str(database), database.as_uri()}, "SQLITE_OPENED_SOURCE")
-        source_opens.append("PRIVATE_COPY_OR_MEMORY")
-        return original_connect(database_arg, *args, **kwargs)
+    no_source = source_sqlite_guard(database, original_connect, source_opens)
 
     def bounded_decode(value, *args, **kwargs):
         if isinstance(value, dict):
@@ -129,8 +152,7 @@ def run(database, root, *, catalog_count, observation_count, receipt):
         require(len(catalog) == catalog_count and observations == observation_count, "NATIVE_POPULATION_INCOMPLETE")
         cut, first, _ = query()
         require(first.total == 2*catalog_count and len(first.rows) == 10, "PLANNER_DENOMINATOR_INCOMPLETE")
-        require(cut["export_contract"]["verified_payloads"]["report"]["logical_bytes"] > 4*1024**2,
-                "NATIVE_LARGE_REPORT_NOT_EXERCISED")
+        require_native_large_cut(cut, catalog_count=catalog_count, observation_count=observation_count)
         _, second, _ = query({"offset": "10"})
         key = lambda row: (row["engine"], row["identity"])
         require(not {key(row) for row in first.rows} & {key(row) for row in second.rows}, "PAGES_OVERLAP")
@@ -183,6 +205,7 @@ def run(database, root, *, catalog_count, observation_count, receipt):
     after = custody_inventory(database, root)
     require(before == after, "SOURCE_OR_CUSTODY_MUTATED")
     require(not network, "NETWORK_ATTEMPTED")
+    require("SOURCE_BLOCKED" not in source_opens, "SQLITE_OPENED_SOURCE")
     return {"schema": "rc6.dashboard-native-large-projection-proof.v1", "status": "GREEN",
         "as_of": datetime.now(timezone.utc).isoformat(), "source_cut": cut_at.isoformat(),
         "pointer": pointer, "generation_verification": VERIFICATION_LEVEL,
@@ -193,7 +216,7 @@ def run(database, root, *, catalog_count, observation_count, receipt):
         "full_page_traversal_claimed": False, "native_report_logical_bytes": cut["export_contract"]["verified_payloads"]["report"]["logical_bytes"],
         "source_custody_inventory_unchanged": True, "source_inventory": before,
         "network_attempts": len(network), "provider_requests": 0,
-        "source_sqlite_opens": 0, "private_or_memory_sqlite_opens": len(source_opens),
+        "source_sqlite_opens": 0, "private_or_memory_sqlite_opens": source_opens.count("PRIVATE_COPY_OR_MEMORY"),
         "bounded_decode_calls": len(decode_calls), "original_report_checkpoint_decode_calls": 0}
 
 

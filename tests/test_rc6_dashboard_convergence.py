@@ -150,6 +150,10 @@ def test_native_funnel_pagination_preserves_selection_and_full_population(native
         html = committed_funnel(later_projection)
         assert "Grupos anteriores" in html and "funnel_offset=0" in html
         assert f"de {later['total_groups']}" in html
+        empty_projection = Projection(store, {"family": "ACCIONES", "funnel_offset": "100000"})
+        assert empty_projection.funnel_scope["groups"] == []
+        assert empty_projection.funnel_scope["counts"] == first["counts"]
+        assert f"grupos 0–0 de {first['total_groups']}" in committed_funnel(empty_projection)
     assert inventory(native.database) == before
 
 

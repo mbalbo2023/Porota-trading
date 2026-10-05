@@ -124,7 +124,9 @@
         "docs/dashboard/evidence/rc6-convergence-ux/phase-link-native-green.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml"
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
@@ -174,7 +176,9 @@
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
-        "tests/test_rc6_dashboard_projection.py"
+        "tests/test_rc6_dashboard_projection.py",
+        "tests/ci_rc6_projection_large_reader.py",
+        "tests/test_rc6_projection_source_guard.py"
       ],
       "upstream_contracts": [
         "PaperBroker.on_quote",
@@ -195,7 +199,10 @@
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
         "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
-        "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget"
+        "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts"
       ],
       "receipts": [
         "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
@@ -204,7 +211,9 @@
         "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml"
       ],
       "pending_gates": [
         "Corte canónico nativo 12k catálogo/60k observaciones: bytes, reader/proyección, RSS, tiempo y contenido disponible.",
@@ -392,7 +401,9 @@
         "rc6_trader_dashboard/projection.py",
         "rc6_annual_instrument_analysis.py",
         "rc6_trader_dashboard/projected_generation.py",
-        "tests/test_rc6_dashboard_projection.py"
+        "tests/test_rc6_dashboard_projection.py",
+        "tests/ci_rc6_projection_large_reader.py",
+        "tests/test_rc6_projection_source_guard.py"
       ],
       "upstream_contracts": [
         "rc6_audit_evidence.sqlite_snapshot.readonly_copy(validate=False)",
@@ -402,7 +413,9 @@
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_convergence.py::test_pending_wal_without_source_shm_is_read_from_copy_including_future_mark",
         "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
-        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals"
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments"
       ],
       "receipts": [
         "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
@@ -410,7 +423,9 @@
         "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml"
       ],
       "external_limits": [
         "Cierre del export y captura/copia compartida corresponden al owner de historia. El fixture finaliza writer GC antes de medir lectura; los guards de fuente permanecen intactos."

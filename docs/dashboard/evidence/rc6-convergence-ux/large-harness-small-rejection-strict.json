@@ -1,0 +1,7 @@
+{
+  "details": {},
+  "error_class": "GateFailure",
+  "gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+  "schema": "rc6.dashboard-native-large-projection-proof.v1",
+  "status": "RED"
+}

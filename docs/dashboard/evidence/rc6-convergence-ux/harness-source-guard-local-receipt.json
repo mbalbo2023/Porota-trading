@@ -1,0 +1,70 @@
+{
+  "focused_pytest": {
+    "errors": "0",
+    "failures": "0",
+    "junit": "source-guard-focal.xml",
+    "skipped": "0",
+    "tests": "24",
+    "time": "5.749"
+  },
+  "large_acceptance_guards": {
+    "minimum_catalog_identities": 12000,
+    "minimum_observations": 60000,
+    "minimum_original_report_bytes_exclusive": 4194304,
+    "phase": "OPEN",
+    "small_preopen_or_missing_phase_must_reject": true
+  },
+  "large_gate": {
+    "positive_large_test_executed": false,
+    "reason": "The exact native 12000/60000 producer has not yet completed the OPEN cut within 90 seconds.",
+    "status": "PENDING_CANONICAL_COMPLETED_OPEN_CUT"
+  },
+  "native_small_fixture": {
+    "catalog_identities": 25,
+    "expected_gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+    "fixture_cut": {
+      "digest": "7e7d2ef3f7fe4e231afcd052e47ff611c69a6456ca3041cd9cc854cb7a2233c5",
+      "generation_id": "179730d848864315b20db61b999e54c2",
+      "manifest_sha256": "30412688451fff9cc6e6a8812414227100184ad030c1038c341b23b044be676e",
+      "schema": "rc6.shadow-evidence-generation.v2",
+      "sequence": 10
+    },
+    "harness_exit_code": 1,
+    "inventory_members": 55,
+    "inventory_sha256": "cb65e9b081270ada11766771eb846381b8fafb9c432f45c7ae325ef8ed7f99f2",
+    "observations": 0,
+    "producer": "tests.rc6_dashboard_native_fixture.native_fixture",
+    "published_phase": "OPEN",
+    "raw_receipt": "large-harness-small-rejection-strict.json",
+    "source_and_custody_inventory_unchanged": true,
+    "source_cut": "2026-10-05T16:00:00+00:00"
+  },
+  "recorded_at": "2026-10-05T06:25:26.017677+00:00",
+  "schema": "rc6.dashboard-harness-source-guard-local-proof.v1",
+  "source_commit_context": "f33147a072f7fac67994b2bec46babe53a952346",
+  "status": "PASS_EXPECTED_SMALL_REJECTION_LARGE_GATE_PENDING",
+  "validation": {
+    "base_sha": "8720458c50285464e6577b5522733be158e9683f",
+    "base_tree": "e68b071e4a3fc182c9d7ea01efda2fca0a982d66",
+    "created_at": "2026-10-05T06:19:25.276559+00:00",
+    "owned_source_files": {
+      "rc6_trader_dashboard/view_common.py": {
+        "git_blob": "8038b3aaff8518ed38e40ba408dcb51f2d83ecfd",
+        "sha256": "e489f4a2a4f8c08d9ce36b0ee0333b8f42258aae73bdf3a71f5336e8b4e1c7ae"
+      },
+      "tests/ci_rc6_projection_large_reader.py": {
+        "git_blob": "b512c17c1aebbdda57faa760613782e6beabb81e",
+        "sha256": "2bb2eb650f0aa4e13b6e8dda52d7b7f20b32773c7d770c90a5a1602bf83539a7"
+      },
+      "tests/test_rc6_dashboard_convergence.py": {
+        "git_blob": "dee8c5478f8918ecbdd58f4e50a1db3b1809322a",
+        "sha256": "83959efdeaf2d8fa066d47b6f64c228c8638db4b6dabe6efa31b75bc83698459"
+      },
+      "tests/test_rc6_projection_source_guard.py": {
+        "git_blob": "e055572f512f4629fb898e86e5c2f10605520bf1",
+        "sha256": "cb30d79a91f452181616e1798b9cf057124f49e89329ab794d1cf8b345b3e77c"
+      }
+    },
+    "validation_kind": "development_focal_owned_overlay"
+  }
+}
