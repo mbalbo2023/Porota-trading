@@ -16,23 +16,8 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-05T05:59:45.931Z-jsmd8gbpzhq2t5e6lvds",
-    "owner": "SUPERVISOR_AUTOMATICO_GITHUB",
-    "acquired_at": "2026-10-05T05:59:45.931Z",
-    "expires_at": "2026-10-05T06:19:45.931Z",
-    "base_commit": "452249d6ebdee767b35edae167f1cb029175c726",
-    "purpose": "REVALIDATE_OWNER_AND_CANDIDATE"
-  },
-  "pending_action": {
-    "type": "REVALIDATE_OWNER_AND_CANDIDATE",
-    "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
-    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
-    "candidate_prs_found": 0,
-    "owner_comment_id": 5986480121,
-    "latest_coordination_comment_id": 5986721421,
-    "started_at": "2026-10-05T05:59:45.931Z"
-  },
+  "lease": null,
+  "pending_action": null,
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -88,7 +73,7 @@
     "count": 12
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-05T04:39:23.309Z",
+  "last_observed_at": "2026-10-05T06:00:55.030Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -181,7 +166,7 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-05T04:39:23.309Z",
+    "observed_at": "2026-10-05T06:00:55.030Z",
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
     "candidate_prs_found": 0,
