@@ -195,6 +195,23 @@ def test_aud02_native_forty_two_minute_sparse_window_is_not_continuous(tmp_path)
         assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
 
 
+def test_aud02_native_repeated_source_time_cannot_supply_distinct_samples(tmp_path):
+    store = engine.PaperStore(str(tmp_path / 'paper.sqlite'))
+    scalping.init_schema(store)
+    r = record()
+    same_event = [(scalping._stamp(AT-timedelta(minutes=1)), D('100'), D('10'))]
+    for index in range(16):
+        checked = AT+timedelta(seconds=index)
+        scalping.persist_payload(store, r, same_event, received_at=checked)
+        store.add_quote(quote(checked, bid='100', ask='100.05'))
+    assert scalping.evaluate_candidate(store, r, at=checked) == 'HOLD'
+    with store.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM ppi_intraday_points').fetchone()[0] == 1
+        assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
+        row = connection.execute('SELECT economics_json FROM scalping_candidates ORDER BY id DESC LIMIT 1').fetchone()
+        assert json.loads(row[0])['temporal_contract']['samples'] == 1
+
+
 def test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract(tmp_path):
     store=engine.PaperStore(str(tmp_path/'paper.sqlite'));scalping.init_schema(store)
     r=record();r['raw']={}
@@ -243,6 +260,21 @@ def test_aud05_native_main_reports_the_observed_horizon_for_each_event_window(tm
     assert inputs['temporal_contract']['sample_kind'] == 'DISTINCT_SOURCE_EVENTS'
     assert inputs['temporal_contract']['bar_duration_seconds'] is None
     assert len(inputs['price_samples']) == 20
+
+
+def test_aud05_main_repeated_market_time_has_one_factual_sample(tmp_path):
+    store = engine.PaperStore(str(tmp_path / 'paper.sqlite'))
+    source = AT-timedelta(minutes=1)
+    for index in range(20):
+        store.add_quote(replace(quote(source, bid=str(100+index), ask=str(100+index+D('.05'))),
+                               observed_at=(source+timedelta(seconds=index)).isoformat()))
+    broker = engine.PaperBroker(store, clock_fn=lambda: AT.isoformat(), ai_mode='OFF')
+    vector = store.signal_prices(quote(AT), AT, window_minutes=90)
+    assert list(vector) == [D('119')]
+    inputs = broker._entry_signal_inputs(vector, quote(AT), AT)
+    assert inputs['samples'] == 1
+    assert inputs['temporal_contract']['observed_span_seconds'] is None
+    assert inputs['price_samples'][0]['source_at'] == source.isoformat()
 
 
 def test_aud05_main_snapshot_declares_event_horizon_and_records_actual_span(tmp_path):
