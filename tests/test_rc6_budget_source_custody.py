@@ -511,3 +511,68 @@ def test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader(nati
     finally:
         reader.discard_exit_round_scope()
         reader.close()
+
+
+@pytest.mark.parametrize("fault", ("other_valid_bindings", "valid_empty_historical_scope", "identity_bool", "identity_over_limit",
+    "reserved_too_small", "demand_bool", "demand_negative", "demand_missing", "configuration_malformed", "recommendation_malformed"))
+def test_historical_metadata_schema_never_authorizes_an_unknown_current_scope(tmp_path, fault):
+    """Durable metadata schema guard; payload is synthetic, not a ledger capture."""
+    from rc6_dynamic_universe.common import digest
+    from tests.test_rc6_ppi_capacity_benchmark import Clock
+    from tests.test_rc6_ppi_global_budget import policy
+    clock = Clock()
+    database = tmp_path/"paper.sqlite"
+    value = policy(clock, limits=dict.fromkeys(budgets.ENDPOINTS, 75), reserves={"EXIT_CRITICAL": {"book": 60}})
+    value.update(open_positions_count=10, exit_demand={"current": 0, "book": 60, "intraday": 0})
+    budget = budgets.GlobalPPIBudget(artifact_root(database)/"ppi-budget/global.sqlite", value, clock=clock.now)
+    historical = {"basis": "FROZEN_AT_FIRST_ADMISSION", "identity_count": 10,
+        "identity_scope_digest": "c"*64, "captured_at": clock.now().isoformat(),
+        "configuration_fingerprint": value["configuration_fingerprint"], "recommendation_digest": value["recommendation_digest"],
+        "expires_at": value["expires_at"], "reserved_open_positions_count": 10,
+        "reserved_exit_demand": deepcopy(value["exit_demand"])}
+    control = budget.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5,
+        required_identity_digests=None, frozen_admission_scope=historical)
+    assert control["status"] == "DEGRADED" and control["lower_suspended"]
+    assert control["fresh_required_count"] is None and not control["required_scope_verified_current"]
+    changed = deepcopy(historical)
+    if fault == "other_valid_bindings":
+        changed.update(configuration_fingerprint="d"*64, recommendation_digest="e"*64)
+    elif fault == "valid_empty_historical_scope":
+        changed.update(identity_count=0, identity_scope_digest=digest([]))
+    elif fault == "identity_bool":
+        changed["identity_count"] = True
+    elif fault == "identity_over_limit":
+        changed["identity_count"] = changed["reserved_open_positions_count"] = 65
+    elif fault == "reserved_too_small":
+        changed["reserved_open_positions_count"] = 9
+    elif fault == "demand_bool":
+        changed["reserved_exit_demand"]["book"] = True
+    elif fault == "demand_negative":
+        changed["reserved_exit_demand"]["book"] = -1
+    elif fault == "demand_missing":
+        del changed["reserved_exit_demand"]["current"]
+    elif fault == "configuration_malformed":
+        changed["configuration_fingerprint"] = "UNVERIFIED"
+    else:
+        changed["recommendation_digest"] = "UNVERIFIED"
+    observed = budget.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5,
+        required_identity_digests=None, frozen_admission_scope=changed)
+    assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+    valid = fault in {"other_valid_bindings", "valid_empty_historical_scope"}
+    if valid:
+        assert observed["required_identities_count"] == changed["identity_count"]
+        assert observed["fresh_required_count"] is None and not observed["required_scope_verified_current"]
+        assert observed["frozen_admission_scope"] == changed
+    else:
+        assert observed["reason"] == "PPI_EXIT_ROUND_MEASUREMENT_INVALID"
+        assert "required_identities_count" not in observed
+    with closing(sqlite3.connect(budget.path)) as c, c:
+        record = budget._get(c, "critical_exit_round")
+        record["frozen_admission_scope"] = changed
+        if valid:
+            record["required_identities_count"] = changed["identity_count"]
+        budget._put(c, "critical_exit_round", record)
+    snapshot = budgets.runtime_budget_snapshot(database, as_of=clock.now())
+    assert snapshot["status"] == ("DEGRADED" if valid else "UNVERIFIED")
+    assert budget.metrics()["exit_service"]["lower_suspended"]
+    assert not budget.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
