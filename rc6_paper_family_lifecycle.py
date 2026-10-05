@@ -889,6 +889,35 @@ def future_cash_effect(store, currency, at, *, connection=None, exclusive=False)
     return sum((decimal_value(row[0], "flujo futuro") for row in rows), Decimal("0"))
 
 
+FUTURE_PROJECTION_FIELDS = (
+    "lifecycle_id", "symbol", "currency", "market", "settlement", "side",
+    "quantity", "cash_multiplier", "entry_price", "settlement_base_price",
+    "last_mark_price", "margin_reserved", "entry_cost", "exit_cost",
+    "variation_realized", "unrealized_pnl", "opened_at", "last_mark_at",
+    "last_book_at", "expires_at", "status", "closed_at", "close_reason",
+)
+FUTURE_PROJECTION_JSON_BYTES = 32768
+
+
+def _bounded_projection_json_column(column):
+    # Only static column names from this module are passed here. Oversized JSON
+    # is never transferred into Python, including on a paginated render path.
+    return ("CASE WHEN length(CAST(" + column + " AS BLOB))<="
+            + str(FUTURE_PROJECTION_JSON_BYTES) + " THEN " + column + " END AS " + column)
+
+
+def _projection_json(value):
+    if value is None or len(value.encode("utf-8")) > FUTURE_PROJECTION_JSON_BYTES:
+        raise ValueError("FUTURES_PROJECTION_JSON_BUDGET_EXHAUSTED")
+    try:
+        result = json.loads(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("FUTURES_PROJECTION_JSON_INVALID") from exc
+    if not isinstance(result, dict):
+        raise ValueError("FUTURES_PROJECTION_JSON_INVALID")
+    return result
+
+
 def future_positions(store, currency=None, *, connection=None, active_only=False,
                      as_of=None, exclusive=False, lifecycle_ids=None):
     """Canonical rows; an explicit cut reconstructs state from visible events.
@@ -919,9 +948,12 @@ def future_positions(store, currency=None, *, connection=None, active_only=False
     if active_only and as_of is None:
         where.append("status='ACTIVE'")
     clause = (" WHERE " + " AND ".join(where)) if where else ""
+    fields = ",".join(FUTURE_PROJECTION_FIELDS) + "," + _bounded_projection_json_column("metadata_json")
     rows = [dict(row) for row in connection.execute(
-        "SELECT * FROM paper_future_positions" + clause + " ORDER BY opened_at,lifecycle_id",
+        "SELECT " + fields + " FROM paper_future_positions" + clause + " ORDER BY opened_at,lifecycle_id",
         tuple(params)).fetchall()]
+    for row in rows:
+        _projection_json(row["metadata_json"])
     if as_of is None:
         return rows
     point = aware_datetime(as_of)
@@ -941,34 +973,43 @@ def _future_position_at(row, point, *, connection, exclusive=False):
     contract = future_position_contract(row)
     operator = "<" if exclusive else "<="
     cutoff = utc_microseconds(point)
-    events = [dict(event) for event in connection.execute(
-        "SELECT rowid AS event_sequence,* FROM paper_family_lifecycle_events WHERE lifecycle_id=? "
+    events = connection.execute(
+        "SELECT rowid AS event_sequence,event_id,lifecycle_id,family,from_state,to_state,"
+        "amount,occurred_at," + _bounded_projection_json_column("detail_json")
+        + " FROM paper_family_lifecycle_events WHERE lifecycle_id=? "
         "AND rc6_instant_us(occurred_at)" + operator + "? "
         "ORDER BY rc6_instant_us(occurred_at),event_sequence,event_id",
-        (row["lifecycle_id"], cutoff))]
-    opening = next((event for event in events if event["to_state"] == "OPEN"), None)
+        (row["lifecycle_id"], cutoff))
+    opening = terminal = None
+    metadata = None
+    variation = cash_effect = Decimal("0")
+    base_price = row["entry_price"]
+    for event in events:
+        detail = _projection_json(event["detail_json"])
+        native = detail.get("book_at", detail.get("opening_book_at"))
+        if native is not None and utc_microseconds(native) > utc_microseconds(event["occurred_at"]):
+            raise ValueError("FUTURES_EVENT_SOURCE_CLOCK_INVALID")
+        cash_effect += decimal_value(event["amount"], "flujo futuro")
+        if event["to_state"] == "OPEN" and opening is None:
+            opening, metadata = event, detail
+        elif event["to_state"] == "DAILY_VARIATION":
+            variation += decimal_value(event["amount"], "variación futura")
+            base_price = detail["settlement_price"]
+        elif event["to_state"] in {"CLOSE", "EXPIRY"}:
+            terminal = (event, detail)
     if not opening:
         raise ValueError("FUTURES_OPEN_EVENT_REQUIRED")
-    metadata = json.loads(opening["detail_json"])
-    original_metadata = json.loads(row["metadata_json"])
+    original_metadata = _projection_json(row["metadata_json"])
     if (metadata.get("financial_contract") != original_metadata.get("financial_contract")
             or metadata.get("contract_snapshot_sha256") != original_metadata.get("contract_snapshot_sha256")):
         raise ValueError("FUTURES_OPEN_CONTRACT_EVENT_MISMATCH")
     for field in ("entry_price", "entry_cost", "quantity", "margin_reserved"):
         if decimal_value(metadata.get(field), field) != decimal_value(row[field], field):
             raise ValueError("FUTURES_OPEN_POSITION_EVENT_MISMATCH")
-    for event in events:
-        detail = json.loads(event["detail_json"])
-        native = detail.get("book_at", detail.get("opening_book_at"))
-        if native is not None and aware_datetime(native) > aware_datetime(event["occurred_at"]):
-            raise ValueError("FUTURES_EVENT_SOURCE_CLOCK_INVALID")
-    terminal = next((event for event in reversed(events) if event["to_state"] in {"CLOSE", "EXPIRY"}), None)
-    variations = [event for event in events if event["to_state"] == "DAILY_VARIATION"]
-    variation = sum((decimal_value(event["amount"], "variación futura") for event in variations), Decimal("0"))
-    base_price = (json.loads(variations[-1]["detail_json"])["settlement_price"]
-                  if variations else row["entry_price"])
     marks = connection.execute(
-        "SELECT rowid AS mark_sequence,* FROM paper_future_marks WHERE lifecycle_id=? "
+        "SELECT rowid AS mark_sequence,event_id,lifecycle_id,mark_price,book_at,observed_at,"
+        "is_settlement,unrealized_pnl," + _bounded_projection_json_column("detail_json")
+        + " FROM paper_future_marks WHERE lifecycle_id=? "
         "AND rc6_instant_us(observed_at)" + operator + "? "
         "ORDER BY rc6_instant_us(observed_at) DESC,mark_sequence DESC,event_id DESC LIMIT 1",
         (row["lifecycle_id"], cutoff)).fetchone()
@@ -980,13 +1021,13 @@ def _future_position_at(row, point, *, connection, exclusive=False):
     observed_at = marks["observed_at"] if marks else row["opened_at"]
     if not marks and (not row["last_book_at"] or not original_metadata.get("opening_book_at")):
         book_at = None
-    if book_at is not None and aware_datetime(book_at) > aware_datetime(observed_at):
+    if book_at is not None and utc_microseconds(book_at) > utc_microseconds(observed_at):
         raise ValueError("FUTURES_MARK_SOURCE_CLOCK_INVALID")
-    if marks and (aware_datetime(book_at) < aware_datetime(row["opened_at"])
-                  or aware_datetime(observed_at) < aware_datetime(row["opened_at"])):
+    if marks and (utc_microseconds(book_at) < utc_microseconds(row["opened_at"])
+                  or utc_microseconds(observed_at) < utc_microseconds(row["opened_at"])):
         raise ValueError("FUTURES_MARK_BEFORE_OPEN")
     if marks:
-        mark_detail = json.loads(marks["detail_json"])
+        mark_detail = _projection_json(marks["detail_json"])
         metadata["last_mark_source"] = (mark_detail.get("price_source") or mark_detail.get("source")
                                         or "PPI_BOOK")
         metadata["last_mark_settlement"] = bool(marks["is_settlement"])
@@ -1004,21 +1045,22 @@ def _future_position_at(row, point, *, connection, exclusive=False):
               "as_of": point.isoformat(), "exclusive": bool(exclusive),
               "reserve_kind": "CONSERVATIVE_PAPER_RESERVE_NOT_BROKER_MARGIN"}
     if terminal:
-        detail = json.loads(terminal["detail_json"])
+        terminal_event, detail = terminal
         final_variation = decimal_value(detail["final_variation"], "variación cierre")
         exit_cost = decimal_value(detail["exit_cost"], "costo salida", nonnegative=True)
         gross = variation + final_variation
         net = gross - entry_cost - exit_cost
-        metadata.update(realized_pnl=str(net), terminal_state=terminal["to_state"])
-        result.update(status="CLOSED", closed_at=terminal["occurred_at"],
+        metadata.update(realized_pnl=str(net), terminal_state=terminal_event["to_state"])
+        result.update(status="CLOSED", closed_at=terminal_event["occurred_at"],
                       close_reason=detail["reason"], exit_cost=str(exit_cost),
                       variation_realized=str(gross), gross_realized_pnl=str(gross),
                       close_variation_cash=str(final_variation), realized_pnl=str(net),
                       unrealized_pnl="0", collateral="0", exposure="0",
-                      last_mark_price=detail["exit_price"], last_mark_at=terminal["occurred_at"],
+                      last_mark_price=detail["exit_price"], last_mark_at=terminal_event["occurred_at"],
                       last_book_at=detail["book_at"])
-    result["cash_effect"] = str(sum((decimal_value(event["amount"], "flujo futuro") for event in events), Decimal("0")))
+    result["cash_effect"] = str(cash_effect)
     result["metadata_json"] = _canonical_json(metadata)
+    _projection_json(result["metadata_json"])
     return result
 
 

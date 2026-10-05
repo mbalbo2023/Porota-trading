@@ -162,6 +162,37 @@ def test_u10_same_timestamp_marks_have_durable_total_order_and_bounded_page_proj
     assert future_positions(store, as_of=CUT, lifecycle_ids=["UNKNOWN"]) == []
 
 
+def test_u18_future_projection_names_columns_and_filters_page_before_loading_json(tmp_path):
+    store, executor = opened(tmp_path)
+    executor.mark_future(dlr(), lifecycle_id="FUT-1", event_id="MARK",
+        mark_price="1510", occurred_at=CUT, book_at=CUT)
+    statements = []
+    with store.connect() as connection:
+        connection.set_trace_callback(statements.append)
+        rows = future_positions(store, as_of=CUT, lifecycle_ids=["FUT-1"], connection=connection)
+    assert len(rows) == 1 and D(rows[0]["last_mark_price"]) == D("1510")
+    selects = [sql.upper() for sql in statements if sql.lstrip().upper().startswith("SELECT")]
+    assert all("*" not in sql for sql in selects)
+    assert any("LIFECYCLE_ID IN ('FUT-1')" in sql for sql in selects)
+    assert any("LENGTH(CAST(METADATA_JSON AS BLOB))<=32768" in sql for sql in selects)
+
+
+@pytest.mark.parametrize("table,column", [
+    ("paper_future_positions", "metadata_json"),
+    ("paper_family_lifecycle_events", "detail_json"),
+    ("paper_future_marks", "detail_json"),
+])
+def test_u18_future_projection_rejects_oversized_json_at_each_loaded_boundary(tmp_path, table, column):
+    store, executor = opened(tmp_path)
+    executor.mark_future(dlr(), lifecycle_id="FUT-1", event_id="MARK",
+        mark_price="1510", occurred_at=CUT, book_at=CUT)
+    oversized = json.dumps({"padding": "x" * 32768})
+    with store.connect() as connection:
+        connection.execute("UPDATE " + table + " SET " + column + "=?", (oversized,))
+    with pytest.raises(ValueError, match="FUTURES_PROJECTION_JSON_BUDGET_EXHAUSTED"):
+        future_positions(store, as_of=CUT, lifecycle_ids=["FUT-1"])
+
+
 def test_future_nested_decimal_diagnostics_persist_and_exact_retry_survives_expiry(tmp_path, monkeypatch):
     import rc6_paper_family_lifecycle as lifecycle
     monkeypatch.setattr(lifecycle, "_now", lambda: OPEN)
