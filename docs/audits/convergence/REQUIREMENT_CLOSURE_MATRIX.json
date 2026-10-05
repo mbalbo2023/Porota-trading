@@ -85,7 +85,7 @@
         "AUD-468-07",
         "U24"
       ],
-      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "native_caller": "HistoricalStore -> cu_history_store_v2_hf6.init_schema / ea_history_close_series_hf2.init_schema -> prepare_history_schema -> readonly_copy -> finish, before source WAL/DDL; no production migration.",
       "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
       "rca": "HistoricalStore opened source SQLite and changed journal mode before required legacy-schema rejection. MAIN/header/atime and source sidecars changed, and close-only legacy could receive FULL DDL before its own rejection.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Currency migration requires an explicit reviewed mapping or actual row currency.; Data912 absent reported currency remains REQUESTED_IDENTITY_ONLY.; No complete current catalog/history snapshot was authorized.",
@@ -224,7 +224,7 @@
         "AUD-468-18",
         "AUD-468-21"
       ],
-      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "native_caller": "readonly_copy and preopen.build_preopen_inputs -> bounded coherent private disk scratch; direct custody and73MiB copy guards. Full preopen.tick integration is linked separately by NEW_PREOPEN_U24.",
       "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
       "rca": "The default copy directory could use the observer32MiB /tmp tmpfs, which cannot hold the73,646,080-byte native fixture. It lacked total scratch/residue/reserve custody accounting.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",

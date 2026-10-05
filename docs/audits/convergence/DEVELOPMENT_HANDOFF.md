@@ -69,12 +69,34 @@ incluye su trabajo de estado y salud. Incumplimiento, ledger desconocido o
 capacidad insuficiente suspenden actividad secundaria y nueva admisión.
 La retención de recibos debe reservar también filas y páginas para EXIT; cupo
 de requests y capacidad de almacenamiento son contratos separados.
+El controlador consulta esa ocupación antes de activar selección dinámica.
+Ledger ausente con sidecars o locks huérfanos significa fuente desconocida,
+no capacidad libre. El envejecimiento legal conserva deuda activa y tokens
+START en vuelo. La ocupación es telemetría fuera del fingerprint estático;
+un cambio legítimo de ocupación no revoca por sí solo la configuración aprobada.
 
 History Store y preopen usan bases explícitas, selección point-in-time e intentos
 reanudables. Export/preopen copian main/WAL coherentemente sin abrir SQLite en
 la fuente ni crear su SHM. Su prueba de inventario y metadata no se generaliza
 a todos los lectores de una base financiera viva. La lectura grande tiene
 límite total y cierre sin historia parcial cuando lo agota.
+La inicialización valida primero una copia de la fuente y su schema, antes
+de negociar WAL o escribir DDL. La prueba queda ligada al Store e inode;
+FULL y CLOSE_ONLY antiguos se rechazan conservando fuente y sidecars. El plan
+de copia/migración probado no autoriza una migración operativa ni acredita
+el ABI del master actual.
+
+El runtime usa scratch privado de disco bajo el artifact root primario,
+incluso cuando `HIST_DB_PATH` elige otro dataset dentro de `/app/data`.
+Sus variables explícitas son `POROTA_SQLITE_SCRATCH_ROOT`,
+`POROTA_SQLITE_SCRATCH_MAX_BYTES`, `POROTA_SQLITE_SCRATCH_RESERVE_BYTES` y
+`POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT`: 512 MiB, 2 GiB residuales y
+10 por ciento de inodes libres. Los residuos identificados de un crash
+cuentan contra esa cuota; contenido desconocido o custodia alterada bloquean
+la lectura. No se aumenta el tmpfs de 32 MiB. El preflight antes de transferencia
+usa el mismo estimador de main/WAL/SHM y la misma configuración del launcher.
+Los modos explícitos OFF/DISABLED del contract runner llegan al observador;
+su guard verifica que ese runner no abra fuente ni proveedor.
 
 ## Publicación y lectores
 
@@ -130,6 +152,15 @@ La repetición por `git archive` íntegro pasó y el receipt original quedó inv
 para claims productivos. La autocorrección no introdujo DDL innecesario ni
 cambió assertions para ocultar una falla.
 
+El replay independiente de los drivers originales sobre el archive íntegro
+de #466 conserva sus resultados caso por caso: warmup prestado, admisión con
+R/R rechazado y selección parcial de libro se reprodujeron en el caller antiguo.
+Stale-tail sigue como control preservado; la semántica real de volumen y la
+capacidad del proveedor siguen como límites externos. La ausencia de duración
+del modelo main se informa como hipótesis de eventos. No se convierte cada
+observación del auditor en un nuevo error matemático ni se atribuye una ejecución
+final a estos recibos históricos.
+
 ## Artefacto y despliegue posterior
 
 Sólo después de cerrar integración se publica un PR DRAFT único y se ejecuta
@@ -151,6 +182,11 @@ El disco exige image tar comprimido + tamaño Docker exacto + dos bundles +
 o migración se mide por separado antes de ejecutarla. No se reinstala un piso
 arbitrario de 6 GiB. Cleanup preserva imágenes referenciadas, evidencia única,
 volúmenes y DB; no usa prune global ni inspecciona assets de PPI Watch.
+La admisión del disco suma también el crecimiento pendiente de scratch,
+`max(0, 512 MiB - residuos identificados)`, conservando una sola reserva común
+de 2 GiB cuando comparten filesystem. La migración condicional exige inventario,
+ABI, destino revisado y costo real propios; no se reemplaza por un estimate
+de un fixture ni por el espacio histórico del host.
 
 La orden final se genera después del artefacto y contiene sus inputs concretos,
 guards, postchecks y contingencia fix-forward. Requiere la aprobación explícita
