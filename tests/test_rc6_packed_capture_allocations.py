@@ -3,6 +3,8 @@
 The reference capture loop is frozen from product a6d622d784c03707001859d87688ddb9ba5fc4b6,
 packed_storage.py Git blob 212b839c443b37bf5a8f9a860ff3736e81ed6f1b.
 It keeps the prior generator/token algorithm, not the append implementation.
+The reference also freezes the unfiltered container count from that product,
+so a change in alias counts cannot pass through a shared production method.
 Scalar/named capture helpers are unchanged by this optimization. Independent
 canonical JSON and public full readers also check the resulting semantics.
 """
@@ -20,6 +22,17 @@ LIMITS = dict(durable_limit=32 * 1024**2, expansion_limit=64 * 1024**2)
 
 class LegacyCaptureBuilder(packed._CaptureBuilder):
     """Prior capture loop, retained only as a byte-layout regression oracle."""
+    def _count(self, value):
+        if not isinstance(value, (dict, list, tuple)):
+            return
+        key = id(value)
+        self.incoming[key] = self.incoming.get(key, 0)+1
+        if key in self.objects:
+            return
+        self.objects[key] = value
+        for child in value.values() if isinstance(value, dict) else value:
+            self._count(child)
+
     def _parts(self, value, name="", *, root=False):
         if isinstance(value, (dict, list, tuple)) and not root and (
                 self.incoming.get(id(value), 0) >= 2 or name in packed._FIELDS):
@@ -90,6 +103,126 @@ def payload(case):
     if case == "large_token":
         return {"rows": ["Ñ" * (packed.PACK_TARGET+5), "small", {"known_at": None}]}
     raise AssertionError(case)
+
+
+def count_graph(case, visits):
+    """A DAG whose alias counts differ from multiplying logical occurrences."""
+    class TracedDict(dict):
+        def __len__(self):
+            return super().__len__()+11
+
+        def values(self):
+            visits.append("dict.values")
+            return reversed(list(super().values()))
+
+    class TracedList(list):
+        def __len__(self):
+            return super().__len__()+13
+
+        def __iter__(self):
+            visits.append("list.iter")
+            return iter(list.__getitem__(self, slice(None, None, -1)))
+
+    class TracedTuple(tuple):
+        def __len__(self):
+            return super().__len__()+17
+
+        def __iter__(self):
+            visits.append("tuple.iter")
+            return iter(tuple.__getitem__(self, slice(None, None, -1)))
+
+    class StringLeaf:
+        def __str__(self):
+            return "native-default-str/observación"
+
+    class IntegerLeaf(int):
+        pass
+
+    class FloatLeaf(float):
+        pass
+
+    class TextLeaf(str):
+        pass
+
+    dictionary, sequence, fixed = (TracedDict, TracedList, TracedTuple) if case == "subclasses" else (dict, list, tuple)
+    typed = [False, 0, -0.0, 0.0, None, "observación/~", "\0", "2026-10-05T16:00:00.000001+00:00"]
+    if case == "default_str":
+        typed.extend([StringLeaf(), IntegerLeaf(7), FloatLeaf(-0.0), TextLeaf("ÑANDÚ"), b"native-bytes"])
+    shared = dictionary(identity=sequence(["ÑANDÚ", "ACCIONES", "BYMA", "ARS", "A-24HS"]),
+        typed=fixed(typed), known_at=None, note="same identity, exact clocks and typed leaves "*3)
+    shared_parent = sequence([shared, dictionary(again=shared), shared])
+    equal_but_distinct = dictionary(shared)
+    value = dictionary(rows=sequence([shared_parent, shared_parent]), outside=shared,
+                       distinct=equal_but_distinct, scalar="unchanged")
+    return value, shared, shared_parent, equal_but_distinct
+
+
+@pytest.mark.parametrize("case", ["dag", "subclasses", "default_str"])
+@pytest.mark.parametrize("target", [17, 65536])
+def test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire(monkeypatch, case, target):
+    monkeypatch.setattr(packed, "PACK_TARGET", target)
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    visits = []
+    value, shared, shared_parent, equal_but_distinct = count_graph(case, visits)
+    expected = LegacyCaptureBuilder(value)
+    prior_visits = list(visits)
+    visits.clear()
+    actual = packed._CaptureBuilder(value)
+    assert visits == prior_visits
+    assert actual.incoming == expected.incoming
+    assert list(actual.objects) == list(expected.objects)
+    assert all(actual.objects[key] is expected.objects[key] for key in expected.objects)
+    assert actual.objects[id(value)] is value
+    assert actual.objects[id(shared)] is shared
+    assert actual.objects[id(shared_parent)] is shared_parent
+    assert actual.incoming[id(shared)] == 4
+    assert actual.incoming[id(shared_parent)] == 2
+    assert equal_but_distinct is not shared
+    assert actual.incoming[id(equal_but_distinct)] == 1
+    assert actual.capture(value) == expected.capture(value)
+    native_wire = packed.encode_packed_storage(value, **LIMITS)
+    with monkeypatch.context() as legacy:
+        legacy.setattr(packed, "_CaptureBuilder", LegacyCaptureBuilder)
+        legacy_wire = packed.encode_packed_storage(value, **LIMITS)
+    assert canonical(native_wire) == canonical(legacy_wire)
+    raw = canonical(value)
+    assert native_wire["logical_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert native_wire["logical_bytes"] == len(raw)
+    assert canonical(serialization.decode_storage(native_wire, **LIMITS)) == raw
+
+
+def test_container_prefilter_skips_only_scalar_dispatches_while_preserving_all_container_arrivals():
+    prior_calls, current_calls = [], []
+
+    class Prior(LegacyCaptureBuilder):
+        def _count(self, value):
+            prior_calls.append(value)
+            return super()._count(value)
+
+    class Current(packed._CaptureBuilder):
+        def _count(self, value):
+            current_calls.append(value)
+            return super()._count(value)
+
+    value, _, _, _ = count_graph("dag", [])
+    prior, current = Prior(value), Current(value)
+    containers = [node for node in prior_calls if isinstance(node, (dict, list, tuple))]
+    assert len(prior_calls) > len(current_calls)
+    assert len(current_calls) == len(containers)
+    assert all(actual is expected for actual, expected in zip(current_calls, containers))
+    assert current.incoming == prior.incoming
+    assert list(current.objects) == list(prior.objects)
+
+
+def test_container_prefilter_keeps_cycle_metadata_finite_and_public_shape_rejection():
+    value = {"rows": []}
+    value["rows"].append(value)
+    expected, actual = LegacyCaptureBuilder(value), packed._CaptureBuilder(value)
+    assert actual.incoming == expected.incoming == {id(value): 2, id(value["rows"]): 1}
+    assert list(actual.objects) == list(expected.objects)
+    assert actual.objects[id(value)] is value
+    with pytest.raises(ValueError, match="^SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED$"):
+        packed.PreparedPackedStorage(value, **LIMITS)
 
 
 @pytest.mark.parametrize("target", [5, 17, 64, 65536])

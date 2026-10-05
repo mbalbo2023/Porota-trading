@@ -271,7 +271,10 @@ class _CaptureBuilder:
             return
         self.objects[key] = value
         for child in value.values() if isinstance(value, dict) else value:
-            self._count(child)
+            # Scalar leaves do not contribute a container identity or edge.
+            # Keep alias arrivals and strong references in the recursive path.
+            if isinstance(child, (dict, list, tuple)):
+                self._count(child)
 
     def _scalar(self, value):
         if type(value) not in (type(None), bool, int, float, str):
