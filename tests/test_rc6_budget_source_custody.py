@@ -366,6 +366,7 @@ def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_s
         opened = broker._open(q, D(".8"), {})
         assert opened[0], opened
     seed_offline_pending_futures(store, monkeypatch)
+    gc.collect()  # Finalize fixture writer cycles before the first read seam.
     controller = RuntimeCapacityController(store.path, environ={}, policy=policy,
         recommendation=recommendation, report=report, approval=approval)
     runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
@@ -385,6 +386,7 @@ def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_s
         opened = broker._open(q, D(".8"), {})
         assert opened[0], opened
         assert len(store.open_positions()) == 6 and len(store.active_future_positions()) == 5
+        gc.collect()  # The admission writer has completed before observation.
         assert budgets.supervisable_position_count(store.path) == 11
         observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
         assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
