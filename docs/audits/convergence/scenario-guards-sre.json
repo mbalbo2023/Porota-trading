@@ -62,27 +62,49 @@
   "ppi_watch": "NOT_TOUCHED",
   "projected_child_health_regression_evidence": {
     "budget_bound": "COOPERATIVE_DEADLINE; not a host SLO or a hard real-time guarantee",
-    "claim_boundary": "ISOLATED_WIP_DIAGNOSTIC; integrated base plus exact dependency hashes; requires final committed persistence dependency and fresh canonical replay before freeze.",
+    "claim_boundary": "FRESH_CANONICAL_NATIVE_GIT_CHECKOUT; NO_OVERLAYS; source/guard receipt is offline validation, not runtime attestation. Native 12000 completion and reader latency remain pending.",
     "codec_guard": "Native publisher with explicitly lowered codec threshold, including compressed status; report/checkpoint logical decode forbidden during health read.",
+    "covered_native_modules": [
+      "health",
+      "committed_projection",
+      "lossless_codec",
+      "external_tuple_binding",
+      "source_image_bundle_modes",
+      "predeploy_workflow_contract",
+      "frozen_artifact_workflow_contract",
+      "published_primary_evidence_replay"
+    ],
     "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
     "economic_edge": "NO_DEMOSTRADO",
     "health_read_budget_seconds": 2.0,
     "inputs": {
-      "claim": "ISOLATED_WIP_DIAGNOSTIC; NOT_FINAL_SHA_VALIDATION",
+      "canonical_persistence_dependency_sha": "7b5960522c312de8a48ea66ac341a918bfb50c08",
+      "claim": "NATIVE_COMMITTED_SOURCE; NO_OVERLAYS",
+      "code_tested_sha": "f971b0bc04adfac47a90b4b2499ba4736b83c091",
+      "code_tested_tree": "4ac9183a31eacee21633839c2f857ccb34ac5604",
       "files": {
         "rc6_shadow_runtime/funnel.py": "067575ae04e60862a9dd4d555e8d810689703eb3f2bea40a4ddb7c187578240c",
-        "rc6_shadow_runtime/persistence.py": "e41f1f6b609de506fb81af7a2cfb9613ee721b9735c772c3962400b37d5f38db",
-        "rc6_shadow_runtime/projection.py": "f2efef009a2f61aafd991f8e8aa1ca56b075b42d2d7c0a073812bdd6dfaf7889",
+        "rc6_shadow_runtime/persistence.py": "1894cb76c310306a9650f4dbcdb0146e93f479647be379425ebeb3777618c156",
+        "rc6_shadow_runtime/projection.py": "5381dcf5e48184b349ecf8c1a328b7202200e9f94e9fc7c0485ca531d019c21f",
         "rc6_shadow_runtime/retention.py": "5eff1e3e3e868ec091f8dc0a2184a8111262c2a2b0fc5fc8c6015e3fb1d73faa",
         "rc6_shadow_runtime/serialization.py": "302066a595ebba7ee5e7f72fc5aee10de9da3384285ae1df225e3b48ba18a2c6",
         "rc6_shadow_runtime/worker.py": "898662423ea09b8879f34cbb9392f8c2b3fe3bc65e05216585d421fc5f9a82ba",
-        "scripts/rc6_shadow_health_gate.py": "8db227df5a7ac5c0aa6184c21349d853cd67dfb38dedaa895229a16dcc91a8a8",
-        "tests/test_rc6_convergence_sre_health.py": "569a0c1b20e30e44de2d8d7162394bc258d0b792769593b29f2348f0fa39ef88"
+        "scripts/rc6_shadow_health_gate.py": "8e3c26de7a4953bfdd50b43a70755d6ef7d6cc1af182b35636931eb07671aa7d",
+        "tests/test_rc6_convergence_sre_health.py": "b7e9155db4dfedc8ee8d48a92e7f72b33fa472755383615b9c3c6bab878153ef"
       },
-      "integrated_base": "7175d9565040715551d5a10677b56689b183e26f"
+      "integrated_base": "10a3cc172791b87c9a735c9f7762f4ffc7ca0e75",
+      "own_followup_sha": "f8be6eadbb72232eac8401ab7967f3f4b0e62740"
     },
-    "junit_sha256": "6699ce2c005bb041f30d76a11d8e294207b5b3ce2c3262661571ce24217a913c",
+    "junit_sha256": "a83d3b3d19efe971a679d239e57247e040a7ebc36e54c0d6251220b799ecf933",
     "large_native_cut_latency": "PENDING_FINAL_DEPENDENCY_AND_NATIVE_12K_MEASUREMENT",
+    "physical_checkout_modes": {
+      "expected": "100644=0644;100755=0755; regular single-link files",
+      "git_mode_counts": {
+        "100644": 1242,
+        "100755": 12
+      },
+      "status": "GREEN"
+    },
     "provider_open_capacity": "NO_VERIFICADO",
     "real_orders_sent": 0,
     "real_routes": "NOT_CALLED",
@@ -94,9 +116,9 @@
         "hostname": "9905252a2cbf",
         "name": "pytest",
         "skipped": "0",
-        "tests": "52",
-        "time": "9.580",
-        "timestamp": "2026-10-05T05:07:44.128306+00:00"
+        "tests": "191",
+        "time": "29.671",
+        "timestamp": "2026-10-05T05:22:32.265391+00:00"
       }
     ],
     "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
