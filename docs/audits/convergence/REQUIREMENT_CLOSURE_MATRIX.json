@@ -6339,6 +6339,69 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/CUSTODY.json": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/MANIFEST.json": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/README.md": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/REVIEW_RECIPE.md": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/SOURCE_PLAN.json": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/original-source-preparation.zip": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/rc6_run_frozen_governed_v2.py.source": {
+      "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/finance-signed-zero-codec-dc59c2fb-receipt.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [

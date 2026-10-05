@@ -447,3 +447,15 @@ custodia de copia en evidence/native-normal4-d9333065-157. Execution_complete
 es true; complete/horizon/acceptance siguen false. Sólo cubre960s de as_of;
 1201 postPRE más PRE, reinicios361/841 y datos obsoletos siguen pendientes,
 así como BIG90 completo, Gov final, navegador, imagen y runtime.
+
+El runner de Gov final y la receta de revisión de artifact quedaron preparados
+en fuente, sin ejecución. El nuevo helper f4e99413 exige Git completo real,
+namespace físico exacto,157 antes de fixtures, colección y ejecución del root
+original, nodos/JUnit idénticos y campos candidateSHA/tree/source_unchanged/
+JUnitSHA/bytes que faltaban en el JSON del runner antiguo. El atime de código
+se observa por separado; sólo las guardas nativas acreditan SourceDATA11stats.
+No autentica bytes instalados ni aislamiento kernel. Sus29 archivos originales,
+CRC/modos/SHA y ZIP byteexacto se preservan en
+evidence/final-predeploy-source-only-preparation. Las snapshots d933 son revisión
+intermedia: Gov311/312 de C final, FIP, build único, artifact y replay reales
+siguen pendientes. No hay autorización de merge/deploy/host/PPI Watch.
