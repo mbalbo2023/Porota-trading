@@ -4,7 +4,8 @@ Every DB, archive and mutation belongs to a synthetic TemporaryDirectory. No
 provider client, production path, broker route or PPI Watch is accessed.
 """
 from copy import deepcopy
-from datetime import timedelta
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 import errno
 import gc
 import gzip
@@ -18,6 +19,7 @@ import sqlite3
 import subprocess
 import time
 import types
+from unittest import mock
 
 import pytest
 
@@ -383,6 +385,123 @@ def test_u19_eio_every_rotation_boundary_is_reentrant_after_restart(tmp_path, po
     EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
     assert not path.exists() and not list(root.glob(".deleting-*")) and not list(root.glob("delete-intent-*"))
     EvidenceRetention(root, archive_root=archive)._verify_archive(receipt)
+
+
+ROTATION_SYSCALL_BOUNDARIES = tuple(("fsync", index) for index in range(1, 10)) + (
+    ("replace", 1), ("replace", 2), ("rmdir", 1), ("intent_unlink", 1))
+
+
+@contextmanager
+def fault_rotation_syscall(primitive, occurrence, trigger):
+    count = 0
+    owner, name = (os, "fsync") if primitive == "fsync" else (Path, "unlink" if primitive == "intent_unlink" else primitive)
+    original = getattr(owner, name)
+    def call(*args, **kwargs):
+        nonlocal count
+        selected = primitive != "intent_unlink" or (args[0].name.startswith("delete-intent-") and args[0].exists())
+        if selected:
+            count += 1
+            if count == occurrence: trigger()
+        return original(*args, **kwargs)
+    with mock.patch.object(owner, name, call):
+        yield
+
+
+def pause_rotation_syscall(root, archive, primitive, occurrence, pipe):
+    def pause():
+        pipe.send((primitive, occurrence)); signal.pause()
+    with fault_rotation_syscall(primitive, occurrence, pause):
+        EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+
+
+@pytest.mark.parametrize("primitive,occurrence", ROTATION_SYSCALL_BOUNDARIES)
+@pytest.mark.parametrize("failure", ["EIO", "SIGKILL"])
+def test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume(tmp_path, primitive, occurrence, failure):
+    root, archive, path, receipt = archive_fixture(tmp_path)
+    if failure == "EIO":
+        def fail(): raise OSError(errno.EIO, "synthetic syscall failure")
+        with fault_rotation_syscall(primitive, occurrence, fail), pytest.raises(RetentionPressure):
+            EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+    else:
+        context = multiprocessing.get_context("fork"); parent, child = context.Pipe(duplex=False)
+        process = context.Process(target=pause_rotation_syscall, args=(root, archive, primitive, occurrence, child)); process.start()
+        try:
+            assert parent.poll(15) and parent.recv() == (primitive, occurrence)
+            os.kill(process.pid, signal.SIGKILL); process.join(10)
+            assert process.exitcode == -signal.SIGKILL
+        finally:
+            if process.is_alive(): process.kill(); process.join(10)
+            parent.close(); child.close()
+    EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+    assert not path.exists() and not list(root.glob(".deleting-*")) and not list(root.glob("delete-intent-*"))
+    assert not list(root.glob(".control-*")) and not list(root.glob("archive-ack-*"))
+    EvidenceRetention(root, archive_root=archive)._verify_archive(receipt)
+    assert read_committed_generation(root)["report"]["number"] == 2
+
+
+def pause_archiver_before_ack(root, archive, path, pipe):
+    def fault(stage):
+        if stage == "archive_before_publish_ack":
+            pipe.send(stage); signal.pause()
+    EvidenceRetention(root, archive_root=archive, fault_inject=fault).archive_generation(path)
+
+
+def three_generations_for_archive(tmp_path):
+    root, archive = tmp_path / "evidence", tmp_path / "private-archive"
+    with EvidenceFiles(root) as files:
+        cuts = [publish(files, index) for index in (1, 2, 3)]
+    paths = [root / ("gen-" + cut["pointer"]["generation_id"]) for cut in cuts]
+    return root, archive, paths
+
+
+def test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain(tmp_path):
+    root, archive, paths = three_generations_for_archive(tmp_path)
+    context = multiprocessing.get_context("fork"); parent, child = context.Pipe(duplex=False)
+    process = context.Process(target=pause_archiver_before_ack, args=(root, archive, paths[0], child)); process.start()
+    try:
+        assert parent.poll(15) and parent.recv() == "archive_before_publish_ack"
+        os.kill(process.pid, signal.SIGKILL); process.join(10)
+        assert process.exitcode == -signal.SIGKILL
+    finally:
+        if process.is_alive(): process.kill(); process.join(10)
+        parent.close(); child.close()
+    receipt1_path = archive / (paths[0].name.removeprefix("gen-") + ".receipt.json")
+    receipt1 = json.loads(receipt1_path.read_text())
+    assert not (root / ("archive-ack-" + receipt1["generation_id"] + ".json")).exists()
+    retention = EvidenceRetention(root, archive_root=archive)
+    receipt2 = retention.archive_generation(paths[1])
+    head2 = (archive / "CHECKPOINT.json").read_bytes()
+    assert receipt2["receipt_sequence"] == 2 and receipt2["previous_receipt_digest"] == digest(receipt1)
+    assert retention.archive_generation(paths[0]) == receipt1
+    assert (archive / "CHECKPOINT.json").read_bytes() == head2
+    ack1 = root / ("archive-ack-" + receipt1["generation_id"] + ".json")
+    assert json.loads(ack1.read_text()) == receipt1
+    EvidenceRetention(root, maximum_files=20, archive_root=archive).prepare(additional_files=6)
+    assert not paths[0].exists() and not paths[1].exists() and paths[2].exists()
+    assert (archive / "CHECKPOINT.json").read_bytes() == head2
+    assert read_committed_generation(root)["report"]["number"] == 3
+    retention._verify_archive(receipt1); retention._verify_archive(receipt2)
+
+
+def test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation(tmp_path):
+    root, archive, paths = three_generations_for_archive(tmp_path)
+    retention = EvidenceRetention(root, archive_root=archive)
+    receipt1 = retention.archive_generation(paths[0]); retention.archive_generation(paths[1])
+    head2 = (archive / "CHECKPOINT.json").read_bytes()
+    mutated = {**receipt1, "acknowledged_at": (datetime.fromisoformat(receipt1["acknowledged_at"]) - timedelta(seconds=1)).isoformat()}
+    assert digest(mutated) != digest(receipt1)
+    (archive / (receipt1["generation_id"] + ".receipt.json")).write_text(json.dumps(mutated))
+    (root / ("archive-ack-" + receipt1["generation_id"] + ".json")).write_text(json.dumps(mutated))
+    # Object, manifest and both receipt copies still agree; only the separately
+    # sealed successor proves that this older receipt was rewritten.
+    retention._verify_archive(mutated)
+    with pytest.raises(ValueError, match="LINEAGE_CONFLICT"):
+        retention.archive_generation(paths[0])
+    with pytest.raises(RetentionPressure):
+        EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+    assert paths[0].is_dir() and set(item.name for item in paths[0].iterdir()) == {*ROLES.values(), "manifest.json"}
+    assert (archive / "CHECKPOINT.json").read_bytes() == head2
+    assert read_committed_generation(root)["report"]["number"] == 3
 
 
 def test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart(tmp_path):

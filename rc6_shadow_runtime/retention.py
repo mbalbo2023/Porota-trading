@@ -181,7 +181,7 @@ class EvidenceRetention:
             raise
         return fd
 
-    def _repair_archive_checkpoint(self):
+    def _repair_archive_checkpoint(self, *, required_receipt=None):
         """Recover a published receipt whose head update was interrupted.
 
         The immutable receipt sequence is the durable high-water: a restored
@@ -195,27 +195,43 @@ class EvidenceRetention:
                 raise ValueError("RETENTION_ARCHIVE_INVENTORY_LIMIT")
             if re.fullmatch(r"[0-9a-f]{32}\.receipt\.json", path.name):
                 paths.append(path)
-        if len(paths) == head["receipt_count"]:
+        if len(paths) == head["receipt_count"] and required_receipt is None:
             if paths:
                 receipt, _ = self._read_control(self.archive_root / (head["generation_id"] + ".receipt.json"))
                 if digest(receipt) != head["receipt_digest"] or receipt.get("receipt_sequence") != head["receipt_count"]:
                     raise ValueError("RETENTION_ARCHIVE_CHECKPOINT_INVALID")
-            return
+            return head
         if len(paths) < head["receipt_count"]:
             raise ValueError("RETENTION_ARCHIVE_RECEIPT_MISSING")
-        receipts = [self._read_control(path)[0] for path in paths]
-        if any(type(receipt.get("receipt_sequence")) is not int for receipt in receipts):
-            raise ValueError("RETENTION_ARCHIVE_RECEIPT_INVALID")
-        previous = None
-        for count, receipt in enumerate(sorted(receipts, key=lambda row: row["receipt_sequence"]), 1):
-            if receipt["receipt_sequence"] != count or receipt.get("previous_receipt_digest") != previous:
+        # Retain bounded chain metadata, not all receipt bodies. Individual
+        # control files may reach CONTROL_LIMIT even when the archive is full.
+        chain = []
+        for path in paths:
+            receipt, _ = self._read_control(path)
+            if (type(receipt.get("receipt_sequence")) is not int
+                    or _generation_id(receipt.get("generation_id")) + ".receipt.json" != path.name):
+                raise ValueError("RETENTION_ARCHIVE_RECEIPT_INVALID")
+            chain.append((receipt["receipt_sequence"], digest(receipt), receipt.get("previous_receipt_digest"), path))
+        previous, required_found = None, required_receipt is None
+        for count, (sequence, receipt_hash, previous_hash, path) in enumerate(sorted(chain, key=lambda row: row[0]), 1):
+            if sequence != count or previous_hash != previous:
                 raise ValueError("RETENTION_ARCHIVE_RECEIPT_LINEAGE_CONFLICT")
-            previous = digest(receipt)
+            previous = receipt_hash
+            if required_receipt is not None and count == required_receipt["receipt_sequence"]:
+                if receipt_hash != digest(required_receipt):
+                    raise ValueError("RETENTION_ARCHIVE_RECEIPT_LINEAGE_CONFLICT")
+                required_found = True
             if count == head["receipt_count"] and previous != head["receipt_digest"]:
                 raise ValueError("RETENTION_ARCHIVE_CHECKPOINT_INVALID")
             if count > head["receipt_count"]:
+                receipt, _ = self._read_control(path)
+                if digest(receipt) != receipt_hash:
+                    raise ValueError("RETENTION_ARCHIVE_RECEIPT_LINEAGE_CONFLICT")
                 self._verify_archive(receipt)
                 self._advance_archive_checkpoint(receipt)
+        if not required_found:
+            raise ValueError("RETENTION_ARCHIVE_RECEIPT_LINEAGE_CONFLICT")
+        return self._archive_checkpoint()
 
     def _archive_checkpoint(self):
         if self.archive_root is None:
@@ -235,6 +251,11 @@ class EvidenceRetention:
         receipt_hash = digest(receipt)
         if head["receipt_count"] == receipt["receipt_sequence"] and head["receipt_digest"] == receipt_hash:
             return head
+        if head["receipt_count"] > receipt["receipt_sequence"]:
+            # An older durable receipt can need its local ACK after another
+            # archive advances HEAD. Prove chain membership without rewinding
+            # the receipt high-water, then regenerate that exact ACK.
+            return self._repair_archive_checkpoint(required_receipt=receipt)
         if (head["receipt_count"] + 1 != receipt["receipt_sequence"]
                 or head["receipt_digest"] != receipt["previous_receipt_digest"]):
             raise ValueError("RETENTION_ARCHIVE_RECEIPT_LINEAGE_CONFLICT")
@@ -521,6 +542,7 @@ class EvidenceRetention:
             archived_manifest = self._verify_archive(ack)
             if archived_manifest != manifest:
                 return False
+            self._advance_archive_checkpoint(ack)
             return True
         except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, EOFError):
             return False
@@ -547,9 +569,7 @@ class EvidenceRetention:
             return
         receipt, _ = self._read_control(ack_path)
         self._verify_archive(receipt)
-        head = self._archive_checkpoint()
-        if head["receipt_count"] < receipt["receipt_sequence"]:
-            head = self._advance_archive_checkpoint(receipt)
+        head = self._advance_archive_checkpoint(receipt)
         # The immutable external receipt carries its previous receipt digest;
         # a single bounded checkpoint replaces high-cadence local ACK files.
         self._durable_control(self.root / "archive-checkpoint.json", head)
@@ -568,6 +588,7 @@ class EvidenceRetention:
                 raise ValueError("RETENTION_FILE_ALIAS_FORBIDDEN")
         receipt, _ = self._read_control(self.root / ("archive-ack-" + ident + ".json"))
         self._verify_archive(receipt)
+        self._advance_archive_checkpoint(receipt)
         tombstone = self.root / (".deleting-" + ident)
         intent = self.root / ("delete-intent-" + ident + ".json")
         self._durable_control(intent, {"schema": "RC6_SHADOW_DELETE_INTENT_V2", "generation_id": ident,
@@ -602,6 +623,7 @@ class EvidenceRetention:
                 self._verify_archive(receipt)
             if digest(receipt) != value.get("receipt_digest") or receipt["manifest_sha256"] != value.get("manifest_sha256"):
                 raise ValueError("RETENTION_DELETE_INTENT_INVALID")
+            self._advance_archive_checkpoint(receipt)
             if generation.exists() and tombstone.exists():
                 raise ValueError("RETENTION_DELETE_NAMESPACE_CONFLICT")
             if generation.exists():

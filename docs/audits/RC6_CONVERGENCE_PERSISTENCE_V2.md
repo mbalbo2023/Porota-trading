@@ -132,6 +132,11 @@ only after archive verification and a durable bounded checkpoint; external
 receipts remain with their objects. Receipt high-water recovers a checkpoint
 interruption/restoration along the exact immutable digest chain and cannot reuse
 receipt sequences. Missing/conflicting receipts stop rotation.
+If a process dies after publishing the external object/receipt but before its
+local ACK, later archives may advance the receipt high-water. Retry validates
+the older receipt's membership in the complete sealed digest chain and restores
+its exact ACK without rewinding the checkpoint. Rewritten older receipts cannot
+authorize rotation, even when their object and both receipt copies agree.
 
 Archive exhaustion stops further archival/rotation and preserves the latest
 committed cut and unarchived generations. Archive objects/receipts are not deleted
@@ -145,6 +150,9 @@ worker, reader and capacity-consumer paths on synthetic SQLite/caches. It covers
 full rehash, cross-role safety/types, CURRENT rollback/deletion, actual V1
 bootstrap, false/ghost source audits, duplicates, secret markers, receipt attacks,
 EIO/SIGKILL around every rotation boundary and SIGKILL around publication sealing.
+The rotation tests also inject EIO and real SIGKILL directly at every fsync in
+the deletion transaction, both control-file replacements, tombstone rmdir and
+delete-intent unlink; this includes the durable-intent and compaction windows.
 
 Two sustained tests write machine evidence into
 `docs/audits/rc6-convergence-persistence-evidence/` when
