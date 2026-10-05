@@ -4,8 +4,12 @@
   "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
   "files": {
     "docs/audits/rc6_convergence_finance/acceptance_review.md": {
-      "bytes": 11749,
-      "sha256": "2693edd5402b0b6497d81f7f7e8b99f20db4679e98a77560455f0de206ca53f5"
+      "bytes": 14053,
+      "sha256": "3552d22ef87a1c1822fc8a59992a161e19fef2a6bcfc2981860b9bf3d431f13c"
+    },
+    "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
+      "bytes": 73120,
+      "sha256": "be4d160629a17465ad02f7ac68643bb45f4e4c2d4e27022649e65d2a601d6a72"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -16,8 +20,8 @@
       "sha256": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267"
     },
     "docs/audits/rc6_convergence_finance/field_authority_matrix.md": {
-      "bytes": 9900,
-      "sha256": "9deeb140c1943e41a760757dbbe20b8e8080706d1c46cfa2ab51f2b93ab5dade"
+      "bytes": 10583,
+      "sha256": "6b307e9cf2dfda10aded834da8cb71390a7b35e5a813c64f7dd487dd71ea0bc3"
     },
     "docs/audits/rc6_convergence_finance/finance_focused_receipt.json": {
       "bytes": 5254,
@@ -31,9 +35,21 @@
       "bytes": 8446,
       "sha256": "235105563bddc4bb7cf0d497230a24bf8b7f164c350a6dbd4ee52c65f5b6873d"
     },
+    "docs/audits/rc6_convergence_finance/historical_semantic_review_tests.xml": {
+      "bytes": 831,
+      "sha256": "21fa7a1a2e28657fe47e6b0f14fc889fa6a378cced147ed1a2b7c183e1468598"
+    },
     "docs/audits/rc6_convergence_finance/integrated_native_tests.xml": {
       "bytes": 26356,
       "sha256": "8cfb848ce1a6f7f5075793190fc3983816bf47bc9272980defdf2ebfaab8782f"
+    },
+    "docs/audits/rc6_convergence_finance/lab_phase_review_receipt.json": {
+      "bytes": 3835,
+      "sha256": "4b21136dfa447bc56d83bcd1bac1fa2609724ad3c73135f86b908d78e5d392aa"
+    },
+    "docs/audits/rc6_convergence_finance/lab_phase_review_tests.xml": {
+      "bytes": 10996,
+      "sha256": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7"
     },
     "docs/audits/rc6_convergence_finance/persistence_independent_review.md": {
       "bytes": 3872,
@@ -63,13 +79,22 @@
       "bytes": 6127,
       "sha256": "308d6e20b34a39ecb3c6e6ea09b3142f46c9f6901b86a88ebb135234a72b22e7"
     },
+    "tests/test_rc6_convergence_finance_historical_review.py": {
+      "bytes": 1841,
+      "sha256": "e0bfafccb817b1be74a270c4ce0472b368c6c69291e582e7df120165398a6fcb"
+    },
     "tests/test_rc6_convergence_finance_review.py": {
-      "bytes": 13415,
-      "sha256": "aa213cad2f458ab2cd93a1aa2f8ecdf1b1362f49de1a502749b8ac42f3d84d7c"
+      "bytes": 14052,
+      "sha256": "b2e96da65dbfed4c8fe0d4e7ecc505a2bbc972f5bd40354a1fe094d0858765aa"
+    },
+    "tests/test_rc6_shadow_lab_atomic_capture.py": {
+      "bytes": 18015,
+      "sha256": "7948b6a5e9513fa91d0f960c5ae8e0a21f6603492fa2d66dcf1177753a3f27a1"
     }
   },
   "frozen_integrated_final_receipt": "REQUIRED_PENDING_PARENT_FREEZE",
   "producer": "FINANCE_REVIEW_AGENT_OFFLINE",
   "schema": "rc6.finance-evidence-manifest.v1",
-  "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY"
+  "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY",
+  "updated_at": "2026-10-05T03:06:59.274289+00:00"
 }

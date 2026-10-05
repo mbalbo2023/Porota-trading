@@ -5,6 +5,13 @@ de veinte sesiones `EXTERNAL_NO_VERIFICADO`. `EDGE_NO_DEMOSTRADO`. Sin tuning,
 sin nuevas familias/shorts, sin ruta de orden real y sin modificación del host.
 La matriz por campo está en [field_authority_matrix.md](field_authority_matrix.md).
 
+El [consolidado JSON](consolidated_finance_evidence.json) liga U09/U10/U22/U23,
+AUD-468-19, el lector financiero U18/I04, R75/R76 y el contrato de costos a RCA,
+paths, nodos pytest sin multiplicar parámetros y receipts. Conserva los66 IDs
+C-01…C-66 del original, su EXPECTED/OBSERVED/PATH/TEST/GAP/VERDICT y referencias
+nativas por capa. Un nodo referenciado no es un receipt de ejecución ni prueba
+por sí solo de toda la expectativa original; los gaps externos/edge se mantienen.
+
 ## Reproducción independiente RED → GREEN
 
 El probe [rc6_convergence_finance_probe.py](../../../tests/probes/rc6_convergence_finance_probe.py)
@@ -87,15 +94,42 @@ ante reuse; una key nueva con el mismo book válido sigue abriendo y captura
 su propio paper_id. La suite de revisión ahora tiene12 casos; el receipt10
 anterior se conserva como evidencia de esa fase, nunca como rerun final.
 
-Además, snapshot del `admit_paper_candidate` directo guardaba decision_at=null
-por ausencia de lineage del caller. El integrador fija decision_at del lock y
-marca explícitamente inputs de señal no proporcionados; no inventa un vector.
-Las entradas main/scalping conservan sus propios inputs nativos y clocks.
-Futuros usa el callback atómico para capturar la evidencia del fill con su
-contrato y vector disponible. Los10 controles iniciales de
-`tests/test_rc6_convergence_finance_review.py` pasaron con receipt explícito;
-las dos regresiones de reuse agregadas también pasan en el root de trabajo.
-El receipt final de los12 casos se repite tras freeze.
+Los callers directos sin lineage conservan sus relojes nativos ausentes y
+declaran inputs de señal no proporcionados; no inventan una señal o vector.
+El recibo ATOMIC_PAPER_ADMISSION registra admission_at bajo lock y
+entry_fill_recorded_at/captured_at real después del intent/inserts, con
+entry_fill_committed_at=null explícito. La captura NATIVE_DECISION posterior
+al COMMIT preserva signal/decision/intent/commit originales y liga el recibo
+mediante financial_admission_snapshot_key/sha256. Ambos viven en el mismo
+store canónico, sin duplicar decisiones ni trades. FUT usa el callback
+atómico con rollback integral ante error. La suite de revisión financiera
+actual tiene12 controles; el receipt anterior de10 queda como corte histórico.
+
+La corrección del consumer lab valida hash/key/pid, quote exacta, vector
+congelado y clocks de ambas fases. Source/received/known/available del vector
+quedan<=signal; la policy debe ser conocida/efectiva<=admission. Captured puede
+ser posterior a signal; recorded debe ser<=commit<=worker cut. Las features
+mutables no reemplazan policy/style/multipliers del snapshot. Admission sola
+no registra una entrada. Un budget1 puede recibir las fases en ticks distintos
+y reintentar sin doble conteo. El checkpoint lab.v2 invalida v1 al tail actual
+sin backfill. Legacy sin vector conserva LEGACY_VECTOR_UNAVAILABLE explícito.
+
+El [receipt de fases](lab_phase_review_receipt.json) y su
+[JUnit](lab_phase_review_tests.xml) registran59/59 a 2026-10-05T02:55:42Z,
+root d5b2a0a7e871333411807052dc2bcfd55c7f5327 con overlay único de lab propio,
+hashes antes/después iguales, network_attempts=[] y real_orders_sent=0.
+Incluye27 casos nuevos de lab,12 de revisión financiera,19 controles previos
+y un caller prospectivo existente;
+son variantes/controles mecánicos, no59 muestras de edge. La prueba original
+de UX test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut
+pasó de forma independiente en su worktree integrado: seis datasets reales
+no vacíos. Ese run y el overlay son intermedios, no el artefacto final congelado.
+
+R75 prueba duplicate fill con todos los hashes públicos y pin regenerados;
+R76 prueba fill1µs antes entry con rehash completo. Se rechazan semánticamente,
+preservando bytes de la fuente. Los dos nuevos nodos más duplicate raw fill y
+entry1µs antes cutoff existentes pasan4/4 en root integrado READ_ONLY; el
+[JUnit](historical_semantic_review_tests.xml) tampoco certifica el master real.
 
 La [revisión independiente de persistencia](persistence_independent_review.md)
 retiene otro RED→GREEN sobre SIGKILL antes de ACK1, archive2 y retry1: la cadena

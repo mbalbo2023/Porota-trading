@@ -1,0 +1,1301 @@
+{
+  "cohort_boundaries": {
+    "audit_469_observed_77_closes_19_dates_80_snapshots": "SEPARATE_AUDIT_COHORT; does not establish exact20/master68_151",
+    "exact_20_session_master_claimed_68_positions_151_fills": "EXTERNAL_NO_VERIFICADO; no real master supplied/authenticated",
+    "synthetic_twenty_business_day_package": "CODE_TEST_ONLY; weekday normalization does not prove exchange sessions/source completeness"
+  },
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "external_gates": [
+    "authenticated master20sessions + raw immutable source custody + cost/account/clock/currency/fill reconciliation",
+    "live PPI exact series and broker/A3 current terms/margin/clearing/calendar",
+    "OOS economic edge with valid denominators/fees/no-trade comparator"
+  ],
+  "field_authority_matrix": "field_authority_matrix.md",
+  "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
+  "finance_head": "ab37d00793b059ec648c7ced70cb62e006fd262b",
+  "generated_at": "2026-10-05T03:05:31.753128+00:00",
+  "original_66_scenarios": [
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_aud02_fifteen_burst_events_do_not_become_a_fifteen_minute_signal"
+      ],
+      "id": "C-01",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Fewer than 15 points cannot form a scalping candidate",
+      "original_gap": "No empirical profitability implication",
+      "original_observed": "Code requires at least 15",
+      "original_path": "`cf_intraday_scalping.evaluate_candidate`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_intraday_scalping_hf3.py::test_volumen_se_confirma_solo_con_solapamiento_estable_y_minuto_nuevo"
+      ],
+      "id": "C-02",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "First 15-point interval-volume sample remains unconfirmed",
+      "original_gap": "Provider volume units remain external",
+      "original_observed": "`PENDING_LIVE_CONFIRMATION`",
+      "original_path": "`persist_payload`",
+      "original_test": "Synthetic probe, first payload",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_intraday_scalping_hf3.py::test_volumen_se_confirma_solo_con_solapamiento_estable_y_minuto_nuevo"
+      ],
+      "id": "C-03",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Overlapping refresh can confirm interval semantics",
+      "original_gap": "Confirms mechanics only",
+      "original_observed": "16th point yielded `CONFIRMED_INTERVAL_VOLUME`",
+      "original_path": "`persist_payload`",
+      "original_test": "Synthetic probe, second payload",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_exit_supervision_v17.py::test_no_rejuvenece_datos_con_hora_de_recepcion"
+      ],
+      "id": "C-04",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Stale intraday source blocks",
+      "original_gap": "No real provider clock verified",
+      "original_observed": "Freshness branch returns `STALE_INTRADAY_SOURCE`",
+      "original_path": "`_intraday_freshness_reason`",
+      "original_test": "Code and existing boundary test",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_exit_supervision_v17.py::test_no_rejuvenece_datos_con_hora_de_recepcion"
+      ],
+      "id": "C-05",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Future-dated source blocks",
+      "original_gap": "SQLite sub-ms semantics elsewhere remain unsafe",
+      "original_observed": "Negative age maps to timestamp-in-future rejection",
+      "original_path": "`_intraday_freshness_reason`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract"
+      ],
+      "id": "C-06",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "No recent volume blocks",
+      "original_gap": "Volume unit/calibration unverified",
+      "original_observed": "Sum of last five must be positive",
+      "original_path": "`evaluate_candidate`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_shadow.py::test_economic_gate_preserves_freshness_and_depth"
+      ],
+      "id": "C-07",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Excessive spread blocks",
+      "original_gap": "Threshold not tied to OOS edge",
+      "original_observed": "Configured spread threshold enforced",
+      "original_path": "`evaluate_candidate`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed"
+      ],
+      "id": "C-08",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Past range below modeled hurdle blocks",
+      "original_gap": "Past range is not a forward payoff distribution",
+      "original_observed": "`ECONOMICS_BINDING_RANGE_BELOW_COST`",
+      "original_path": "`evaluate_candidate`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS_MECHANICS_ONLY"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_intraday_scalping_hf3.py::test_configuracion_rc6_es_shadow_y_reduce_riesgo"
+      ],
+      "id": "C-09",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Low heuristic score blocks",
+      "original_gap": "Score calibration absent",
+      "original_observed": "Threshold comparison enforced",
+      "original_path": "`evaluate_candidate`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS_MECHANICS_ONLY"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_shadow.py::test_shadow_economics_is_out_of_sample_and_not_binding"
+      ],
+      "id": "C-10",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Score must not be interpreted as probability",
+      "original_gap": "No reliability curve/Brier/OOS evidence",
+      "original_observed": "Raw score `1.083416…` clipped to `1`",
+      "original_path": "`evaluate_candidate`",
+      "original_test": "Synthetic counterexample",
+      "original_verdict": "GAP_EDGE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed"
+      ],
+      "id": "C-11",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Delayed promotion rechecks candidate/source/book",
+      "original_gap": "Does not re-run economic gate",
+      "original_observed": "Age and book checks precede broker construction",
+      "original_path": "`promote_paper_candidate`",
+      "original_test": "Code plus existing test",
+      "original_verdict": "PASS_PARTIAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_u06_private_primitive_cannot_bypass_same_binding_gate"
+      ],
+      "id": "C-12",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Binding economics rejects net RR below 1.20",
+      "original_gap": "Caller can bypass it",
+      "original_observed": "Canonical diagnostic: RR `0.670348…`, `passed=false`",
+      "original_path": "`PaperBroker._economic_diagnostics`, `on_quote`",
+      "original_test": "Actual synthetic broker",
+      "original_verdict": "FAIL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed"
+      ],
+      "id": "C-13",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Promotion must use canonical admission",
+      "original_gap": "Existing test mocks `_open`",
+      "original_observed": "It calls private `_open` directly and opens",
+      "original_path": "`promote_paper_candidate:937-941`",
+      "original_test": "Actual synthetic promotion",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed"
+      ],
+      "id": "C-14",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Persisted economics must reflect evaluated economics",
+      "original_gap": "Health sees laundered telemetry",
+      "original_observed": "Caller overwrites `passed/binding/execution_enabled` to true",
+      "original_path": "`promote_paper_candidate:924-926`",
+      "original_test": "Ledger inspection after probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_shadow.py::test_missing_expected_move_is_not_an_invented_profit_forecast"
+      ],
+      "id": "C-15",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Candidate should beat nominal no-trade after costs",
+      "original_gap": "Signal probabilities unestimated",
+      "original_observed": "Equal-target/stop EV `-0.2851507516` per unit; no-trade `0`",
+      "original_path": "GGAL synthetic candidate",
+      "original_test": "Exact Decimal counterfactual",
+      "original_verdict": "FAIL_EDGE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_exit_supervision_v17.py::test_max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar"
+      ],
+      "id": "C-16",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Max-hold exit accounts for spread/slippage/fees",
+      "original_gap": "One path, not distribution",
+      "original_observed": "Exact 30m close: gross `-9.16`, costs `87.93`, net `-97.09`",
+      "original_path": "`SCALPING_MAX_HOLD_PAPER`",
+      "original_test": "Actual open then supervised close",
+      "original_verdict": "PASS_ACCOUNTING_NEGATIVE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_costs.py::test_stop_is_price_trigger_not_net_loss_guarantee"
+      ],
+      "id": "C-17",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Take-profit threshold guarantees neither fill nor profit",
+      "original_gap": "Gap/jump and queue position unmodeled",
+      "original_observed": "Exit still requires a fresh executable bid and charges costs",
+      "original_path": "`_maybe_close` / `_close`",
+      "original_test": "Code inspection",
+      "original_verdict": "GAP_EXECUTION"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_costs.py::test_stop_is_price_trigger_not_net_loss_guarantee"
+      ],
+      "id": "C-18",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Stop threshold caps loss",
+      "original_gap": "Tail slippage unbounded by stop value",
+      "original_observed": "It triggers intent, but executable bid can gap below stop",
+      "original_path": "`_maybe_close` / `_close`",
+      "original_test": "Code inspection",
+      "original_verdict": "GAP_RISK"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_exit_supervision_v17.py::test_no_fabrica_fill_con_mercado_cerrado_ni_calendario_desconocido"
+      ],
+      "id": "C-19",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "EOD closes without inventing a book",
+      "original_gap": "Outage-at-close residual remains",
+      "original_observed": "Close requires fresh market input",
+      "original_path": "session policy / exit reader",
+      "original_test": "Code inspection",
+      "original_verdict": "GAP_OPERATIONAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_shadow.py::test_factual_and_candidate_are_deterministic_and_do_not_promote"
+      ],
+      "id": "C-20",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Robustness must not imply edge",
+      "original_gap": "Real cohort unavailable",
+      "original_observed": "No OOS evidence in candidate; historical claims are external",
+      "original_path": "issue authorities and docs",
+      "original_test": "Evidence inventory",
+      "original_verdict": "GAP_EDGE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_identity_dimensions_and_nonmissing_contract_cohorts_stay_blocked"
+      ],
+      "id": "C-21",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Exact future identity is mandatory",
+      "original_gap": "PPI live identity external",
+      "original_observed": "Symbol/family/A3/ARS/settlement/source checks fail closed",
+      "original_path": "`PaperBroker._open_future`",
+      "original_test": "Code + synthetic positive control",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_lifecycle.py::test_future_lifecycle_rejects_short_or_nonfull_notional_policy"
+      ],
+      "id": "C-22",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "PAPER margin policy must be explicit",
+      "original_gap": "Not a broker-margin claim",
+      "original_observed": "Requires `CONSERVATIVE_NOTIONAL_RATE=1`",
+      "original_path": "`_open_future`",
+      "original_test": "Synthetic positive/negative control",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_standard_dlr_policy_uses_exact_a3_terms_and_paper_full_notional"
+      ],
+      "id": "C-23",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "DLR multiplier is USD 1,000",
+      "original_gap": "Particular live series external",
+      "original_observed": "Lifecycle validates `cash_multiplier=1000`",
+      "original_path": "`_validate_future_contract`",
+      "original_test": "Synthetic lifecycle + A3 guide",
+      "original_verdict": "PASS_CONTRACT"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_standard_dlr_policy_uses_exact_a3_terms_and_paper_full_notional"
+      ],
+      "id": "C-24",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Whole contract/minimum one",
+      "original_gap": "Broker order minimum remains external",
+      "original_observed": "Quantity step/minimum one enforced",
+      "original_path": "`InstrumentContract.quantity`",
+      "original_test": "Synthetic lifecycle",
+      "original_verdict": "PASS_PAPER"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_ws_motor_14_paper_policy.py::test_future_without_broker_margin_uses_full_notional_paper_reserve"
+      ],
+      "id": "C-25",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Default capital should not silently lever a DLR lot",
+      "original_gap": "Strategy becomes inert under defaults",
+      "original_observed": "One lot at 1500 reserves ARS 1.5m vs caps 250k/600k",
+      "original_path": "`_open_future` capacity",
+      "original_test": "Exact Decimal probe",
+      "original_verdict": "SAFE_BLOCK_GAP"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_engine.py::test_future_binding_economics_fails_closed_because_exact_fixed_costs_are_not_proved"
+      ],
+      "id": "C-26",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Binding future economics requires exact costs",
+      "original_gap": "Exact broker/account fees external",
+      "original_observed": "Opens are blocked with `FUTURES_EXACT_COST_MODEL_REQUIRED...`",
+      "original_path": "`_open_future:1327-1328`",
+      "original_test": "Branch inspection",
+      "original_verdict": "PASS_FAIL_CLOSED"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u09_adverse_execution_grid_at_fill_boundary"
+      ],
+      "id": "C-27",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Simulated buy fill must land on exchange price grid",
+      "original_gap": "Contract lacks price tick",
+      "original_observed": "`1579.3158 mod 0.5 = 0.3158`",
+      "original_path": "`_open_future:1358`",
+      "original_test": "Actual synthetic specialized open",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u09_adverse_execution_grid_at_fill_boundary"
+      ],
+      "id": "C-28",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Simulated sell fill must land on exchange price grid",
+      "original_gap": "Contract lacks price tick",
+      "original_observed": "`1579.6840 mod 0.5 = 0.1840`",
+      "original_path": "`_close_future:1485`",
+      "original_test": "Actual synthetic specialized close",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u09_official_settlement_preserves_precision_and_close_does_not_count_variation_twice"
+      ],
+      "id": "C-29",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Round-trip PnL must not benefit from invalid rounding",
+      "original_gap": "Official current guide has no publication date",
+      "original_observed": "Against adverse valid ticks, gross is overstated ARS `368.20`/contract",
+      "original_path": "DLR, multiplier 1000",
+      "original_test": "Exact tick-grid counterfactual",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_final_shared_risk.py::test_emergency_position_cap_counts_both_ledgers_for_each_executor"
+      ],
+      "id": "C-30",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Global budget counts all active exits",
+      "original_gap": "Query assumes spot literal `OPEN`",
+      "original_observed": "One `paper_future_positions.status='ACTIVE'` counted as zero",
+      "original_path": "`RuntimePPIBudget._opened`",
+      "original_test": "Actual durable lifecycle",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_ppi_global_budget.py::test_exit_reserve_cannot_be_consumed_by_discovery"
+      ],
+      "id": "C-31",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Discovery cannot consume reserved future exit calls",
+      "original_gap": "Futures absent from existing tests",
+      "original_observed": "With undercount, three discovery books were admitted",
+      "original_path": "global PPI budget",
+      "original_test": "Synthetic policy probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_ppi_global_budget.py::test_approved_envelope_reserves_actual_opened_demand_once"
+      ],
+      "id": "C-32",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Exit-critical request survives discovery pressure",
+      "original_gap": "Correct count would reserve three",
+      "original_observed": "Fourth call was denied `PPI_BUDGET_EXHAUSTED`",
+      "original_path": "global PPI budget",
+      "original_test": "Synthetic policy probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_lifecycle.py::test_future_lifecycle_reserve_mark_variation_close_and_cash"
+      ],
+      "id": "C-33",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Opening reserve/cash effect uses full PAPER notional",
+      "original_gap": "Conservative PAPER policy, not real margin",
+      "original_observed": "At 1500, one contract reserves ARS 1.5m",
+      "original_path": "future lifecycle",
+      "original_test": "Synthetic open",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_lifecycle.py::test_future_lifecycle_reserve_mark_variation_close_and_cash"
+      ],
+      "id": "C-34",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Daily variation realizes multiplier-scaled change",
+      "original_gap": "Actual clearing feed external",
+      "original_observed": "1500→1510 realizes ARS 10,000 before fees",
+      "original_path": "future lifecycle",
+      "original_test": "Synthetic settlement",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_lifecycle.py::test_future_lifecycle_reserve_mark_variation_close_and_cash"
+      ],
+      "id": "C-35",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Close releases collateral and preserves realized PnL",
+      "original_gap": "Does not establish executable strategy",
+      "original_observed": "Final 1520 with 100+100 fees gives net ARS 19,800",
+      "original_path": "future lifecycle",
+      "original_test": "Synthetic open/settle/close",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_programming_complete.py::test_open_mark_variation_close_replay_survives_restart_and_cash_reconciles"
+      ],
+      "id": "C-36",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Restart/replay is idempotent",
+      "original_gap": "Crash at untested I/O boundaries remains",
+      "original_observed": "Repeated close added no event and returned same result",
+      "original_path": "lifecycle event IDs",
+      "original_test": "New executor + replay",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u10_events_and_marks_respect_exact_inclusive_cut_and_restart"
+      ],
+      "id": "C-37",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "`as_of=t` excludes settlement at `t+1µs`",
+      "original_gap": "`julianday` collapses sub-ms values",
+      "original_observed": "Earlier snapshot included future settlement",
+      "original_path": "`future_cash_effect`, `future_risk_snapshot`",
+      "original_test": "Actual SQLite microsecond probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u10_events_and_marks_respect_exact_inclusive_cut_and_restart"
+      ],
+      "id": "C-38",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "`as_of=t` excludes close at `t+1µs`",
+      "original_gap": "Same precision defect",
+      "original_observed": "Earlier snapshot became closed, released collateral, realized PnL",
+      "original_path": "`future_risk_snapshot`",
+      "original_test": "Actual SQLite microsecond probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u10_exclusive_cash_and_risk_share_boundary_and_exact_offset_sql"
+      ],
+      "id": "C-39",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Timestamp ordering preserves all microseconds",
+      "original_gap": "Boundary depends on binary/parser rounding",
+      "original_observed": "+1/+100/+499µs compared equal; +500µs became ~1.006ms",
+      "original_path": "SQLite `julianday`",
+      "original_test": "Direct database probe",
+      "original_verdict": "FAIL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u10_events_and_marks_respect_exact_inclusive_cut_and_restart"
+      ],
+      "id": "C-40",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "A mark later than cut must not affect money",
+      "original_gap": "Stale flag is not exclusion",
+      "original_observed": "Later mark was flagged stale but still changed realized/exposure/cash",
+      "original_path": "`future_risk_snapshot`",
+      "original_test": "Settlement lookahead probe",
+      "original_verdict": "FAIL_P1"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_lifecycle.py::test_future_lifecycle_rejects_short_or_nonfull_notional_policy"
+      ],
+      "id": "C-41",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Supported side semantics are explicit",
+      "original_gap": "No short strategy claimed",
+      "original_observed": "Schema accepts LONG only",
+      "original_path": "future schema / `_open_future`",
+      "original_test": "Code inspection",
+      "original_verdict": "PASS_SCOPE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_programming_complete.py::test_idempotent_replay_cannot_replace_original_contract_provenance"
+      ],
+      "id": "C-42",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Expiry identity is pinned and immutable",
+      "original_gap": "Expiry holiday accuracy external",
+      "original_observed": "Contract mutation after restart rejected",
+      "original_path": "lifecycle snapshot hash",
+      "original_test": "Synthetic mutation",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_future_paper_window_is_a3_specific_and_has_eod_buffers"
+      ],
+      "id": "C-43",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "EOD prevents new entry at cutoff",
+      "original_gap": "Exchange exceptional schedule external",
+      "original_observed": "Before cutoff allowed; at cutoff `FUTURES_EOD_NO_NEW_ENTRIES`",
+      "original_path": "session policy",
+      "original_test": "Synthetic boundary",
+      "original_verdict": "PASS_STATIC"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_future_paper_window_is_a3_specific_and_has_eod_buffers"
+      ],
+      "id": "C-44",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Holiday/exception calendar should be authoritative",
+      "original_gap": "No live A3 calendar/halting authority",
+      "original_observed": "Policy is static weekday/time plus stored expiry",
+      "original_path": "futures session policy",
+      "original_test": "Code inspection",
+      "original_verdict": "GAP_EXTERNAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_rc6_future_paper_engine.py::test_future_binding_economics_fails_closed_because_exact_fixed_costs_are_not_proved"
+      ],
+      "id": "C-45",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Current margin/rights/tariff should be authoritative",
+      "original_gap": "Broker/account VAT/fees/margin external",
+      "original_observed": "PAPER uses full notional and estimated rate; binding is blocked",
+      "original_path": "`_future_cost`, margin policy",
+      "original_test": "Code + official guide review",
+      "original_verdict": "GAP_EXTERNAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_byte_determinism_same_snapshot_key_session_order_and_path_independence"
+      ],
+      "id": "C-46",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "20-session input is normalized deterministically",
+      "original_gap": "Real session completeness absent",
+      "original_observed": "Reversed session arguments emitted byte-identical package",
+      "original_path": "`export_package`, `cohort_sessions`",
+      "original_test": "Synthetic package probe",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_exact_hand_calculation_partials_currencies_and_no_slippage_double_count"
+      ],
+      "id": "C-47",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Partial fills are preserved and reconciled",
+      "original_gap": "Real fills absent",
+      "original_observed": "1 buy + 2 partial sells; gross 6, costs 3, net 3",
+      "original_path": "package/recompute",
+      "original_test": "Synthetic package probe",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_whitelist_does_not_export_ids_secrets_accounts_key_or_source_path"
+      ],
+      "id": "C-48",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Raw IDs/secrets do not leak",
+      "original_gap": "Synthetic fixture only",
+      "original_observed": "Raw paper/account/token/chat markers absent",
+      "original_path": "package output",
+      "original_test": "Byte scan",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_actual_sqlite_readonly_query_only_authorizer_and_no_source_change"
+      ],
+      "id": "C-49",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Main source DB is unchanged",
+      "original_gap": "Sidecars were not covered",
+      "original_observed": "SHA-256 before/after matched",
+      "original_path": "`readonly_snapshot`",
+      "original_test": "Synthetic rollback DB",
+      "original_verdict": "PASS_PARTIAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_actual_sqlite_readonly_query_only_authorizer_and_no_source_change"
+      ],
+      "id": "C-50",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Strict READ_ONLY must leave source directory unchanged",
+      "original_gap": "Existing test checks only main DB",
+      "original_observed": "Opening copied WAL source created 32,768-byte `source.sqlite-shm`",
+      "original_path": "`readonly_snapshot:163-204`",
+      "original_test": "Synthetic WAL/no-SHM probe",
+      "original_verdict": "FAIL_P2"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest"
+      ],
+      "id": "C-51",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Undeclared fill-byte edit is detected",
+      "original_gap": "None for this mutation",
+      "original_observed": "`FILE_DIGEST_MISMATCH`",
+      "original_path": "`verify_package`",
+      "original_test": "Byte mutation",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest"
+      ],
+      "id": "C-52",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Rehashed cost corruption is detected semantically",
+      "original_gap": "Real tariff correctness external",
+      "original_observed": "`LEDGER_COST_RECONCILIATION`",
+      "original_path": "recompute verifier",
+      "original_test": "Cost mutation + rehash",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_source_counterexamples_cannot_become_partial_package"
+      ],
+      "id": "C-53",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Rehashed opening quantity corruption is detected",
+      "original_gap": "Other valid coordinated forgery needs pin",
+      "original_observed": "`OPENING_QUANTITY_MISMATCH`",
+      "original_path": "recompute verifier",
+      "original_test": "Quantity mutation + rehash",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r75_duplicate_fill_cannot_pass_when_all_public_digests_and_the_pin_are_rebound"
+      ],
+      "id": "C-54",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Duplicate fill identity is rejected",
+      "original_gap": "Real provider IDs absent",
+      "original_observed": "`DUPLICATE_OR_INVALID_FILL`",
+      "original_path": "recompute verifier",
+      "original_test": "Duplicate + rehash",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r76_fill_one_microsecond_before_entry_is_rejected_despite_complete_semantic_rehash"
+      ],
+      "id": "C-55",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Fill before position entry is rejected",
+      "original_gap": "Provider clock authority external",
+      "original_observed": "`FILL_CLOCK_ORDER` for entry minus 1µs",
+      "original_path": "recompute verifier",
+      "original_test": "Timestamp mutation + rehash",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_manifest_digest_independently_pinned_and_mixed_generations_rejected"
+      ],
+      "id": "C-56",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Retained manifest pin detects manifest edit",
+      "original_gap": "Independent retention required",
+      "original_observed": "`MANIFEST_DIGEST_MISMATCH`",
+      "original_path": "`verify_package`",
+      "original_test": "Count edit, original pin",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_independent_recomputation_attacks_even_with_rehashed_manifest"
+      ],
+      "id": "C-57",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Rebound manifest cannot hide wrong row count",
+      "original_gap": "Coordinated valid-content forgery remains possible",
+      "original_observed": "`ROW_COUNT_MISMATCH`",
+      "original_path": "`verify_package`",
+      "original_test": "Count edit, new pin",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation"
+      ],
+      "id": "C-58",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Position bound fails closed",
+      "original_gap": "Real cohort size external",
+      "original_observed": "`POSITION_ROW_BUDGET_EXHAUSTED`",
+      "original_path": "exporter limits",
+      "original_test": "Two rows vs limit one",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_limits_fail_closed_without_silent_truncation"
+      ],
+      "id": "C-59",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Fill bound fails closed",
+      "original_gap": "Real cohort size external",
+      "original_observed": "`FILL_ROW_BUDGET_EXHAUSTED`",
+      "original_path": "exporter limits",
+      "original_test": "Three fills vs limit two",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_manifest_digest_independently_pinned_and_mixed_generations_rejected"
+      ],
+      "id": "C-60",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Original pin detects ARS→USD_MEP relabel",
+      "original_gap": "Pin must be independently held",
+      "original_observed": "`MANIFEST_DIGEST_MISMATCH`",
+      "original_path": "verifier",
+      "original_test": "Currency relabel + original pin",
+      "original_verdict": "PASS"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_exact_hand_calculation_partials_currencies_and_no_slippage_double_count"
+      ],
+      "id": "C-61",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "New self-supplied pin is not source authentication",
+      "original_gap": "Source-owner reconciliation absent",
+      "original_observed": "Fully rehashed valid relabel was accepted; opaque source commitment unchanged",
+      "original_path": "package trust boundary",
+      "original_test": "Currency relabel + new pin",
+      "original_verdict": "EXTERNAL_NO_VERIFICADO"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_rc6_performance_costs.py::test_audit_keeps_zero_days_and_currencies_separate"
+      ],
+      "id": "C-62",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Currency totals must remain separate",
+      "original_gap": "FX aggregation/opportunity cost unmodeled",
+      "original_observed": "Manifest says combined=false; verifier emits per-currency results",
+      "original_path": "package/recompute",
+      "original_test": "Synthetic inspection",
+      "original_verdict": "PASS_SCOPE"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_no_inferred_or_missing_twenty_sessions"
+      ],
+      "id": "C-63",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Exactly 20 unique sessions are required",
+      "original_gap": "Exchange holidays not proven by weekday list",
+      "original_observed": "Synthetic 20-business-day cohort accepted after normalization",
+      "original_path": "`cohort_sessions`",
+      "original_test": "Synthetic export",
+      "original_verdict": "PASS_FORMAT_GAP_CALENDAR"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "LIVE_SOURCE_AND_FINAL_FROZEN_RERUN_NOT_VERIFIED_BY_THIS_MAPPING",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_safety_state_must_be_exact_paper_zero_real_orders"
+      ],
+      "id": "C-64",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Source must attest PAPER and zero real orders",
+      "original_gap": "Does not independently prove no external routing",
+      "original_observed": "Export requires one `PRODUCTION_PAPER,0` observer row",
+      "original_path": "`readonly_snapshot`",
+      "original_test": "Synthetic source",
+      "original_verdict": "PASS_LOCAL"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_full_native_source_missing_fields_stay_unverified"
+      ],
+      "id": "C-65",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Real provider clocks/fees/account terms must be present for economic claims",
+      "original_gap": "Cannot validate net edge",
+      "original_observed": "Manifest explicitly records them missing",
+      "original_path": "package manifest",
+      "original_test": "Inspection",
+      "original_verdict": "EXTERNAL_NO_VERIFICADO"
+    },
+    {
+      "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
+      "current_external_status": "EXTERNAL_NO_VERIFICADO_OR_EDGE_NO_DEMOSTRADO",
+      "current_native_nodes": [
+        "tests/test_issue465_historical_package.py::test_empty_cohort_pending_not_fabricated_actual_68_151"
+      ],
+      "id": "C-66",
+      "node_scope": "REFERENCED_MECHANICS_OR_HONEST_UNKNOWN_GUARD; not automatic proof of full original expected claim",
+      "original_expected": "Claimed 20-session production counts/PnL must be recomputed from the real package",
+      "original_gap": "68/151 rows and all published totals unverified",
+      "original_observed": "No private master/package was available",
+      "original_path": "issue #464/#465 claim boundary",
+      "original_test": "Evidence inventory",
+      "original_verdict": "EXTERNAL_NO_VERIFICADO"
+    }
+  ],
+  "original_scenarios_source": {
+    "count": 66,
+    "frozen_commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "frozen_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+    "path": "/workspace/porota_rc6_handoff_468_469_470/audit_evidence/finance/SCENARIO_MATRIX.md",
+    "sha256": "d7d3f1200e5f4e80087d1ca240cd0c7ecff2f62de21c1c177dcc7f355b5733a5"
+  },
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "receipt_hashes": {
+    "consolidated_finance_evidence.json": "53cff0841f0bf49d394ff6b00e768f37dec5e09cdcd87546b76a40fd20be6552",
+    "core_finance_review_receipt.json": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00",
+    "core_finance_review_tests.xml": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267",
+    "finance_focused_receipt.json": "a0ebdde8d10e3befc0df796105ee3b9515cb07eedbaffbf758120696289858cf",
+    "finance_focused_tests.xml": "a4ff398b7aa063a9f9fcc697737d3e74cc52025ad4b79e39f88f458c3a98fe2f",
+    "green_integrated_worktree.json": "235105563bddc4bb7cf0d497230a24bf8b7f164c350a6dbd4ee52c65f5b6873d",
+    "historical_semantic_review_tests.xml": "21fa7a1a2e28657fe47e6b0f14fc889fa6a378cced147ed1a2b7c183e1468598",
+    "integrated_native_tests.xml": "8cfb848ce1a6f7f5075793190fc3983816bf47bc9272980defdf2ebfaab8782f",
+    "lab_phase_review_receipt.json": "4b21136dfa447bc56d83bcd1bac1fa2609724ad3c73135f86b908d78e5d392aa",
+    "lab_phase_review_tests.xml": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7",
+    "red_c27dfd9.json": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c",
+    "retention_ack_resume_green_b82666db.json": "34b9fe26024749ea8838e05e5462b6d6eb204cf0073f16ee11186ce619305e88",
+    "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",
+    "retention_ack_resume_red_2fb29369.json": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
+  },
+  "reference_root_sha": "6606317ab61ef89339d503f4f6cfefb9cc1f33ab",
+  "requirements": [
+    {
+      "aliases": [
+        "RA-C-02",
+        "C-27",
+        "C-28",
+        "C-29"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Current PPI series availability/account margin/official publication historical validity remain EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "bs_instrument_contracts.py",
+        "rc6_ppi_future_contract_policy.py",
+        "rc6_contract_bridge.py",
+        "be_paper_engine.py"
+      ],
+      "id": "U09",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u09_adverse_execution_grid_at_fill_boundary",
+        "tests/test_rc6_convergence_finance.py::test_u09_nonexecutable_grid_is_rejected_at_its_typed_boundary",
+        "tests/test_rc6_convergence_finance.py::test_u09_official_settlement_preserves_precision_and_close_does_not_count_variation_twice",
+        "tests/test_rc6_convergence_finance.py::test_u09_paper_settlement_is_explicit_assumption_and_official_rule_is_required",
+        "tests/test_rc6_convergence_finance_review.py::test_u09_direct_future_close_rejects_off_grid_or_crossed_book_with_valid_control"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Fills multiplied by slippage remained off the DLR executable tick; fractional fill prices gave ARS368.20 artificial benefit per contract.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "core_finance_review_receipt.json",
+        "red_c27dfd9.json",
+        "green_integrated_worktree.json"
+      ]
+    },
+    {
+      "aliases": [
+        "RA-C-04",
+        "C-37",
+        "C-38",
+        "C-39",
+        "C-40"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Synthetic boundaries do not authenticate provider clocks."
+      ],
+      "fix_paths": [
+        "bs_instrument_contracts.py",
+        "rc6_paper_family_lifecycle.py",
+        "dh_paper_dynamic_risk_gate_hf6.py",
+        "be_paper_engine.py"
+      ],
+      "id": "U10",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u10_dst_fold_instants_remain_distinct_at_writer_and_sql_boundaries",
+        "tests/test_rc6_convergence_finance.py::test_u10_events_and_marks_respect_exact_inclusive_cut_and_restart",
+        "tests/test_rc6_convergence_finance.py::test_u10_exclusive_cash_and_risk_share_boundary_and_exact_offset_sql",
+        "tests/test_rc6_convergence_finance.py::test_u10_same_timestamp_marks_have_durable_total_order_and_bounded_page_projection",
+        "tests/test_rc6_convergence_finance_review.py::test_u10_quote_clock_distinguishes_zoneinfo_fold_instants"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "SQLite julianday floating precision equated +1/+100/+499microseconds to cut; later money/mark/collateral entered earlier snapshots.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "core_finance_review_receipt.json",
+        "red_c27dfd9.json",
+        "green_integrated_worktree.json"
+      ]
+    },
+    {
+      "aliases": [
+        "RA-D-02"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Real risk, current broker exposure and reconciled positions remain EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "rc6_paper_family_lifecycle.py",
+        "dh_paper_dynamic_risk_gate_hf6.py",
+        "be_paper_engine.py"
+      ],
+      "id": "U22",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u22_capacity_at_cut_is_unchanged_by_later_terminal_event",
+        "tests/test_rc6_future_programming_complete.py::test_historical_risk_cuts_use_original_open_and_events_without_future_information"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Risk reader selected current ACTIVE/CLOSED status, so closing later changed portfolio capacity at an unchanged historical cut.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "red_c27dfd9.json",
+        "green_integrated_worktree.json"
+      ]
+    },
+    {
+      "aliases": [
+        "C-36_FINANCIAL_LIFECYCLE_ONLY"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Idempotent synthetic mechanics do not authenticate external source ownership."
+      ],
+      "fix_paths": [
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "id": "U23",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_legacy_snapshot_digest_is_checked_on_captured_fields_before_new_defaults",
+        "tests/test_rc6_convergence_finance.py::test_u23_equivalent_decimal_offset_and_implicit_time_retries_are_idempotent",
+        "tests/test_rc6_convergence_finance.py::test_u23_full_generic_intent_collision_is_rejected_without_mutation",
+        "tests/test_rc6_convergence_finance.py::test_u23_future_retries_bind_time_reason_and_full_detail",
+        "tests/test_rc6_convergence_finance.py::test_u23_generic_future_event_binds_complete_contract_terms",
+        "tests/test_rc6_convergence_finance.py::test_u23_real_multiprocess_conflicting_intents_serialize_to_one_event"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Event-ID retries omitted complete semantic payload/contract/clock/identity, accepting conflicting requests as successful retries.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "red_c27dfd9.json",
+        "green_integrated_worktree.json"
+      ]
+    },
+    {
+      "aliases": [
+        "AUD19",
+        "NATIVE_CAPTURE_FINANCIAL_PHASE_LINK"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Native capture hash is local evidence, not independent external authentication or profitability validation."
+      ],
+      "fix_paths": [
+        "be_paper_engine.py",
+        "rc6_paper_family_lifecycle.py",
+        "rc6_performance/common.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/funnel.py"
+      ],
+      "id": "AUD-468-19",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_aud19_future_commit_evidence_failure_rolls_back_financial_rows_and_valid_retry_captures_once",
+        "tests/test_rc6_convergence_finance_review.py::test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits",
+        "tests/test_rc6_shadow_lab_atomic_capture.py::test_atomic_producer_worker_and_restart_preserve_frozen_inputs_after_mutable_revisions",
+        "tests/test_rc6_shadow_lab_atomic_capture.py::test_capture_receipt_never_authorizes_future_inputs_or_cross_decision_evidence",
+        "tests/test_rc6_shadow_lab_atomic_capture.py::test_two_phase_link_guards_hash_paper_vector_clocks_and_known_policy",
+        "tests/test_rc6_shadow_lab_atomic_capture.py::test_two_phases_register_one_native_trade_even_across_a_one_row_read_budget"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Mutable price tables could not reconstruct historical vectors; atomic receipts initially reused native keys and collapsed native clocks, losing capture phase and permitting incorrect consumer counts.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "lab_phase_review_receipt.json"
+      ]
+    },
+    {
+      "aliases": [
+        "UX470-I04"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "UI producer-to-render evidence belongs to UX owner; final integrated SHA/tree rerun remains mandatory."
+      ],
+      "fix_paths": [
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "id": "U18_FINANCE_READER",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_u18_future_projection_names_columns_and_filters_page_before_loading_json",
+        "tests/test_rc6_convergence_finance.py::test_u18_future_projection_rejects_oversized_json_at_each_loaded_boundary"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Historical future readers exposed unbounded mutable rows/metadata to UI. Pagination needs explicit columns and keyed projection before materialization.",
+      "receipts": [
+        "finance_focused_receipt.json"
+      ]
+    },
+    {
+      "aliases": [
+        "C-54",
+        "HISTORICAL_DUPLICATE_FILL"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Real fill IDs and independent source custody remain EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/recompute.py"
+      ],
+      "id": "R75",
+      "native_nodes": [
+        "tests/test_issue465_historical_package.py::test_duplicate_raw_fill_id_rejected_before_export",
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r75_duplicate_fill_cannot_pass_when_all_public_digests_and_the_pin_are_rebound"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Public digests and a newly supplied manifest pin cannot make duplicate fill identity a valid ledger. Existing semantic rejection is preserved and independently re-exercised.",
+      "receipts": [
+        "historical_semantic_review_tests.xml"
+      ]
+    },
+    {
+      "aliases": [
+        "C-55",
+        "HISTORICAL_MICROSECOND_CLOCK_ORDER"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Provider clock correctness and real source cohort remain EXTERNAL_NO_VERIFICADO."
+      ],
+      "fix_paths": [
+        "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/recompute.py",
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "id": "R76",
+      "native_nodes": [
+        "tests/test_issue465_historical_package.py::test_entry_one_microsecond_before_cutoff_cannot_disappear_in_sqlite_rounding",
+        "tests/test_rc6_convergence_finance.py::test_u10_events_and_marks_respect_exact_inclusive_cut_and_restart",
+        "tests/test_rc6_convergence_finance_historical_review.py::test_r76_fill_one_microsecond_before_entry_is_rejected_despite_complete_semantic_rehash"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "A fill one microsecond before entry must remain invalid even with complete public rehash; exact source entry just before cohort cut must remain included.",
+      "receipts": [
+        "historical_semantic_review_tests.xml",
+        "finance_focused_receipt.json"
+      ]
+    },
+    {
+      "aliases": [
+        "ORDER_SECTION_7_5_FINANCIAL_COST_BINDING",
+        "FULL_DATED_PAPER_COST_CONTRACT"
+      ],
+      "code_status": "IMPLEMENTED_OR_PRESERVED; INTERMEDIATE_SYNTHETIC_NATIVE_EVIDENCE; FINAL_FROZEN_RERUN_REQUIRED",
+      "external": [
+        "Account-authoritative commissions/rights/clearing/VAT/minima/tiers/margin/FX are EXTERNAL_NO_VERIFICADO. Explicit PAPER assumptions allow only their declared PAPER scope; exact FUT BINDING stays blocked."
+      ],
+      "fix_paths": [
+        "rc6_performance/costs.py",
+        "be_paper_engine.py",
+        "cf_intraday_scalping.py"
+      ],
+      "id": "Q",
+      "native_nodes": [
+        "tests/test_rc6_convergence_finance.py::test_cost_binding_closes_for_each_unknown_required_component",
+        "tests/test_rc6_convergence_finance.py::test_cost_contract_is_versioned_paper_with_separate_unknown_account_terms",
+        "tests/test_rc6_convergence_finance.py::test_cost_contract_known_time_currency_tiers_minima_and_rebate_are_independent",
+        "tests/test_rc6_convergence_finance_review.py::test_u06_fee_policy_change_before_commit_cannot_mix_fill_diagnostics_and_risk",
+        "tests/test_rc6_convergence_finance_review.py::test_u06_positive_binding_fill_costs_each_leg_once_and_retains_atomic_decision_clock",
+        "tests/test_rc6_future_paper_engine.py::test_future_binding_economics_fails_closed_because_exact_fixed_costs_are_not_proved",
+        "tests/test_rc6_convergence_core_admission.py::test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed"
+      ],
+      "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
+      "rca": "Loose rate estimates and caller-forced passed could bypass actual binding economics; missing fee components/known dates/account authority were not interchangeable.",
+      "receipts": [
+        "finance_focused_receipt.json",
+        "core_finance_review_receipt.json",
+        "lab_phase_review_receipt.json"
+      ]
+    }
+  ],
+  "schema": "rc6.finance-consolidated-requirement-evidence.v1",
+  "source_status": "MAPPING_NOT_FINAL_RELEASE_ATTESTATION"
+}
