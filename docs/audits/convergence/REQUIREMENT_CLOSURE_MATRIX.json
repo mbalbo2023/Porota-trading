@@ -2,6 +2,29 @@
   "additional_findings": [
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/convergence/evidence/native-capacity-retention.json",
+      "fix": "Apply the canonical read-only receipt/storage preflight before selection; occupancy remains telemetry outside static configuration fingerprint.",
+      "id": "NEW_EXIT_RETAINED_RECEIPT_ACTIVATION",
+      "linked_requirement_ids": [
+        "U02",
+        "U05"
+      ],
+      "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
+      "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
+      "rca": "A reviewed controller declared dynamic activation before checking20000 physically retained receipts.",
+      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
+      "test_nodes": [
+        "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+        "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration"
+      ],
+      "workstream": "BUDGET"
+    },
+    {
+      "code_paths": [
         "cu_history_store_v2_hf6.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -131,6 +154,28 @@
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal"
       ],
       "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        ".github/workflows/porota-deploy-v2-promote.yml",
+        "scripts/porota_predeploy_binding.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/convergence/evidence/source-modes-evolution.json",
+      "fix": "Compare complete Git records and disclose mode preservation separately from byte preservation.",
+      "id": "NEW_SOURCE_GIT_MODE_EVOLUTION",
+      "linked_requirement_ids": [
+        "U11",
+        "U25"
+      ],
+      "native_caller": "scripts/porota_predeploy_binding.py:parse_merge_approval; scripts/porota_predeploy_binding.py:validate_binding; scripts/porota_predeploy_binding.py:safe_extract; .github/workflows/porota-deploy-v2-promote.yml:Locate successful Predeploy V2 artifact",
+      "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
+      "rca": "An unchanged source blob with a changed Git mode escaped guarded evolution.",
+      "remaining_uncertainty": "Promotion requires external approval trailers and exact GitHub tuple/completed successful attempt; evidence-only cannot bootstrap that approval.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_provenance.py::test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution"
+      ],
+      "workstream": "SRE"
     }
   ],
   "counting_rule": "55 original requirement IDs,80 original R IDs,90 original F01/F02/F03-F05 clauses and6 restored controls; shared/parametrized native guard executions are not new independent attacks.",
@@ -787,6 +832,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -817,6 +863,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -1189,6 +1236,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -3471,6 +3519,48 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/native-capacity-retention-green.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-retention-red.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-retention.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "docs/audits/convergence/evidence/original-closure-rebinding-green.xml": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -3857,6 +3947,19 @@
         "U26"
       ]
     },
+    "docs/dashboard/RC6_COMMITTED_PROJECTION_UX.md": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/RC6_CONVERGENCE_UX470_AUD14_15_16.md": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -3987,6 +4090,110 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-1024.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-1280.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-1440.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-360.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-600.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/instrumentos-800.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/native-capacity-off.png": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/causal-risk-green.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -4000,7 +4207,33 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/funnel-pagination-native.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -4027,6 +4260,19 @@
       ]
     },
     "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-harness-small-rejection.json": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -4157,6 +4403,58 @@
       ]
     },
     "docs/dashboard/evidence/rc6-convergence-ux/producer-reader-ui.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/projection-adapter-legacy-path.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/projection-affected-guard.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/projection-native-guard.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -4507,6 +4805,7 @@
     "rc6_dynamic_universe/promotion.py": {
       "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
       "requirement_ids": [
+        "U02",
         "U05"
       ]
     },
@@ -4745,6 +5044,15 @@
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-16"
+      ]
+    },
+    "rc6_trader_dashboard/projected_generation.py": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I05"
       ]
     },
     "rc6_trader_dashboard/projection.py": {
@@ -5020,6 +5328,14 @@
         "AUD-468-21"
       ]
     },
+    "tests/ci_rc6_projection_large_reader.py": {
+      "reason": "Provide the independent read-only acceptance runner for an actually completed12000/60000 native producer cut; small fixtures are rejected and large proof remains pending until that runner executes on the frozen candidate.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03"
+      ]
+    },
     "tests/ci_trader_terminal_browser.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -5228,6 +5544,27 @@
         "AUD-468-04"
       ]
     },
+    "tests/test_rc6_budget_receipt_retention.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "tests/test_rc6_capacity_retention_activation.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U02",
+        "U05"
+      ]
+    },
     "tests/test_rc6_committed_projection.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -5371,6 +5708,15 @@
         "UX470-I02",
         "UX470-I03",
         "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "tests/test_rc6_dashboard_projection.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
         "UX470-I05"
       ]
     },
@@ -6259,6 +6605,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -6276,6 +6623,8 @@
       "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
       "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
       "test_nodes": [
+        "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+        "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes",
         "tests/test_rc6_convergence_budget_liveness.py::test_u02_genuinely_full_legacy_sqlite_recovers_on_restart_and_keeps_live_wire_debt",
         "tests/test_rc6_convergence_budget_liveness.py::test_u02_six_scopes_per_second_stay_bounded_and_exit_recovers_after_aging"
@@ -6354,6 +6703,8 @@
       "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
       "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
       "test_nodes": [
+        "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+        "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_capacity_cannot_claim_more_identities_than_complete_round_can_observe",
@@ -7074,12 +7425,14 @@
       "code_paths": [
         "rc6_shadow_runtime/projection.py",
         "rc6_trader_dashboard/generation.py",
-        "rc6_trader_dashboard/projection.py"
+        "rc6_trader_dashboard/projected_generation.py",
+        "rc6_trader_dashboard/projection.py",
+        "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I01",
-      "native_caller": "rc6_shadow_runtime.persistence.shadow_evidence_root; rc6_shadow_runtime.persistence.read_committed_generation",
+      "native_caller": "rc6_shadow_runtime.persistence.shadow_evidence_root; rc6_shadow_runtime.persistence.read_committed_generation; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
       "original_requirement": {
         "closure": "Un \u00fanico resolver/config de ra\u00edz y contrato can\u00f3nico; ejecutar writer real en copia, lectura committed y render sin override manual oculto. Ausente/corrupto debe seguir fail-closed, no buscar arbitrariamente por mtime.",
         "condition": "`Projection.shadow` usa por defecto `db + '.shadow'`; #466 escribe en `artifact_root(db)/dynamic-shadow`. El env del dashboard no aporta el override.",
@@ -7094,6 +7447,9 @@
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
+        "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
         "tests/test_ws_dash_trader_terminal_08.py::test_canonical_reader_rejection_has_no_legacy_fallback",
         "tests/test_ws_dash_trader_terminal_08.py::test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default",
         "tests/test_ws_dash_trader_terminal_08.py::test_missing_canonical_reader_preserves_awaiting_reconciliation",
@@ -7106,12 +7462,14 @@
         "rc6_shadow_runtime/projection.py",
         "rc6_trader_dashboard/components.py",
         "rc6_trader_dashboard/datasets.py",
-        "rc6_trader_dashboard/views_universe.py"
+        "rc6_trader_dashboard/projected_generation.py",
+        "rc6_trader_dashboard/views_universe.py",
+        "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I02",
-      "native_caller": "rc6_dynamic_universe.promotion.DEFAULT_POLICY; capacity_policy; engines[*].exit_capacity_contract",
+      "native_caller": "rc6_dynamic_universe.promotion.DEFAULT_POLICY; capacity_policy; engines[*].exit_capacity_contract; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
       "original_requirement": {
         "closure": "Schema versionado compartido o adapter expl\u00edcito de versi\u00f3n; mostrar capacidad factual y limitaciones correctas en OFF/SHADOW/APPROVED. No traducir recomendaci\u00f3n SHADOW a capacidad OPEN comprobada.",
         "condition": "UX espera `OFF/SHADOW`, `OPEN_EVIDENCE_VERIFIED`, `baseline`, `endpoint_budgets`; motor emite `OFF_BASELINE/SHADOW_BASELINE`, `SHADOW_RECOMMENDATION/NO_VERIFICADO`, `baseline_limits`, `slots_by_endpoint`.",
@@ -7127,7 +7485,8 @@
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
-        "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open"
+        "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population"
       ],
       "workstream": "UX"
     },
@@ -7135,15 +7494,17 @@
       "code_paths": [
         "rc6_shadow_runtime/projection.py",
         "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/projection.py",
         "rc6_trader_dashboard/view_common.py",
         "rc6_trader_dashboard/views_analytics.py",
-        "rc6_trader_dashboard/views_home.py"
+        "rc6_trader_dashboard/views_home.py",
+        "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I03",
-      "native_caller": "rc6.runtime-entry-signals.v1; rc6.runtime-shadow-lab.v2; rc6.prospective-operational-funnel.v1; RC6_SHADOW_FAMILY_RUNTIME_V2",
+      "native_caller": "rc6.runtime-entry-signals.v1; rc6.runtime-shadow-lab.v2; rc6.prospective-operational-funnel.v1; RC6_SHADOW_FAMILY_RUNTIME_V2; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
       "original_requirement": {
         "closure": "Labs, cards y funnel deben consumir el mismo cut y cohort/currency/channel con cardinalidades coherentes. Dataset no vac\u00edo no puede aparentar vac\u00edo por campo desconocido; desconocido produce error contractual. No sumar monedas/canales para rellenar un total.",
         "condition": "Labs buscan `rows/families/evaluations/registry`; motor entrega `experiments/cohorts/registries` y `entries/entry_hour_cohorts`. Counts espera `funnel.counts` en ra\u00edz; motor publica `by_currency_channel[].stages`.",
@@ -7159,7 +7520,10 @@
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_cohort_selection_is_exact_and_cards_match_widget",
+        "tests/test_rc6_dashboard_convergence.py::test_native_funnel_pagination_preserves_selection_and_full_population",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
+        "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
         "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency"
       ],
       "workstream": "UX"
@@ -7198,15 +7562,17 @@
         "DASHBOARD_TRUTH_MATRIX_RC6.json",
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/generation.py",
+        "rc6_trader_dashboard/projected_generation.py",
         "scripts/rc6_dashboard_route_inventory.py",
         "tests/ci_trader_terminal_browser.py",
         "tests/rc6_dashboard_native_fixture.py",
-        "tests/test_rc6_dashboard_convergence.py"
+        "tests/test_rc6_dashboard_convergence.py",
+        "tests/test_rc6_dashboard_projection.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I05",
-      "native_caller": "PaperBroker.on_quote; FamilyPaperExecutor; ShadowRuntime.from_environment.tick; read_committed_generation V2; SRE source/mount/image SHA-tree guard",
+      "native_caller": "PaperBroker.on_quote; FamilyPaperExecutor; ShadowRuntime.from_environment.tick; read_committed_generation V2; SRE source/mount/image SHA-tree guard; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
       "original_requirement": {
         "closure": "Guard productor\u2192consumidor y truth matrix final; hook, paquete, mounts e imagen deben corresponder al mismo SHA/tree con import closure ejecutada. No mezclar hook nuevo con paquete interno viejo, ni desplegar artifacts parciales.",
         "condition": "CI y truth matrix aislados usan un contrato sint\u00e9tico y no acreditan integraci\u00f3n. El launcher monta el hook desde stage, mientras el paquete UX depende de la imagen.",
@@ -7216,11 +7582,15 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "GREEN de #470 y su truth matrix aislada usaban un contrato sint\u00e9tico; no probaban el productor\u2192reader\u2192UI real ni igualdad del hook, paquete e imagen. Un checkpoint l\u00f3gico grande tambi\u00e9n exige lectura verificada acotada y medici\u00f3n real.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.; El artefacto nativo completo 12000/60000 y render/consulta \u22641 s, salida \u22644 MiB siguen pendientes; fixture peque\u00f1o y SQL aislado no los cierran.",
       "test_nodes": [
         "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_convergence.py::test_navigation_scope_preserves_exact_contract",
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
+        "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
+        "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
         "tests/test_ws_dash_04_full_dashboard_truth.py::test_every_registered_route_has_a_programmatic_surface_and_dataset_inventory",
         "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
         "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview",
@@ -9808,6 +10178,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -9836,6 +10207,8 @@
       "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
       "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
       "test_nodes": [
+        "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+        "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes",
         "tests/test_rc6_convergence_budget_liveness.py::test_u02_genuinely_full_legacy_sqlite_recovers_on_restart_and_keeps_live_wire_debt",
         "tests/test_rc6_convergence_budget_liveness.py::test_u02_six_scopes_per_second_stay_bounded_and_exit_recovers_after_aging"
@@ -9915,6 +10288,8 @@
       "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
       "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
       "test_nodes": [
+        "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+        "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_capacity_cannot_claim_more_identities_than_complete_round_can_observe",

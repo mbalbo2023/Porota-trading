@@ -235,7 +235,8 @@ class RuntimeCapacityController:
             resolved = resolve_capacity_policy(policy, **values, as_of=as_of)
             resolved["approval_digest"] = (values.get("approval") or {}).get("approval_digest")
             if resolved["status"] == "APPROVED_DYNAMIC" and self.database is not None:
-                from rc6_ppi_global_budget import supervisable_position_count, exit_capacity_contract
+                from rc6_ppi_global_budget import (supervisable_position_count,
+                    exit_capacity_contract, exit_retention_preflight)
                 opened = supervisable_position_count(self.database)
                 if opened is None:
                     resolved.update(status="BASELINE_FAIL_CLOSED", production_limits_modified=False,
@@ -246,6 +247,17 @@ class RuntimeCapacityController:
                     if exit_contract["status"] != "READY":
                         resolved.update(status="ACTIVATION_BLOCKED_EXIT_CAPACITY",
                             production_limits_modified=False, reason_codes=exit_contract["reason_codes"])
+                    else:
+                        # Retained receipt occupancy is an activation guard,
+                        # not a new reviewed configuration on every wire send.
+                        # Keep its telemetry outside the static exit contract
+                        # fingerprint while binding changes in status/reasons.
+                        retained = exit_retention_preflight(self.database, resolved,
+                            opened_count=opened, as_of=as_of or datetime.now(timezone.utc))
+                        resolved["exit_receipt_capacity"] = retained
+                        if retained["status"] != "READY":
+                            resolved.update(status="ACTIVATION_BLOCKED_EXIT_CAPACITY",
+                                production_limits_modified=False, reason_codes=retained["reason_codes"])
             return self._fingerprinted(resolved)
         except (OSError, ValueError, KeyError, TypeError):
             return self._fingerprinted({"status": "BASELINE_FAIL_CLOSED", "mode": "OFF", "configuration_fingerprint": None,
