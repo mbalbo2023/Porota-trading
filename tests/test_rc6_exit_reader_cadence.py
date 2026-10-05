@@ -370,3 +370,32 @@ def test_round_marker_aliases_fail_closed_without_modifying_target(tmp_path, ali
     with pytest.raises(BudgetBackpressure, match="STATE_UNAVAILABLE"):
         budget.acquire("current", consumer="SCANNER", priority="DISCOVERY")
     assert target.read_bytes() == b"UNCHANGED_OFFLINE_TARGET"
+
+
+def test_round_cannot_acknowledge_completion_when_barrier_directory_sync_fails(tmp_path, monkeypatch):
+    from pathlib import Path
+    from rc6_ppi_global_budget import GlobalPPIBudget
+    from tests.test_rc6_ppi_capacity_benchmark import Clock
+    from tests.test_rc6_ppi_global_budget import policy, use
+    clock = Clock()
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", policy(clock), clock=clock.now)
+    assert use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    original_sync = budget._sync_directory
+    syncs = []
+
+    def fail_clear_sync():
+        syncs.append(1)
+        if len(syncs) == 2:
+            raise OSError("OFFLINE_DIRECTORY_SYNC_FAILURE")
+        original_sync()
+
+    monkeypatch.setattr(budget, "_sync_directory", fail_clear_sync)
+    result = budget.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5, required_identity_digests=set())
+    assert result["status"] == "DEGRADED" and result["lower_suspended"]
+    assert len(syncs) == 3  # failed clear restores the private durable barrier
+    assert Path(str(budget.path) + ".exit-round-degraded").is_file()
+    restored = GlobalPPIBudget(budget.path, deepcopy(budget.policy), clock=clock.now)
+    assert not restored.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
+    assert restored.metrics()["global"]["used"] == 1
+    with closing(sqlite3.connect(budget.path)) as c:
+        assert c.execute("SELECT COUNT(*) FROM budget_requests WHERE used=1").fetchone()[0] == 1

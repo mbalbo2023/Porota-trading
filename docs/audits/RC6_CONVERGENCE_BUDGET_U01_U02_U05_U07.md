@@ -11,8 +11,8 @@ No production database, PPI account, real-order route or PPI Watch is used.
 |---|---|---|---|
 | U01 | Arrival-order single-flight made EXIT followers expire at 50 ms behind an inferior owner. | EXIT waits to its monotonic critical cadence, joins the existing exact-identity flight, and records per-identity service. Waiting defers lower admissions. A missed deadline becomes durable DEGRADED pressure and suspends lower until fresh EXIT evidence. A token-checked alarm records an EXIT owner's deadline while its existing HTTP body remains in flight. No duplicate HTTP or pretend preemption. | Actual `ProductionMarketReader` plus `collect_exit_books`, lower 120 ms, three windows and one wire/cycle; frozen source clock with monotonic timeout; restart, recovered fresh cache, actual two-process coalescing, and alarm during an EXIT-owned HTTP body. |
 | U02 | Clock/telemetry writes preceded pruning; 3,601 growing JSON seconds filled SQL pages and prevented housekeeping. | Every write transaction prunes before growth. Non-binding telemetry has a quota-derived byte bound and explicit retained-window completeness. Exact receipts, policy envelopes, circuits and leases are preserved. Page count reserves the DELETE-journal header/page receipts in addition to database bytes. | Six scopes/s for 120 seconds at 64 KiB and 3,100 seconds at 8 MiB; genuine legacy SQLITE_FULL at both quotas; restart, live wire debt retained, +4,000 s recovery, and measured DB plus auxiliary peak within quota. |
-| U05 | Declared demand was truncated to a smaller reserve and activation remained approved. | Integer-exact demand is checked against every endpoint and the global cap before a dynamic policy or sidecar can be created. Impossible capacity returns `ACTIVATION_BLOCKED_EXIT_CAPACITY` / `PPI_EXIT_CAPACITY_INSUFFICIENT`. No cap is increased. | Actual durable ledger with 30 exits/cap 15, 30/global 10, and 10 positions/cap 5 across three windows: blocked before wire and before sidecar creation. |
-| U07 | Both spot and futures tables were queried for OPEN; futures are ACTIVE. | A common verified PAPER snapshot counts spot OPEN and future ACTIVE. Unknown ledger is unknown, never zero. | Five real PAPER spot positions and five independently supported DLR ACTIVE lifecycles; discovery denied against the combined EXIT floor, restart retains count/debt, and insufficient capacity blocks. |
+| U05 | Declared demand was truncated to a smaller reserve. Cold BLOCKED/unknown readers then returned unleased permission; START did not revalidate the original scope. | Check exact endpoint/global demand and the 64-identity tracking limit before activation. A cold failed activation blocks every market send. A previously committed budget can retain EXIT under its exact caps/cadence/expiry/debt; LOWER never bypasses or relabels its original priority at START. | 30 exits/cap15, 30/global10, and ten positions/cap5 over three windows; real controller→SDK rejection; ledger/approval/expiry changed after acquire; exact token/used receipt preservation. |
+| U07 | Both spot and futures tables were queried for OPEN; futures are ACTIVE. | A common verified PAPER snapshot counts spot OPEN and future ACTIVE, including pending expired contracts. Unknown ledger is unknown, never zero. | Five native PAPER spot positions plus five distinct synthetic DLR ACTIVE lifecycles. Two expired contracts remain supervised. Native reader visits all ten; real financial supervisor visits/closes all five futures; restart and insufficient-capacity guards preserve the conservative floor. |
 | AUD-468-04 | Baseline demand limits cannot establish complete EXIT service; dynamic recommendations were insufficient proof. | The dynamic envelope must satisfy actual family-complete EXIT demand before lower HOT/WARM/discovery traffic. Catalog/discovery remains owned by the orchestrator; this change does not return to an old batch or claim measured OPEN capability. | U05/U07 capacity and caller tests plus preserved native approved-caller and multiprocess stress suites. Final closure also depends on the root-owned promotion/catalog integration. |
 
 ## Shared APIs
@@ -22,8 +22,23 @@ No production database, PPI account, real-order route or PPI Watch is used.
   `SUPERVISABLE_POSITION_STATES`: `paper_positions/OPEN`,
   `paper_future_positions/ACTIVE`.
 - `exit_capacity_contract(state, opened_count=...)` returns demand, endpoint/global
-  gaps, deadline and READY or ACTIVATION_BLOCKED_EXIT_CAPACITY. `budget_policy`
-  and native policy validation reject impossible declared demand.
+  gaps, identity-tracking limit/gap, deadline and READY or
+  ACTIVATION_BLOCKED_EXIT_CAPACITY. `budget_policy` and native policy validation
+  reject impossible declared demand. READY is a software feasibility condition;
+  it does not certify current provider OPEN capacity.
+- `RuntimePPIBudget.observe_exit_round(*, elapsed_seconds, deadline_seconds,
+  failures=0)` is an explicit producer write, exposed by the native reader.
+  COMPLETE requires a verified exact five-key PAPER scope, fresh service of
+  every current identity, no unresolved current critical pressure, zero read
+  failures and elapsed time within the exact policy deadline. An isolated book
+  does not release whole-round debt. Unknown/stale/incomplete/late evidence
+  returns DEGRADED and suspends LOWER in both acquire and START.
+- If SQLite cannot commit round pressure, a fixed-size private sidecar marker
+  persists LOWER suspension across independent budget instances. Aliases and
+  invalid measurements fail closed. Marker writes/deletes sync their directory;
+  failure while clearing restores the barrier. SQL/IO uncertainty returns a
+  fixed DEGRADED diagnosis without terminating the EXIT producer or editing
+  an existing wire lease, circuit, request receipt or capacity envelope.
 - `runtime_budget_snapshot(database, as_of=...)` reads the canonical existing
   sidecar with no bootstrap, mkdir, clock update, pruning, chmod or SQL writes.
   It reports ABSENT, OBSERVED, DEGRADED or UNVERIFIED; global counters,
@@ -33,7 +48,8 @@ No production database, PPI account, real-order route or PPI Watch is used.
   under normal, missing, corrupted, aliased, WAL and contested-source tests.
 
 Normal WAITING defers lower work and remains OBSERVED. It does not declare a
-missed deadline. DEGRADED requires its durable deadline marker. The current
+missed deadline. DEGRADED reflects unresolved critical/round pressure or the
+round barrier. The current
 worker also exposes `deadline_alarm_unavailable` if the alarm cannot write;
 uncertain IO never releases a wire lease or creates another sender.
 
@@ -53,7 +69,13 @@ Shared recommendation/controller fixtures were not modified.
 
 ## Verification and remaining factual limits
 
-The final local receipt is `/tmp/rc6-budget-verified.xml`, generated by:
+The versioned register [RC6_BUDGET_F01_CONVERGENCE.json](convergence/RC6_BUDGET_F01_CONVERGENCE.json)
+links U01/U02/U05/U07/U27, all **35 semantic F01 clauses**, quota extensions
+X1/X2 and R29–R36/R45/R64–R66 to exact executed test nodes and receipt hashes.
+It distinguishes SDK fake-wire, native SQL with modeled sends and actual
+process interruption; parametrizations never become independent attack counts.
+
+The final combined run used:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
@@ -61,18 +83,51 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   tests/test_rc6_ppi_global_budget.py \
   tests/test_issue465_budget_adversarial.py \
   tests/test_rc6_convergence_budget_liveness.py \
+  tests/test_rc6_exit_reader_cadence.py \
   tests/test_rc6_no_budget_permission_probe.py \
   tests/test_rc6_approved_factual_callers.py \
   tests/test_issue465_stress.py \
-  --basetemp=/tmp/rc6-budget-verified \
-  --junitxml=/tmp/rc6-budget-verified.xml
+  tests/test_rc6_source_consolidation.py \
+  tests/test_rc6_ppi_iol_reconciliation_rc6.py \
+  tests/test_rc6_final_family_source_policy.py \
+  tests/test_rc6_byma_morning_pipeline.py \
+  tests/test_rc6_cauciones_shadow_evidence.py \
+  --basetemp=/tmp/rc6-budget-source-final-20261005 \
+  --junitxml=/tmp/rc6-budget-source-final.xml
 ```
 
-Result: **211 passed, 0 failed, 0 errors, 0 skipped**, 108.904 seconds.
-JUnit SHA-256:
-`c398b98236be7ef8dabc4bbf48b530bc97aa8da0abbb2273cbcb9431bdbecf8a`.
-The final read-only helper exception boundary was then rechecked with the
-observation-specific suite; no broader behavior changed after this receipt.
+Result: **334 passed, 0 failed, 0 errors, 0 skipped**, 201.676 seconds, 195
+distinct function families. [Versioned JUnit](convergence/evidence/rc6-budget-source-final.xml)
+SHA-256 `1d373c796d933109ba3c67014230bcda0ae91b8f6eade7bd31f1b2b45f28b9a7`.
+A [post-commit fault receipt](convergence/evidence/rc6-budget-postcommit.xml)
+checks directory-sync recovery, BUSY, aliases, invalid measurements and the
+tracking boundary: **12 passed**, zero nonpasses, SHA-256
+`abf4b6b5543b9a9b297fe851ea2357d62934ad1c50fc3ce981a716f35201412c`.
+Across both receipts there are **335 distinct executed nodes / 196 function
+families**; overlapping tests are not added as new scenarios.
+
+The prior 240-node revalidation produced three REDs. One assert wrongly
+expected carry as the final futures cause; native daily-risk stale/latch has
+precedence. Two caller fixtures lacked an explicit interval-volume contract;
+the root dependency `d5b2a0a7` supplies its dated offline contract. The full
+[RED receipt](convergence/evidence/rc6-budget-revalidation-red.xml) is preserved,
+SHA-256 `c76a76239dc61c6ae8897204503e0b77ecd98d11aed136fc566e5c8911ec3740`.
+Both causes were corrected without relaxing production guards.
+
+At the 5-Oct cutoff the mixed ledger has five spots and AGO/SEP/OCT/NOV/DIC
+futures. AGO/SEP are expired pending positions; only three futures series are
+current. Thus ten positions need conservative supervision although eight are
+currently viable. August entries use an explicitly dated
+`OFFLINE_SYNTHETIC_PENDING_LEDGER_ONLY` execution-grid fixture and make no
+historical PPI/A3 claim. The dated real standard-grid evidence remains known
+only from its actual October retrieval. The native financial supervisor
+evaluates carry/expiry and preserves daily-risk priority; its PAPER closures
+do not prove availability of expired contracts' provider books.
+
+The producer monotonic clock is controlled at its public module seam for
+deterministic schedule arithmetic. Single-flight deadlines use actual
+monotonic thread/process waits. Neither fixture measures production-host IO,
+provider latency, current quota or a factual ten-position five-second SLA.
 
 The integrator must rerun these tests on the single final candidate and artifact.
 Fake-wire timing does not certify current provider latency, account quota,

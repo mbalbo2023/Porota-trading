@@ -55,3 +55,11 @@ Receipt local: `/tmp/rc6-u27-evidence.xml`, SHA-256
 Esta validación acredita semántica y guardas de código. Disponibilidad actual
 PPI/IOL/BYMA, deployment y comportamiento productivo son NO_VERIFICADO por esta
 prueba offline.
+
+La integración final vuelve a ejecutar esas cinco suites junto al presupuesto
+y callers nativos: **334/334 GREEN**, cero fallos/errores/skips. El
+[registro exacto](convergence/RC6_BUDGET_F01_CONVERGENCE.json) vincula las seis
+funciones U27 a sus nodos ejecutados, sin convertir sus parametrizaciones en
+escenarios nuevos. [JUnit versionado](convergence/evidence/rc6-budget-source-final.xml),
+SHA-256 `1d373c796d933109ba3c67014230bcda0ae91b8f6eade7bd31f1b2b45f28b9a7`.
+La severidad heredada de #469 es **P3**, sin bypass de entrada observado.
