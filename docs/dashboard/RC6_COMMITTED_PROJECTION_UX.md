@@ -79,9 +79,20 @@ excepción. El receipt `harness-source-guard-local-receipt.json` identifica las
 permanecieron idénticas. Es un control negativo del harness, no evidencia de
 capacidad del productor grande.
 
+`tests/ci_rc6_projection_large_browser.py` recibe esa misma DB y raíz congeladas;
+no crea un fixture, no supervisa posiciones ni llama a un writer. Está preparado
+para las 49 subvistas por seis anchos, 22 aliases, foco/refresh/interacciones,
+páginas y cohorte finales, y búsqueda de la última identidad. Mide cada render
+completo y rechaza un cuerpo descartado por deadline o contrato inválido.
+Su salida debe ser un directorio nuevo fuera de la fuente y la custodia.
+Las siete pruebas de preparación verifican el rechazo del corte pequeño antes
+de importar Playwright y de destinos inseguros antes de SQLite. El receipt
+`large-browser-preparation-local-receipt.json` marca explícitamente que
+Chromium todavía no fue ejecutado sobre el artefacto grande.
+
 El gate grande sigue abierto hasta ejecutar ese harness sobre el productor
 final y obtener ≤4 MiB por solicitud y ≤1 s por consulta/render. Los tiempos
-del fixture pequeño y el deadline de falla no prueban esa capacidad. El parent
-ejecutará además imports, mounts/imagen y navegador sobre un único SHA/tree y
+del fixture pequeño y el deadline de falla no prueban esa capacidad. La validación
+integrada ejecutará además imports, mounts/imagen y navegador sobre un único SHA/tree y
 artefacto congelados. Este incremento no modifica los doce tests protegidos
 de #344, el enganche o_dashboard, fuentes de PPI Watch/#107 ni runtime productivo.
