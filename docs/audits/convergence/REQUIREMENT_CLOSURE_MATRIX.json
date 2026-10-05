@@ -6215,6 +6215,16 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/NATIVE_BIG_IMPORT_PROVENANCE_FOCAL.json": {
+      "reason": "Preserve actual source-qualified157 scoped import controls:4087 has19 unique18PASS/1fixture RSS high-water FAIL; correctedfa1 has19/19PASS, actual collection/call/phase/JUnit identities and wait4 reaped actualPID/lifetimeRSS. All2161 Git bytes/modes/index/TAR unchanged and Python private barriers record zero network/rejectedSQL. Sixteen RAW are byte exact; external source TARs/index metadata, retained imports and controlled fork sources are not BIG transient-worker closure, finalC/Gov/image/runtime acceptance or38 independent cases.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/NATIVE_BIG_IMPORT_PROVENANCE_SOURCE_PLAN.json": {
       "reason": "Preserve source-only actual-child import proof plan and reviewed fix-forward lineage, honest bootstrap/tail/opaque/limit boundaries, typed partial failure JSON and all-reaped-child RSS scope; no prior BIG receipt is retroactively audited.",
       "requirement_ids": [
@@ -8271,6 +8281,166 @@
         "U24",
         "U25",
         "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-runner.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-supervisor.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-supervisor.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal.log": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/native-import-provenance-focal-receipt.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/native-import-provenance-focal.junit.xml": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/4087/source.index.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-runner.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-supervisor.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-supervisor.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal.log": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/native-import-provenance-focal-receipt.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/native-import-provenance-focal.junit.xml": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/fa1/source.index.json": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/harness/focal-runner-d086-unexecuted-draft.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-import-provenance/harness/whole-source-exporter.py.source": {
+      "reason": "Preserve16 byte-exact RAW from source4087 RED19 andfa1 GREEN19 plus unexecuted prior external runner/exporter bytes. Actual source2161/frozen157/physicalnamespace/index/TAR qualification, collection and call-phase identity, controlled fork/import-window adversaries and original canonical20 native case retain declared scopes. Management180/watchdog/wait4 peak109,158,400B is separate from product90; old fixture inherited high-water FAIL is not product/BIG RED. No count summation, finalSource/Gov/actualBIG/horizon/image/runtime claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
         "U29"
       ]
     },
