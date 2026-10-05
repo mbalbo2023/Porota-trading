@@ -29,10 +29,12 @@ from tests.rc6_browser_ipc import (
 
 
 class NativeProduct:
-    def __init__(self, root, index, *, diagnostic=False, diagnostic_deadline=None):
+    def __init__(self, root, index, *, diagnostic=False, diagnostic_deadline=None, require_complete_index=False):
         self.root, self.index, self.diagnostic = root, index, diagnostic
         self.diagnostic_deadline = diagnostic_deadline
         self.before, self.source_index = source_start(root, index)
+        require(not require_complete_index or self.source_index is not None
+                and self.source_index["pin_complete"] is True, "WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED")
         self.guards, self.resources, self.network, self.source_calls = ExitStack(), ExitStack(), [], []
         self.initialized, self.finished, self.database = False, False, None
         self.native_root, self.custody_before, self.fixture = None, None, None
@@ -102,7 +104,7 @@ class NativeProduct:
         result = {"mode": mode, "database": str(self.database), "root": str(self.native_root),
             "pointer": self.pointer, "source_cut": self.cut_at.isoformat(), "native_generation_roles": sorted(self.manifest["files"]),
             "verification_level": VERIFICATION_LEVEL, "canonical_paths": list(CANONICAL_PATHS), "legacy": LEGACY,
-            "source_pin_complete": self.source_index is not None}
+            "source_pin_complete": bool(self.source_index and self.source_index["pin_complete"])}
         if mode == "LARGE":
             with self.readonly_copy(self.database, validate=False, deadline=monotonic() + 2) as copied:
                 catalog_count = copied.execute("SELECT count(*) FROM financial_instrument_catalog").fetchone()[0]
@@ -211,7 +213,7 @@ class NativeProduct:
             "custody_inventory_before": self.custody_before, "custody_inventory_after": custody_after,
             "native_custody_unchanged": self.custody_before is not None and self.custody_before == custody_after,
             "custody_verification_scope": "SELECTED_NATIVE_SOURCE" if self.custody_before is not None else "NOT_EXERCISED",
-            "source_pin_complete": self.source_index is not None}
+            "source_pin_complete": bool(self.source_index and self.source_index["pin_complete"])}
         if self.trace is not None:
             receipt.update({"stage_aggregates": self.trace.records(), "gc_aggregates": self.trace.gc_records(),
                             "renders": self.trace.state["renders"]})
@@ -238,7 +240,7 @@ def serve(args, input_stream=None, output_stream=None):
             require(args.diagnostic_deadline is None or args.diagnostic and isfinite(args.diagnostic_deadline),
                     "DIAGNOSTIC_WINDOW_INVALID")
             product = NativeProduct(ROOT, args.index, diagnostic=args.diagnostic,
-                diagnostic_deadline=args.diagnostic_deadline)
+                diagnostic_deadline=args.diagnostic_deadline, require_complete_index=args.require_complete_index)
             response = {"protocol": PROTOCOL, "id": 0, "ok": True, "result": {"environment": environment}}
         except Exception as error:
             output_stream.write(frame({"protocol": PROTOCOL, "id": 0, "ok": False, "error": error_response(error)}))
@@ -286,6 +288,7 @@ if __name__ == "__main__":
     parser.add_argument("--expected-python", required=True)
     parser.add_argument("--expected-python-version", choices=("3.11", "3.12"))
     parser.add_argument("--index", type=Path)
+    parser.add_argument("--require-complete-index", action="store_true")
     parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--diagnostic-deadline", type=float)
     raise SystemExit(serve(parser.parse_args()))

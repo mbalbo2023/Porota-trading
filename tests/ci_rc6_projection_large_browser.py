@@ -21,13 +21,14 @@ from tests.rc6_browser_ipc import (
 
 
 def run(database, root, output, *, product_python=None, index=None, diagnostic=False, product_python_version=None,
-        client_sink=None, diagnostic_deadline=None):
+        client_sink=None, diagnostic_deadline=None, require_complete_index=False):
     output_guard(output, database, root)
     database, root = database.resolve(), root.resolve()
     require(database.is_file() and root.is_dir(), "COMPLETED_NATIVE_FIXTURE_REQUIRED")
     browser_requests, renders = [], []
     with ProductClient(product_python or sys.executable, index=index, diagnostic=diagnostic,
-                       python_version=product_python_version, diagnostic_deadline=diagnostic_deadline) as product:
+                       python_version=product_python_version, diagnostic_deadline=diagnostic_deadline,
+                       require_complete_index=require_complete_index) as product:
         if client_sink is not None:
             client_sink.append(product)
         preflight = product.request("initialize", mode="LARGE", database=str(database), root=str(root))
@@ -201,14 +202,13 @@ if __name__ == "__main__":
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if (args.output.is_symlink() or args.output.resolve().is_relative_to(args.root.resolve())
-            or args.output.resolve().is_relative_to(Path(str(args.root.resolve())+".authority"))
-            or args.output.resolve() in {Path(str(args.database.resolve())+suffix) for suffix in ("", "-wal", "-shm", "-journal")}
-            or args.output.exists()):
-        parser.error("Output must be a new directory outside the database, sidecars and SHADOW custody")
+    try:
+        output_guard(args.output, args.database, args.root)
+    except GateFailure as error:
+        parser.error(str(error))
     try:
         result = run(args.database, args.root, args.output, product_python=args.product_python,
-                     index=args.index, product_python_version=args.product_python_version)
+                     index=args.index, product_python_version=args.product_python_version, require_complete_index=True)
     except Exception as error:
         result = {"schema": "rc6.dashboard-native-large-browser-proof.v1", "status": "RED",
             "recorded_at": datetime.now(timezone.utc).isoformat(), "error_class": type(error).__name__,

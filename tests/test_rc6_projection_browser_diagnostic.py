@@ -202,14 +202,21 @@ def test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_a
               for path in extracted.rglob("*") if path.is_file()}
     source_sha = subprocess.check_output(["git", "rev-parse", BASE_SHA], cwd=REPOSITORY, text=True).strip()
     tree_sha = subprocess.check_output(["git", "rev-parse", BASE_SHA+"^{tree}"], cwd=REPOSITORY, text=True).strip()
+    modes, blobs = {}, {}
+    for entry in subprocess.check_output(["git", "ls-tree", "-rz", BASE_SHA], cwd=REPOSITORY).split(b"\0"):
+        if entry:
+            metadata, name = entry.split(b"\t", 1)
+            mode, kind, blob = metadata.decode().split()
+            assert kind == "blob"
+            modes[name.decode()], blobs[name.decode()] = mode, blob
+    raw_commit = subprocess.check_output(["git", "cat-file", "commit", BASE_SHA], cwd=REPOSITORY)
     index = tmp_path/"index.json"
-    index.write_text(json.dumps({"source_sha": source_sha, "candidate_tree_sha": tree_sha,
-        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "source_file_hashes": hashes,
-        "source_file_modes": {str(path.relative_to(extracted)): path.stat().st_mode & 0o777
-                              for path in extracted.rglob("*") if path.is_file()},
-        "extracted_root": str(extracted), "overlays": []}))
+    index.write_text(json.dumps({"schema": "rc6.complete-archive-source-pin.v1", "source_sha": source_sha,
+        "source_tree": tree_sha, "tar_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "overlay_count": 0,
+        "raw_git_commit_sha256": hashlib.sha256(raw_commit).hexdigest(), "modes": modes, "blob_ids": blobs,
+        "files": hashes}))
     output = tmp_path/"diagnostic"
-    command = [sys.executable, "-I", str(REPOSITORY/"tests/ci_rc6_projection_browser_diagnostic.py"),
+    command = [sys.executable, "-I", "-B", str(extracted/"tests/ci_rc6_projection_browser_diagnostic.py"),
                "--product-python", sys.executable, "--product-python-version", f"{sys.version_info.major}.{sys.version_info.minor}",
                "--index", str(index), "--database", str(fixture.database), "--root", str(fixture.root),
                "--output", str(output)]

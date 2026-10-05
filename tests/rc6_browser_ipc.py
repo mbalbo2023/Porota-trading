@@ -17,6 +17,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import sysconfig
 from threading import Event, Lock, Thread
 from time import monotonic, perf_counter
 from urllib.parse import unquote, urlsplit
@@ -155,7 +156,10 @@ def read_source_index(path, root):
             "archive_sha256": raw["tar_sha256"], "source_file_hashes": raw["files"],
             "source_file_modes": {key: int(value[-3:], 8) for key, value in raw["modes"].items()},
             "source_blob_ids": raw["blob_ids"], "overlays": [], "extracted_root": str(root),
-            "index_schema": raw["schema"], "raw_git_commit_sha256_declared": raw["raw_git_commit_sha256"]}
+            "index_schema": raw["schema"], "pin_complete": True,
+            "raw_git_commit_sha256_declared": raw["raw_git_commit_sha256"]}
+    raw["pin_complete"] = False
+    raw["index_schema"] = "LEGACY_PARTIAL_SOURCE_INDEX"
     return raw
 
 
@@ -181,6 +185,8 @@ def source_start(root, index_path=None):
 
 def imported_source(root, inventory):
     closure, unexpected = [], []
+    allowed = {Path(sys.prefix).resolve(), Path(sysconfig.get_path("stdlib")).resolve(),
+               Path(sysconfig.get_path("platstdlib")).resolve()}
     for name, module in sorted(sys.modules.items()):
         filename = getattr(module, "__file__", None)
         if not filename:
@@ -191,7 +197,7 @@ def imported_source(root, inventory):
             checksum = hashlib.sha256(protected_bytes(path)).hexdigest()
             closure.append({"module": name, "path": relative, "sha256": checksum,
                 "matches_archived_blob": checksum == inventory.get(relative, {}).get("sha256")})
-        elif str(path).startswith("/workspace/") and not path.is_relative_to(Path(sys.prefix).resolve()):
+        elif not any(path.is_relative_to(prefix) for prefix in allowed):
             unexpected.append(str(path))
     return closure, unexpected
 
@@ -235,7 +241,10 @@ def parse_frame(raw):
         return result
     def no_constant(_value):
         raise GateFailure("PRODUCT_IPC_NONFINITE_JSON")
-    value = json.loads(raw, object_pairs_hook=pairs, parse_constant=no_constant)
+    try:
+        value = json.loads(raw, object_pairs_hook=pairs, parse_constant=no_constant)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise GateFailure("PRODUCT_IPC_INVALID_JSON") from error
     require(type(value) is dict and value.get("protocol") == PROTOCOL
             and type(value.get("id")) is int and value["id"] >= 0, "PRODUCT_IPC_PROTOCOL_OR_ID")
     return value
@@ -250,19 +259,24 @@ def frame(value):
 class ProductClient:
     """One child, no response cache, bounded frames and joined cleanup."""
     def __init__(self, executable, *, root=ROOT, index=None, diagnostic=False, python_version=None,
-                 diagnostic_deadline=None):
+                 diagnostic_deadline=None, require_complete_index=False):
         self.executable = Path(executable).absolute()
         self.root, self.index, self.diagnostic = root.resolve(), index, diagnostic
         self.python_version = python_version
         self.diagnostic_deadline = diagnostic_deadline
+        self.require_complete_index = require_complete_index
         self.sequence, self.pending, self.last_elapsed = 0, bytearray(), None
         self.last_frame_bytes, self.process, self.finish_receipt = 0, None, None
         self.stderr_bytes, self.stderr_hash = 0, hashlib.sha256()
+        self.cleanup_forced = False
+        self.transport_failed = False
         self.lock, self.stderr_stop = Lock(), Event()
         self.driver_guards, self.driver_network, self.driver_sqlite = ExitStack(), [], []
 
     def __enter__(self):
         self.source_before, self.source_index = source_start(self.root, self.index)
+        require(not self.require_complete_index or self.source_index is not None
+                and self.source_index["pin_complete"] is True, "WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED")
         self.driver_environment = environment_receipt(self.root)
         def no_network(*_args, **_kwargs):
             self.driver_network.append("BLOCKED")
@@ -278,6 +292,8 @@ class ProductClient:
                    "--expected-python", str(self.executable)]
         if self.index:
             command.extend(("--index", str(self.index.absolute())))
+        if self.require_complete_index:
+            command.append("--require-complete-index")
         if self.diagnostic:
             command.append("--diagnostic")
             if self.diagnostic_deadline is not None:
@@ -289,6 +305,7 @@ class ProductClient:
         try:
             self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, cwd=self.root, env=environment, bufsize=0)
+            os.set_blocking(self.process.stdin.fileno(), False)
             self.stderr_thread = Thread(target=self._drain_stderr, name="rc6-browser-product-stderr")
             self.stderr_thread.start()
             ready = self._read(monotonic() + 20)
@@ -308,6 +325,8 @@ class ProductClient:
         with selectors.DefaultSelector() as selector:
             selector.register(self.process.stderr, selectors.EVENT_READ)
             while True:
+                if self.stderr_stop.is_set():
+                    return
                 if selector.select(.1):
                     raw = os.read(self.process.stderr.fileno(), 64 * 1024)
                     if not raw:
@@ -326,7 +345,9 @@ class ProductClient:
                     raw = bytes(self.pending[:newline + 1])
                     del self.pending[:newline + 1]
                     self.last_frame_bytes = len(raw)
-                    return parse_frame(raw)
+                    result = parse_frame(raw)
+                    require(monotonic() <= deadline, "PRODUCT_IPC_DEADLINE")
+                    return result
                 require(len(self.pending) < MAX_FRAME, "PRODUCT_IPC_FRAME_BUDGET_OR_FRAMING")
                 remaining = deadline - monotonic()
                 require(remaining > 0 and selector.select(remaining), "PRODUCT_IPC_DEADLINE")
@@ -350,18 +371,39 @@ class ProductClient:
     def request(self, operation, *, timeout=20, **payload):
         with self.lock:
             begin = perf_counter()
+            deadline = monotonic() + timeout
             self.sequence += 1
             request = frame({"protocol": PROTOCOL, "id": self.sequence, "op": operation, **payload})
+            received = False
             try:
-                self.process.stdin.write(request)
-                self.process.stdin.flush()
-                response = self._read(monotonic() + timeout)
+                self._write(request, deadline)
+                response = self._read(deadline)
                 require(response["id"] == self.sequence, "PRODUCT_IPC_RESPONSE_ID")
-                return self._successful(response)
+                received = True
+                result = self._successful(response)
+                require(monotonic() <= deadline, "PRODUCT_IPC_DEADLINE")
+                return result
             except (BrokenPipeError, OSError) as error:
                 raise GateFailure("PRODUCT_IPC_PROCESS_DIED") from error
             finally:
+                if not received:
+                    self.transport_failed = True
                 self.last_elapsed = perf_counter() - begin
+
+    def _write(self, raw, deadline):
+        with selectors.DefaultSelector() as selector:
+            descriptor = self.process.stdin.fileno()
+            selector.register(descriptor, selectors.EVENT_WRITE)
+            view, offset = memoryview(raw), 0
+            while offset < len(raw):
+                remaining = deadline - monotonic()
+                require(remaining > 0 and selector.select(remaining), "PRODUCT_IPC_DEADLINE")
+                try:
+                    written = os.write(descriptor, view[offset:])
+                except BlockingIOError:
+                    continue
+                require(written > 0, "PRODUCT_IPC_PROCESS_DIED")
+                offset += written
 
     def render(self, path, params):
         result = self.request("render", timeout=5, path=path, params=params)
@@ -386,11 +428,15 @@ class ProductClient:
     def close(self):
         if self.process is None:
             return
+        self.process.stdin.close()
         if self.process.poll() is None:
+            if self.transport_failed:
+                self.cleanup_forced = True
+                self.process.terminate()
             try:
-                self.process.stdin.close()
                 self.process.wait(timeout=5)
             except (OSError, subprocess.TimeoutExpired):
+                self.cleanup_forced = True
                 self.process.terminate()
                 try:
                     self.process.wait(timeout=5)
@@ -407,7 +453,7 @@ class ProductClient:
     def __exit__(self, exc_type, exc, traceback):
         finish_error = None
         try:
-            if self.process.poll() is None:
+            if self.process.poll() is None and not self.transport_failed:
                 self.finish_receipt = self.request("finish", timeout=20)
         except BaseException as error:
             finish_error = error
@@ -419,6 +465,11 @@ class ProductClient:
         if finish_error is not None and exc is None:
             raise finish_error
         if self.finish_receipt is not None:
+            require(self.process.returncode == 0 and not self.cleanup_forced,
+                "PRODUCT_CLEANUP_DID_NOT_EXIT_SUCCESSFULLY", {"returncode": self.process.returncode,
+                    "cleanup_forced": self.cleanup_forced,
+                    "primary_gate": str(exc) if isinstance(exc, GateFailure) else None,
+                    "primary_error_class": type(exc).__name__ if exc is not None else None})
             require(self.finish_receipt["source_proof_pass"], "PRODUCT_SOURCE_OR_CUSTODY_PROOF_FAILED")
             require(not self.driver_network and not self.driver_sqlite, "DRIVER_NETWORK_OR_SQLITE_ATTEMPTED")
         elif exc is None:

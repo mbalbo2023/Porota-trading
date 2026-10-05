@@ -40,6 +40,24 @@ del producto deben proceder de ese mismo source sin overlays. Ambos procesos
 comparan hashes/modos antes/después; el child verifica la custodia/DB externas
 y bloquea network/SQLite sobre la fuente. El driver bloquea toda SQLite y red
 Python; las peticiones del navegador siguen interceptadas y sin proveedores.
+El índice legacy se identifica como parcial y nunca satisface el pin FINAL;
+los CLI finales exigen el RAW completo antes de iniciar el proceso nativo.
+La comprobación de imports acepta sólo ROOT, el prefix declarado y stdlib,
+independientemente de que una fuente ajena esté en `/tmp` o `/workspace`.
+
+Las rutas de salida se validan antes del bloque que guarda un fallo: rechazar
+una ruta bajo SOURCE, existente o con un parent symlink no crea ningún JSON.
+El envío usa escritura no bloqueante con la misma deadline absoluta desde
+antes de serializar. Un stream desincronizado se descarta y se cierra; no se
+intenta recuperar una respuesta. El proof de finish permanece parcial hasta
+que el hijo termina con exit code 0 y cleanup no forzado. Exit 1 o timeout de
+cleanup produce un fallo tipado aunque el frame de finish declare proof true.
+
+Los nuevos negativos de transporte emplean un peer de protocolo con entorno
+157 real, sin fixture ni payload financiero. Los positivos de handlers usan
+el caller/publisher canónico dentro del child. Ambos alcances se registran
+por separado; ni la revisión de fuente ni esos negativos prueban latencia
+del catálogo grande.
 
 El comando LARGE preparado, después de integrar/congelar la fuente, obtener
 un nuevo BIG OPEN y liberar SLOT, es:

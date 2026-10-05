@@ -6,12 +6,13 @@ from pathlib import Path
 import subprocess
 import sys
 import tarfile
-from time import sleep
+from time import sleep, perf_counter
 
 import pytest
 
 from tests.rc6_browser_ipc import (
     GateFailure, MAX_FRAME, PROTOCOL, ProductClient, frame, parse_frame, git_tree_digest,
+    imported_source, source_inventory,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,16 +126,16 @@ def test_wrong_interpreter_flag_rejects_before_fixture_or_native_import(tmp_path
 
 
 def test_protocol_wrong_response_id_rejects_native_response_entirely(monkeypatch):
-    with ProductClient(sys.executable) as product:
-        original_read = product._read
-        def wrong_id(deadline):
-            response = original_read(deadline)
-            response["id"] += 1  # Wire fault, not a financial payload fixture.
-            return response
-        monkeypatch.setattr(product, "_read", wrong_id)
-        with pytest.raises(GateFailure, match="^PRODUCT_IPC_RESPONSE_ID$"):
+    with pytest.raises(GateFailure, match="^PRODUCT_IPC_RESPONSE_ID$"):
+        with ProductClient(sys.executable) as product:
+            original_read = product._read
+            def wrong_id(deadline):
+                response = original_read(deadline)
+                response["id"] += 1  # Wire fault, not a financial payload fixture.
+                return response
+            monkeypatch.setattr(product, "_read", wrong_id)
             product.request("health")
-        monkeypatch.setattr(product, "_read", original_read)
+    assert product.process.poll() is not None and not product.stderr_thread.is_alive()
 
 
 def test_process_death_never_returns_a_previous_body_and_joins_all_resources():
@@ -170,6 +171,8 @@ def test_ipc_delay_rejects_real_native_body_against_total_original_one_second(na
     b'{"protocol":"rc6.browser-product-ipc.v1","id":1,"value":NaN}\n',
     b'{"protocol":"wrong","id":1}\n',
     b'{}',
+    b'not JSON\n',
+    b'{"protocol":"rc6.browser-product-ipc.v1","id":1,"value":"\xff"}\n',
     b'X' * MAX_FRAME,
 ))
 def test_transport_contract_rejects_invalid_frames_without_truncation(raw):
@@ -209,6 +212,104 @@ def test_source_mode_mutation_rejects_whole_proof_even_when_bytes_are_unchanged(
         assert product.process.poll() is not None and not product.stderr_thread.is_alive()
     finally:
         target.chmod(original_mode)
+
+
+@pytest.mark.parametrize("runner", ("ci_trader_terminal_browser.py", "ci_rc6_projection_large_browser.py", "ci_rc6_projection_browser_diagnostic.py"))
+@pytest.mark.parametrize("destination", ("source", "parent_symlink", "existing"))
+def test_cli_invalid_outputs_never_write_reports_or_start_native_child(tmp_path, runner, destination):
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    alias = tmp_path / "source-alias"
+    alias.symlink_to(ROOT, target_is_directory=True)
+    target = {"source": ROOT / "native-output-must-not-exist", "parent_symlink": alias / "native-output-must-not-exist",
+              "existing": existing}[destination]
+    index = tmp_path / "index.json"
+    index.write_text(json.dumps({"extracted_root": str(ROOT), "overlays": []}))
+    command = [sys.executable, "-I", "-B", str(ROOT / "tests" / runner), "--product-python", str(tmp_path / "not-an-interpreter"),
+               "--index", str(index), "--output", str(target)]
+    if runner != "ci_trader_terminal_browser.py":
+        command += ["--database", str(tmp_path / "not-a-source.db"), "--root", str(tmp_path / "not-a-root")]
+    before = source_inventory(ROOT)
+    completed = subprocess.run(command, capture_output=True, timeout=10)
+    assert completed.returncode != 0 and completed.stdout == b""
+    assert source_inventory(ROOT) == before
+    assert not (ROOT / "native-output-must-not-exist").exists() and list(existing.iterdir()) == []
+    assert not (tmp_path / "not-a-source.db").exists() and not (tmp_path / "not-a-root").exists()
+
+
+def protocol_peer(tmp_path, monkeypatch, mode):
+    """Protocol-only fault peer. No financial payload, fixture or acceptance."""
+    script = tmp_path / "protocol-peer.py"
+    script.write_text("""
+import sys,json,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from tests.rc6_browser_ipc import PROTOCOL,frame,environment_receipt,source_inventory
+root=Path(sys.argv[1]); mode=sys.argv[2]
+environment=environment_receipt(root,product=True,executable=sys.executable)
+before=source_inventory(root)
+sys.stdout.buffer.write(frame({'protocol':PROTOCOL,'id':0,'ok':True,'result':{'environment':environment}}));sys.stdout.buffer.flush()
+if mode=='no_reader':time.sleep(30)
+else:
+ request=json.loads(sys.stdin.buffer.readline())
+ assert request['op']=='finish'
+ after=source_inventory(root)
+ proof={'source_proof_pass':before==after,'scope':'PROTOCOL_ONLY_NO_FINANCIAL_HANDLER'}
+ sys.stdout.buffer.write(frame({'protocol':PROTOCOL,'id':request['id'],'ok':True,'result':proof}));sys.stdout.buffer.flush()
+ if mode=='exit_one':sys.exit(1)
+ time.sleep(30)
+""")
+    original = subprocess.Popen
+    def peer(_command, **kwargs):
+        return original([sys.executable, "-I", "-B", str(script), str(ROOT), mode], **kwargs)
+    monkeypatch.setattr(subprocess, "Popen", peer)
+
+
+@pytest.mark.parametrize("mode", ("exit_one", "cleanup_timeout"))
+def test_finish_proof_never_becomes_green_after_exit_error_or_cleanup_timeout(tmp_path, monkeypatch, mode):
+    protocol_peer(tmp_path, monkeypatch, mode)
+    product = ProductClient(sys.executable)
+    with pytest.raises(GateFailure, match="^PRODUCT_CLEANUP_DID_NOT_EXIT_SUCCESSFULLY$"):
+        with product:
+            pass
+    assert product.finish_receipt["source_proof_pass"] is True
+    assert product.process.returncode != 0 and not product.stderr_thread.is_alive()
+    assert product.process.stdin.closed and product.process.stdout.closed and product.process.stderr.closed
+    assert product.pending == bytearray()
+
+
+def test_nonreading_peer_times_out_entire_send_under_original_absolute_deadline(tmp_path, monkeypatch):
+    protocol_peer(tmp_path, monkeypatch, "no_reader")
+    product = ProductClient(sys.executable)
+    with pytest.raises(GateFailure, match="^PRODUCT_IPC_DEADLINE$"):
+        with product:
+            begin = perf_counter()
+            try:
+                product.request("render", timeout=.1, path="/instrumentos", params={str(index): "x"*4096 for index in range(32)})
+            finally:
+                measured = perf_counter()-begin
+    assert .1 <= measured < 2 and product.transport_failed
+    assert product.process.poll() is not None and not product.stderr_thread.is_alive()
+
+
+def test_import_proof_rejects_outside_source_module_in_tmp_without_location_heuristic(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    outside = tmp_path / "rc6_foreign_product.py"
+    outside.write_text("VALUE = 'not canonical source'\n")
+    monkeypatch.setitem(sys.modules, "rc6_foreign_product", SimpleNamespace(__file__=str(outside)))
+    _, unexpected = imported_source(ROOT, source_inventory(ROOT))
+    assert str(outside) in unexpected
+
+
+def test_legacy_hash_index_is_partial_and_never_satisfies_final_pin(complete_archive, tmp_path):
+    extracted, original, tree = complete_archive
+    raw = json.loads(original.read_text())
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({"source_sha":raw["source_sha"], "candidate_tree_sha":tree,
+        "archive_sha256":raw["tar_sha256"], "source_file_hashes":raw["files"], "extracted_root":str(extracted), "overlays":[]}))
+    with pytest.raises(GateFailure, match="^WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED$"):
+        with ProductClient(sys.executable, root=extracted, index=legacy, require_complete_index=True):
+            raise AssertionError("Partial source started a final child")
 
 
 def test_native_diagnostic_finish_proves_fresh_four_role_reads_and_source_modes(tmp_path):

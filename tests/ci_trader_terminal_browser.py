@@ -16,10 +16,11 @@ sys.path.insert(0, str(ROOT))
 from tests.rc6_browser_ipc import GateFailure, ProductClient, imported_source, output_guard, require
 
 
-def run(output, *, product_python=None, index=None, product_python_version=None):
+def run(output, *, product_python=None, index=None, product_python_version=None, require_complete_index=False):
     output_guard(output)
     findings, requests, renders = [], [], []
-    with ProductClient(product_python or sys.executable, index=index, python_version=product_python_version) as product:
+    with ProductClient(product_python or sys.executable, index=index, python_version=product_python_version,
+                       require_complete_index=require_complete_index) as product:
         fixture = product.request("initialize", mode="NORMAL")
         CANONICAL_PATHS, LEGACY = fixture["canonical_paths"], fixture["legacy"]
         from playwright.sync_api import sync_playwright
@@ -194,7 +195,12 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
     try:
-        run(arguments.output, product_python=arguments.product_python, index=arguments.index, product_python_version=arguments.product_python_version)
+        output_guard(arguments.output)
+    except GateFailure as error:
+        parser.error(str(error))
+    try:
+        run(arguments.output, product_python=arguments.product_python, index=arguments.index,
+            product_python_version=arguments.product_python_version, require_complete_index=True)
     except Exception as error:
         arguments.output.mkdir(parents=True, exist_ok=True)
         (arguments.output/"browser-failure.json").write_text(json.dumps({

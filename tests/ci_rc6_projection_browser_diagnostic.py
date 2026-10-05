@@ -296,7 +296,7 @@ def run(args):
                 browser.run(database, native_root, output/"browser",
                     product_python=getattr(args, "product_python", sys.executable), index=args.index, diagnostic=True,
                     product_python_version=getattr(args, "product_python_version", None),
-                    client_sink=clients, diagnostic_deadline=end)
+                    client_sink=clients, diagnostic_deadline=end, require_complete_index=True)
             except (DiagnosticWindowEnded, ProductDiagnosticWindowEnded):
                 pass
             except BaseException as error:
