@@ -31,6 +31,30 @@ BOOK_CACHE_LIMIT = 64
 BOOK_CACHE_BYTES = 16384
 AUTHORITY_LIMIT = 64
 SUPERVISABLE_POSITION_STATES = (("paper_positions", "OPEN"), ("paper_future_positions", "ACTIVE"))
+EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSITIONS_ROUND_V1"})
+
+
+def _supervisable_identity_digests(database):
+    """Verified exact five-key ledger scope, without provider/catalog inference."""
+    try:
+        with closing(sqlite3.connect(Path(database).resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
+            c.execute("PRAGMA query_only=ON")
+            c.set_progress_handler(lambda: 1, 100000)
+            c.execute("BEGIN")
+            if c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone() != ("PRODUCTION_PAPER", 0):
+                return None
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "paper_positions" not in tables:
+                return None
+            rows = list(c.execute("SELECT symbol,asset_class,market,currency,settlement FROM paper_positions WHERE status='OPEN'"))
+            if "paper_future_positions" in tables:
+                rows.extend(c.execute("SELECT symbol,'FUTUROS',market,currency,settlement FROM paper_future_positions WHERE status='ACTIVE'"))
+            if len(rows) > BOOK_CACHE_LIMIT or any(
+                    any(not isinstance(v, str) or not v.strip() for v in row) for row in rows):
+                return None
+            return {digest(list(row)) for row in rows}
+    except (OSError, ValueError, sqlite3.Error):
+        return None
 
 
 def supervisable_position_count(database, unverified=None):
@@ -74,11 +98,14 @@ def exit_capacity_contract(state, *, opened_count=0):
     demand = {"current": 0, "intraday": 0, "book": (opened * window + cadence - 1) // cadence}
     gaps = {e: max(0, demand[e] - _int(envelope["endpoint_limits"][e], 1)) for e in ENDPOINTS}
     global_gap = max(0, sum(demand.values()) - _int(envelope["global_limit"], 1))
-    blocked = bool(global_gap or any(gaps.values()))
+    tracking_gap = max(0, opened - BOOK_CACHE_LIMIT)
+    blocked = bool(global_gap or any(gaps.values()) or tracking_gap)
     return {"schema": "RC6_EXIT_CAPACITY_CONTRACT_V1", "open_positions_count": opened,
         "exit_demand": demand, "endpoint_gaps": gaps, "global_gap": global_gap,
+        "identity_tracking_limit": BOOK_CACHE_LIMIT, "identity_tracking_gap": tracking_gap,
         "status": "ACTIVATION_BLOCKED_EXIT_CAPACITY" if blocked else "READY",
-        "reason_codes": ["PPI_EXIT_CAPACITY_INSUFFICIENT"] if blocked else [],
+        "reason_codes": (["PPI_EXIT_CAPACITY_INSUFFICIENT"] if global_gap or any(gaps.values()) else [])
+            + (["PPI_EXIT_IDENTITY_TRACKING_INSUFFICIENT"] if tracking_gap else []),
         "deadline_seconds": settings["critical_book_seconds"], "real_orders_sent": 0}
 
 
@@ -135,6 +162,8 @@ def validate_policy(policy):
                 raise ValueError("PPI_BUDGET_RESERVATION_INVALID")
     stamp(policy["expires_at"])
     _int(policy.get("open_positions_count", 0))
+    if policy.get("open_positions_count", 0) > BOOK_CACHE_LIMIT:
+        raise ValueError("PPI_EXIT_IDENTITY_TRACKING_INSUFFICIENT")
     for endpoint, value in policy.get("exit_demand", {}).items():
         if endpoint not in ENDPOINTS:
             raise ValueError("PPI_BUDGET_EXIT_DEMAND_INVALID")
@@ -253,6 +282,10 @@ class GlobalPPIBudget:
                 # Reuse the same alias-checked snapshot for quota accounting.
                 # Another process may remove an auxiliary file immediately.
                 size += metadata.st_size
+        for suffix in (".exit-round-degraded", ".exit-round.lock"):
+            metadata = self._check_one(Path(str(self.path) + suffix))
+            if metadata is not None:
+                size += metadata.st_size
         if size >= self.policy["maximum_bytes"]:
             raise ValueError("PPI_BUDGET_CAPACITY_REACHED")
 
@@ -269,7 +302,7 @@ class GlobalPPIBudget:
         page_size = c.execute("PRAGMA page_size").fetchone()[0]
         # DELETE journal needs a header and an eight-byte receipt per page.
         # Bound DB+worst-case full journal, rather than half the DB alone.
-        pages = (self.policy["maximum_bytes"] - 512) // (2 * page_size + 8)
+        pages = (self.policy["maximum_bytes"] - 608) // (2 * page_size + 8)
         c.execute(f"PRAGMA max_page_count={pages}")
 
     def _begin_write(self, c):
@@ -562,8 +595,8 @@ class GlobalPPIBudget:
                 self._total(c, endpoint, consumer, priority, requested=1)
                 reason = None
                 pressure = self._get(c, "critical_exit_pressure", {})
-                if priority != "EXIT_CRITICAL" and any(
-                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values()):
+                if priority != "EXIT_CRITICAL" and (self._round_guard_active() or any(
+                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
                     reason = "PPI_EXIT_DEADLINE_LOWER_SUSPENDED"
                 if now >= stamp(self.policy["expires_at"]).timestamp():
                     reason = "PPI_CAPACITY_EXPIRED_BACKPRESSURE"
@@ -620,6 +653,10 @@ class GlobalPPIBudget:
                     raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
                 if now >= stamp(self.policy["expires_at"]).timestamp():
                     raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                pressure = self._get(c, "critical_exit_pressure", {})
+                if row["priority"] != "EXIT_CRITICAL" and (self._round_guard_active() or any(
+                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
+                    raise BudgetBackpressure("PPI_EXIT_DEADLINE_LOWER_SUSPENDED")
                 circuits = self._get(c, "circuits", {})
                 if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", row["endpoint"])):
                     raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
@@ -734,6 +771,7 @@ class GlobalPPIBudget:
         critical = priority == "EXIT_CRITICAL"
         started = time.monotonic()
         deadline = started + (self.policy["critical_book_seconds"] if critical else .05)
+        fetch_failure = None
         try:
             # The valid authority was observed even when its ensuing read
             # meets a breaker or occupied flight. Commit the promise before
@@ -803,10 +841,14 @@ class GlobalPPIBudget:
                 monitor.start()
             try:
                 result = fetch()
-            except BaseException:
+            except BaseException as error:
                 # A hard process kill leaves a bounded durable flight; restart
                 # cannot manufacture concurrency or silently use an old book.
                 self._complete_book(key, token, authority, age, None)
+                # requests transport failures inherit OSError. Preserve the
+                # fetch's original type only after cleanup is verified, so
+                # native transient retry is not mistaken for SQLite failure.
+                fetch_failure = error
                 raise
             finally:
                 if monitor is not None:
@@ -824,12 +866,15 @@ class GlobalPPIBudget:
                         self._exit_served(c, key, now, elapsed)
             return result
         except (OSError, ValueError, sqlite3.Error) as error:
+            if error is fetch_failure:
+                raise
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
     def _exit_waiting(self, c, key, now, owner):
         pressure = self._get(c, "critical_exit_pressure", {})
         old = pressure.get(key, {})
-        if key not in pressure and len(pressure) >= BOOK_CACHE_LIMIT:
+        if key != EXIT_ROUND_PRESSURE_KEY and key not in pressure and len(
+                set(pressure) - {EXIT_ROUND_PRESSURE_KEY}) >= BOOK_CACHE_LIMIT:
             # Never erase an unresolved identity to admit new lower activity.
             raise BudgetBackpressure("PPI_BOOK_EXIT_PRESSURE_CAPACITY")
         pressure[key] = old | {"status": old.get("status", "WAITING"),
@@ -862,6 +907,120 @@ class GlobalPPIBudget:
         pressure = self._get(c, "critical_exit_pressure", {})
         pressure[key].update(status="DEGRADED", reason=reason, elapsed_seconds=elapsed, degraded_at=now)
         self._put(c, "critical_exit_pressure", pressure)
+
+    def _round_guard_active(self):
+        return self._check_one(Path(str(self.path) + ".exit-round-degraded")) is not None
+
+    def _sync_directory(self):
+        directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+
+    def _round_guard(self, active):
+        # SQLite BUSY must not turn an unrecorded failed round into permission
+        # for another process. This fixed-size private marker is only a lower
+        # suspension barrier; it grants no send authority and holds no lease.
+        marker = Path(str(self.path) + ".exit-round-degraded")
+        self._check_one(marker)
+        if active:
+            fd = os.open(marker, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            try:
+                if os.fstat(fd).st_nlink != 1:
+                    raise ValueError("PPI_BUDGET_PATH_ALIAS")
+                os.write(fd, b"PPI_EXIT_ROUND_UNVERIFIED\n")
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        else:
+            marker.unlink(missing_ok=True)
+        self._sync_directory()
+
+    def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0,
+                           required_identity_digests=None):
+        """Publish round debt; only a verified complete fresh round releases it.
+
+        This producer API never edits requests, leases, circuits or capacity.
+        Unavailable state returns a fixed DEGRADED diagnosis so EXIT keeps
+        running, while a durable sidecar marker also blocks LOWER after BUSY.
+        """
+        unavailable = {"status": "DEGRADED", "lower_suspended": True,
+            "reason": "PPI_EXIT_ROUND_STATE_UNAVAILABLE"}
+        lock_fd = None
+        lock_held = False
+        try:
+            self._check_path()
+            lock_path = Path(str(self.path) + ".exit-round.lock")
+            self._check_one(lock_path)
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            if os.fstat(lock_fd).st_nlink != 1:
+                raise ValueError("PPI_BUDGET_PATH_ALIAS")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_held = True
+            self._round_guard(True)
+            for value in (elapsed_seconds, deadline_seconds):
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not Decimal(str(value)).is_finite() or value < 0):
+                    return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
+            if deadline_seconds != self.policy["critical_book_seconds"] or deadline_seconds <= 0:
+                return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
+            if isinstance(failures, bool) or not isinstance(failures, int) or failures < 0:
+                return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
+            if required_identity_digests is not None and (not isinstance(required_identity_digests, set)
+                    or len(required_identity_digests) > BOOK_CACHE_LIMIT
+                    or any(not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key)
+                        for key in required_identity_digests)):
+                return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
+            with closing(self._connect()) as c, c:
+                self._begin_write(c)
+                now = self._clock(c)
+                service = self._get(c, "critical_exit_service", {})
+                covered = {key for key, record in service.items() if record.get("status") == "SERVED"
+                    and 0 <= now - record.get("last_served_at", 0) <= deadline_seconds}
+                pressure = self._get(c, "critical_exit_pressure", {})
+                ongoing = required_identity_digests is not None and any(
+                    key in required_identity_digests and (value.get("status") == "DEGRADED" or value.get("until", 0) > now)
+                    for key, value in pressure.items())
+                reason = ("PPI_EXIT_ROUND_DEADLINE_EXCEEDED" if elapsed_seconds > deadline_seconds else
+                    "PPI_EXIT_ROUND_READ_FAILURES" if failures else
+                    "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED" if required_identity_digests is None
+                        or not required_identity_digests <= covered else
+                    "PPI_EXIT_ROUND_CRITICAL_IN_PROGRESS" if ongoing else None)
+                if reason:
+                    self._mark_exit_degraded(c, EXIT_ROUND_PRESSURE_KEY, now, reason, elapsed_seconds)
+                else:
+                    # Retire ghosts only with the entire verified current
+                    # scope covered. Never release HTTP ownership or receipts.
+                    pressure = {key: value for key, value in pressure.items()
+                        if key != EXIT_ROUND_PRESSURE_KEY and key in required_identity_digests}
+                    self._put(c, "critical_exit_pressure", pressure)
+                round_state = {"status": "DEGRADED" if reason else "COMPLETE", "recorded_at": now,
+                    "elapsed_seconds": elapsed_seconds, "deadline_seconds": deadline_seconds,
+                    "failures": failures, "required_identities_count": len(required_identity_digests)
+                        if required_identity_digests is not None else None,
+                    "covered_identities_count": len(covered & required_identity_digests)
+                        if required_identity_digests is not None else 0,
+                    "reason": reason}
+                self._put(c, "critical_exit_round", round_state)
+            if not reason:
+                self._round_guard(False)
+            suspended = bool(reason) or any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
+                for p in pressure.values())
+            return round_state | {"lower_suspended": suspended}
+        except (BudgetBackpressure, OSError, ValueError, TypeError, InvalidOperation, sqlite3.Error):
+            if lock_held:
+                # In particular, failed directory sync after clearing must
+                # not leave an acknowledged DEGRADED round without a barrier.
+                try:
+                    self._round_guard(True)
+                except (OSError, ValueError):
+                    pass
+            return unavailable
+        finally:
+            if lock_fd is not None:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
 
     def _monitor_exit_deadline(self, key, token, started, deadline):
         """Alarm during an existing HTTP body, without manipulating its owner."""
@@ -986,9 +1145,11 @@ class GlobalPPIBudget:
                 "circuits": self._get(c, "circuits", {}), "last_backpressure": self._get(c, "last_backpressure"),
                 "exit_service": {"deadline_seconds": self.policy["critical_book_seconds"],
                     "deadline_alarm_unavailable": self.deadline_alarm_unavailable,
+                    "round": self._get(c, "critical_exit_round"),
+                    "round_guard_active": self._round_guard_active(),
                     "by_identity_digest": self._get(c, "critical_exit_service", {}),
                     "pressure_by_identity_digest": self._get(c, "critical_exit_pressure", {}),
-                    "lower_suspended": any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
+                    "lower_suspended": self._round_guard_active() or any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
                         for p in self._get(c, "critical_exit_pressure", {}).values())},
                 "telemetry_retention": self._telemetry_retention(c, now, seconds),
                 "max_parallel_requests": 1, "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
@@ -1050,6 +1211,8 @@ class RuntimePPIBudget:
         self.budget = None
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.activation_contract = None
+        self._admission_scopes = {}
+        self._scope_lock = threading.Lock()
 
     def _opened(self, unverified):
         return supervisable_position_count(self.database, unverified)
@@ -1067,8 +1230,36 @@ class RuntimePPIBudget:
         except (ValueError, sqlite3.Error) as error:
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
-    def _current(self):
+    def _blocked_activation(self, state, reason, priority):
+        """An unsuccessful activation cannot turn into unleased lower sends.
+
+        A previously committed budget may still service EXIT under its exact
+        caps, cadence, expiry, receipts and circuits. A cold reader has no
+        verified floor to reuse and must remain blocked off wire.
+        """
+        self.activation_contract = deepcopy(state.get("exit_capacity") or {
+            "schema": "RC6_EXIT_CAPACITY_CONTRACT_V1",
+            "status": "ACTIVATION_BLOCKED_EXIT_CAPACITY",
+            "open_positions_count": None, "exit_demand": None,
+            "reason_codes": [reason], "deadline_seconds": None,
+            "real_orders_sent": 0,
+        })
+        if priority != "EXIT_CRITICAL":
+            raise BudgetBackpressure(reason)
+        if self.budget is None:
+            saved = self._previous()
+            if saved is None:
+                raise BudgetBackpressure(reason)
+            self.budget = GlobalPPIBudget(self.path, saved, clock=self.clock,
+                protected=[self.database, *self.controller.input_paths])
+        return self.budget
+
+    def _current(self, *, priority="DISCOVERY"):
         state = self.controller.state(self.clock())
+        if state["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY":
+            return self._blocked_activation(state, "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
+        if "CAPACITY_OPENED_LEDGER_UNVERIFIED" in state.get("reason_codes", ()):
+            return self._blocked_activation(state, "CAPACITY_OPENED_LEDGER_UNVERIFIED", priority)
         if state["status"] != "APPROVED_DYNAMIC":
             if self.budget is None:
                 saved = self._previous()
@@ -1081,6 +1272,12 @@ class RuntimePPIBudget:
             self.budget.policy = validate_policy(baseline_budget_policy(previous,
                 opened_count=opened, as_of=self.clock(), environ=self.controller.environ))
             return self.budget
+        # Recheck the ledger at the send seam too. Controllers without a
+        # database are useful pure policy readers, but grant no wire authority
+        # to a runtime whose durable PAPER position count is unknown.
+        durable_opened = self._opened(None)
+        if durable_opened is None:
+            return self._blocked_activation(state, "CAPACITY_OPENED_LEDGER_UNVERIFIED", priority)
         opened = 0
         planned = {}
         try:
@@ -1104,10 +1301,11 @@ class RuntimePPIBudget:
             pass
         # Reserve positions from the existing durable ledger too; unavailable
         # shadow state cannot allow discovery to steal opened books.
-        opened = max(opened, self._opened(max(state["global_budget"]["endpoint_limits"].values())))
+        opened = max(opened, durable_opened)
         self.activation_contract = exit_capacity_contract(state, opened_count=opened)
         if self.activation_contract["status"] != "READY":
-            raise BudgetBackpressure("PPI_EXIT_CAPACITY_INSUFFICIENT")
+            return self._blocked_activation(state | {"exit_capacity": self.activation_contract},
+                "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
         policy = budget_policy(state, opened_count=opened, planned_reservations=planned)
         if self.budget is None:
             protected = [self.database, *self.controller.input_paths]
@@ -1117,11 +1315,25 @@ class RuntimePPIBudget:
         return self.budget
 
     def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
-        budget = self._current()
-        return budget.acquire(endpoint, consumer=consumer, priority=priority) if budget else {"allowed": True, "lease": None}
+        budget = self._current(priority=priority)
+        if budget is None:
+            return {"allowed": True, "lease": None}
+        admitted_policy = deepcopy(budget.policy)
+        result = budget.acquire(endpoint, consumer=consumer, priority=priority)
+        if result["allowed"]:
+            with self._scope_lock:
+                self._admission_scopes[result["lease"]] = {
+                    "priority": priority, "expires_at": admitted_policy["expires_at"],
+                    "approved_dynamic": not admitted_policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"),
+                }
+                # Only one durable lease can be live. Older abandoned scopes
+                # cannot regain authority through a subsequent token.
+                while len(self._admission_scopes) > BOOK_CACHE_LIMIT:
+                    del self._admission_scopes[next(iter(self._admission_scopes))]
+        return result
 
     def coalesced_book(self, identity, fetch, *, consumer, priority):
-        budget = self._current()
+        budget = self._current(priority=priority)
         # Invalid/missing/expired approval uses the original factual read path.
         # It never continues a dynamic cache or changes baseline cadence.
         if budget is None or budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
@@ -1130,7 +1342,30 @@ class RuntimePPIBudget:
 
     def start(self, lease):
         if lease:
-            self.budget.start(lease)
+            with self._scope_lock:
+                scope = self._admission_scopes.get(lease)
+            if scope is None:
+                raise BudgetBackpressure("PPI_BUDGET_LEASE_SCOPE_UNVERIFIED")
+            if stamp(self.clock()) >= stamp(scope["expires_at"]):
+                raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+            priority = scope["priority"]
+            state = self.controller.state(self.clock())
+            if scope["approved_dynamic"] and state["status"] != "APPROVED_DYNAMIC":
+                if state["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY":
+                    budget = self._blocked_activation(state, "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
+                elif "CAPACITY_OPENED_LEDGER_UNVERIFIED" in state.get("reason_codes", ()):
+                    budget = self._blocked_activation(state, "CAPACITY_OPENED_LEDGER_UNVERIFIED", priority)
+                elif priority == "EXIT_CRITICAL":
+                    # EXIT retains the original live authority. It cannot
+                    # renew an expired approval or raise its committed caps.
+                    budget = self.budget
+                else:
+                    raise BudgetBackpressure("PPI_CAPACITY_REVALIDATION_BACKPRESSURE")
+            else:
+                budget = self._current(priority=priority)
+            if budget is None:
+                raise BudgetBackpressure("PPI_CAPACITY_REVALIDATION_BACKPRESSURE")
+            budget.start(lease)
 
     def wire_scope(self, lease):
         return self.budget.wire_scope(lease) if lease and self.budget else nullcontext()
@@ -1138,10 +1373,30 @@ class RuntimePPIBudget:
     def finish(self, lease, **outcome):
         if lease:
             self.budget.finish(lease, **outcome)
+            with self._scope_lock:
+                self._admission_scopes.pop(lease, None)
 
     def report_error(self, endpoint, code):
         if self.budget:
             self.budget.report_error(endpoint, code)
+
+    def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0):
+        """Explicit producer write, distinct from runtime_budget_snapshot."""
+        try:
+            budget = self._current(priority="EXIT_CRITICAL")
+            if budget is None:
+                return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
+            identities = _supervisable_identity_digests(self.database)
+            state = self.controller.state(self.clock())
+            if (state.get("status") != "APPROVED_DYNAMIC"
+                    or (self.activation_contract or {}).get("status") != "READY"):
+                identities = None
+            return budget.observe_exit_round(elapsed_seconds=elapsed_seconds,
+                deadline_seconds=deadline_seconds, failures=failures,
+                required_identity_digests=identities)
+        except (BudgetBackpressure, OSError, ValueError, TypeError, sqlite3.Error):
+            return {"status": "DEGRADED", "lower_suspended": True,
+                "reason": "PPI_EXIT_ROUND_STATE_UNAVAILABLE"}
 
 
 def budget_from_environment(database=None, *, clock=None):
@@ -1187,7 +1442,8 @@ def runtime_budget_snapshot(database, *, as_of=None):
             return result
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
             raise ValueError("PPI_BUDGET_PATH_ALIAS")
-        for suffix in ("-journal", "-wal", "-shm"):
+        round_guard_active = False
+        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock"):
             auxiliary = Path(str(path) + suffix)
             try:
                 aux_metadata = auxiliary.lstat()
@@ -1197,6 +1453,8 @@ def runtime_budget_snapshot(database, *, as_of=None):
                 raise ValueError("PPI_BUDGET_PATH_ALIAS")
             if suffix in {"-wal", "-shm"}:
                 raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+            if suffix == ".exit-round-degraded":
+                round_guard_active = True
         # Refuse a WAL main before SQLite can create a missing SHM companion.
         with path.open("rb") as stream:
             header = stream.read(32)
@@ -1232,8 +1490,9 @@ def runtime_budget_snapshot(database, *, as_of=None):
             policy = read("last_policy", {})
             pressure = read("critical_exit_pressure", {})
             service = read("critical_exit_service", {})
+            round_record = read("critical_exit_round")
             if (not isinstance(policy, dict) or not isinstance(pressure, dict) or not isinstance(service, dict)
-                    or len(pressure) > BOOK_CACHE_LIMIT or len(service) > BOOK_CACHE_LIMIT):
+                    or len(set(pressure) - {EXIT_ROUND_PRESSURE_KEY}) > BOOK_CACHE_LIMIT or len(service) > BOOK_CACHE_LIMIT):
                 raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
             # Emit a fixed whitelist, never arbitrary fields from durable JSON.
             def project(records, fields):
@@ -1265,8 +1524,29 @@ def runtime_budget_snapshot(database, *, as_of=None):
             pressure = project(pressure, ("status", "first_wait_at", "until", "owner_priority",
                 "deadline_seconds", "reason", "elapsed_seconds", "degraded_at"))
             service = project(service, ("status", "last_served_at", "elapsed_seconds", "deadline_seconds"))
-            suspended = any(p.get("status") == "DEGRADED" or p.get("until", 0) > at.timestamp() for p in pressure.values())
-            degraded = any(p.get("status") == "DEGRADED" for p in pressure.values())
+            round_summary = None
+            if round_record is not None:
+                if not isinstance(round_record, dict) or round_record.get("status") not in {"COMPLETE", "DEGRADED"}:
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                round_summary = {"status": round_record["status"]}
+                for field in ("recorded_at", "elapsed_seconds", "deadline_seconds", "failures",
+                              "required_identities_count", "covered_identities_count"):
+                    value = round_record.get(field)
+                    if field == "required_identities_count" and value is None:
+                        round_summary[field] = None
+                        continue
+                    if (isinstance(value, bool) or not isinstance(value, (int, float))
+                            or not Decimal(str(value)).is_finite() or value < 0):
+                        raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                    if field == "recorded_at" and value > at.timestamp():
+                        raise ValueError("PPI_BUDGET_CLOCK_AHEAD_OF_INSPECTION")
+                    round_summary[field] = value
+                reason = round_record.get("reason")
+                if reason is not None and (not isinstance(reason, str) or not re.fullmatch(r"PPI_[A-Z0-9_]{1,95}", reason)):
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                round_summary["reason"] = reason
+            suspended = round_guard_active or any(p.get("status") == "DEGRADED" or p.get("until", 0) > at.timestamp() for p in pressure.values())
+            degraded = round_guard_active or any(p.get("status") == "DEGRADED" for p in pressure.values())
             totals = dict.fromkeys(("requested", "allowed", "used", "dropped"), 0)
             for row in c.execute("SELECT requested,allowed,used,dropped FROM budget_totals"):
                 for key in totals:
@@ -1288,6 +1568,7 @@ def runtime_budget_snapshot(database, *, as_of=None):
                 "age_seconds": at.timestamp() - last_clock if last_clock is not None else None,
                 "global": totals,
                 "exit_service": {"deadline_seconds": policy.get("critical_book_seconds"),
+                    "round": round_summary, "round_guard_active": round_guard_active,
                     "lower_suspended": suspended, "by_identity_digest": service,
                     "pressure_by_identity_digest": pressure},
                 "telemetry_retention": {"status": "BOUNDED_PARTIAL" if partial else "COMPLETE_RETAINED_WINDOW",

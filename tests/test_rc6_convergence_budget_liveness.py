@@ -2,7 +2,8 @@
 from contextlib import closing
 from copy import deepcopy
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
+from decimal import Decimal
 import json
 import hashlib
 import multiprocessing
@@ -25,10 +26,14 @@ from rc6_ppi_global_budget import (
     budget_policy, exit_capacity_contract, supervisable_position_count, validate_policy,
     runtime_budget_snapshot,
 )
+from rc6_dynamic_universe.common import digest
+from rc6_dynamic_universe.promotion import APPROVAL_SCHEMA, DEFAULT_POLICY, build_recommendation
+from tests.test_rc6_capacity_promotion import approved, controller
 from tests.test_issue465_budget_adversarial import native_opened_store, scoped_book
 from tests.test_issue465_budget_adversarial import _single_flight_worker
+from tests.test_issue465_budget_adversarial import exit_floor
 from tests.test_rc6_future_paper_lifecycle import dlr
-from tests.test_rc6_ppi_capacity_benchmark import Clock, wire
+from tests.test_rc6_ppi_capacity_benchmark import Clock, wire, measure
 from tests.test_rc6_ppi_global_budget import policy, use
 
 
@@ -307,15 +312,11 @@ def test_u02_genuinely_full_legacy_sqlite_recovers_on_restart_and_keeps_live_wir
 
 
 def test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart(tmp_path, monkeypatch):
-    # Five independently supported 2026 monthly series are unexpired here.
-    clock = Clock("2026-07-01T14:00:00+00:00")
+    # Two expired futures remain pending in this explicit offline ledger.
+    # Their historical execution rule is synthetic, never provider evidence.
+    clock = Clock("2026-10-05T14:00:00+00:00")
     store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=5)
-    executor = FamilyPaperExecutor(store)
-    for index, month in enumerate(("AGO", "SEP", "OCT", "NOV", "DIC")):
-        symbol = f"DLR/{month}26"
-        contract = replace(dlr(), symbol=symbol, expires_at=standard_dlr_terms(symbol)["expires_at"])
-        executor.open_future(contract, lifecycle_id=f"FUT-{index}", event_id=f"OPEN-FUT-{index}",
-            entry_price="1500", quantity="1", entry_cost="100", occurred_at=clock.now().isoformat())
+    seed_offline_pending_futures(store, monkeypatch)
     assert supervisable_position_count(store.path) == 10
     value = policy(clock, limits=dict(current=5, book=60, intraday=5), global_limit=60)
     ctl = ExactController(state_from_policy(value))
@@ -340,12 +341,60 @@ def test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_aft
     with store.connect() as c:
         assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'").fetchone()[0] == 5
+        assert c.execute("SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE' AND julianday(expires_at)<julianday(?)",
+            (clock.now().isoformat(),)).fetchone()[0] == 2
+
+
+def seed_offline_pending_futures(store, monkeypatch):
+    """Native lifecycle fixture, without inventing historical A3/PPI evidence.
+
+    A dated synthetic execution-grid rule permits simulated August entries.
+    The source remains explicitly synthetic at the October supervision cutoff.
+    Five exact series, including two overdue ACTIVE positions, never duplicate
+    an identity or authorize a new provider entry.
+    """
+    import rc6_ppi_future_contract_policy as contract_policy
+    original = contract_policy.standard_dlr_terms
+    source = "OFFLINE_SYNTHETIC_PENDING_LEDGER_ONLY"
+    known_at = "2026-08-24T13:00:00+00:00"
+
+    def offline_terms(symbol):
+        terms = original(symbol)
+        return terms | {"price_tick_source": source, "price_tick_known_at": known_at} if terms else None
+
+    monkeypatch.setattr(contract_policy, "standard_dlr_terms", offline_terms)
+    executor = FamilyPaperExecutor(store)
+    for index, month in enumerate(("AGO", "SEP", "OCT", "NOV", "DIC")):
+        symbol = f"DLR/{month}26"
+        terms = offline_terms(symbol)
+        contract = replace(dlr(), symbol=symbol, metadata_source=source, expires_at=terms["expires_at"],
+            price_tick=Decimal(terms["price_tick"]), price_tick_source=source, price_tick_known_at=known_at)
+        executor.open_future(contract, lifecycle_id=f"FUT-{index}", event_id=f"OPEN-FUT-{index}",
+            entry_price="1500", quantity="1", entry_cost="100", occurred_at="2026-08-24T14:00:00+00:00",
+            detail={"provider_entry_history_status": "NO_VERIFICADO", "real_orders_sent": 0,
+                "historical_grid_effectivity": "OFFLINE_SYNTHETIC", "entry_authority": False})
 
 
 def test_u07_unknown_ledger_is_not_misreported_as_zero(tmp_path):
     assert supervisable_position_count(tmp_path / "missing.sqlite") is None
     assert supervisable_position_count(tmp_path / "missing.sqlite", 99) == 99
     assert not (tmp_path / "missing.sqlite").exists()
+
+
+def test_u05_capacity_cannot_claim_more_identities_than_complete_round_can_observe():
+    clock = Clock()
+    value = policy(clock, limits=dict(current=1000, book=1000, intraday=1000), global_limit=1000)
+    state = state_from_policy(value)
+    assert exit_capacity_contract(state, opened_count=64)["status"] == "READY"
+    blocked = exit_capacity_contract(state, opened_count=65)
+    assert blocked["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+    assert blocked["identity_tracking_limit"] == 64 and blocked["identity_tracking_gap"] == 1
+    assert not blocked["global_gap"] and not any(blocked["endpoint_gaps"].values())
+    with pytest.raises(ValueError, match="PPI_EXIT_CAPACITY_INSUFFICIENT"):
+        budget_policy(state, opened_count=65)
+    malformed = value | {"open_positions_count": 65}
+    with pytest.raises(ValueError, match="PPI_EXIT_IDENTITY_TRACKING_INSUFFICIENT"):
+        validate_policy(malformed)
 
 
 def inventory(root):
@@ -515,3 +564,362 @@ def test_u01_exit_owner_alarms_during_its_existing_http_body_without_cancelling_
         release.set()
         thread.join(3)
         reader.close()
+
+
+def measured_small_approval(fake_wire):
+    """Use measured native SDK calls; never forge a smaller approval envelope."""
+    report = measure(fake_wire, cadence_seconds=30)
+    at = fake_wire[0].now()
+    configuration = deepcopy(DEFAULT_POLICY)
+    configuration["safety_factor"] = .25
+    recommendation = build_recommendation(report, policy=configuration, as_of=at)
+    assert recommendation["status"] == "SHADOW_RECOMMENDATION"
+    assert recommendation["global_budget"]["endpoint_limits"]["book"] == 5
+    approval = {"schema": APPROVAL_SCHEMA, "approved": True, "reviewer": "explicit-offline-review",
+        "reviewed_at": at.isoformat(), "recommendation_digest": recommendation["recommendation_digest"],
+        "runtime_policy_fingerprint": recommendation["runtime_policy_fingerprint"]}
+    approval["approval_digest"] = digest(approval)
+    configuration.update(mode="APPROVED", approved_recommendation_digest=recommendation["recommendation_digest"])
+    return configuration, recommendation, report, approval, at
+
+
+@pytest.mark.parametrize("case", ["five_spots_cap15", "five_spots_cap5", "five_spots_five_active_cap5", "missing_ledger"])
+def test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send(wire, tmp_path, monkeypatch, case):
+    clock, calls, _ = wire
+    clock.at = Clock("2026-10-05T14:00:00+00:00").at
+    values = approved(wire) if case == "five_spots_cap15" else measured_small_approval(wire)
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=5)
+    if case == "five_spots_five_active_cap5":
+        seed_offline_pending_futures(store, monkeypatch)
+    elif case == "missing_ledger":
+        with store.connect() as c:
+            c.execute("ALTER TABLE paper_positions RENAME TO missing_opened_ledger")
+    ctl = controller(values, database=store.path)
+    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="SCANNER")
+    reason = "CAPACITY_OPENED_LEDGER_UNVERIFIED" if case == "missing_ledger" else "PPI_EXIT_CAPACITY_INSUFFICIENT"
+    try:
+        reader.login_once()
+        before = len(calls)
+        for priority in ("DISCOVERY", "OPENED_CRITICAL", "EXIT_CRITICAL"):
+            for endpoint in ("current", "book", "intraday"):
+                with reader.read_scope(priority=priority, identity=IDENTITY):
+                    with pytest.raises(BudgetBackpressure, match=reason):
+                        getattr(reader, endpoint)(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        assert len(calls) == before
+        assert runtime.budget is None and not runtime.path.exists()
+        assert runtime.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+        expected_count = None if case == "missing_ledger" else 10 if "five_active" in case else 5
+        assert runtime.activation_contract["open_positions_count"] == expected_count
+        if expected_count is not None:
+            assert runtime.activation_contract["exit_demand"]["book"] == expected_count * 6
+        with store.connect() as c:
+            assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("failure", ["insufficient", "missing_ledger"])
+def test_u05_blocked_reactivation_reuses_only_existing_exit_caps_cadence_and_debt(wire, tmp_path, monkeypatch, restart, failure):
+    clock, calls, _ = wire
+    values = measured_small_approval(wire)
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=0)
+    ctl = controller(values, database=store.path)
+    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="SCANNER")
+    try:
+        reader.login_once()
+        reader.current(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        original_policy = deepcopy(runtime.budget.policy)
+        assert runtime.budget.metrics()["global"]["used"] == 1
+    finally:
+        reader.close()
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=5)
+    reason = "PPI_EXIT_CAPACITY_INSUFFICIENT"
+    if failure == "missing_ledger":
+        with store.connect() as c:
+            c.execute("ALTER TABLE paper_positions RENAME TO missing_opened_ledger")
+        reason = "CAPACITY_OPENED_LEDGER_UNVERIFIED"
+    if restart:
+        runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    try:
+        reader.login_once()
+        before = len(calls)
+        with pytest.raises(BudgetBackpressure, match=reason):
+            scoped_book(reader, IDENTITY, "OPENED_CRITICAL")
+        assert len(calls) == before
+        assert scoped_book(reader, IDENTITY, "EXIT_CRITICAL")["bids"]
+        assert len(calls) == before + 1
+        assert runtime.budget.policy == original_policy
+        assert runtime.budget.metrics()["global"]["used"] == 2
+        assert runtime.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+        if failure == "missing_ledger":
+            assert runtime.activation_contract["exit_demand"] is None
+        else:
+            assert runtime.activation_contract["exit_demand"]["book"] == 30
+        # Existing receipts still enforce the reviewed cap5. No promised
+        # reserve is truncated, and no impossible activation becomes READY.
+        for _ in range(4):
+            assert use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+        denied = runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+        assert not denied["allowed"] and denied["reason"] == "PPI_BUDGET_EXHAUSTED"
+        assert runtime.budget.policy["endpoint_limits"]["book"] == 5
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("mode", ["OFF", "SHADOW"])
+def test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar(wire, tmp_path, mode):
+    values = approved(wire)
+    values[0]["mode"] = mode
+    clock, calls, _ = wire
+    database = tmp_path / "absent-paper.sqlite"
+    runtime = RuntimePPIBudget(database, controller(values, database=database), clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    try:
+        reader.login_once()
+        before = len(calls)
+        for _ in range(2):
+            assert scoped_book(reader, IDENTITY, "EXIT_CRITICAL")["bids"]
+        assert len(calls) == before + 2
+        assert runtime.budget is None and runtime.activation_contract is None
+        assert not runtime.path.exists() and not database.exists()
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("failure", ["new_positions", "missing_ledger", "approval_revoked"])
+def test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt(wire, tmp_path, monkeypatch, failure):
+    clock, calls, _ = wire
+    values = approved(wire)
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=0)
+    ctl = controller(values, database=store.path)
+    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="SCANNER")
+    original_start = runtime.start
+    changed = []
+    try:
+        reader.login_once()
+        reader.current(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        prior_policy = deepcopy(runtime.budget.policy)
+        with closing(sqlite3.connect(runtime.path)) as c:
+            prior_receipt = c.execute("SELECT * FROM budget_requests WHERE used=1").fetchone()
+
+        def changed_before_start(lease):
+            if not changed:
+                changed.append(lease)
+                if failure == "new_positions":
+                    native_opened_store(tmp_path, clock, monkeypatch, count=5)
+                elif failure == "missing_ledger":
+                    with store.connect() as c:
+                        c.execute("ALTER TABLE paper_positions RENAME TO missing_opened_ledger")
+                else:
+                    ctl.inputs["approval"]["approved"] = False
+            # A changed caller scope cannot relabel the already-issued lease.
+            with reader.read_scope(priority="EXIT_CRITICAL"):
+                original_start(lease)
+
+        monkeypatch.setattr(runtime, "start", changed_before_start)
+        before = len(calls)
+        reason = {"new_positions": "PPI_EXIT_CAPACITY_INSUFFICIENT",
+            "missing_ledger": "CAPACITY_OPENED_LEDGER_UNVERIFIED",
+            "approval_revoked": "PPI_CAPACITY_REVALIDATION_BACKPRESSURE"}[failure]
+        with pytest.raises(BudgetBackpressure, match=reason):
+            reader.intraday(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        assert len(calls) == before and len(changed) == 1
+        assert runtime.budget.policy == prior_policy
+        with closing(sqlite3.connect(runtime.path)) as c:
+            assert c.execute("SELECT * FROM budget_requests").fetchall() == [prior_receipt]
+            assert json.loads(c.execute("SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0]) is None
+        metrics = runtime.budget.metrics()["global"]
+        # dropped counts admission rejection; this claim was admitted then
+        # safely cancelled before wire and therefore retains allowed=2.
+        assert metrics == {"requested": 2, "allowed": 2, "used": 1, "dropped": 0}
+        # A new, authentic EXIT request remains within the unchanged budget.
+        assert scoped_book(reader, IDENTITY, "EXIT_CRITICAL")["bids"]
+        assert len(calls) == before + 1
+        assert runtime.budget.metrics()["global"]["used"] == 2
+    finally:
+        reader.close()
+
+
+def test_u05_native_start_cannot_renew_expired_admission_through_baseline_fallback(wire, tmp_path, monkeypatch):
+    clock, calls, _ = wire
+    values = approved(wire)
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=0)
+    ctl = controller(values, database=store.path)
+    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="SCANNER")
+    try:
+        reader.login_once()
+        reader.current(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        prior_policy = deepcopy(runtime.budget.policy)
+        expires = datetime.fromisoformat(prior_policy["expires_at"])
+        clock.advance((expires-clock.now()).total_seconds()-1)
+        assert ctl.state(clock.now())["status"] == "APPROVED_DYNAMIC"
+        original_start = runtime.start
+
+        def expires_before_start(lease):
+            clock.advance(2)
+            ctl.inputs["approval"]["approved"] = False
+            original_start(lease)
+
+        monkeypatch.setattr(runtime, "start", expires_before_start)
+        before = len(calls)
+        with pytest.raises(BudgetBackpressure, match="PPI_CAPACITY_EXPIRED_BACKPRESSURE"):
+            reader.intraday(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+        assert len(calls) == before
+        assert runtime.budget.policy == prior_policy
+        assert runtime.budget.metrics()["global"]["used"] == 1
+        with closing(sqlite3.connect(runtime.path)) as c:
+            assert c.execute("SELECT COUNT(*) FROM budget_requests WHERE used=0").fetchone()[0] == 0
+    finally:
+        reader.close()
+
+
+def test_f01_interleaved_native_scanner_and_exit_preserve_complete_floor(wire, tmp_path):
+    clock, calls, _ = wire
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock, common=2), clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=budget, consumer="SCANNER")
+    try:
+        reader.login_once()
+        before = len(calls)
+        for index in range(5):
+            lower = (f"LOWER{index}", *IDENTITY[1:])
+            if index < 2:
+                assert scoped_book(reader, lower, "OPENED_CRITICAL")["bids"]
+            else:
+                with pytest.raises(BudgetBackpressure, match="RESERVE"):
+                    scoped_book(reader, lower, "OPENED_CRITICAL")
+            assert scoped_book(reader, (f"EXIT{index}", *IDENTITY[1:]), "EXIT_CRITICAL")["bids"]
+        assert len(calls) == before + 7
+        metrics = budget.metrics()
+        assert metrics["global"] == {"requested": 10, "allowed": 7, "used": 7, "dropped": 3}
+        assert metrics["by_endpoint"]["book"]["used"] == 7
+        assert sum(row["used"] for row in metrics["by_scope"] if row["priority"] == "EXIT_CRITICAL") == 5
+    finally:
+        reader.close()
+
+
+def test_f01_native_exit_transient_retry_is_bounded_and_cannot_retry_backpressure(wire, tmp_path, monkeypatch):
+    from bd_ppi_readonly_guard import retry_read
+    clock, calls, _ = wire
+    original_send = requests.adapters.HTTPAdapter.send
+    attempts = []
+
+    def interrupted_book(adapter, request, **kwargs):
+        if urlsplit(request.url).path.lower().endswith("/book"):
+            attempts.append(request.url)
+            if len(attempts) == 1:
+                raise requests.exceptions.ConnectionError("connection reset")
+        return original_send(adapter, request, **kwargs)
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", interrupted_book)
+    value = exit_floor(clock, books=2)
+    value["exit_demand"] = {"book": 2}
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", value, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=budget, consumer="EXIT_READER")
+    try:
+        reader.login_once()
+        assert retry_read(lambda: scoped_book(reader, IDENTITY, "EXIT_CRITICAL"), retries=1, pause=clock.advance)["bids"]
+        assert len(attempts) == 2 and budget.metrics()["global"]["used"] == 2
+        before = len(calls)
+        other = ("YPFD", *IDENTITY[1:])
+        with pytest.raises(BudgetBackpressure, match="EXHAUSTED"):
+            retry_read(lambda: scoped_book(reader, other, "EXIT_CRITICAL"), retries=2, pause=clock.advance)
+        assert len(attempts) == 2 and len(calls) == before
+        assert budget.metrics()["global"]["requested"] == 3
+    finally:
+        reader.close()
+
+
+def _native_kill_boundary(path, value, at, stage, ready, hold, wire_count):
+    """Interrupt the actual guarded SDK path at each durable wire boundary."""
+    clock = Clock(at)
+    budget = GlobalPPIBudget(path, value, clock=clock.now)
+    actual_send = requests.adapters.HTTPAdapter.send
+    actual_start = budget.start
+
+    def blocked_start(token):
+        ready.put(token)
+        assert hold.wait(30)
+        actual_start(token)
+
+    def blocked_wire(adapter, request, **kwargs):
+        if urlsplit(request.url).path.lower().endswith("/current"):
+            with wire_count.get_lock():
+                wire_count.value += 1
+            if stage == "after_start":
+                with closing(sqlite3.connect(path)) as c:
+                    token = c.execute("SELECT lease FROM budget_requests WHERE used=1").fetchone()[0]
+                ready.put(token)
+                assert hold.wait(30)
+        return actual_send(adapter, request, **kwargs)
+
+    if stage == "before_start":
+        budget.start = blocked_start
+    requests.adapters.HTTPAdapter.send = blocked_wire
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=budget, consumer="SCANNER")
+    try:
+        reader.login_once()
+        reader.current(IDENTITY[0], IDENTITY[1], IDENTITY[4])
+    finally:
+        reader.close()
+        requests.adapters.HTTPAdapter.send = actual_send
+
+
+@pytest.mark.parametrize("stage", ["before_start", "after_start"])
+def test_f01_native_process_kill_preserves_exact_pre_or_post_wire_receipt(wire, tmp_path, monkeypatch, stage):
+    clock, calls, _ = wire
+    value = exit_floor(clock, common=1, global_limit=6)
+    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", value, clock=clock.now)
+    ctx = multiprocessing.get_context("fork")
+    ready, hold, wire_count = ctx.Queue(), ctx.Event(), ctx.Value("i", 0)
+    child = ctx.Process(target=_native_kill_boundary,
+        args=(str(budget.path), value, clock.now().isoformat(), stage, ready, hold, wire_count))
+    actual_send = requests.adapters.HTTPAdapter.send
+
+    def counted_parent_wire(adapter, request, **kwargs):
+        if "/marketdata/" in urlsplit(request.url).path.lower():
+            with wire_count.get_lock():
+                wire_count.value += 1
+        return actual_send(adapter, request, **kwargs)
+
+    child.start()
+    try:
+        token = ready.get(timeout=8)
+        with closing(sqlite3.connect(budget.path)) as c:
+            before = c.execute("SELECT * FROM budget_requests WHERE lease=?", (token,)).fetchone()
+        emitted = int(stage == "after_start")
+        assert before[-1] == emitted and wire_count.value == emitted
+        child.kill()
+        child.join(5)
+        assert not child.is_alive() and child.exitcode < 0
+        # The OS mutex is gone, but the durable crashed lease is still live.
+        denied = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+        assert not denied["allowed"] and denied["reason"] == "PPI_SERIAL_BACKPRESSURE"
+        with closing(sqlite3.connect(budget.path)) as c:
+            assert c.execute("SELECT * FROM budget_requests WHERE lease=?", (token,)).fetchone() == before
+        clock.advance(61)
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", counted_parent_wire)
+        reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=budget, consumer="EXIT_READER")
+        try:
+            reader.login_once()
+            assert scoped_book(reader, IDENTITY, "EXIT_CRITICAL")["bids"]
+        finally:
+            reader.close()
+        assert wire_count.value == emitted + 1
+        assert budget.metrics()["global"]["used"] == emitted + 1
+        with closing(sqlite3.connect(budget.path)) as c:
+            assert c.execute("SELECT * FROM budget_requests WHERE lease=?", (token,)).fetchone() == before
+            assert c.execute("SELECT COUNT(*) FROM budget_requests WHERE used=1").fetchone()[0] == emitted + 1
+    finally:
+        # A killed owner may poison its Event's internal mutex. Do not reuse
+        # hold to release it after SIGKILL; ensure the process is reaped.
+        if child.is_alive():
+            child.kill()
+            child.join(5)
+        ready.cancel_join_thread()
+        ready.close()
