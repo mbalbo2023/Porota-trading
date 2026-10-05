@@ -161,6 +161,31 @@ def test_u10_same_timestamp_marks_have_durable_total_order_and_bounded_page_proj
     assert future_positions(store, as_of=CUT, lifecycle_ids=["UNKNOWN"]) == []
 
 
+def test_future_nested_decimal_diagnostics_persist_and_exact_retry_survives_expiry(tmp_path, monkeypatch):
+    import rc6_paper_family_lifecycle as lifecycle
+    monkeypatch.setattr(lifecycle, "_now", lambda: OPEN)
+    store, executor = opened(tmp_path, occurred_at=None, book_at=None,
+                             detail={"execution_price_terms": {"multiplier": D("1000")},
+                                     "score": D("0.8")})
+    monkeypatch.setattr(lifecycle, "_now", lambda: "2026-11-01T12:00:00-03:00")
+    repeated = executor.open_future(dlr(), lifecycle_id="FUT-1", event_id="OPEN",
+        entry_price="1500", entry_cost="100", quantity="1", occurred_at=None, book_at=None,
+        detail={"execution_price_terms": {"multiplier": D("1000")}, "score": D("0.8")})
+    assert repeated["idempotent"]
+    assert future_cash_effect(store, "ARS", CUT) == D("-1500100")
+
+
+def test_known_corrupt_future_mark_cannot_resurrect_earlier_ready_mark(tmp_path):
+    store, executor = opened(tmp_path)
+    executor.mark_future(dlr(), lifecycle_id="FUT-1", event_id="MARK", mark_price="1510",
+                         book_at=CUT, occurred_at=CUT)
+    with store.connect() as connection:
+        connection.execute("UPDATE paper_future_marks SET book_at=?",
+                           ("2026-10-05T13:00:00.000001-03:00",))
+    with pytest.raises(ValueError, match="SOURCE_CLOCK_INVALID"):
+        future_risk_snapshot(store, "ARS", CUT)
+
+
 def test_u22_capacity_at_cut_is_unchanged_by_later_terminal_event(tmp_path, monkeypatch):
     monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
     monkeypatch.delenv("POROTA_RUNTIME_SCHEMA_READY", raising=False)
@@ -233,6 +258,14 @@ def test_u23_equivalent_decimal_offset_and_implicit_time_retries_are_idempotent(
     implicit = dict(occurred_at=None, event_id="IMPLICIT", lifecycle_id="FCI-IMPLICIT")
     request(store, **implicit)
     assert request(Store(store.path), **implicit)["idempotent"]
+
+
+def test_u23_generic_future_event_binds_complete_contract_terms(tmp_path):
+    executor = FamilyPaperExecutor(Store(tmp_path / "generic-future.sqlite"))
+    values = dict(lifecycle_id="FUT-1", event_id="OPEN", to_state="OPEN", occurred_at=OPEN)
+    executor.future_event(dlr(), **values)
+    with pytest.raises(ValueError, match="EVENT_ID_COLLISION"):
+        executor.future_event(replace(dlr(), cash_multiplier=D("500")), **values)
 
 
 def _race_subscription(path, amount, barrier, results):

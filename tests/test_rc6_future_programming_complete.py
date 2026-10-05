@@ -579,7 +579,7 @@ def test_exit_book_collector_reads_active_futures_and_restores_exact_snapshot(tm
         def execution_error(self, *_args):
             raise AssertionError("equity exit policy acquired FUTURES authority")
     monkeypatch.setattr(observer, "now_iso", lambda: MARK_AT)
-    monkeypatch.setattr(catalog, "lookup", lambda *_args: None)
+    monkeypatch.setattr(catalog, "lookup", lambda *_args, **_kwargs: None)
     assert runtime.collect_exit_books(Reader(), b.store, Policy(), MARK_AT) == 0
     assert calls == [("DLR/OCT26", "FUTUROS", "INMEDIATA")]
     q = b.store.latest_quote({"symbol": "DLR/OCT26", "asset_class": "FUTUROS", "settlement": "INMEDIATA"})
