@@ -13,7 +13,7 @@ import pytest
 
 from scripts.rc6_archive_maximum_member_probe import (
     MAX_ARCHIVE, MAX_LIVE, MAX_MEMBER, MAX_RSS, MAX_SCRATCH, MAX_WALL,
-    MIN_MEMBER, execute_governed_witness, safe_path,
+    MIN_MEMBER, execute_governed_witness, safe_path, validate_completed_child_resources,
 )
 
 
@@ -73,7 +73,14 @@ def test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss
     assert report["network_attempts"] == 0 and report["source_sqlite_attempts_after_custody_baseline"] == []
     assert 0 < report["peak_rss_bytes"] == resources["real_peak_rss_bytes"] <= MAX_RSS
     assert 0 < report["elapsed_wall_seconds"] <= MAX_WALL
-    assert 0 < resources["elapsed_wall_seconds"] <= 330 and resources["cpu_total_seconds"] > 0
+    assert 0 < resources["elapsed_wall_seconds"] <= MAX_WALL and resources["cpu_total_seconds"] > 0
+    validate_completed_child_resources(resources)
+    # Protocol-negative controls over this fresh run's real kernel receipt;
+    # no301s process is executed or claimed. Late output cannot use the330s
+    # termination window, and bool/NaN cannot masquerade as a measured time.
+    for altered_time in (MAX_WALL+1.0, True, float("nan")):
+        with pytest.raises(AssertionError, match="NATIVE_KERNEL_FULL_ENVELOPE_EXCEEDS_300SECONDS"):
+            validate_completed_child_resources({**resources, "elapsed_wall_seconds": altered_time})
     assert 1 <= len(report["calibration"]) <= 3 and report["real_fsync_calls"] > 0
     cuts, restored = report["cuts"], report["restore"]
     assert len(cuts) == 34 and [cut["sequence"] for cut in cuts] == list(range(1, 35))

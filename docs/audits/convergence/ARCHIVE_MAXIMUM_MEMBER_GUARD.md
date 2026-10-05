@@ -11,7 +11,8 @@ No previous report, environment flag, skip, source inspection or supplied
 passing receipt can replace execution.
 
 The launcher resolves the literal committed HEAD and tree with replacement
-objects disabled and rejects replacement refs. It verifies every tracked
+objects disabled and rejects replacement refs. Git network protocols and lazy
+fetch are disabled during the local snapshot and native witness. It verifies every tracked
 checkout blob and mode, exports every raw Git blob into a new private source
 directory, and compares the complete snapshot against the current checkout.
 The native child executes that committed script using the actual interpreter
@@ -51,7 +52,9 @@ archive bytes and all stat fields must remain unchanged by the restores.
 Native live128MiB/512entries, archive512MiB/32768entries, scratch512MiB,
 the single filesystem reserve2GiB and free inodes10% remain unchanged. Actual
 logical and allocated residence is observed before and after real fsync and
-before native renames/removals, with per-cut and aggregate reports. Generic
+before native renames/removals, including actual dir_fd-relative unlink and
+both sides of rename, with per-cut and aggregate reports. Directory FDs resolve
+through their kernel target and must retain the same directory identity. Generic
 Python temporary requests must use the current factory's canonical scratch
 and that same quota. The native scratch inspector must admit every final
 namespace. Restored images reside in RAM and in-memory SQLite. The complete
@@ -66,10 +69,20 @@ forecast with `RETENTION_HARD_BYTES_CAPACITY_REACHED` under128MiB while the
 entry forecast still fits512. Full current-root bytes and stat custody must
 remain unchanged. It does not physically publish the three forbidden images.
 
-The child has a real300-second alarm from launch; the parent has a330-second
-deadline and terminates only its fresh process group if necessary. Linux
-`wait4` measures that exact PID's CPU, wall time and real peak RSS. Native
-`RUSAGE_SELF` and the kernel receipt must agree and remain below2GiB. The
+The child has a real300-second alarm from launch through final custody,
+provenance, JSON serialization, receipt flush/fsync and output. The parent has
+a330-second deadline solely for termination and diagnosis; it terminates only
+its fresh process group if necessary. Linux
+`wait4` measures that exact PID's CPU and real peak RSS. Parent monotonic time
+from launch through that PID's kernel reap measures the complete wall envelope,
+including output, exit and conservative polling latency. Native
+`RUSAGE_SELF` and the kernel receipt must agree and remain below2GiB. The actual
+kernel wall envelope, including the final output and exit, must be at most300s
+for aPASS; a self-reported JSON time cannot extend it to330s. The memory node
+also rejects301s, boolean and NaN protocol substitutions over its actual
+kernel receipt. Those metadata controls do not represent a separate301s
+execution or an additional original attack. The socket guard blocks connect,
+DNS, send/sendall, direct UDP sendto and sendmsg. The
 fresh execution nonce, actual PID, source SHA/tree, script/index hashes and
 immutable new receipt bind the two test nodes to the same actual execution.
 Raw receipts remain available. Successful teardown removes only the fresh

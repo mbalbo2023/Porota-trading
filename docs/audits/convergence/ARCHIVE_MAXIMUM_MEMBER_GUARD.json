@@ -29,10 +29,34 @@
     "FRESH_EXECUTION_ON_ACTUAL_INTEGRATED_SOURCE_DURING_EXPLICIT_CPU_SLOT"
   ],
   "protocol": {
+    "actual_wall_counter": "PARENT_MONOTONIC_LAUNCH_TO_EXACT_PID_KERNEL_REAP; INCLUDES_OUTPUT_EXIT_AND_CONSERVATIVE_POLL_LATENCY",
+    "child_alarm_final_tail": "ALARM_ACTIVE_THROUGH_CUSTODY_PROVENANCE_SERIALIZATION_RECEIPT_FLUSH_FSYNC_FINAL_OUTPUT",
+    "git_network": "LOCAL_RAW_OBJECTS_ONLY; protocol.allow=never AND GIT_NO_LAZY_FETCH=1",
     "guard_output": "NEW_PRIVATE_DISK_BACKED_DIRECTORY_EXTERNAL_TO_REPOSITORY; NO_FIXED_WORKSPACE",
+    "kernel_metadata_negative_controls": {
+      "case_values": [
+        "301_SECONDS",
+        "BOOLEAN",
+        "NAN"
+      ],
+      "scope": "PROTOCOL_SUBSTITUTION_OVER_FRESH_ACTUAL_KERNEL_RECEIPT; NO_EXTRA_NATIVE_EXECUTION_OR_ORIGINAL_ATTACK"
+    },
     "native_child_watchdog_seconds": 300,
+    "network_barrier": [
+      "connect",
+      "connect_ex",
+      "create_connection",
+      "getaddrinfo",
+      "send",
+      "sendall",
+      "sendto",
+      "sendmsg"
+    ],
     "owner_uid": "ACTUAL_REAL_AND_EFFECTIVE_UID_EQUAL; EVERY_PRIVATE_MEMBER_CUSTODY_MATCHES",
+    "parent330_is_pass_allowance": false,
     "parent_watchdog_seconds": 330,
+    "pass_kernel_wall_seconds_maximum": 300,
+    "physical_delete_observation": "CWD_OR_ACTUAL_DIR_FD_KERNEL_TARGET_WITH_DIRECTORY_IDENTITY_CHECK; REMOVE_RMDIR_AND_BOTH_RENAME_SIDES",
     "public_admission": "EvidenceRetention.prepare with actual owned writer_fd and public read_writer_generation authority check",
     "python": "ACTUAL_SYS_EXECUTABLE_LINUX311_OR312_EXACT_APPROVED157_CLOSURE",
     "read_only_previous_receipt_pass": false,
@@ -152,13 +176,13 @@
   "source_files": {
     "scripts/rc6_archive_maximum_member_probe.py": {
       "AST_compile_only": "GREEN",
-      "bytes": 52770,
-      "sha256": "5440aa7b70962bbd3f71c42de358e327a52051427e95db6493d22887a6b31018"
+      "bytes": 55709,
+      "sha256": "8b41c1eb18c6da181d2dd349f286d78f17f97ac2ae74b8206352ae17b792fabf"
     },
     "tests/test_rc6_archive_maximum_member_guard.py": {
       "AST_compile_only": "GREEN",
-      "bytes": 8534,
-      "sha256": "f50773ba9afd3a1a155992da680dadc7a5a6ba9c8df97dd5f2fce6bf53d00ef7"
+      "bytes": 9114,
+      "sha256": "4c80b2435cbd955034f3d423d539c5a091d62b9e6676e9c837f4193a89ff8dd6"
     }
   },
   "source_identity_at_execution": "LITERAL_COMMITTED_HEAD_AND_RAW_TREE; ALL_TRACKED_GIT_BLOBS_AND_EXACT_PHYSICAL_MODES; ZERO_OVERLAYS",

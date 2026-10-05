@@ -15,6 +15,7 @@ import gzip
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 from pathlib import Path
 import resource
@@ -158,7 +159,8 @@ def source_inventory(source, index):
 
 def git_authority(repo, sha, expected_tree, index):
     def git(*args):
-        return subprocess.check_output(["git", "--no-replace-objects", "-C", str(repo), *args], stderr=subprocess.DEVNULL, timeout=10)
+        return subprocess.check_output(["git", "--no-replace-objects", "-c", "protocol.allow=never", "-C", str(repo), *args],
+            env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}, stderr=subprocess.DEVNULL, timeout=10)
     require(not git("for-each-ref", "--format=%(refname)", "refs/replace").strip(), "GIT_REPLACE_AUTHORITY_FORBIDDEN")
     raw = git("cat-file", "commit", sha)
     oid = hashlib.sha1(b"commit " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
@@ -222,6 +224,9 @@ def main():
         network.append("BLOCKED")
         raise AssertionError("NATIVE_MEMORY_NETWORK_FORBIDDEN")
     socket.socket.connect = socket.socket.connect_ex = socket.create_connection = socket.getaddrinfo = no_network
+    socket.socket.send = socket.socket.sendall = socket.socket.sendto = no_network
+    if hasattr(socket.socket, "sendmsg"):
+        socket.socket.sendmsg = no_network
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(source))
     from scripts.porota_dependency_repro_audit import installed_distribution_audit
@@ -303,6 +308,19 @@ def main():
         require(result["peak_rss_bytes"] <= MAX_RSS, "NATIVE_REAL_RSS_2GIB_EXCEEDED")
     def measured_fsync(fd):
         peak(); actual_fsync(fd); result["real_fsync_calls"] += 1; peak()
+    def audit_target(value, directory_fd):
+        path = Path(os.fsdecode(value))
+        if path.is_absolute():
+            return safe_path(path)
+        if directory_fd is None or directory_fd < 0:
+            return safe_path(Path.cwd()/path)
+        # os.unlink(name, dir_fd=fd) audits the relative name and actual FD;
+        # resolving only against cwd would miss native retention removals.
+        descriptor = os.fstat(directory_fd)
+        require(stat.S_ISDIR(descriptor.st_mode), "AUDIT_NATIVE_DIRECTORY_FD_REQUIRED")
+        directory = safe_path(os.readlink("/proc/self/fd/"+str(directory_fd)))
+        require(identity(descriptor) == identity(directory.lstat()), "AUDIT_NATIVE_DIRECTORY_FD_CHANGED")
+        return safe_path(directory/path)
     def observed_audit(event, arguments):
         nonlocal audit_observing
         if audit_observing:
@@ -316,16 +334,24 @@ def main():
             require(current_scratch is not None and requested.is_relative_to(current_scratch),
                     "TEMPFILE_REQUEST_OUTSIDE_CANONICAL_NATIVE_SCRATCH")
         elif event in ("os.remove", "os.rmdir", "os.rename") and arguments and isinstance(arguments[0], (str, bytes)):
-            path = Path(os.fsdecode(arguments[0])).absolute()
-            if path.is_relative_to(root) and path.exists():
-                audit_observing = True
-                try:
+            audit_observing = True
+            try:
+                if event == "os.rename":
+                    targets = [(arguments[0], arguments[2] if len(arguments) > 2 else None),
+                               (arguments[1], arguments[3] if len(arguments) > 3 else None)]
+                else:
+                    targets = [(arguments[0], arguments[1] if len(arguments) > 1 else None)]
+                inside = [(audit_target(value, directory_fd), directory_fd) for value, directory_fd in targets]
+                inside = [(path, directory_fd) for path, directory_fd in inside
+                          if path.is_relative_to(root) and path.exists()]
+                if inside:
                     peak()
-                    physical_destroy_observations.append({"event": event, "path": str(path),
-                                                         "residence_before_operation": residence(path)
-                                                         if path.is_dir() else identity(path.lstat())})
-                finally:
-                    audit_observing = False
+                    for path, directory_fd in inside:
+                        physical_destroy_observations.append({"event": event, "path": str(path),
+                            "directory_fd": directory_fd,
+                            "residence_before_operation": residence(path) if path.is_dir() else identity(path.lstat())})
+            finally:
+                audit_observing = False
     sys.addaudithook(observed_audit)
     os.fsync = measured_fsync
 
@@ -573,7 +599,6 @@ def main():
         os.fsync = actual_fsync
         sqlite3.connect = actual_sqlite_connect
         tempfile.tempdir = actual_tempdir
-        signal.alarm(0)
         result["elapsed_wall_seconds"] = time.monotonic()-begin
         result["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
         result["fixture_environments"] = environments
@@ -619,13 +644,15 @@ def main():
         with os.fdopen(fd, "wb") as stream:
             stream.write(wire); stream.flush(); os.fsync(stream.fileno())
         print(json.dumps({k: result[k] for k in ("source_sha", "complete", "elapsed_wall_seconds", "peak_rss_bytes")}), flush=True)
+        require(time.monotonic()-process_begin <= MAX_WALL, "NATIVE_FINAL_OUTPUT_EXCEEDED_300SECOND_DEADLINE")
+        signal.alarm(0)
     return 0 if result["complete"] else 1
 
 
 def _git(repo, *arguments):
     return subprocess.check_output(
-        ["git", "--no-replace-objects", "-C", str(repo), *arguments],
-        stderr=subprocess.DEVNULL, timeout=20,
+        ["git", "--no-replace-objects", "-c", "protocol.allow=never", "-C", str(repo), *arguments],
+        env={**os.environ, "GIT_NO_LAZY_FETCH": "1"}, stderr=subprocess.DEVNULL, timeout=20,
     )
 
 
@@ -679,6 +706,21 @@ def _publish_json(path, value):
     return hashlib.sha256(raw).hexdigest()
 
 
+def validate_completed_child_resources(resources):
+    """Require the actual kernel envelope, including output and process exit.
+
+    The330-second outer limit is exclusively for termination/diagnosis. A
+    child whose own JSON says300 or less cannot pass a kernel envelope over300.
+    This predicate is applied to counters obtained directly from wait4.
+    """
+    require(type(resources.get("returncode")) is int and resources["returncode"] == 0
+            and resources.get("outer_timed_out") is False, "NATIVE_KERNEL_EXIT_NOT_SUCCESSFUL")
+    elapsed, rss = resources.get("elapsed_wall_seconds"), resources.get("real_peak_rss_bytes")
+    require(type(elapsed) in (int, float) and math.isfinite(elapsed) and 0 < elapsed <= MAX_WALL,
+            "NATIVE_KERNEL_FULL_ENVELOPE_EXCEEDS_300SECONDS")
+    require(type(rss) is int and 0 < rss <= MAX_RSS, "NATIVE_KERNEL_REAL_RSS_LIMIT_FAILED")
+
+
 def capture_complete_checkout(repo, output):
     """Snapshot every committed blob, preserving exact modes and zero overlays.
 
@@ -697,7 +739,8 @@ def capture_complete_checkout(repo, output):
     output.mkdir(mode=0o700)
     source = output / "source"
     source.mkdir(mode=0o700)
-    batch = subprocess.Popen(["git", "--no-replace-objects", "-C", str(repo), "cat-file", "--batch"],
+    batch = subprocess.Popen(["git", "--no-replace-objects", "-c", "protocol.allow=never", "-C", str(repo), "cat-file", "--batch"],
+                             env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, start_new_session=True)
     total = 0
@@ -819,6 +862,7 @@ def _execute_governed_witness(repo_root, output_root):
         resources = {"schema": "rc6.maximum-member-governed-linux-wait4.v1", "execution_id": execution_id,
                      "pid": process.pid, "returncode": exit_code, "outer_timed_out": timed_out,
                      "elapsed_wall_seconds": time.monotonic()-started,
+                     "elapsed_wall_source": "PARENT_MONOTONIC_LAUNCH_THROUGH_EXACT_PID_KERNEL_REAP; INCLUDES_OUTPUT_EXIT_AND_POLL_LATENCY",
                      "cpu_user_seconds": usage.ru_utime, "cpu_system_seconds": usage.ru_stime,
                      "cpu_total_seconds": usage.ru_utime+usage.ru_stime,
                      "real_peak_rss_bytes": usage.ru_maxrss*1024, "ru_maxrss_unit": "LINUX_KIBIBYTES",
@@ -827,6 +871,7 @@ def _execute_governed_witness(repo_root, output_root):
                      "scope": "EXACT_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; HIGH_WATER_RSS_NOT_SUM_OF_PROCESSES"}
         _publish_json(raw / "child-resource.json", resources)
         require(not timed_out and exit_code == 0, "NATIVE_WITNESS_FAILED; raw=" + str(raw))
+        validate_completed_child_resources(resources)
         report_wire, _ = capture(raw / "native-receipt.json", raw=True, maximum=2*MIB)
         report = json.loads(report_wire)
         require(report.get("schema") == "rc6.native-maximum-archive-member-memory-witness.v2"
@@ -840,7 +885,7 @@ def _execute_governed_witness(repo_root, output_root):
                 and report["guards_in_shared_native_execution"] == 2,
                 "FRESH_ACTUAL_NATIVE_CHILD_RECEIPT_BINDING_FAILED")
         require(report["peak_rss_bytes"] == resources["real_peak_rss_bytes"] <= MAX_RSS
-                and report["elapsed_wall_seconds"] <= MAX_WALL and resources["elapsed_wall_seconds"] <= 330,
+                and report["elapsed_wall_seconds"] <= MAX_WALL and resources["elapsed_wall_seconds"] <= MAX_WALL,
                 "NATIVE_CHILD_ACTUAL_RESOURCE_LIMIT_FAILED")
         require(_literal_head(repo) == pin["head"]
                 and _checkout_inventory(repo, pin["objects"]) == pin["checkout_before"],
