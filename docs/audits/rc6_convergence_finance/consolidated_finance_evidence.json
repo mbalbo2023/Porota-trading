@@ -318,6 +318,130 @@
     "release_artifact_verified": false,
     "wire_or_custody_bypass_demonstrated": false
   },
+  "independent_snapshot_source_review": {
+    "alien_imports": 0,
+    "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
+    "documentation": "original_snapshot_sources_replay_review.md",
+    "economic_edge": "EDGE_NO_DEMOSTRADO",
+    "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+    "network_attempts": 0,
+    "original_counts_changed": false,
+    "original_order_sha256": "d41e404d893a2fedfb10017b5f5732282f6e695220305e9b9cf1049b7c310731",
+    "parameter_independence_claimed": false,
+    "probe_path": "docs/audits/rc6_convergence_finance/probes/original_snapshot_sources_archive_probe.py",
+    "probe_sha256": "3fcf7a49dd5f294ee0bc3282099b348960b3d6c94e8928473799970e379dcca2",
+    "receipt": "original_snapshot_sources_c27_replay_receipt.json",
+    "receipt_sha256": "1c729c639bc3b9656a360d0c6b3e677bd6b84b85ad3acf3aa32af6e11e905b2b",
+    "release_artifact_verified": false,
+    "repository_imports": 74,
+    "requirements": [
+      {
+        "boundary": "Snapshot selected by exact committed fill key/pid, not arbitrary first snapshot. No claim that every c27 vector is absent. Reconstructed native caller uses old APIs and no broker/math/financial/risk mocks. PAPER fee assumptions are not authenticated account terms.",
+        "evidence_kind": "OLD_NATIVE_RED_RECONSTRUCTED_BINDING_CALLER_WITH_PRESERVED_CONTROLS",
+        "final_frozen_guard_execution": "PENDING_PARENT_FREEZE",
+        "fix_paths": [
+          "be_paper_engine.py",
+          "rc6_paper_family_lifecycle.py",
+          "rc6_performance/common.py",
+          "rc6_performance/metrics.py",
+          "rc6_shadow_runtime/entry_signals.py",
+          "rc6_shadow_runtime/funnel.py",
+          "rc6_shadow_runtime/lab.py"
+        ],
+        "guard_execution_by_this_replay": false,
+        "id": "AUD-468-19",
+        "json_result_pointer": "/results/AUD-468-19/result",
+        "native_guard_nodes": [
+          "tests/test_rc6_committed_projection.py::test_native_atomic_admission_is_not_a_second_funnel_decision_and_preserves_entry",
+          "tests/test_rc6_convergence_finance.py::test_aud19_future_commit_evidence_failure_rolls_back_financial_rows_and_valid_retry_captures_once",
+          "tests/test_rc6_convergence_finance_review.py::test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits",
+          "tests/test_rc6_shadow_lab_atomic_capture.py::test_atomic_producer_worker_and_restart_preserve_frozen_inputs_after_mutable_revisions",
+          "tests/test_rc6_shadow_lab_atomic_capture.py::test_capture_receipt_never_authorizes_future_inputs_or_cross_decision_evidence",
+          "tests/test_rc6_shadow_lab_atomic_capture.py::test_two_phase_link_guards_hash_paper_vector_clocks_and_known_policy",
+          "tests/test_rc6_shadow_lab_atomic_capture.py::test_two_phases_register_one_native_trade_even_across_a_one_row_read_budget"
+        ],
+        "observed": "Canonical BINDING net R/R3.159276919618520632939203876 passes. The actual runtime broker factory and CF promote create an OPENED_SIMULATED fill. Its snapshot selected by exact trade_gate_evaluations.decision_key+paper_id has no entry_signal_inputs and all four native clocks are null. The separate native observed-signal snapshot preserves16 source prices but has paper_id=null; filled-position native_decision_key is absent.",
+        "original_requirement": {
+          "closure": "Probar vector PIT completo por cada decisi\u00f3n binding+hash/clocks y replay sin tabla mutable; si falta, revisiones append-only. No duplicar stores sin demostrar necesidad.",
+          "condition": "Store intraday mutable no permite replay previo; snapshot podr\u00eda sustituirlo, no est\u00e1 probado completo.",
+          "id": "AUD-468-19",
+          "registry": "468",
+          "severity": "P2"
+        },
+        "positive_controls": [
+          "Main real native BINDING on_quote preserves8 exact factual price samples.",
+          "Separate observed CF native signal snapshot already preserves16 source prices and immutable hash."
+        ],
+        "receipt": "original_snapshot_sources_c27_replay_receipt.json",
+        "receipt_sha256": "1c729c639bc3b9656a360d0c6b3e677bd6b84b85ad3acf3aa32af6e11e905b2b",
+        "related_original_store_probe": "Original100->110 price and1->2 volume revision overwrites the single canonical ppi_intraday_points row, retaining old first_received_at. This demonstrates the old store gap, not failure of every immutable snapshot."
+      },
+      {
+        "boundary": "No real secret/exfiltration/provider call or entry authority. The failed collector observation is rejected for identity but raw native_reason still leaks to durable evidence; rejection does not sanitize source error text.",
+        "evidence_kind": "OLD_NATIVE_RED_REAL_COLLECTOR_AND_FULL_TICK",
+        "final_frozen_guard_execution": "PENDING_PARENT_FREEZE",
+        "fix_paths": [
+          "iol_shadow_collector_rc6.py",
+          "rc6_dynamic_universe/sources.py",
+          "rc6_shadow_runtime/projection.py",
+          "rc6_shadow_runtime/serialization.py",
+          "rc6_shadow_runtime/worker.py"
+        ],
+        "guard_execution_by_this_replay": false,
+        "id": "U16",
+        "json_result_pointer": "/results/U16/result",
+        "native_guard_nodes": [
+          "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
+        ],
+        "observed": "Native IOL run_batch with FailedClient carrying exclusively SYNTHETIC_CREDENTIAL_MARKER_469 writes marker into iol_shadow_latest.json and iol_shadow_checkpoint.json. Actual ShadowRuntime.tick/read_committed_generation retains marker in source report native_reason and committed report.",
+        "original_requirement": {
+          "closure": "Marcadores de tokens, headers/URLs/PII sint\u00e9ticos; taxonom\u00eda allowlisted, no mero truncado.",
+          "condition": "Sanitizar errores de fuentes antes de cache/report/archive.",
+          "id": "U16",
+          "registry": "469",
+          "severity": "P2"
+        },
+        "positive_controls": [
+          "Same native full tick commits a marker-free valid synthetic cache."
+        ],
+        "receipt": "original_snapshot_sources_c27_replay_receipt.json",
+        "receipt_sha256": "1c729c639bc3b9656a360d0c6b3e677bd6b84b85ad3acf3aa32af6e11e905b2b"
+      },
+      {
+        "boundary": "Adversarial report-list input at actual public audit/publication APIs; no naturally duplicating worker/caller demonstrated and no empirical warmup/risk/P&L inflation claim.",
+        "evidence_kind": "OLD_NATIVE_RED_NORMALIZER_AUDIT_PUBLICATION_BOUNDARY",
+        "final_frozen_guard_execution": "PENDING_PARENT_FREEZE",
+        "fix_paths": [
+          "rc6_dynamic_universe/sources.py",
+          "rc6_shadow_runtime/projection.py",
+          "rc6_shadow_runtime/serialization.py"
+        ],
+        "guard_execution_by_this_replay": false,
+        "id": "U26",
+        "json_result_pointer": "/results/U26/result",
+        "native_guard_nodes": [
+          "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
+        ],
+        "observed": "Native source_observations gives one useful source report. audit_sources([report,copy]) accepts two identical a520206cf96fe3005ee02490ed495e611fa4160954c1f602409a331bfb020d02 digests/count2; real EvidenceFiles.commit_generation and read_committed_generation preserve report_list_count2/audit_count2. Conflicting same-identity report also counts2, duplicate observation payload seen2 is accepted.",
+        "original_requirement": {
+          "closure": "Exact duplicate y duplicado conflictivo; conteo/digest/identidad coherentes.",
+          "condition": "Report duplicado no infla cardinalidad sin sem\u00e1ntica declarada.",
+          "id": "U26",
+          "registry": "469",
+          "severity": "P3"
+        },
+        "positive_controls": [
+          "Native single report produces source_report_count1."
+        ],
+        "receipt": "original_snapshot_sources_c27_replay_receipt.json",
+        "receipt_sha256": "1c729c639bc3b9656a360d0c6b3e677bd6b84b85ad3acf3aa32af6e11e905b2b"
+      }
+    ],
+    "schema": "rc6.original-snapshot-source-review.v1",
+    "source_files_unchanged": 1109,
+    "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2"
+  },
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -1337,6 +1461,7 @@
     "lab_phase_review_receipt.json": "4b21136dfa447bc56d83bcd1bac1fa2609724ad3c73135f86b908d78e5d392aa",
     "lab_phase_review_tests.xml": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7",
     "original_core_c27dfd9_replay_receipt.json": "617090f4a4ac927fd8171eabab26253d20a61b61b94aa3a93a8324a6ef265313",
+    "original_snapshot_sources_c27_replay_receipt.json": "1c729c639bc3b9656a360d0c6b3e677bd6b84b85ad3acf3aa32af6e11e905b2b",
     "projection_index_green_f6e46b9d_receipt.json": "c8d7e1ed4286a79086a18354e768cce689f28c47eb221886bb0484837f60146e",
     "projection_index_red_e321d8ad_receipt.json": "f39a1534f02778b4a72aba314a85807e045f5d263d172136f4aebcd40d03db49",
     "red_c27dfd9.json": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c",
@@ -1499,7 +1624,8 @@
       "rca": "Mutable price tables could not reconstruct historical vectors; atomic receipts initially reused native keys and collapsed native clocks, losing capture phase and permitting incorrect consumer counts.",
       "receipts": [
         "finance_focused_receipt.json",
-        "lab_phase_review_receipt.json"
+        "lab_phase_review_receipt.json",
+        "original_snapshot_sources_c27_replay_receipt.json"
       ]
     },
     {
