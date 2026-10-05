@@ -406,8 +406,8 @@ capture_restore_real_cut, con DriverOWN y Product400 separados explícitamente.
 La fuente integrada eb17/frozen311157 ejecutó cuatro cortes descriptivos
 1200/6000 en59.882s, con310,042,624B de RSS. PREOPEN y tres OPEN publicaron,
 archivaron y restauraron sus cinco miembros exactos; los clocks completos
-por corte fueron14.377/16.261/14.813/13.189s. Los1773 blobs/modos y los once
-campos/hash de SourceDB quedaron intactos, provider0. Execution_complete es
+por corte fueron14.377/16.261/14.813/13.189s. Los1773 blobs/modos y los diez
+campos/hash efectivamente medidos de SourceDB quedaron intactos, provider0. Execution_complete es
 true; complete/horizon/acceptance sonfalse. El factory inicial y la emisión
 del resultado aún quedan fuera del reloj por corte de a4; los reinicios361/841
 no se ejercitaron. No hay auditoría de imports en este wrapper externo. RAW
@@ -439,7 +439,7 @@ Con esa fuente fortalecida, whole ROOTd933/frozen311157 completó otro NORMAL4
 descriptivo1200/6000:58.403s/CPU58.196s/RSS321,073,152B. PREOPEN y tres OPEN
 restauraron los cinco miembros originales y sus manifest/CURRENT/receipts;
 clocks completos10.985/15.250/15.933/14.521s. Sus1866 blobs/modos, imports,
-índice/TAR y once campos/hash de SourceDB quedaron intactos; provider/network0.
+índice/TAR y diez campos/hash efectivamente medidos de SourceDB quedaron intactos; provider/network0.
 Se observaron132 fsync y232 mediciones scratch, mantenimiento/recovery/pins
 nativos. Compaction ACK, rotaciones, intents GC completos y miembros borrados
 son cero: no se presenta un positivo de borrado. RAW originales lossless y
@@ -459,3 +459,28 @@ CRC/modos/SHA y ZIP byteexacto se preservan en
 evidence/final-predeploy-source-only-preparation. Las snapshots d933 son revisión
 intermedia: Gov311/312 de C final, FIP, build único, artifact y replay reales
 siguen pendientes. No hay autorización de merge/deploy/host/PPI Watch.
+
+Corrección derivada de custodia: los RAW NORMAL4 eb17 y d933 registraron diez
+campos stat másSHA para la base, sin st_blocks. La afirmación anterior de once
+fue incorrecta. Ambos CUSTODY derivados identifican el SHA de su versión
+anterior y ahora declaran diez verdaderos/once falso/allocated_blocks no
+acreditado; RAW permanecen byteexactos. Se prepara el campo faltante antes de
+una nueva fuente/corrida. Las observaciones no se convierten retroactivamente
+en evidencia de once campos. Esto no altera ciclos/restores/hash verificados.
+
+El fastpath small-container pasó197/197 en wholeOWNd171/frozen311157:84 casos
+nuevos y113 guardas previas,1847 blobs/modos intactos,96 imports propios y
+cero alien/network/SourceSQL. Conserva alias/FIELDS/bindings/caches/cortes y
+wire mediante oracle del append anterior; sólo usa canonical builtin completo
+cuando cabe en el espacio actual sin literals, con fallback idéntico. Dossier
+packed_small_container preserva once originales lossless y la preparación
+rechazada por modo664 antes de cualquier Native. Producto c0f y corrección
+test-only d171 son autoridades separadas; no prueba ahorro ni BIG90.
+
+La primera tranche multifamilia/health OWN6d2a9 en311 terminó65PASS/7ERROR,
+no GREEN:55 previos y10 health pasan;7 comparten timeout initialize20s al
+crear la fixture nativa318identidades/10ticks, antes de cualquier render.
+Sus1776 blobs/modos quedaron intactos.312 no se lanzó sobre esa fuente RED.
+Se prepara productor157 separado antes del IPC del consumidor, conservando
+cuotas/clocks/GC/10ticks, familias y FULL5; no se elevan1s/4MiB render,2s health
+ni20sRPC. Navegador y nuevos recibos completos permanecen pendientes.
