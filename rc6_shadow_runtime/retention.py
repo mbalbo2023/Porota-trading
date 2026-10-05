@@ -663,7 +663,9 @@ class EvidenceRetention:
             "cleaned_temporaries": cleaned, "rotated_archived_generations": rotated,
             "pinned_generation_count": len(pins),
             "tick_seconds": 30, "contracted_horizon_seconds": CONTRACTED_HORIZON_SECONDS,
-            "minutes_to_hard_files": max(0, (self.policy.maximum_files - projected_files) / 5 * .5),
+            "entries_per_generation": len(MEMBERS) + 1,
+            "minutes_to_hard_files": max(0, (self.policy.maximum_files - projected_files) / (len(MEMBERS) + 1) * .5),
+            "file_horizon_assumption": "FOUR_PAYLOAD_ROLES_PLUS_MANIFEST_AND_DIRECTORY; NO_FURTHER_ARCHIVE_ROTATION",
             "minutes_to_hard_bytes_at_current_cut": (None if additional_bytes <= 0 else
                 max(0, (self.policy.maximum_bytes - projected_bytes) / additional_bytes * .5)),
             "archive_configured": self.archive_root is not None,

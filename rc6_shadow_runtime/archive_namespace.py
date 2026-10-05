@@ -27,7 +27,8 @@ def _custody(info, *, owner_uid, directory=False):
             or (not directory and info.st_nlink != 1)):
         raise ValueError("ARCHIVE_CUSTODY_INVALID")
     return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
-            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+            info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            info.st_blocks)
 
 
 def _read_only_open(name, *, directory=False, dir_fd=None):
@@ -81,7 +82,7 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
                     fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 except BlockingIOError as error:
                     raise ValueError("ARCHIVE_WRITER_ACTIVE") from error
-            members, occupied, temporary = {}, 0, 0
+            members, occupied, allocated, temporary = {}, 0, 0, 0
             with os.scandir(descriptor) as iterator:
                 for entry in iterator:
                     if len(members) >= maximum_files:
@@ -92,6 +93,7 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
                     proof = _custody(entry.stat(follow_symlinks=False), owner_uid=owner_uid)
                     members[entry.name] = proof
                     occupied += proof[6]
+                    allocated += proof[9] * 512
                     temporary += int(is_temporary)
                     if occupied >= max_bytes:
                         raise ValueError("ARCHIVE_BYTES_CAPACITY_REACHED")
@@ -109,6 +111,7 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
             return {"schema": SCHEMA, "verification_level": LEVEL,
                 "state": "RECOVERY_REQUIRED" if temporary else "WITHIN_QUOTA",
                 "occupied_bytes": occupied, "files": len(members), "inodes": len(members) + 1,
+                "allocated_bytes": allocated, "allocated_directory_bytes": before[9] * 512,
                 "growth_remaining_bytes": max_bytes - occupied, "max_bytes": max_bytes,
                 "maximum_files": maximum_files, "owner_uid": owner_uid,
                 "free_bytes": available.f_bavail * available.f_frsize,

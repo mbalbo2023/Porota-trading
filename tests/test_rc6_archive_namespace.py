@@ -50,10 +50,27 @@ def test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_wi
     result = inspect_archive(root)
     assert result["schema"] == SCHEMA and result["verification_level"] == LEVEL
     assert result["occupied_bytes"] == sum(path.stat().st_size for path in root.iterdir())
+    assert result["allocated_bytes"] == sum(path.stat().st_blocks * 512 for path in root.iterdir())
+    assert result["allocated_directory_bytes"] == root.stat().st_blocks * 512
     assert result["files"] == 4 and result["inodes"] == 5
     assert result["growth_remaining_bytes"] + result["occupied_bytes"] == 512 * 1024**2
     assert result["owned_temporary_count"] == 0 and result["free_bytes"] > 0
     assert result["state"] == "WITHIN_QUOTA" and receipt["durable"] is True
+    assert before == inventory(root)
+
+
+def test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes(tmp_path):
+    root = prepared(tmp_path)
+    member(root, "archive.lock")
+    path = member(root, "a" * 32 + ".tar.gz", b"synthetic metadata-only fixture")
+    with path.open("r+b") as stream:
+        stream.truncate(16 * 1024**2)
+    before = inventory(root)
+    result = inspect_archive(root)
+    assert result["occupied_bytes"] == 16 * 1024**2
+    assert result["allocated_bytes"] == sum(info.st_blocks * 512 for name, info in before.items() if name != Path("."))
+    assert result["allocated_bytes"] < result["occupied_bytes"]
+    assert result["growth_remaining_bytes"] == 512 * 1024**2 - result["occupied_bytes"]
     assert before == inventory(root)
 
 

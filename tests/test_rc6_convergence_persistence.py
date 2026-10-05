@@ -598,6 +598,22 @@ def test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rot
     assert read_committed_generation(root)["report"]["number"] == 3
 
 
+def test_u14_file_horizon_counts_all_four_native_roles_manifest_and_directory(tmp_path):
+    root = tmp_path / "native-four-role-forecast"
+    with EvidenceFiles(root, maximum_files=512) as files:
+        first = publish(files, 1)
+        first_directory = root / ("gen-" + first["pointer"]["generation_id"])
+        occupied_generation_entries = len(list(first_directory.iterdir())) + 1
+        assert set(item.name for item in first_directory.iterdir()) == {*persistence.GENERATION_ROLES.values(), "manifest.json"}
+        second = publish(files, 2)
+    metrics = second["report"]["evidence_retention"]
+    assert occupied_generation_entries == 6
+    assert metrics["entries_per_generation"] == occupied_generation_entries
+    actual_generation_slots = (metrics["maximum_files"] - metrics["projected_files"]) / occupied_generation_entries
+    assert metrics["minutes_to_hard_files"] == actual_generation_slots * metrics["tick_seconds"] / 60
+    assert metrics["file_horizon_assumption"] == "FOUR_PAYLOAD_ROLES_PLUS_MANIFEST_AND_DIRECTORY; NO_FURTHER_ARCHIVE_ROTATION"
+
+
 def test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart(tmp_path):
     # The exact three-role 40.5/50.5-minute replay is separately preserved on
     # b82666db. The derived fourth member consumes one additional durable slot
@@ -626,11 +642,11 @@ def test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_
     finally:
         connection.close()
     database_before = hashlib.sha256(Path(store.path).read_bytes()).hexdigest()
-    worker = ShadowRuntime(store.path, source_roots=[])
+    worker = ShadowRuntime.from_environment(store.path, source_roots=[])
     started = time.monotonic(); max_files, max_bytes = 0, 0
     # Ten hours gives a complete nine-hour contract plus one-hour margin.
     for index in range(1201):
-        if index in (360, 840): worker = ShadowRuntime(store.path, source_roots=[])
+        if index in (360, 840): worker = ShadowRuntime.from_environment(store.path, source_roots=[])
         report = worker.tick(PRE + timedelta(seconds=30 * index))
         metrics = report["evidence_retention"]
         assert metrics["status"] == "OK" and report["real_orders_sent"] == report["provider_requests"] == 0
@@ -638,6 +654,11 @@ def test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_
     final = read_committed_generation(worker.root)
     assert final["pointer"]["sequence"] == 1201 and final["report"]["checkpoint_reused"]
     assert database_before == hashlib.sha256(Path(store.path).read_bytes()).hexdigest()
+    archive = worker.files.archive_root
+    receipts = [json.loads(path.read_text()) for path in archive.glob("*.receipt.json")]
+    assert receipts and all(receipt["durable"] is True for receipt in receipts)
+    archive_bytes = sum(path.stat().st_size for path in archive.iterdir())
+    assert archive_bytes < worker.files.archive_maximum_bytes == 512 * 1024**2
     save_proof("U14-full-tick-horizon", {"four_role_512_soft_minutes": soft, "four_role_512_hard": hard,
         "four_role_512_commits": commits, "historical_three_role_soft_minutes": 40.5,
         "historical_three_role_hard_minutes": 50.5,
@@ -647,7 +668,9 @@ def test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_
         "maximum_projected_files": max_files, "maximum_projected_bytes": max_bytes,
         "files_budget": worker.files.maximum_files, "bytes_budget": worker.files.maximum_bytes,
         "elapsed_test_seconds": round(time.monotonic() - started, 3), "source_database_bytes_unchanged": True,
-        "archive_configured": False, "production_capacity_claim": False,
+        "archive_configured": True, "archive_root": str(archive), "archive_bytes": archive_bytes,
+        "archive_receipts": len(receipts), "archive_bytes_budget": worker.files.archive_maximum_bytes,
+        "production_capacity_claim": False,
         "real_orders_sent": 0, "provider_requests": 0, "ppi_watch": "UNTOUCHED"})
 
 
