@@ -533,3 +533,21 @@ sin atribuirlo al nuevo productor PREPARED_SMALL ni al ROOT actual. Los7errores
 son setup20s antes del render1s; la etapa interna del productor no aparece en
 el RAW original. Health10PASS no convierte la tranche en GREEN;312/Chrome/BIG
 no se lanzaron. El Sourcefix del productor separado permanece en revisión.
+
+El cache privado de scalars volátiles pasó271/271 sobre wholeOWNd51b/
+frozen311157:74 controles nuevos y197 previos solapados,1940 blobs/modos
+intactos,97 imports propios y0 alien/network/SourceSQLite. Conserva cada
+literal/slot/cut/wire frente al append/capture anterior;4096 entradas y1MiB
+de bytes canónicos acotan el cache de una sola captura, no el heap/RSS total.
+El dossier packed_volatile_scalars preserva15 originales lossless y la
+corrección estática del oracle previa a Native. Docs3689 y ROOT integrado
+no se relabelan como fuente ejecutada. Ahorro y nuevo BIG90 siguen pendientes.
+
+El productor PREPARED_SMALL OWN342 quedó integrado después de revisión
+SOURCE sin bloqueos. Separa DATA_READY del productor del recibo real
+exit0/reap/noForced del launcher y verifica familias contra enum AST pin.
+Cinco rechazos antes de fixture pasaron en311/157 y1792 blobs/modos intactos;
+son un subset de95/Python, no cinco adicionales. La preparación90s sucede
+antes del RPC20; render1s/4MiB,health2s y LARGE quedan con sus caps originales.
+La batería95/Python311/312 y Chrome aún no se ejecutaron. El RAW focal está
+externo y se preservará con sus siguientes recibos, sin inventar GREEN total.
