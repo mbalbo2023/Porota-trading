@@ -183,6 +183,74 @@ def _reason(error):
     return type(error).__name__
 
 
+def _control(path, *, limit=64*1024):
+    """Small private control read without changing its access timestamp."""
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+        raise ValueError("DIAGNOSTIC_CONTROL_REJECTED")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        if _stat(os.fstat(fd)) != _stat(before):
+            raise ValueError("DIAGNOSTIC_SOURCE_CHANGED")
+        pieces, length = [], 0
+        while length <= limit:
+            piece = os.read(fd, min(65536, limit-length+1))
+            if not piece:
+                break
+            pieces.append(piece); length += len(piece)
+        if (length != before.st_size or length > limit or _stat(os.fstat(fd)) != _stat(before)
+                or _stat(path.lstat()) != _stat(before)):
+            raise ValueError("DIAGNOSTIC_SOURCE_CHANGED")
+        return json.loads(b"".join(pieces))
+    finally:
+        os.close(fd)
+
+
+def _native_receipt(path, *, pid, phase, sampling, pointer, manifest, source, pin):
+    if not path.exists():
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_MISSING")
+    native = _control(path, limit=MAX_OUTPUT)
+    if (not isinstance(native, dict) or native.get("schema") != "rc6.capture-restore-native-diagnostic.v1"
+            or native.get("native_completed") is not True or type(native.get("pid")) is not int or native["pid"] != pid
+            or native.get("phase") != phase or native.get("stack_sampling") != sampling or native.get("pointer") != pointer
+            or native.get("manifest_sha256") != pointer["manifest_sha256"] or native.get("as_of") != manifest["as_of"]
+            or native.get("alien_product_imports") != []
+            or native.get("diagnostic_only") is not True or native.get("acceptance_complete") is not False
+            or native.get("worker_tick_called") is not False or native.get("provider_called") is not False
+            or not isinstance(native.get("gc_thresholds_before"), list) or len(native["gc_thresholds_before"]) != 3
+            or any(type(value) is not int or value < 0 for value in native["gc_thresholds_before"])
+            or native.get("gc_thresholds_before") != native.get("gc_thresholds_after")
+            or type(native.get("peak_rss_bytes")) is not int or not 0 < native["peak_rss_bytes"] <= MAX_RSS):
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    attempts = native.get("attempts")
+    if (not isinstance(attempts, dict) or set(attempts) != {"network", "source_sqlite"}
+            or any(type(value) is not int or value != 0 for value in attempts.values())):
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    proofs, imports = native.get("verified_payloads"), native.get("product_imports")
+    if (not isinstance(proofs, dict) or set(proofs) != set(manifest["files"])
+            or not isinstance(imports, list) or not imports):
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    for role, record in manifest["files"].items():
+        if (not isinstance(proofs[role], dict) or any(proofs[role].get(key) != record[key]
+                for key in ("payload_digest", "logical_bytes", "storage_schema"))):
+            raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    for imported in imports:
+        if not isinstance(imported, dict) or not isinstance(imported.get("module"), str):
+            raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+        path = Path(imported.get("path", ""))
+        if not path.is_absolute() or not path.is_relative_to(source):
+            raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+        if imported.get("sha256") != pin["files"].get(str(path.relative_to(source))):
+            raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    expected_level = "WIRE_AND_CHECKPOINT_SEMANTICS" if phase == "restore" else "SEALED_WIRE_CUSTODY"
+    if native.get("export_verification_level") != expected_level:
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    if phase == "capture-report" and (native.get("logical_sha256"), native.get("logical_bytes")) != (
+            manifest["files"]["report"]["payload_digest"], manifest["files"]["report"]["logical_bytes"]):
+        raise ValueError("DIAGNOSTIC_NATIVE_RECEIPT_INVALID")
+    return native
+
+
 def _preflight(source, pin):
     installed, required, locks = {}, {}, {}
     normalize = lambda name: re.sub(r"[-_.]+", "-", name).lower()
@@ -501,7 +569,7 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
         "host":socket.gethostname(), "platform":platform.platform(), "pid":os.getpid(), "native_pid":None,
         "uid":os.getuid(), "gid":os.getgid(), "source_data":str(data), "private_copy":str(private),
         "raw":str(raw), "parent_argv":sys.argv, "phase":args.phase,
-        "stack_sampling":getattr(args, "stack_sampling", "timed"),
+        "stack_sampling":getattr(args, "stack_sampling", "none"),
         "original_cycle_budget_seconds":90, "original_lab_source_capture_budget_seconds":0.25,
         "diagnostic_watchdog_seconds":WATCHDOG_SECONDS, "maximum_rss_bytes":MAX_RSS,
         "copy_limit_bytes":COPY_LIMIT, "space_reserve_bytes":RESERVE, "minimum_free_inode_percent":10,
@@ -520,10 +588,12 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
         private.mkdir(mode=0o700)
         evidence, copied = _copy(data, before, private)
         private_before = snapshot(private)
+        pointer = _control(evidence/"CURRENT.json")
+        manifest = _control(evidence/("gen-"+pointer["generation_id"])/"manifest.json")
         command = [INTERPRETER, "-B", "-u", str(Path(__file__).absolute()), "--phase", args.phase,
             "--source-index", str(args.source_index.absolute()), "--source", str(source),
             "--data", str(data), "--raw", str(raw), "--private", str(evidence),
-            "--stack-sampling", args.stack_sampling]
+            "--stack-sampling", getattr(args, "stack_sampling", "none")]
         metadata.update(copy=copied, command=command,
             source_component_sha256={name: pin["files"][name] for name in
                 ("rc6_shadow_runtime/packed_storage.py", "rc6_shadow_runtime/serialization.py",
@@ -531,12 +601,9 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
         _write(raw/"wrapper-before.json", metadata)
         metadata.update(_monitor(command, source, raw, metadata))
         failed = bool(metadata["native_returncode"] != 0 or metadata["watchdog_reason"])
-        native_path = raw/"native-result.json"
-        if native_path.exists() and native_path.stat().st_size <= MAX_OUTPUT:
-            native = json.loads(native_path.read_bytes())
-            if (native.get("peak_rss_bytes", MAX_RSS+1) > MAX_RSS
-                    or native.get("gc_thresholds_before") != native.get("gc_thresholds_after")):
-                failed = True
+        if not failed:
+            _native_receipt(raw/"native-result.json", pid=metadata["native_pid"], phase=args.phase,
+                sampling=metadata["stack_sampling"], pointer=pointer, manifest=manifest, source=source, pin=pin)
         metadata["diagnostic_completed"] = not failed
     except BaseException as error:
         failed = True
@@ -566,17 +633,21 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
     return int(failed or any(attempts.values()))
 
 
-def main(argv=None):
+def _arguments(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase",required=True,choices=("restore","capture-report"))
     parser.add_argument("--source-index",required=True,type=Path)
     parser.add_argument("--source",required=True,type=Path)
     parser.add_argument("--data",required=True,type=Path)
     parser.add_argument("--raw",required=True,type=Path)
-    parser.add_argument("--stack-sampling",choices=("timed", "none"),default="timed",
-                        help="Diagnostic variant; timed is the original ten-second watcher.")
+    parser.add_argument("--stack-sampling",choices=("timed", "none"),default="none",
+                        help="Default NONE avoids auxiliary sampling; TIMED is an explicit diagnostic variant.")
     parser.add_argument("--private",type=Path,help=argparse.SUPPRESS)
-    args=parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args=_arguments(argv)
     os.umask(0o077)
     source=_absolute(args.source); data=_absolute(args.data); raw=_absolute(args.raw)
     if (raw.is_relative_to(data) or source.is_relative_to(data) or data.is_relative_to(raw)

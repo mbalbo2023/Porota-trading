@@ -2,8 +2,11 @@
 
 State: DESARROLLADO. Original driver `15b36374` has 18/18 native custody/failure
 guards on frozen311157. Its restore diagnostic completed; its report decode
-terminated with SIGSEGV before preparation. The new explicit sampling selector
-and its additional guards are execution-pending. This diagnostic does not
+terminated with SIGSEGV before preparation. The explicit sampling-selector
+driver `dc817b73` has 21/21 native guards. Its single NONE control decoded the
+sealed report and entered preparation but was stopped by its 60-second
+watchdog. The subsequent receipt/default-NONE guards are execution-pending.
+This diagnostic does not
 modify product code and does not establish acceptance of the 90-second runtime
 pipeline.
 
@@ -87,6 +90,8 @@ The original driver does not register GC callbacks, trace each token, arm
 multiple watchers or close its stack stream before cancellation. Its restore
 diagnostic completed before the first sample.
 
+The auxiliary profiler now defaults to NONE; this avoids its sampler and does
+not demonstrate or repair the unexplained SIGSEGV. Explicit
 `--stack-sampling timed` preserves the original ten-second periodic watcher.
 The explicit `--stack-sampling none` diagnostic control installs no timed,
 registered or fatal faulthandler callback. It retains the same native reader,
@@ -96,6 +101,13 @@ faulthandler state and fatal return signal are recorded. A single coordinated
 NONE control is authorized after its guards pass; even a favorable result is
 only a discriminator for the sampling hypothesis, not acceptance or permission
 to repeat controls or change product `_loads`.
+
+Completion also requires a final native receipt. A zero child exit without
+that file is rejected. PID, phase, sampling mode, original cut, manifest,
+four-role proofs, source imports, zero network/source-SQLite attempts, native
+completion and memory/GC checks must match before the wrapper can report
+`diagnostic_completed=true`. This is a separately identified static driver
+gap; it neither caused nor changes the preserved SIGSEGV/timeout outcomes.
 
 After the SOURCE checkpoint and coordinated CPU authorization, run the two
 commands sequentially, each using a new RAW directory:

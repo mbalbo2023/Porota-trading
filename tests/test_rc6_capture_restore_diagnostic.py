@@ -251,3 +251,64 @@ def test_unknown_sampling_mode_is_rejected_before_arming_watcher(tmp_path, monke
     with (tmp_path/"samples.log").open("wb") as stream:
         with pytest.raises(ValueError, match="DIAGNOSTIC_SAMPLING_MODE_REJECTED"):
             diagnostic._start_sampling(stream, "unknown")
+
+
+def test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired():
+    args = diagnostic._arguments(["--phase","restore", "--source","/synthetic/source",
+        "--source-index","/synthetic/index", "--data","/synthetic/data", "--raw","/synthetic/raw"])
+    assert args.stack_sampling == "none"
+
+
+def receipt_case(tmp_path):
+    source = tmp_path/"source"
+    source.mkdir()
+    filename = "synthetic_module.py"
+    source_sha = hashlib.sha256(b"synthetic module").hexdigest()
+    pointer = {"generation_id":"a"*32, "manifest_sha256":"b"*64, "sequence":1}
+    files = {role:{"payload_digest":str(ordinal)*64, "logical_bytes":100+ordinal, "storage_schema":"synthetic.v1"}
+             for ordinal,role in enumerate(("report","checkpoint","status","projection"),1)}
+    manifest = {"as_of":"2026-10-05T13:20:00+00:00", "files":files}
+    native = {"schema":"rc6.capture-restore-native-diagnostic.v1", "native_completed":True,
+        "diagnostic_only":True, "acceptance_complete":False, "worker_tick_called":False, "provider_called":False,
+        "pid":123, "phase":"capture-report", "stack_sampling":"none", "pointer":pointer,
+        "manifest_sha256":pointer["manifest_sha256"], "as_of":manifest["as_of"],
+        "alien_product_imports":[], "gc_thresholds_before":[700,10,10], "gc_thresholds_after":[700,10,10],
+        "peak_rss_bytes":1000000, "attempts":{"network":0,"source_sqlite":0}, "verified_payloads":files,
+        "product_imports":[{"module":"synthetic_module", "path":str(source/filename), "sha256":source_sha}],
+        "export_verification_level":"SEALED_WIRE_CUSTODY",
+        "logical_sha256":files["report"]["payload_digest"], "logical_bytes":files["report"]["logical_bytes"]}
+    kwargs = {"pid":123, "phase":"capture-report", "sampling":"none", "pointer":pointer,
+              "manifest":manifest, "source":source, "pin":{"files":{filename:source_sha}}}
+    return native, kwargs
+
+
+def test_complete_native_receipt_is_required_even_after_zero_exit_status(tmp_path):
+    native, kwargs = receipt_case(tmp_path)
+    path = tmp_path/"native-result.json"
+    path.write_text(json.dumps(native))
+    assert diagnostic._native_receipt(path, **kwargs) == native
+    path.unlink()
+    with pytest.raises(ValueError, match="DIAGNOSTIC_NATIVE_RECEIPT_MISSING"):
+        diagnostic._native_receipt(path, **kwargs)
+
+
+@pytest.mark.parametrize("mutation", ("noncompleted", "pid", "phase", "cut", "imports", "alien", "attempts", "proof", "logical", "peak", "missing_gc"))
+def test_incomplete_or_different_native_receipt_never_authorizes_completion(tmp_path, mutation):
+    native, kwargs = receipt_case(tmp_path)
+    native = json.loads(json.dumps(native))
+    if mutation == "noncompleted": native["native_completed"] = False
+    elif mutation == "pid": native["pid"] = 124
+    elif mutation == "phase": native["phase"] = "restore"
+    elif mutation == "cut": native["pointer"]["generation_id"] = "c"*32
+    elif mutation == "imports": native["product_imports"] = []
+    elif mutation == "alien": native["alien_product_imports"] = [{"module":"synthetic"}]
+    elif mutation == "attempts": native["attempts"]["network"] = True
+    elif mutation == "proof": native["verified_payloads"].pop("checkpoint")
+    elif mutation == "logical": native["logical_bytes"] += 1
+    elif mutation == "missing_gc":
+        native.pop("gc_thresholds_before"); native.pop("gc_thresholds_after")
+    else: native["peak_rss_bytes"] = diagnostic.MAX_RSS+1
+    path = tmp_path/"native-result.json"
+    path.write_text(json.dumps(native))
+    with pytest.raises(ValueError, match="DIAGNOSTIC_NATIVE_RECEIPT_INVALID"):
+        diagnostic._native_receipt(path, **kwargs)
