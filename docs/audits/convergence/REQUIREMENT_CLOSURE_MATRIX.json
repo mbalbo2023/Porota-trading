@@ -6293,18 +6293,10 @@
       ]
     },
     "rc6_audit_evidence/history_convergence/ORIGINAL_AUD20_AUD21_REVIEW.md": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Describe exact prior native Data912 replay and successful controls separately from immutable dated coverage evidence; no current full-database JOIN, deployed readiness or full tick is claimed.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
         "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-21"
       ]
     },
     "rc6_audit_evidence/history_convergence/canonical_initialization_native.json": {
@@ -6413,108 +6405,47 @@
       ]
     },
     "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Preserve the16 final native original-archive replay results and30 fixture-only SQLite opens with source/import/network proof; these controlled Data912 failures and controls do not certify current dataset coverage.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-20"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_issue468/adversarial_candidate.json.source": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Preserve literal supplied original candidate audit bytes as prior evidence; this record is not a new current producer implementation or complete replay of every original audit clause.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-20"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_issue468/adversarial_harness.py.source": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Preserve literal supplied original adversarial driver bytes with its declared fake exception/modeling limits; actual native complementary replay uses the intact original archive and real requests exception classes.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-20"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_issue468/adversarial_prod.json.source": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Preserve literal supplied original production audit bytes as dated prior evidence, without inferring current native producer correctness or new independent scenarios from file presence.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-20"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_issue468/history_audit.json": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Preserve the exact October1 coverage receipt and its family totals as dated observability; the original full database is unavailable, so its JOIN and current master coverage remain NO_VERIFICADO.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-21"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_issue468/member_inventory.json": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Bind exact ZIP member sizes/hashes and original filenames for native replay and dated coverage receipts; preservation of evidence bytes alone does not establish a current runtime fix.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
         "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-21"
       ]
     },
     "rc6_audit_evidence/history_convergence/original_prior_evidence_binding.json": {
-      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "reason": "Bind immutable original audit member bytes and hashes to native Data912 replay, separate successful controls and the October1 coverage receipt; dated observability is not a new READY bug.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
-        "AUD-468-18",
         "AUD-468-20",
-        "AUD-468-21",
-        "U24"
+        "AUD-468-21"
       ]
     },
     "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json": {
@@ -8708,7 +8639,7 @@
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
       "id": "AUD-468-21",
-      "native_caller": "cu_history_store_v2_hf6.coverage_inventory plus dated marker/history progress helpers; exact cohort, currency, session, consumer and as-of diagnostics. These guards do not execute a full SHADOW tick or replay the unavailable original full-database JOIN.",
+      "native_caller": "cu_history_store_v2_hf6.coverage_inventory, bl_candle_engine.SampleMaterializer.tick heartbeat/progress and cp_history_ingest_policy_hf6.history_collection_capability; exact cohort, currency, session, consumer and as-of diagnostics without READY authority. These guards do not execute the separate BF dated marker, a full SHADOW tick or the unavailable original full-database JOIN.",
       "original_requirement": {
         "closure": "M\u00e9trica full-key/currency/session por consumidor y corte; no trasladar5739/7728 del1/10 al presente ni exigir history global a estrategias que no lo consumen.",
         "condition": "Gap de cobertura/observabilidad; no es por s\u00ed mismo un bug READY.",
