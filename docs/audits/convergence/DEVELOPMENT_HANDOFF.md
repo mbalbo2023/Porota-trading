@@ -301,8 +301,11 @@ El control pequeño del observador GC completó el pipeline y cinco salidas
 PAPER dentro del fsync con190 eventos y cero errores del callback. El BIG
 diagnóstico agotó90s antes de fsync/CURRENT. La captura lab pasó0.071s y el
 observador no registró GC en captura; por tanto no reprodujo ni cerró el fallo
-anterior de0.25s. Nueve stacks periódicos y el último progreso ubican la captura
-del checkpoint en PackedStorage sin completar. Veintinueve pares completos
+anterior de0.25s. Nueve stacks periódicos y el orden de los ENTER ubican la
+primera captura de publication, report, en PackedStorage sin completar. Los
+7.225s previos pertenecen al funnel y no hubo ENTER de checkpoint prepare;
+esta atribución corrige la interpretación inicial conservando el RAW.
+Veintinueve pares completos
 de GC generación2 consumieron16.453s; el máximo fue2.216s. Los timers parciales
 del último progreso no son el tiempo total. Memoria1,289,154,560B, bytes y diez
 stats de fuente quedaron dentro de sus límites; la aceptación grande sigue RED.
@@ -310,13 +313,32 @@ La optimización de asignaciones está integrada con capturas/chunks/literales/
 canonical bytes exactos, plazos, GC y cuotas originales. Su evidencia OWN
 conserva162/162 casos sobre0b380438 y35/35 sobre93489456 después de restaurar
 la denegación MAX_BINDINGS del nuevo buffer. Son ejecuciones distintas y
-solapadas; no se suman como cobertura independiente. El ahorro CPU/RSS y el
-ciclo BIG90 sin instrumentación sobre la integración siguen sin medición.
+solapadas; no se suman como cobertura independiente. La primera medición BIG90
+sin observador GC de la fuente integrada está registrada más abajo; no se
+declara un ahorro porcentual por compararla con el diagnóstico anterior.
 
 La separación de los drivers de navegador está integrada desde OWN881efed5:
 Playwright queda en el driver; los handlers nativos se ejecutan en un child
 con157 distribuciones verificadas antes del fixture y con fuente Git completa.
-El IPC conserva respuesta fresca, custodia,4MiB y los plazos originales; sus
-guards funcionales311/312 están en ejecución separada. La preparación fuente
+El IPC prepara respuesta fresca, custodia,4MiB y los plazos originales; sus
+guards funcionales311/312 requieren corregir la revisión y una ejecución separada.
+La preparación fuente
 no constituye aceptación de esos guards ni de las294 rutas/resoluciones,
 aliases/foco/accesibilidad o del corte BIG OPEN final.
+
+El BIG sin observador GC sobre whole400a677c/frozen157 conservó los1703 blobs/
+modos y la fuente. Midió publicación completa a83.830s, fsync real y cinco
+salidas PAPER dentro de esa pausa. El pico RSS fue1,650,683,904B, dentro de2GiB.
+Los cuatro prepares completados de almacenamiento sumaron47.868s y la
+publicación58.340s; son spans completados, no tiempos totales del ciclo. El
+último evento entró a checkpoint_restore después de publicar y agotó el
+límite original90s antes de completarlo. Complete y cleanup quedaronfalse;
+CLI1 y wall externo91.553s. La aceptación BIG sigue RED aunque fsync/EXIT
+pasaron. El siguiente análisis usa este checkpoint real sin cambiar cuotas,
+GC, plazos ni semántica de restore. RAW íntegros y runner exacto están en
+evidence/native-big-400a677c-157; no es Gov, horizonte, browser o artefacto.
+
+La revisión estática independiente del nuevo IPC detectó cinco problemas de
+output/cleanup/deadline/procedencia. OWN881 se conserva como preparación sin
+ejecución: todavía no se inició pytest sobre esa fuente. La corrección y sus
+guards son obligatorios antes de cualquier aceptación funcional o navegador.

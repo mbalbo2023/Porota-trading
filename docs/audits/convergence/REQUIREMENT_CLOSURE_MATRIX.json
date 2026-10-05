@@ -5967,6 +5967,126 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/CUSTODY.json": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/big.log.gz": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/entry-preflight.json": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/export-whole-source.py": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/native-big-result.json": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/prepare-wrapper.py": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/run-wrapper.py": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/source.index.json.gz": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/wrapper-before.json": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-big-400a677c-157/wrapper-final.json": {
+      "reason": "Preserve the exact first uninstrumented optimized whole400a677c/frozen157 canonical12000/60000 BIG trial with all1703 Git blobs/modes and source custody unchanged. Real publication completed at83.830s and five PAPER exits occurred within actual staged-member fsync; peakRSS1,650,683,904 bytes remained below2GiB. The final checkpoint_restore entered after publication and did not complete before the original90s, so complete/cleanup remain false and nativeCLI1 is RED. Completed storage_prepare47.868s/publication58.340s and last-progress spans are partial rather than total CPU/wall. No observer GC, raised quota, fresh-BIG-OPEN browser, horizon, governed/image or runtime acceptance is inferred; original RAW plus exact external wrapper/export sources are losslessly retained.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-big.log": {
       "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
       "requirement_ids": [
@@ -6370,7 +6490,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-big-gc.log.gz": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6382,7 +6502,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-child-stacks.log.gz": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6394,7 +6514,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-entry-preflight.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6406,7 +6526,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-native-big-gc-result.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6418,7 +6538,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-runner.py": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6430,7 +6550,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-wrapper-before.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6442,7 +6562,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-wrapper-final.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6454,7 +6574,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/receipt-custody.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6466,7 +6586,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-child-stacks.log.gz": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6478,7 +6598,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-entry-preflight.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6490,7 +6610,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-native-small-gc-result.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6502,7 +6622,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-runner.py": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6514,7 +6634,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-small-gc.log.gz": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6526,7 +6646,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-wrapper-before.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -6538,7 +6658,7 @@
       ]
     },
     "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-wrapper-final.json": {
-      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks and actual ENTER ordering identify unfinished first publication report PackedStorage capture before fsync/CURRENT; the earlier7.225s completed prepare is funnel and no checkpoint prepare ENTER occurred. This corrects the initial derived attribution while preserving RAW. There were29 complete gen2 pairs taking16.453s; lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
       "requirement_ids": [
         "U04",
         "U13",

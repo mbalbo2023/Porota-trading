@@ -32,11 +32,14 @@ Root executed the complete d9 source tree with the exact frozen Python 3.11
 interpreter and 157 installed distributions. The 12,000-identity / 60,000-input
 observation diagnostic hit its 90-second deadline before member fsync or any
 committed CURRENT. The child exceeded that deadline while preparing the
-checkpoint. The report preparation returned after 7.225 s; sampled stacks at
+publication's first role, report. The completed 7.225 s prepare belongs to
+the preceding funnel encoder; the later publication report prepare did not
+return, and no checkpoint prepare ENTER occurred. Sampled stacks at
 70, 80 and 90 s were in `_parts` / `capture` beneath
 `PreparedPackedStorage.__init__` and `commit_generation`. Measured peak RSS was
 1,289,154,560 bytes. These are observations, not proof that every remaining
-second belongs to Capture allocations.
+second belongs to Capture allocations. This attribution corrects the initial
+source plan after reviewing the actual ENTER order; the original RAW is intact.
 
 Raw inputs, owned and preserved by Root:
 
