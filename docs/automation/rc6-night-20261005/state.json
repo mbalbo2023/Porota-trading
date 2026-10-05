@@ -16,18 +16,8 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-05T01:54:08.143Z-arm-18f6890fe0f918",
-    "holder": "SUPERVISOR_SETUP",
-    "purpose": "ARM_AFTER_VERIFIED_BOOTSTRAP",
-    "acquired_at": "2026-10-05T01:54:08.143Z",
-    "expires_at": "2026-10-05T02:14:08.143Z"
-  },
-  "pending_action": {
-    "kind": "ARMING_RECEIPT",
-    "issue": 473,
-    "marker": "NIGHT_SUPERVISOR_ARMED=WS-RC6-NIGHT-CONVERGENCE-20261005"
-  },
+  "lease": null,
+  "pending_action": null,
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -47,6 +37,11 @@
       "type": "bootstrap",
       "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986740552",
       "observed_at": "2026-10-05T01:50:20.170Z"
+    },
+    {
+      "type": "arming",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986779842",
+      "observed_at": "2026-10-05T01:55:13.037Z"
     }
   ],
   "blockers": [
@@ -95,5 +90,12 @@
   "bootstrap_result": "VALIDATED_GITHUB_READ_CONTROL_COMMIT_COMMENT",
   "armed_at": "2026-10-05T01:54:08.143Z",
   "armed_after_receipt_id": 5986740552,
-  "arming_authorization": "Autorización vigente del usuario en esta conversación para vincular al candidato y dejar la supervisión lista, incluidos los deploys al cumplir los gates; no requiere una confirmación adicional."
+  "arming_authorization": "Autorización vigente del usuario en esta conversación para vincular al candidato y dejar la supervisión lista, incluidos los deploys al cumplir los gates; no requiere una confirmación adicional.",
+  "arming_receipt": {
+    "id": 5986779842,
+    "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986779842",
+    "created_at": "2026-10-05T01:54:44Z",
+    "control_commit": "d19f49a058427cd52bfae2b4febf257277927353"
+  },
+  "last_setup_verified_at": "2026-10-05T01:55:13.037Z"
 }
