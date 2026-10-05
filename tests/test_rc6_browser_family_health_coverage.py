@@ -13,14 +13,42 @@ import pytest
 
 from tests.rc6_browser_ipc import GateFailure, ProductClient, parse_frame, protected_bytes, source_inventory
 from tests.rc6_browser_coverage import observe_health, verified_scope
+from tests.rc6_browser_prepared import initialize_prepared_product, prepare_native_fixture, prepared_receipt
 from tests.test_rc6_browser_product_ipc import complete_archive
 
 
 @pytest.fixture(scope="module")
-def multifamily_product():
-    with ProductClient(sys.executable) as product:
-        source = product.request("initialize", mode="MULTIFAMILY")
+def prepared_multifamily(complete_archive, tmp_path_factory):
+    root, index, _ = complete_archive
+    return prepare_native_fixture(sys.executable, tmp_path_factory.mktemp("multifamily-prepared-parent") / "fixture",
+        source_root=root, index=index, variant="MULTIFAMILY", python_version=f"{sys.version_info.major}.{sys.version_info.minor}")
+
+
+@pytest.fixture(scope="module")
+def multifamily_product(complete_archive, prepared_multifamily):
+    root, index, _ = complete_archive
+    prepared = prepared_multifamily
+    with ProductClient(sys.executable, root=root, index=index, require_complete_index=True) as product:
+        source = initialize_prepared_product(product, prepared)
         yield product, source
+
+
+def test_consumer_variant_rejects_jointly_consistent_but_wrong_multifamily_distribution(prepared_multifamily, complete_archive):
+    """Additive Source precision; underlying native database/cut are intact."""
+    import hashlib
+    from tests.rc6_browser_ipc import PROTOCOL, frame, read_source_index
+    root, index, _ = complete_archive
+    actual = prepared_multifamily
+    value = deepcopy(actual["receipt"])
+    row = next(row for row in value["catalog_full_identities"] if row[1] == "BONOS")
+    row[1] = "FCI"
+    value["catalog_families"]["BONOS"] -= 1
+    value["catalog_families"]["FCI"] += 1
+    raw = frame({"protocol": PROTOCOL, "id": 0, "ok": True, "result": value})
+    path = actual["receipt_path"].with_name("wrong-consistent-distribution.json")
+    path.write_bytes(raw)
+    with pytest.raises(GateFailure, match="^PREPARED_RECEIPT_VARIANT_POPULATION_REJECTED$"):
+        prepared_receipt(path, hashlib.sha256(raw).hexdigest(), source_root=root, source_index=read_source_index(index, root))
 
 
 def test_multifamily_native_catalog_preserves_supported_dlr_and_actual_page_denominators(multifamily_product):

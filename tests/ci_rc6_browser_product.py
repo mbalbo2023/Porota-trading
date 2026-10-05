@@ -39,6 +39,8 @@ class NativeProduct:
         self.initialized, self.finished, self.database = False, False, None
         self.native_root, self.custody_before, self.fixture = None, None, None
         self.live_health = None
+        self.prepared_small = None
+        self.prepared_launcher = None
         self.require = require
         self.trace = None
         def no_network(*_args, **_kwargs):
@@ -52,10 +54,11 @@ class NativeProduct:
         require(not self.initialized and self.database is None and not self.finished,
                 "PRODUCT_IPC_INITIALIZATION_REPEATED")
         mode = request.get("mode")
-        require(mode in {"LARGE", "NORMAL", "MULTIFAMILY", "HEALTH_LIVE"}, "PRODUCT_IPC_MODE_INVALID")
+        require(mode != "MULTIFAMILY", "SMALL_FIXTURE_REQUIRES_PREPARATION_OUTSIDE_RPC")
+        require(mode in {"LARGE", "NORMAL", "PREPARED_SMALL", "HEALTH_LIVE"}, "PRODUCT_IPC_MODE_INVALID")
         # No native import occurs before the environment and whole-source
         # handshake. NORMAL keeps the original writer supervision/GC behavior.
-        if mode in {"NORMAL", "MULTIFAMILY", "HEALTH_LIVE"}:
+        if mode in {"NORMAL", "HEALTH_LIVE"}:
             temporary = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="porota-native-browser-product-"))
             from tests.rc6_dashboard_native_fixture import native_fixture, LiveHealthFixture
             if mode == "HEALTH_LIVE":
@@ -65,8 +68,7 @@ class NativeProduct:
                 self.live_health = self.fixture
                 self.database, self.native_root = self.fixture.database, self.fixture.root
             else:
-                options = {"multifamily": True, "count": 35} if mode == "MULTIFAMILY" else {}
-                self.fixture = native_fixture(Path(temporary), **options)
+                self.fixture = native_fixture(Path(temporary))
                 self.fixture.broker.supervise_futures(self.fixture.as_of.isoformat())
                 gc.collect()  # Original normal-runner writer finalization, unchanged.
                 self.database, self.native_root, self.cut_at = self.fixture.database, self.fixture.root, self.fixture.as_of
@@ -78,6 +80,18 @@ class NativeProduct:
                     "SOURCE_ALIAS_FORBIDDEN")
             self.database, self.native_root = (path.resolve() for path in paths)
             require(self.database.is_file() and self.native_root.is_dir(), "COMPLETED_NATIVE_FIXTURE_REQUIRED")
+            if mode == "PREPARED_SMALL":
+                from tests.rc6_browser_prepared import prepared_receipt, prepared_launcher, inventory_digest
+                require(type(request.get("prepared_receipt")) is str and type(request.get("prepared_launcher")) is str,
+                        "PREPARED_RECEIPT_DIGEST_REQUIRED")
+                self.prepared_small = prepared_receipt(Path(request["prepared_receipt"]),
+                    request.get("prepared_receipt_sha256"), source_root=self.root, source_index=self.source_index,
+                    database=self.database, root=self.native_root)
+                self.prepared_launcher = prepared_launcher(Path(request["prepared_launcher"]),
+                    request.get("prepared_launcher_sha256"), source_root=self.root, source_index=self.source_index,
+                    producer=self.prepared_small, receipt_sha256=request["prepared_receipt_sha256"])
+                require(inventory_digest(self.prepared_small["product_environment"]) == inventory_digest(environment_receipt(self.root,
+                    product=True, executable=sys.executable)), "PREPARED_RECEIPT_ENVIRONMENT_REJECTED")
 
         self.guards.enter_context(patch.dict(os.environ, {"POROTA_DYNAMIC_SHADOW_ROOT": str(self.native_root),
             "POROTA_SHADOW_RUNTIME_ROOT": str(self.native_root)}))
@@ -98,6 +112,11 @@ class NativeProduct:
         self.pointer = json.loads(protected_bytes(self.native_root / "CURRENT.json"))
         self.manifest = json.loads(protected_bytes(self.native_root / ("gen-" + self.pointer["generation_id"]) / "manifest.json"))
         self.require(set(self.manifest["files"]) == {"report", "checkpoint", "status", "projection"}, "FOUR_ROLES_REQUIRED")
+        if self.prepared_small:
+            require(inventory_digest(self.custody_before) == inventory_digest(self.prepared_small["custody_inventory"])
+                    and inventory_digest(self.pointer) == inventory_digest(self.prepared_small["pointer"])
+                    and inventory_digest(self.manifest) == inventory_digest(self.prepared_small["manifest"]),
+                    "PREPARED_NATIVE_CUT_OR_CUSTODY_CHANGED")
         self.cut_at = datetime.fromisoformat(self.manifest["as_of"].replace("Z", "+00:00"))
         forbidden = {self.manifest["files"][role]["payload_digest"] for role in ("report", "checkpoint")}
         original_decode = persistence.decode_storage
@@ -117,12 +136,19 @@ class NativeProduct:
         with self.readonly_copy(self.database, validate=False, deadline=monotonic() + 2) as copied:
             result["catalog_families"] = {row[0]: row[1] for row in copied.execute(
                 "SELECT instrument_type,count(*) FROM financial_instrument_catalog GROUP BY instrument_type ORDER BY instrument_type")}
-        if mode == "LARGE":
+        if mode in {"LARGE", "PREPARED_SMALL"}:
             with self.readonly_copy(self.database, validate=False, deadline=monotonic() + 2) as copied:
                 catalog_count = copied.execute("SELECT count(*) FROM financial_instrument_catalog").fetchone()[0]
                 observation_count = copied.execute("SELECT count(*) FROM ppi_intraday_points").fetchone()[0]
                 last_identity = tuple(copied.execute("SELECT ticker,instrument_type,market,currency,settlement "
                     "FROM financial_instrument_catalog ORDER BY ticker DESC LIMIT 1").fetchone())
+                if self.prepared_small:
+                    require(catalog_count <= 318, "PREPARED_SMALL_POPULATION_EXCEEDED")
+                    catalog = [list(row) for row in copied.execute("SELECT ticker,instrument_type,market,currency,settlement "
+                        "FROM financial_instrument_catalog ORDER BY ticker,instrument_type,market,currency,settlement")]
+                    require(catalog == self.prepared_small["catalog_full_identities"]
+                            and result["catalog_families"] == self.prepared_small["catalog_families"],
+                            "PREPARED_NATIVE_FULL_IDENTITY_OR_POPULATION_CHANGED")
             preflight_begin = perf_counter()
             with Store(self.database, now=self.cut_at) as store:
                 projection = Projection(store)
@@ -132,11 +158,18 @@ class NativeProduct:
                      "elapsed_seconds": perf_counter() - preflight_begin, "scope": "default"})
                 self.require(cut["pointer"] == self.pointer and cut["verification_level"] == VERIFICATION_LEVEL,
                              "BROWSER_PREFLIGHT_CUT_OR_VERIFICATION_MISMATCH")
-                require_native_large_cut(cut, catalog_count=catalog_count, observation_count=observation_count)
+                if mode == "LARGE":
+                    require_native_large_cut(cut, catalog_count=catalog_count, observation_count=observation_count)
+                else:
+                    require(cut["report"].get("phase") == "OPEN"
+                            and cut["manifest"] == self.prepared_small["manifest"],
+                            "PREPARED_NATIVE_COHERENT_OPEN_CUT_REQUIRED")
                 planner = shadow_rows(projection, "opportunities")
-                self.require(planner.state == "AVAILABLE" and planner.total == 2 * catalog_count,
+                self.require(planner.state == "AVAILABLE"
+                             and (planner.total == 2 * catalog_count if mode == "LARGE" else planner.total > 0),
                              "PLANNER_DENOMINATOR_INCOMPLETE")
             self.require(not store.errors, "SOURCE_SNAPSHOT_REJECTED")
+        if mode == "LARGE":
             preflight_begin = perf_counter()
             with Store(self.database, now=self.cut_at) as store:
                 scoped_projection = Projection(store, {"family": last_identity[1]})
@@ -152,6 +185,10 @@ class NativeProduct:
             result.update({"catalog_full_identities": catalog_count, "observations": observation_count,
                 "last_identity": last_identity, "planner_rows": planner.total, "funnel_groups": scoped["total_groups"],
                 "custody": cut["export_contract"]["custody"]})
+        if self.prepared_small:
+            result["prepared_small_variant"] = self.prepared_small["variant"]
+            result["prepared_small_receipt_sha256"] = request["prepared_receipt_sha256"]
+            result["big_acceptance_claim"] = False
         self.initialized = True
         return result
 
@@ -246,6 +283,11 @@ class NativeProduct:
             "source_pin_complete": bool(self.source_index and self.source_index["pin_complete"])}
         if self.live_health:
             receipt["offline_live_health_fixture"] = self.fixture.receipt()
+        if self.prepared_small:
+            receipt["prepared_small_variant"] = self.prepared_small["variant"]
+            receipt["prepared_small_producer_pid"] = self.prepared_small["producer_pid"]
+            receipt["big_acceptance_claim"] = False
+            receipt["prepared_small_launcher_proof"] = self.prepared_launcher
         if self.trace is not None:
             receipt.update({"stage_aggregates": self.trace.records(), "gc_aggregates": self.trace.gc_records(),
                             "renders": self.trace.state["renders"]})
@@ -352,6 +394,9 @@ def serve(args, input_stream=None, output_stream=None):
                               "health": {"protocol", "id", "op"}, "finish": {"protocol", "id", "op"}}[operation]
                     if operation == "initialize" and request.get("mode") == "LARGE":
                         fields = fields | {"database", "root"}
+                    if operation == "initialize" and request.get("mode") == "PREPARED_SMALL":
+                        fields = fields | {"database", "root", "prepared_receipt", "prepared_receipt_sha256",
+                                           "prepared_launcher", "prepared_launcher_sha256"}
                     require(set(request) == fields, "PRODUCT_IPC_REQUEST_FIELDS_INVALID")
                     result = handlers[operation](request)
                     response = {"protocol": PROTOCOL, "id": request_id, "ok": True, "result": result}

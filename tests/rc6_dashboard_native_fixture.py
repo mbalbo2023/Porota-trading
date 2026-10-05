@@ -203,9 +203,9 @@ class NativeFixture:
     clock: list
 
 
-def native_fixture(tmp_path, *, as_of=AS_OF, count=25, with_future=True, with_spot=True, multifamily=False):
+def native_fixture(tmp_path, *, as_of=AS_OF, count=25, with_future=True, with_spot=True, multifamily=False, progress=None):
     fixture = _build_native_fixture(tmp_path, as_of=as_of, count=count,
-                                    with_future=with_future, with_spot=with_spot, multifamily=multifamily)
+                                    with_future=with_future, with_spot=with_spot, multifamily=multifamily, progress=progress)
     # SQLite's transaction context commits but does not close a connection.
     # Native writer UDFs may retain cycles until GC; finalize those writers
     # before measuring read custody, so their last-close WAL checkpoint cannot
@@ -287,14 +287,20 @@ def _multifamily_records(as_of, count):
             yield record
 
 
-def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, multifamily):
+def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, multifamily, progress=None):
+    def observed(stage, **values):
+        if progress is not None:
+            progress(stage, **values)
+    observed("SCHEMA_BEGIN")
     path = Path(tmp_path) / "native-paper.db"
     store = PaperStore(str(path))
     _support_schema(store)
     init_schema(store)
+    observed("SCHEMA_END")
     start = as_of - timedelta(minutes=10)
     preopen = as_of.replace(hour=13, minute=20, second=0, microsecond=0)
     with store.connect() as connection:
+        observed("CATALOG_BEGIN")
         if multifamily:
             from bu_instrument_catalog import persist
             for record in _multifamily_records(as_of, count):
@@ -306,6 +312,7 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
                 connection.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     (*identity(asset), "OFFLINE SYNTHETIC", "fixture", (preopen-timedelta(minutes=1)).isoformat(), "test",
                      "AVAILABLE", "READY_PAPER_SPOT", "{}"))
+    observed("CATALOG_END")
     clock = [start]
     def native_clock():
         clock[0] += timedelta(microseconds=1)
@@ -317,7 +324,13 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
     # Resolve exactly the root the launcher/worker/dashboard share. No caller
     # constructs a .shadow fallback or publishes manually fabricated bundles.
     worker = ShadowRuntime.from_environment(path, source_roots=[])
-    worker.tick(preopen)
+    def tick(at):
+        observed("TICK_BEGIN", as_of=at.isoformat())
+        report = worker.tick(at)
+        if progress is not None:
+            observed("TICK_END", as_of=report["as_of"], generation_id=report["generation_id"],
+                     sequence=report["sequence"], phase=report["phase"], mode=report["mode"])
+    tick(preopen)
     prices = ("100", "101", "100.5", "102", "101.5", "103", "103.5", "104")
     for index, price in enumerate(prices):
         at = start + timedelta(minutes=index + 1)
@@ -333,7 +346,7 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
             with patch.dict(os.environ, {"PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY"}):
                 broker.on_quote(quote)
             assert store.open_positions(), "Native PAPER caller did not open the synthetic spot"
-        worker.tick(at + timedelta(seconds=1))
+        tick(at + timedelta(seconds=1))
     if with_future:
         executor = FamilyPaperExecutor(store)
         opened = as_of - timedelta(minutes=1)
@@ -346,8 +359,10 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
                 heartbeat_at=as_of.isoformat(), last_market_data_at=as_of.isoformat(), real_orders_sent=0)
     clock[0] = as_of
     broker.mark_equity({"T000": quote}, as_of=as_of.isoformat())
-    worker.tick(as_of)
+    tick(as_of)
     root = shadow_evidence_root(path)
     assert root == artifact_root(path) / "dynamic-shadow"
+    observed("FULL_READER_BEGIN")
     cut = read_committed_generation(root)
+    observed("FULL_READER_END")
     return NativeFixture(path, as_of, root, cut, store, worker, broker, clock)

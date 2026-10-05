@@ -39,6 +39,7 @@ def complete_archive(tmp_path_factory):
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], cwd=ROOT, text=True).strip()
     raw_commit = subprocess.check_output(["git", "cat-file", "commit", "HEAD"], cwd=ROOT)
+    (base / "source.commit.raw").write_bytes(raw_commit)
     index.write_text(json.dumps({"schema": "rc6.complete-archive-source-pin.v1", "source_sha": sha,
         "source_tree": tree, "tar_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(), "overlay_count": 0,
         "raw_git_commit_sha256": hashlib.sha256(raw_commit).hexdigest(), "modes": modes, "blob_ids": blobs,

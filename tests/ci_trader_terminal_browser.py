@@ -15,14 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tests.rc6_browser_ipc import GateFailure, ProductClient, imported_source, output_guard, require
 from tests.rc6_browser_coverage import observe_health, verify_family_pages
+from tests.rc6_browser_prepared import prepare_native_fixture, initialize_prepared_product
 
 
 def run(output, *, product_python=None, index=None, product_python_version=None, require_complete_index=False, multifamily=False):
     output_guard(output)
     findings, requests, renders = [], [], []
+    prepared = prepare_native_fixture(product_python or sys.executable, output.with_name(output.name + "-native-fixture"),
+        source_root=ROOT, index=index, variant="MULTIFAMILY" if multifamily else "NORMAL",
+        python_version=product_python_version)
     with ProductClient(product_python or sys.executable, index=index, python_version=product_python_version,
                        require_complete_index=require_complete_index) as product:
-        fixture = product.request("initialize", mode="MULTIFAMILY" if multifamily else "NORMAL")
+        fixture = initialize_prepared_product(product, prepared)
         CANONICAL_PATHS, LEGACY = fixture["canonical_paths"], fixture["legacy"]
         health_observation = observe_health(product) if index is not None else {"consumer_state": "NOT_EXERCISED_SOURCE_INDEX_ABSENT"}
         from playwright.sync_api import sync_playwright
@@ -186,6 +190,7 @@ def run(output, *, product_python=None, index=None, product_python_version=None,
               "source_cut": fixture["source_cut"], "native_contract_checks": ["FUT ACTIVE visible", "FUT native supervision intent visible", "same-entry exit lab nonempty", "entry experiment nonempty", "OFF policy separate from OPEN evidence", "unique element IDs", "same four-role sealed generation", "explicit projected verification scope"],
               "as_of": datetime.now(timezone.utc).isoformat(),
               "product_proof": product.finish_receipt, "product_environment": product.product_environment,
+              "native_preparation_proof": prepared["receipt"], "native_preparation_transport": prepared["launcher_receipt"],
               "driver_environment": product.driver_environment, "driver_imported_source": closure,
               "tracked_source_hashes_and_modes_unchanged": product.source_before == product.source_after,
               "request_timing_scope": "DRIVER_ROUNDTRIP_INCLUDES_IPC_NATIVE_SNAPSHOT_RENDER_HTML_JSON"}
