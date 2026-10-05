@@ -1,0 +1,107 @@
+{
+  "schema": "rc6.native-big-import-provenance-source-plan.v1",
+  "status": "SOURCE_ONLY_NOT_EXECUTED",
+  "base_source": {
+    "sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+    "tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+    "original_stress_sha256": "1643c3d58ab69b8ccdfed8b2818bb5ceb03adae77fa85f9cd702b36a3fdf4492",
+    "read_only_previous_external_wrapper": "/workspace/rc6-canonical-8764e934-big-wrapper.py",
+    "previous_wrapper_sha256": "342cf31542114f233061d0c2ee85916c969581287ebd7b45afe7bff18292c58f"
+  },
+  "ownership": {
+    "worktree": "/workspace/porota_rc6_worktrees/budget_big_import_closure",
+    "branch": "work/rc6-native-big-import-closure-20261005",
+    "scope": [
+      "scripts/rc6_native_import_provenance.py",
+      "scripts/rc6_issue465_stress.py optional import audit only",
+      "tests/test_rc6_native_big_import_provenance.py",
+      "this source plan"
+    ],
+    "root_or_product_edited": false
+  },
+  "rca": [
+    "The external8764 wrapper proves source bytes/modes/blobIDs and exact157 metadata but never observes the spawned SHADOW worker sys.modules.",
+    "The native stress launcher uses multiprocessing spawn, so its worker has independent module state. External or launcher-only snapshots cannot attest the real worker.",
+    "A retained-module snapshot cannot detect an alien module executed and then removed from sys.modules. Actual import/exec audit events supply a separate bounded observation window."
+  ],
+  "native_contract_preserved": {
+    "catalog_count": 12000,
+    "observations_per_identity": 5,
+    "materialized_observations": 60000,
+    "factual_paper_exits": 5,
+    "canonical_runtime": true,
+    "cycle_deadline_seconds": 90,
+    "slow_fsync_release_limit_seconds": 15,
+    "live_bytes": 134217728,
+    "rss_bytes": 2147483648,
+    "fixtures_or_business_clocks_changed": false,
+    "runtime_or_horizon_changed": false,
+    "gc_collect_callbacks_or_thresholds_added": false,
+    "call_profile_or_stack_sampler_added": false,
+    "per_event_hash_io_or_queue_added": false
+  },
+  "future_cli_addition": "--source-root \"$RC6_BIG_WHOLE\" --source-repo \"$RC6_BIG_REPO\" --source-sha \"$RC6_BIG_SHA\" --source-tree \"$RC6_BIG_TREE\" --source-index \"$RC6_BIG_PREPARED/source.index.json\"",
+  "source_and_environment": {
+    "binding": "All five CLI fields together or none. Raw local Git commit/all tree hashes plus complete physical namespace SHA/modes/blobIDs must agree with the index. Helper must itself be the pinned source member.",
+    "parent_preflight": "Exact installed157 names/versions and policy hash locks, actual supported Python3.11.16 or3.12.14 Linux/x86_64/glibc>=2.36 virtualenv and effective sys.path before fixture_database. Installed metadata is not installed-wheel byte authentication.",
+    "worker_preflight": "Actual spawned worker repeats exact157 qualification before product imports, with its own executable/prefix and explicit statement that PRIMARY fixtures were already created by its parent.",
+    "physical_code_proof_after": "The external governed wrapper must still verify wholeSource/index/tar after actual reap. This helper does not replace that independent final source proof."
+  },
+  "observation": {
+    "parent": "Snapshot and audit window cover fixture construction, launcher activity and actual PAPER exits, ending before final result emission.",
+    "worker": "Installed before product imports; snapshot before/after PRE+OPEN+readCommitted. Initial IMPORT_PROVENANCE event survives a later timeout; final proof rides existing FINAL.",
+    "retained_scope": "Actual module file/spec/namespace locations at two boundaries. No claim that retained modules enumerate every transient import.",
+    "transient_scope": "Stdlib audit hook counts actual import and exec events, retaining bounded module/filename strings and complete event counters. It never profiles Python function calls.",
+    "callback_cost": "Python calls every registered audit hook for other audit events too; this handler immediately returns for them. The spawned-worker qualification, observations and IPC consume the existing parent-managed90s window without renewal. Parent preflight/initial snapshot and fixture construction precede that original timer; parent final capture follows worker cleanup. The external wrapper must measure full launcher lifetime/resource use as well; none of these stages is relabeled as a90s whole-launcher deadline.",
+    "records": "At most2048 event records,2048 pending names,2048 retained-origin/unresolved records per snapshot and4096 characters per identifier (UTF-8 may occupy up to16384 bytes). Counters explicitly record overflow and errors; no truncation is silently accepted.",
+    "filename_none": "Original None counts retained. A named event may be resolved only through the actual final retained-module origin; missing/unresolved names remain UNVERIFIED.",
+    "opaque": "Generic <string>, frozen-looking exec filenames and other unknown code locations remain opaque/UNVERIFIED. No generic allowlist is used to turn them GREEN.",
+    "closure_limit": "Bootstrap before installation and postboundary IPC/emission/process teardown are outside the observed window. Local module paths/code.co_filename are interpreter metadata, not cryptographic authentication of executed code or installed binaries.",
+    "cleanup": "Owner wrappers unconditionally deactivate audit hooks on every exit, including root/fixture/spawn/import/setup failures. Python audit hooks cannot be uninstalled; inactive hooks return without changing counters."
+  },
+  "pid_and_acceptance": {
+    "worker_binding": "Both initial/final worker payloads must match ctx.Process.pid, os.getppid==launcherPID and sourceSHA/tree/indexRAWsha. Actual child.join/exitcode/cleanup and final receipt are required. No manual wait4 is added to multiprocessing's own waitpid.",
+    "external_wrapper": "Future wrapper must bind native launcher os.getpid to external Popen.pid and actual wait4/reap/returncode. Its own sys.modules cannot substitute for the spawned worker proof.",
+    "result_fields": [
+      "business_resource_complete",
+      "import_proof_complete",
+      "import_provenance.requested",
+      "import_provenance.status",
+      "import_provenance.transient_closure_verified",
+      "import_provenance.worker_pid_source_binding_verified",
+      "import_provenance.worker_exitcode",
+      "import_provenance.worker_cleanup_completed"
+    ],
+    "incomplete": "Business/resource-complete can coexist with import proof incomplete. In opt-in audit mode incomplete imports raise StressImportProofLimit with lossless evidence/exit1. Missing FINAL, timeout, invalid PID/pin, unknown origin, opaque exec, observer failure or overflow never closes the proof.",
+    "legacy": "No binding preserves original business path and reports NOT_AUDITED. Old8764 and other raw epochs remain byteexact and are never relabeled as audited."
+  },
+  "guards_planned_not_executed": [
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_actual_retained_pinned_module_origin_is_reported", "kind": "ACTUAL_FRESH_PYTHON_IMPORT_OBSERVER_CONTROL_NOT_FULL_RAW_GIT_QUALIFICATION"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked", "kind": "ACTUAL_FRESH_PYTHON_TRANSIENT_ALIEN_EXEC"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist", "kind": "ACTUAL_OPAQUE_EXEC_CONTROL"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_unresolved_filename_none_is_not_treated_as_a_closed_import", "kind": "DIRECT_PUBLIC_AUDIT_EVENT_TELEMETRY_CONTROL_NOT_MODULE_IMPORT"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure", "kind": "DIRECT_PUBLIC_AUDIT_EVENT_CAPACITY_CONTROL_NOT2049_MODULE_IMPORTS"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer", "kind": "ACTUAL_EVENT_AFTER_DEACTIVATION_AND_NEXT_OBSERVER"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook", "kind": "EXPLICIT_SNAPSHOT_FAILURE_CONTROL"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer", "variants": ["root_abort", "fixture_abort"], "kind": "ACTUAL_ABORT_OWNER_CLEANUP_WITH_CONTROLLED_PREPARED_BINDING_NOT_RAW_GIT_PASS"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import", "kind": "ACTUAL_CLI_PARTIAL_BINDING_REJECTION"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture", "kind": "CONTROLLED_INVALID_INDEX_BINDING_FAILS_BEFORE_ENVIRONMENT_OR_FIXTURE_NOT_RAW_GIT_SUCCESS"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup", "kind": "ACTUAL_TARGET_ENTRY_PID_BINDING_REJECTION_NO_PRODUCT_IMPORT_OR_FIXTURE"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation", "kind": "DECLARATIVE_AST_CONTRACT_NOT_NATIVE_IMPORT_PROOF"}
+  ],
+  "phase": {
+    "ast_compile_only": "PASS_WITHOUT_IMPORT_OR_EXECUTION",
+    "product_imports_executed": 0,
+    "guard_executions": 0,
+    "native_big_executions": 0,
+    "native_horizon_executions": 0,
+    "new_original_requirements_or_scenarios": 0,
+    "source_S": null,
+    "source_T": null,
+    "source_self_commit": null,
+    "final_input_provenance": null,
+    "artifact_validated": false,
+    "runtime_validated": false,
+    "deployed": false
+  }
+}

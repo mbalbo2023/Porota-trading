@@ -41,6 +41,12 @@ class StressResourceLimit(AssertionError):
             "shadow_reason": evidence["shadow"].get("reason")}, sort_keys=True))
 
 
+class StressImportProofLimit(AssertionError):
+    def __init__(self, evidence):
+        self.evidence = evidence
+        super().__init__("NATIVE_IMPORT_PROVENANCE_NOT_VERIFIED")
+
+
 def source_file_custody(path):
     """Capture owned source bytes and metadata without changing access time."""
     path = Path(path)
@@ -144,7 +150,43 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
 
 
 def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes,
-                  canonical_runtime=False, diagnostic_stacks=None):
+                  canonical_runtime=False, diagnostic_stacks=None, source_binding=None):
+    import_observer = None
+    if source_binding is not None:
+        try:
+            from scripts.rc6_native_import_provenance import NativeImportObserver, environment_qualification
+            if source_binding["prepared_by_pid"] != os.getppid() or source_binding["source_root"] != str(ROOT):
+                raise ValueError("NATIVE_IMPORT_CHILD_PARENT_OR_SOURCE_ROOT_MISMATCH")
+            child_qualification = environment_qualification(ROOT)
+            import_observer = NativeImportObserver(source_binding, role="SPAWNED_SHADOW_WORKER")
+            initial = import_observer.initial_receipt()
+            initial.update(environment_before_product_imports=child_qualification,
+                           primary_fixture_created_by_parent=True)
+            queue.put({"_probe_event":"IMPORT_PROVENANCE", "phase":"BEFORE_PRODUCT_IMPORTS", "import_provenance":initial})
+        except Exception as error:
+            if import_observer is not None:
+                import_observer.deactivate()
+            started.set()
+            queue.put({"_probe_event":"FINAL", "status":"SHADOW_FAIL_CLOSED", "cycle_completion":False,
+                "cycle_handled":True, "reason":"NATIVE_IMPORT_PROVENANCE_STARTUP_UNVERIFIED", "handler_resources":{},
+                "phases":[], "elapsed_seconds":0., "cpu_seconds":0., "peak_rss_bytes":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                "fsync":{"fsync_entered":False,"fsync_completed":False,"scope":"ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
+                "import_provenance":{"status":"UNVERIFIED_STARTUP","native_pid":os.getpid(),"parent_pid":os.getppid(),
+                    "source_sha":source_binding.get("source_sha"),"source_tree":source_binding.get("source_tree"),
+                    "source_index_sha256":source_binding.get("source_index_sha256"),"transient_closure_verified":False,
+                    "error_class":type(error).__name__,"reason":str(error)}})
+            return
+    try:
+        return _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
+            canonical_runtime,diagnostic_stacks,import_observer,
+            child_qualification if source_binding is not None else None)
+    finally:
+        if import_observer is not None:
+            import_observer.deactivate()
+
+
+def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
+                       canonical_runtime,diagnostic_stacks,import_observer,child_qualification):
     from rc6_shadow_runtime import persistence
     from rc6_shadow_runtime.worker import ShadowRuntime
     import rc6_shadow_runtime.worker as worker_module
@@ -412,6 +454,14 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
     if diagnostic_stacks is not None:
         result["diagnostic_gc_receipt"] = dict(gc_diagnostic,
             policy_changed=False, scope="OBSERVED_REAL_CHILD_COLLECTION_ONLY")
+    if import_observer is not None:
+        try:
+            result["import_provenance"] = import_observer.finish()
+            result["import_provenance"]["environment_before_product_imports"] = child_qualification
+        except Exception as error:
+            result["import_provenance"] = {"status":"UNVERIFIED_FINAL_BOUNDARY", "native_pid":os.getpid(),
+                "parent_pid":os.getppid(), "transient_closure_verified":False,
+                "error_class":type(error).__name__, "reason":str(error)}
     result.update(phases=phases, cycle_handled=True,
                   full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
@@ -481,7 +531,28 @@ def factual_exit_probe(path):
 
 def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
                slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False,
-               canonical_runtime=False, diagnostic_stacks=None):
+               canonical_runtime=False, diagnostic_stacks=None, source_provenance=None):
+    binding, parent_observer, parent_before = None, None, None
+    if source_provenance is not None:
+        if not canonical_runtime or not isinstance(source_provenance,dict):
+            raise ValueError("NATIVE_IMPORT_PROVENANCE_REQUIRES_CANONICAL_RUNTIME_AND_FULL_BINDING")
+        from scripts.rc6_native_import_provenance import prepare_binding, NativeImportObserver
+        binding = prepare_binding(**source_provenance)
+    try:
+        if binding is not None:
+            parent_observer = NativeImportObserver(binding,role="NATIVE_LAUNCHER_AND_FACTUAL_EXITS")
+            parent_before = parent_observer.initial_receipt()
+        return _run_stress(root,catalog_count=catalog_count,observations_per_identity=observations_per_identity,
+            slow_disk=slow_disk,maximum_bytes=maximum_bytes,allow_fail_closed=allow_fail_closed,
+            canonical_runtime=canonical_runtime,diagnostic_stacks=diagnostic_stacks,
+            binding=binding,parent_observer=parent_observer,parent_before=parent_before)
+    finally:
+        if parent_observer is not None:
+            parent_observer.deactivate()
+
+
+def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, maximum_bytes,
+                allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()):
@@ -507,8 +578,11 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
     before = source_before[""]["sha256"]
     ctx = mp.get_context("spawn")
     started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
-    child = ctx.Process(target=_shadow_child, args=(str(database), str(output),
-                        started, release, queue, slow_disk, maximum_bytes, canonical_runtime, diagnostic_stacks))
+    child_args = (str(database), str(output), started, release, queue, slow_disk, maximum_bytes,
+                  canonical_runtime, diagnostic_stacks)
+    if binding is not None:
+        child_args += (binding,)
+    child = ctx.Process(target=_shadow_child,args=child_args)
     cycle_begin = time.monotonic(); deadline = cycle_begin+90
     child.start()
     shadow = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False, "cycle_handled": False,
@@ -517,9 +591,10 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
         "elapsed_seconds": 90., "cpu_seconds": 0., "peak_rss_bytes": 0}
     completed = False
     progress_receipts = []
+    child_import_before = None
 
     def receive(message):
-        nonlocal completed, shadow
+        nonlocal completed, shadow, child_import_before
         event = message.pop("_probe_event", None)
         progress_receipts.append({"event": event,
             "received_at_monotonic": time.monotonic(),
@@ -529,7 +604,9 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             "child_elapsed_seconds": message.get("elapsed_seconds"),
             "phases": list(message.get("phases", [])),
             "handler_names": sorted(message.get("handler_resources", {}))})
-        if event == "FINAL":
+        if event == "IMPORT_PROVENANCE":
+            child_import_before = message.get("import_provenance")
+        elif event == "FINAL":
             shadow = message
             completed = True
         elif event in {"PROGRESS", "FSYNC"}:
@@ -622,10 +699,39 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
         "actual_slow_fsync_exit_isolation": not slow_disk or allow_fail_closed or slow_proven,
         "maximum_rss_bytes": 2 * 1024**3, "actual_rss_bytes": shadow["peak_rss_bytes"],
         "maximum_evidence_bytes": maximum_bytes, "actual_evidence_bytes": shadow["evidence_bytes"]}
-    if not all(result["resource_gates"][key] for key in
+    if binding is None:
+        result["import_provenance"] = {"requested":False,"status":"NOT_AUDITED","transient_closure_verified":False}
+    else:
+        try:
+            parent_final = parent_observer.finish()
+        except Exception as error:
+            parent_final = {"status":"UNVERIFIED_FINAL_BOUNDARY","transient_closure_verified":False,
+                            "error_class":type(error).__name__,"reason":str(error)}
+        child_final = shadow.get("import_provenance")
+        sources = (binding["source_sha"],binding["source_tree"],binding["source_index_sha256"])
+        child_bound = (isinstance(child_import_before,dict) and isinstance(child_final,dict)
+            and all(proof.get("native_pid")==child.pid and proof.get("parent_pid")==os.getpid()
+                and tuple(proof.get(key) for key in ("source_sha","source_tree","source_index_sha256"))==sources
+                for proof in (child_import_before,child_final)))
+        verified = bool(child_bound and completed and shadow.get("child_cleanup_completed") is True
+            and child.exitcode==0 and parent_final.get("transient_closure_verified") is True
+            and child_final.get("transient_closure_verified") is True)
+        result["import_provenance"] = {"requested":True,"status":"VERIFIED_OBSERVED_WINDOWS" if verified else "UNVERIFIED",
+            "source_sha":binding["source_sha"],"source_tree":binding["source_tree"],"source_index_sha256":binding["source_index_sha256"],
+            "environment_before_fixtures":binding["parent_environment_before_fixtures"],
+            "sys_path_before_fixtures":binding["sys_path_before_fixtures"],"launcher_pid":os.getpid(),"launcher_parent_pid":os.getppid(),
+            "worker_pid":child.pid,"worker_exitcode":child.exitcode,"worker_cleanup_completed":shadow.get("child_cleanup_completed") is True,
+            "worker_pid_source_binding_verified":child_bound,"parent_boundary_before":parent_before,"parent_final":parent_final,
+            "worker_boundary_before":child_import_before,"worker_final":child_final,"transient_closure_verified":verified,
+            "scope":"OBSERVED_PARENT_AND_WORKER_WINDOWS; BOOTSTRAP_AND_POSTBOUNDARY_IPC_TEARDOWN_NOT_FULL_LIFETIME_CLOSURE"}
+    result["business_resource_complete"] = all(result["resource_gates"][key] for key in
                ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
-                "complete_committed_cycle", "actual_slow_fsync_exit_isolation")):
+                "complete_committed_cycle", "actual_slow_fsync_exit_isolation"))
+    result["import_proof_complete"] = binding is not None and result["import_provenance"]["transient_closure_verified"] is True
+    if not result["business_resource_complete"]:
         raise StressResourceLimit(result)
+    if binding is not None and not result["import_proof_complete"]:
+        raise StressImportProofLimit(result)
     return result
 
 
@@ -638,13 +744,20 @@ def main(argv=None):
     parser.add_argument("--slow-disk", action="store_true")
     parser.add_argument("--canonical-runtime", action="store_true")
     parser.add_argument("--diagnostic-stacks", help="New private raw stack/GC file; result is diagnostic-only")
+    for name in ("source-root","source-repo","source-sha","source-tree","source-index"):
+        parser.add_argument("--"+name,help="Optional import audit: all five source-binding arguments are required together")
     args = parser.parse_args(argv)
+    source_values = {name:getattr(args,name) for name in ("source_root","source_repo","source_sha","source_tree","source_index")}
+    if any(value is not None for value in source_values.values()) and not all(value is not None for value in source_values.values()):
+        parser.error("Import provenance requires all five full source-binding arguments")
+    source_provenance = source_values if all(value is not None for value in source_values.values()) else None
     code = 0
     try:
         result = run_stress(args.root, catalog_count=args.catalog_count,
                             observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
-                            canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks)
-    except StressResourceLimit as error:
+                            canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks,
+                            **({"source_provenance":source_provenance} if source_provenance is not None else {}))
+    except (StressResourceLimit,StressImportProofLimit) as error:
         result, code = error.evidence, 1
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")
     print("ISSUE465_STRESS_EVIDENCE="+str(Path(args.out)))
