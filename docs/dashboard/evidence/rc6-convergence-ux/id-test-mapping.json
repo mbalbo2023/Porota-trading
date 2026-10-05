@@ -229,17 +229,19 @@
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json",
         "docs/dashboard/evidence/rc6-convergence-ux/native-large-first-cut-local-receipt.json",
-        "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json"
       ],
       "pending_gates": [
-        "Browser grande: preflight RED en59481b3e por deadline wire; corregir costo sin aumentar1s y ejecutar reader→browser sobre nuevo archive íntegro.",
+        "Browser grande:40f mejora reader(max0.811644s), pero af71ff9e intermedio falla1.181601s en1280/trading/equity-spot tras49views1440GREEN. Corregir costo, ejecutar49×6/22/interacciones sin aumentar1s.",
         "Reejecución final de navegador/import closure sobre SHA/tree/artifact congelado con implementación launcher del owner SRE."
       ],
       "external_limits": [
         "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
         "El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
         "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales.",
-        "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados."
+        "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados.",
+        "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN."
       ]
     },
     {

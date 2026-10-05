@@ -17,6 +17,18 @@ args=a.arguments[1:] if a.arguments[:1]==['--'] else a.arguments
 source=Path(args[args.index('--database')+1]).resolve()
 native_root=Path(args[args.index('--root')+1]).resolve()
 source_members={Path(str(source)+suffix) for suffix in ('','-wal','-shm','-journal')}
+def native_inventory():
+ paths=list(source_members)
+ for folder in (native_root,Path(str(native_root)+'.authority')):
+  if folder.exists(): paths.extend(path for path in folder.rglob('*') if path.is_file())
+ result={}
+ for path in sorted(paths):
+  if not path.exists(): continue
+  info=path.stat()
+  descriptor=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW)
+  with os.fdopen(descriptor,'rb') as stream: checksum=hashlib.sha256(stream.read()).hexdigest()
+  result[str(path)]={'sha256':checksum,'bytes':info.st_size,'inode':info.st_ino,'mtime_ns':info.st_mtime_ns,'atime_ns':info.st_atime_ns,'ctime_ns':info.st_ctime_ns}
+ return result
 proof_path=a.proof.resolve()
 if (a.proof.exists() or any(path.is_symlink() for path in (a.proof,*a.proof.parents))
     or proof_path.is_relative_to(root) or proof_path.is_relative_to(native_root)
@@ -26,6 +38,7 @@ def hashes():
  return {str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(root.rglob('*')) if f.is_file()}
 before=hashes()
 assert before==index['source_file_hashes'], 'ARCHIVE_SOURCE_HASH_MISMATCH'
+native_before=native_inventory()
 net=[]; source_calls=[]
 original_connect=sqlite3.connect
 def no_network(*args,**kwargs):
@@ -66,8 +79,10 @@ finally:
   elif str(path).startswith(('/workspace/porota_','/tmp/rc6_finance_core_original_')) and path!=Path(__file__).resolve():
    unexpected.append({'module':name,'path':str(path)})
  after=hashes()
- good=(before==after and not unexpected and not net and not source_calls and all(m['matches_archived_blob'] for m in closure))
+ native_after=native_inventory()
+ good=(before==after and native_before==native_after and not unexpected and not net and not source_calls and all(m['matches_archived_blob'] for m in closure))
  proof={'schema':'rc6.exact-archive-gate-source-proof.v1','source_sha':index['source_sha'],'candidate_tree_sha':index['candidate_tree_sha'],'archive_sha256':index['archive_sha256'],'overlays':[],'script':a.script,'command_argv':sys.argv,'gate_exit_code':exit_code,'unexpected_error_class':error,'tracked_source_files':len(before),'tracked_source_hashes_unchanged':before==after,'imported_product_modules':closure,'unexpected_product_imports':unexpected,'network_attempts':len(net),'source_sqlite_attempts':len(source_calls),'source_proof_pass':good,'runner_wrapper_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+ proof.update(native_custody_inventory_before=native_before,native_custody_inventory_after=native_after,native_custody_unchanged=native_before==native_after)
  with a.proof.open('x') as stream: stream.write(json.dumps(proof,indent=2,sort_keys=True)+'\n')
  print(json.dumps({k:proof[k] for k in ('source_sha','gate_exit_code','tracked_source_files','tracked_source_hashes_unchanged','source_proof_pass')}))
  if not good: exit_code=1

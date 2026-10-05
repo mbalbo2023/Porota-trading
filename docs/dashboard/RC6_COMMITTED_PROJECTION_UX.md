@@ -115,6 +115,16 @@ y los 15 miembros de DB/custodia conservaron bytes/hash/stat/atime. El receipt
 elegir el positivo ni ampliar el deadline. La navegación grande sigue pendiente
 de corregir ese costo y ejecutar lector y browser en el próximo archivo íntegro.
 
+La corrección `40f34f6e` paraleliza verificación wire y SHA con workers acotados,
+conservando hash/CRC, deadlines y join. Se aplicó exactamente junto con el aporte
+UX en un checkout aislado de la raíz `3d1f45aa`: pin intermedio `af71ff9e`, sin
+overlays ni cambios de la rama raíz. Su lector pasó las doce solicitudes con
+máximo 0,811644 s. Chromium completó 49 subvistas a 1440 px; en el siguiente ancho
+1280 px, `/trading/equity-spot` consumió 1,181601 s y descartó el corte. Se conservan
+el RED, los 1380 hashes de fuente y los 15 miembros de custodia intactos en
+`native-large-intermediate-40f-local-receipt.json`. No se declara browser GREEN,
+294 checks ni freeze raíz final a partir de ese viewport parcial.
+
 El gate grande sigue abierto hasta obtener navegación y render completos dentro
 de ≤4 MiB por solicitud y ≤1 s. Los tiempos del fixture pequeño y el deadline
 de falla no prueban esa capacidad. La validación

@@ -13,7 +13,7 @@ from pathlib import Path
 import socket
 import sqlite3
 import sys
-from time import monotonic, perf_counter
+from time import monotonic, perf_counter, process_time
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -124,10 +124,12 @@ def run(database, root, output):
                         return
                     params = {key: values[-1] for key, values in parse_qs(parts.query).items()}
                     begin = perf_counter()
+                    begin_cpu = process_time()
                     html, headers = build_page(parts.path, params, database, now=cut_at)
                     elapsed = perf_counter()-begin
                     record = {"path": parts.path, "filters": params, "width": page.viewport_size["width"],
                               "elapsed_seconds": elapsed, "html_bytes": len(html.encode()),
+                              "process_cpu_seconds": process_time()-begin_cpu,
                               "queries": int(headers["X-Porota-Read-Queries"]), "server_timing": headers["Server-Timing"]}
                     renders.append(record)
                     if elapsed > 1 or record["html_bytes"] >= 4*1024**2:
@@ -142,7 +144,8 @@ def run(database, root, output):
                     page.set_viewport_size({"width": width, "height": 980})
                     for path in CANONICAL_PATHS:
                         page.goto("http://terminal.test"+path, wait_until="load")
-                        require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings})
+                        require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings,
+                                "canonical_viewport_checks_completed": checks, "renders_measured": renders})
                         dimensions = page.evaluate("({body:document.body.scrollWidth,html:document.documentElement.scrollWidth})")
                         require(max(dimensions.values()) <= width+1, "BROWSER_HORIZONTAL_OVERFLOW", {"path": path, "width": width})
                         require(page.locator(".primary-nav > a").count() == 8, "EIGHT_DESTINATIONS_NOT_PRESERVED")
@@ -213,7 +216,8 @@ def run(database, root, output):
                 require(page.locator("tr[data-row]").count() == 2 and all(last_identity[0] in text for text in page.locator("tr[data-row]").all_inner_texts()),
                         "LAST_CATALOG_IDENTITY_UNREACHABLE")
                 require(VERIFICATION_LEVEL in page.locator(".data-panel .source-line").inner_text(), "FALSE_BROWSER_VERIFICATION_SCOPE")
-                require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings})
+                require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings,
+                        "canonical_viewport_checks_completed": checks, "renders_measured": renders})
             finally:
                 browser.close()
     after = custody_inventory(database, root)
