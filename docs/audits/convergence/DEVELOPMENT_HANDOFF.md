@@ -484,3 +484,27 @@ Sus1776 blobs/modos quedaron intactos.312 no se lanzó sobre esa fuente RED.
 Se prepara productor157 separado antes del IPC del consumidor, conservando
 cuotas/clocks/GC/10ticks, familias y FULL5; no se elevan1s/4MiB render,2s health
 ni20sRPC. Navegador y nuevos recibos completos permanecen pendientes.
+
+La captura compartida de custodia agregó st_blocks con una sola línea; los
+flags RO/NOATIME/NOFOLLOW/NONBLOCK, bytes/SHA y fd/path antes/después permanecen.
+Dos guardas físicas pasaron en wholeOWN3bad/frozen311157,1906 blobs/modos/
+índice/TAR intactos: PRIMARY/WAL/SHM reales y sparse→allocated con bytes/size
+idénticos y bloques distintos. El oracle compara once atributos explícitos,
+incluidos nanosegundos; os.stat_result== no acredita esos campos adicionales.
+Sin network/SQLite rechazado; un connect privado para preparar la fixture.
+Los cuatro RAW exactos están en evidence/native-source-blocks-3bad4a1d-157;
+Source639a débil no se ejecutó y docs647 no es fuente probada. No recalifica
+históricos diez campos ni el worker/horizonte1201/Gov/browser/imagen/runtime.
+
+El helper de published replay separó HTTP30 del presupuesto total600 real
+de Dockerload/inspect/import; el codec conserva min(restante,30)/64KiB. Las
+checks originales de ImageID/source permanecen, containers privados tienen
+cleanup acotado y la limpieza del contexto más JSON/GREEN/flush quedan dentro
+del mismo deadline. La revisión detectó el acople y el tail por fuente, sin
+atribuir NativeDockerRED. WholeOWNbd69/frozen311157 pasó45/45 nodos únicos
+collect=execute,0fail/error/skip/duplicate,1868 blobs/modos/namespace intactos,
+16 imports propios y2 de infraestructura declarados,0foreign/network/SQL.
+Atime del directorio tests cambió y se registra aparte; no se declara once
+stats de código sin cambios ni bytes de distribuciones autenticados. Scope
+es protocolo con clocks/subprocesos controlados: no Docker real, artifact,
+Gov ni runtime. Recibos originales externos se están preservando en dossier.
