@@ -16,6 +16,7 @@ from be_paper_engine import PaperBroker, PaperStore, Quote
 from bs_instrument_contracts import InstrumentContract
 from rc6_performance.costs import ledger_leg_cost
 from rc6_ppi_future_contract_policy import standard_dlr_terms
+from rc6_paper_family_lifecycle import future_position_contract, future_risk_snapshot
 
 
 OPEN = "2026-10-05T12:00:00-03:00"
@@ -262,3 +263,62 @@ def test_aud19_native_decision_key_cannot_silently_cover_two_financial_commits(t
     assert current["native_decision_key"] == fresh_key
     assert current["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
     assert current["decision"]["paper_id"] == control[2] != first[2]
+
+
+def test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority(tmp_path):
+    clock = [OPEN]
+    engine = broker(tmp_path / "future-contract.sqlite", clock)
+
+    def financial_rows():
+        with engine.store.connect() as connection:
+            return {table: [tuple(row) for row in connection.execute(
+                "SELECT * FROM " + table + " ORDER BY rowid")]
+                for table in ("paper_family_lifecycle", "paper_family_lifecycle_events",
+                              "paper_future_positions", "paper_future_marks", "paper_fills",
+                              "decision_evidence_snapshots")}
+
+    initial = financial_rows()
+    initial_cash = engine._cash(as_of=OPEN, currency="ARS")
+    absent = engine._open_future(replace(quote(), contract=None), D(".8"), {})
+    assert absent == (False, "FUTURES_EXACT_PAPER_CONTRACT_REQUIRED", None)
+    wrong = replace(contract(), cash_multiplier=D("2000"))
+    rejected = engine._open_future(replace(quote(), contract=wrong), D(".8"), {})
+    assert rejected == (False, "FUTURES_EXACT_STANDARD_DLR_REQUIRED", None)
+    with pytest.raises(ValueError, match="FUTURES_EXACT_STANDARD_DLR_REQUIRED"):
+        engine.family_paper.open_future(wrong, lifecycle_id="REJECTED-FUTURE",
+            event_id="REJECTED-FUTURE:OPEN", entry_price="1500", quantity="1",
+            entry_cost="100", occurred_at=OPEN)
+    assert financial_rows() == initial
+    assert engine._cash(as_of=OPEN, currency="ARS") == initial_cash
+
+    position = open_future(engine)
+    committed_cash = engine._cash(as_of=OPEN, currency="ARS")
+    original_metadata = position["metadata_json"]
+    metadata = json.loads(original_metadata)
+    metadata["financial_contract"]["cash_multiplier"] = "2000"
+    metadata["contract_snapshot_sha256"] = hashlib.sha256(json.dumps(
+        metadata["financial_contract"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    # The raw snapshot hash and matching position dimension are coherent.
+    # Only the exact DLR contract guard may reject this changed multiplier.
+    with engine.store.connect() as connection:
+        connection.execute("UPDATE paper_future_positions SET cash_multiplier=?,metadata_json=? "
+            "WHERE lifecycle_id=?", ("2000", json.dumps(metadata), position["lifecycle_id"]))
+        corrupted = dict(connection.execute("SELECT * FROM paper_future_positions "
+            "WHERE lifecycle_id=?", (position["lifecycle_id"],)).fetchone())
+    before_rejected_restore = financial_rows()
+    for request in (lambda: future_position_contract(corrupted),
+                    lambda: future_risk_snapshot(engine.store, "ARS", OPEN)):
+        with pytest.raises(ValueError, match="FUTURES_EXACT_STANDARD_DLR_REQUIRED"):
+            request()
+    clock[0] = CLOSE
+    assert engine._close_future(quote(CLOSE), corrupted, "CONTROL") is False
+    assert financial_rows() == before_rejected_restore
+
+    # Restoring the original synthetic authority proves the blocked requests
+    # did not debit/credit cash or create any additional mark or terminal row.
+    with engine.store.connect() as connection:
+        connection.execute("UPDATE paper_future_positions SET cash_multiplier=?,metadata_json=? "
+            "WHERE lifecycle_id=?", (position["cash_multiplier"], original_metadata,
+                                     position["lifecycle_id"]))
+    assert future_position_contract(engine.store.active_future_positions()[0]) == contract()
+    assert engine._cash(as_of=OPEN, currency="ARS") == committed_cash < initial_cash
