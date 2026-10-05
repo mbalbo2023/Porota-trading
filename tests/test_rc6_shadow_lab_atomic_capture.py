@@ -173,6 +173,7 @@ def test_two_phases_register_one_native_trade_even_across_a_one_row_read_budget(
     ("wrong_hash", "IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH"),
     ("wrong_paper_id", "IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH"),
     ("wrong_vector", "IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH"),
+    ("wrong_economics", "IMMUTABLE_FINANCIAL_ADMISSION_LINK_MISMATCH"),
     ("wrong_intent", "IMMUTABLE_FINANCIAL_ADMISSION_CLOCK_MISMATCH"),
     ("policy_after_admission", "ENTRY_INPUT_POLICY_NOT_KNOWN_AT_ADMISSION"),
     ("fabricated_commit", "IMMUTABLE_ADMISSION_COMMIT_CLOCK_FABRICATED"),
@@ -187,6 +188,8 @@ def test_two_phase_link_guards_hash_paper_vector_clocks_and_known_policy(tmp_pat
         admission["decision"]["paper_id"] = "PAPER-other"
     elif case == "wrong_vector":
         admission["inputs_used"]["entry_signal_inputs"]["price_samples"][0]["price"] = "77"
+    elif case == "wrong_economics":
+        admission["inputs_used"]["economics"] = {"cost_contract": {"policy_sha256": "0"*64}, "passed": True}
     elif case == "wrong_intent":
         admission["intent_at"] = (stamp(admission["intent_at"])+timedelta(microseconds=1)).isoformat()
     elif case == "policy_after_admission":
@@ -231,6 +234,24 @@ def test_legacy_early_capture_is_explicitly_unverified_without_fabricating_a_vec
     evidence = _native_evidence(envelope(payload), stamp(clock(391)))
     assert evidence["signal_vector_status"] == "LEGACY_VECTOR_UNAVAILABLE"
     assert evidence["signal_input_sha256"] is None
+
+
+def test_nonmapping_quote_payload_is_an_explicit_rejection(tmp_path):
+    path = source(tmp_path)
+    _, payload = atomic_entry(path)
+    payload["quote_used"] = ["untrusted", "quote"]
+    with pytest.raises(ValueError, match="^ENTRY_BOOK_PAYLOAD_INVALID$"):
+        _native_evidence(envelope(payload), stamp(clock(391)))
+
+
+def test_zero_frozen_multiplier_is_not_replaced_by_the_equity_default(tmp_path):
+    path = source(tmp_path)
+    checkpoint = warm(path)
+    position, payload = atomic_entry(path)
+    payload["inputs_used"]["contract_cash_multiplier"] = 0
+    evidence = _native_evidence(envelope(payload), stamp(clock(391)))
+    with pytest.raises(ValueError, match="^INVALID_NUMBER$"):
+        _register(position, evidence, checkpoint, *_settings({"slippage": "0", "participation": "0.1"}), stamp(clock(391)))
 
 
 def test_atomic_producer_worker_and_restart_preserve_frozen_inputs_after_mutable_revisions(tmp_path, monkeypatch):

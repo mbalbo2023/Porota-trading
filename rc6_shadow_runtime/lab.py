@@ -93,6 +93,8 @@ def _checkpoint_hash(checkpoint):
 
 def _book(row):
     # An absent native clock is never replaced by observation/capture time.
+    if not isinstance(row, dict):
+        raise ValueError("ENTRY_BOOK_PAYLOAD_INVALID")
     keys = ("symbol", "asset_class", "settlement", "currency", "market", "bid", "ask",
             "bid_size", "ask_size", "observed_at", "book_at", "trade_at", "last", "last_kind")
     book = {key: row.get(key) for key in keys}
@@ -238,7 +240,8 @@ def _native_evidence(row, at):
         raise ValueError("IMMUTABLE_DECISION_CAPTURE_MISMATCH")
     frozen_inputs = {name: inputs.get(name) for name in
                      ("exit_policy", "execution_style", "scalping_max_hold_minutes",
-                      "contract_cash_multiplier", "contract_quantity_step")}
+                      "contract_cash_multiplier", "contract_quantity_step",
+                      "economics", "financial_contract")}
     clocks = {key: value.get(key) or runtime.get(key) for key in
               ("signal_at", "decision_at", "intent_at", "entry_fill_committed_at")}
     if phase == "ATOMIC_PAPER_ADMISSION":
@@ -462,8 +465,10 @@ def _register(row, evidence, checkpoint, settings, session_policy, at):
     entry = {key: row[key] for key in ("symbol", "asset_class", "settlement", "currency", "market",
                                      "opened_at", "entry_price", "quantity")}
     entry.update(id=row["paper_id"], paper_id=row["paper_id"],
-                 contract_cash_multiplier=str(number(frozen_inputs.get("contract_cash_multiplier") or 1, positive=True)),
-                 quantity_step=str(number(frozen_inputs.get("contract_quantity_step") or 1, positive=True)),
+                 contract_cash_multiplier=str(number(1 if frozen_inputs.get("contract_cash_multiplier") is None
+                                                      else frozen_inputs["contract_cash_multiplier"], positive=True)),
+                 quantity_step=str(number(1 if frozen_inputs.get("contract_quantity_step") is None
+                                           else frozen_inputs["contract_quantity_step"], positive=True)),
                  score=evidence["score"], strategy_id=evidence["strategy_id"],
                  decision_at=evidence["clocks"]["decision_at"], intent_at=evidence["clocks"]["intent_at"])
     if number(entry["contract_cash_multiplier"]) != 1:

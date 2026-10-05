@@ -184,3 +184,13 @@ datos/convenciones y no se calculan por falta de evidencia. No se modificaron
 score, Stop/TP/EOD/MaxHold ni se invirtió una señal usando cohortes conocidas.
 La evaluación futura de edge necesita contrato provider, costos completos,
 latencia/liquidez y holdout o purged walk-forward preregistrados por moneda.
+
+## Auto-revisión final del link financiero
+
+El link compara además economics/financial_contract congelados, para impedir
+que un recibo con vector idéntico y costo/policy distinto se reutilice como
+evidencia compatible. Un multiplier explícito0/False no recibe default1, y
+quote JSON no-mapping produce rechazo preciso. Los49 casos de lab/replay
+focales pasan en overlay READ_ONLY del root integrado;
+[JUnit followup](lab_cost_link_followup_tests.xml). Este followup sigue siendo
+intermedio: no se atribuye source freeze ni autenticación externa.

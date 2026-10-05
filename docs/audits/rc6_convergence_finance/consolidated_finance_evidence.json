@@ -13,8 +13,8 @@
   ],
   "field_authority_matrix": "field_authority_matrix.md",
   "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
-  "finance_head": "ab37d00793b059ec648c7ced70cb62e006fd262b",
-  "generated_at": "2026-10-05T03:05:31.753128+00:00",
+  "finance_head": "bed9dc6b424b752f084866340a8d5929db9a11e6",
+  "generated_at": "2026-10-05T03:11:05.506800+00:00",
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -1017,7 +1017,7 @@
   "real_orders_sent": 0,
   "real_routes_used": [],
   "receipt_hashes": {
-    "consolidated_finance_evidence.json": "53cff0841f0bf49d394ff6b00e768f37dec5e09cdcd87546b76a40fd20be6552",
+    "consolidated_finance_evidence.json": "be4d160629a17465ad02f7ac68643bb45f4e4c2d4e27022649e65d2a601d6a72",
     "core_finance_review_receipt.json": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00",
     "core_finance_review_tests.xml": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267",
     "finance_focused_receipt.json": "a0ebdde8d10e3befc0df796105ee3b9515cb07eedbaffbf758120696289858cf",
@@ -1025,6 +1025,7 @@
     "green_integrated_worktree.json": "235105563bddc4bb7cf0d497230a24bf8b7f164c350a6dbd4ee52c65f5b6873d",
     "historical_semantic_review_tests.xml": "21fa7a1a2e28657fe47e6b0f14fc889fa6a378cced147ed1a2b7c183e1468598",
     "integrated_native_tests.xml": "8cfb848ce1a6f7f5075793190fc3983816bf47bc9272980defdf2ebfaab8782f",
+    "lab_cost_link_followup_tests.xml": "12d18ce79f086c8780f1b93793d20a8ee7baf00703a0da5cb409db90f9bea24b",
     "lab_phase_review_receipt.json": "4b21136dfa447bc56d83bcd1bac1fa2609724ad3c73135f86b908d78e5d392aa",
     "lab_phase_review_tests.xml": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7",
     "red_c27dfd9.json": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c",
@@ -1032,7 +1033,7 @@
     "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",
     "retention_ack_resume_red_2fb29369.json": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
   },
-  "reference_root_sha": "6606317ab61ef89339d503f4f6cfefb9cc1f33ab",
+  "reference_root_sha": "edc20c74dae2b3dd9095edba3dd3d8e95d0b4625",
   "requirements": [
     {
       "aliases": [
