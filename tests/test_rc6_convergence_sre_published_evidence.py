@@ -553,14 +553,14 @@ def test_workflow_secondary_cannot_replace_primary_or_trigger_another_build():
     assert provenance < primary < replay < secondary
     assert "scripts/rc6_convergence_provenance.py" in steps[provenance]["run"]
     assert '--candidate-sha "$CANDIDATE_SHA"' in steps[provenance]["run"]
-    assert "--junit /tmp/porota-governed-tests.xml" in steps[provenance]["run"]
-    assert "--out /tmp/porota-final-input-provenance.json --fetch-source-refs" in steps[provenance]["run"]
-    assert "/tmp/porota-final-input-provenance.json" in steps[primary]["with"]["path"]
+    assert '--junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"' in steps[provenance]["run"]
+    assert '--out "${POROTA_PREDEPLOY_TMP}/porota-final-input-provenance.json" --fetch-source-refs' in steps[provenance]["run"]
+    assert "${{ env.POROTA_PREDEPLOY_TMP }}/porota-final-input-provenance.json" in steps[primary]["with"]["path"]
     assert "porota-predeploy-image.tar.gz" in steps[primary]["with"]["path"]
     assert "evidence-only" in steps[secondary]["with"]["name"]
     assert steps[secondary]["with"]["path"].splitlines() == [
-        "/tmp/porota-predeploy-published-evidence/*.json",
-        "/tmp/porota-predeploy-published-evidence/*.xml",
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.json",
+        "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.xml",
     ]
     assert "docker build" not in steps[replay]["run"]
     assert artifact_name(approved_origin()[0]).startswith("porota-predeploy-v2-" + "a"*40)

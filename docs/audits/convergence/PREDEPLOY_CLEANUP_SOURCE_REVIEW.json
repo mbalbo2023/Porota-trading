@@ -1,0 +1,111 @@
+{
+  "base_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+  "base_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+  "baseline": {
+    "bytes": 35177,
+    "classification": "SOURCE_INFERRED_CONTRACT_RED_NOT_EXECUTED_DOCKER_RED",
+    "cleanup_step_raw": "      - name: Local cleanup\n        if: always()\n        shell: bash\n        run: |\n          set +e\n          docker ps -aq --filter \"ancestor=$IMAGE\" | xargs -r docker rm -f\n          docker image rm \"$IMAGE\" >/dev/null 2>&1 || true\n          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json \"${RUNNER_TEMP}/porota-predeploy-evidence\"\n          rm -f POROTA_SOURCE_PROVENANCE.json /tmp/porota-source-provenance.json /tmp/porota-image-inspect.json /tmp/porota-bundle-byte-provenance.json /tmp/porota-image-tar-byte-provenance.json\n          rm -f /tmp/porota-issue465-audit-gate.json\n          rm -rf /tmp/porota-predeploy-published-evidence\n          rm -f /tmp/porota-installed-dependencies.txt /tmp/porota-predeploy-origin.json\n          rm -f /tmp/porota-final-input-provenance.json\n          rm -f /tmp/porota-runtime-codec-smoke.json\n          rm -f /tmp/porota-convergence-input-inventory.json\n          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'\n",
+    "cleanup_step_sha256": "aaaab6462be9872cd56825d2cae8194481387d7d240700bf326bf8271f09fe9f",
+    "findings": [
+      "set +e and ignored removal failures followed by unconditional cleanup GREEN",
+      "ancestor filter can include containers not created by this run",
+      "shared fixed temporary paths have no UUID/root ownership marker",
+      "overall Predeploy GREEN is emitted before always cleanup",
+      "cleanup does not measure filesystem free bytes/inodes before and after"
+    ],
+    "git_blob_id": "c3487ae3f1859e2aa42870b5e1f23ddf3f24eb6e",
+    "sha256": "278df57e7a40815cc3bfda2878dc4c35f18028e25ece9dd78e498f7fd823dd19",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "branch": "work/rc6-predeploy-cleanup-source-20261005",
+  "developed_contract": {
+    "artifact_basenames": "unchanged; secondary exactly JSON/XML globs; SHA/tree/FIP/Save ordering preserved",
+    "cleanup_total_seconds": 180,
+    "context": [
+      "repository",
+      "workflow_path",
+      "pull_request",
+      "run_id",
+      "run_attempt",
+      "candidate_sha",
+      "candidate_tree"
+    ],
+    "docker_call_timeout_seconds": 10,
+    "docker_daemon": "local Unix socket only; no global prune or ancestor queries; no foreign-container inspection",
+    "free_space": "per filesystem free bytes and free inodes before/after; signed delta and max(0,delta), not causal shared-layer attribution",
+    "image_tag": "porota-predeploy-v2:<candidate_sha> UNCHANGED",
+    "one_build": true,
+    "output": "exclusive PENDING receipt reserved/fsynced outside private root before mutations; replaced by measured GREEN/RED receipt",
+    "owner": "current euid + private UUID marker + root dev/inode/mount id + source hash + full image labels + actual ImageID",
+    "partial_build": "explicit STARTED phase; missing capture never means no build; only complete own-label binding permits removal",
+    "policy_bounds": {
+      "fixed_start_gate_added": false,
+      "min_inode_free_percent": 10,
+      "post_cleanup_min_free_bytes": 2147483648
+    },
+    "primary_promotable_artifacts": 1,
+    "private_files": "bounded fd-relative NOFOLLOW/NOATIME inventory; nlink/uid/type/dev/mount id; external source manifest exact claimed identity/hash",
+    "secondary_promotable": false,
+    "shared_image": "retain and RED if foreign tags/digests/references prevent scoped removal; no force image removal",
+    "stress_producer": "only governed collection/execution receive RUNNER_TEMP=POROTA_PREDEPLOY_TMP; global RUNNER_TEMP remains owner-control parent",
+    "workflow_order": "primary upload -> replay -> secondary upload/API check -> always cleanup -> success + cleanup-receipt gated summary"
+  },
+  "owner_role": "WRITE_OWNER_ISOLATED_SOURCE",
+  "proposed_focal": {
+    "command_arguments": [
+      "-I",
+      "-B",
+      "-m",
+      "pytest",
+      "-o",
+      "pythonpath=.",
+      "-p",
+      "no:cacheprovider",
+      "-q",
+      "tests/test_rc6_predeploy_scoped_cleanup.py",
+      "tests/test_deploy_v2_frozen_artifact_contract.py",
+      "tests/test_rc6_convergence_sre_published_evidence.py",
+      "--junitxml=<external_raw>/cleanup-controlled.xml"
+    ],
+    "modules": [
+      "tests/test_rc6_predeploy_scoped_cleanup.py",
+      "tests/test_deploy_v2_frozen_artifact_contract.py",
+      "tests/test_rc6_convergence_sre_published_evidence.py"
+    ],
+    "requirements": "fresh whole OWN Git source, exact frozen311 closure157/hashlocks preflight, source bytes/modes/blob/index before-after, imports/offline/SQL evidence, outputs outside source; controlled Docker adapter only"
+  },
+  "schema": "rc6.predeploy-cleanup-source-review.v1",
+  "scope": "SOURCE_ONLY_NO_PRODUCT_IMPORT_NO_TEST_COLLECTION_NO_DOCKER_NO_ACTIONS_NO_DEPLOY",
+  "source_files": {
+    ".github/workflows/porota-predeploy-v2.yml": {
+      "bytes": 38857,
+      "sha256": "38ad4642f9e71b6a7493f381058b9e6af28879bbbeb5cd68b071c6c572cc24db"
+    },
+    "scripts/porota_predeploy_cleanup.py": {
+      "bytes": 36566,
+      "sha256": "85739673a14bc59b4731f077c94d0fce5938a68e545a97a8ba362817bd926455"
+    },
+    "tests/test_deploy_v2_frozen_artifact_contract.py": {
+      "bytes": 1402,
+      "sha256": "faf7cf71b4769d179ffeece77511303bb901018fa7657d1cd40126c50f6bd784"
+    },
+    "tests/test_rc6_convergence_sre_published_evidence.py": {
+      "bytes": 33172,
+      "sha256": "f5636f65c995ec6d4a0d2f6bdb8392c4b1572a707f7a00e58df44450cf520c49"
+    },
+    "tests/test_rc6_predeploy_scoped_cleanup.py": {
+      "bytes": 19916,
+      "sha256": "62e435236cc880ed06686797168d49904396643e80457b950d1da4a35a7ea22e"
+    }
+  },
+  "validation": {
+    "controlled_guards_execution": "PENDING_ROOT_SLOT_AFTER_SOURCE_REVIEW",
+    "final_artifact": "NOT_BUILT_NOT_PUBLISHED",
+    "native_docker_execution": "NOT_EXECUTED",
+    "python_heredoc_blocks": 15,
+    "runtime_or_deploy_approval": "NONE",
+    "shell_runs": "bash -n only",
+    "status": "SOURCE_AST_AND_SHELL_SYNTAX_ONLY"
+  },
+  "workstream_id": "RC6_PREDEPLOY_SCOPED_CLEANUP_SOURCE_20261005"
+}

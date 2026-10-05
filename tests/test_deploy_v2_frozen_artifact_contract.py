@@ -13,7 +13,7 @@ def test_frozen_artifact_is_exported_only_after_paper_safety():
 def test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped():
     assert "ref: ${{ env.CANDIDATE_SHA }}" in WORKFLOW
     assert "CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}" in WORKFLOW
-    assert "docker save \"$IMAGE\" | gzip -1 > /tmp/porota-predeploy-image.tar.gz" in WORKFLOW
+    assert 'docker save "$IMAGE" | gzip -1 > "${POROTA_PREDEPLOY_TMP}/porota-predeploy-image.tar.gz"' in WORKFLOW
     assert "porota-deploy-bundle-v2.tgz" in WORKFLOW
 
     export = WORKFLOW.index("- name: Export frozen candidate artifacts")
