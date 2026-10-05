@@ -22,6 +22,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .sqlite_snapshot import SnapshotError, readonly_copy
+
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 SCHEMA = "rc6.sanitized-20session-evidence.v1"
 CALCULATION = "rc6-independent-fill-cashflow.v1"
@@ -161,47 +163,44 @@ def _safe_file(path):
 
 @contextmanager
 def readonly_snapshot(path, budget):
-    """A snapshot transaction, mode=ro, query_only and SELECT-only authorizer."""
+    """A verified copy, mode=ro, query_only and SELECT-only authorizer.
+
+    No SQLite connection touches source main/WAL/SHM. The 512 MiB source-copy
+    cap is independent of the much smaller sanitized output budget.
+    """
     path = _safe_file(path)
-    connection = None
     try:
-        connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.025)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA query_only=ON")
-        connection.execute("PRAGMA busy_timeout=25")
-        connection.execute("PRAGMA trusted_schema=OFF")
-        connection.set_progress_handler(lambda: int(time.monotonic() >= budget.deadline), 100)
-        tables = {r[0] for r in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('observer_state','paper_positions','paper_fills')")}
-        if tables != {"observer_state", "paper_positions", "paper_fills"}:
-            raise EvidenceError("SOURCE_SCHEMA_UNAVAILABLE")
+        with readonly_copy(path, deadline=budget.deadline) as connection:
+            tables = {r[0] for r in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('observer_state','paper_positions','paper_fills')")}
+            if tables != {"observer_state", "paper_positions", "paper_fills"}:
+                raise EvidenceError("SOURCE_SCHEMA_UNAVAILABLE")
 
-        allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
-                   sqlite3.SQLITE_TRANSACTION}
+            allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
+                       sqlite3.SQLITE_TRANSACTION}
 
-        def authorize(action, first, second, database, trigger):
-            if action not in allowed or trigger is not None:
-                return sqlite3.SQLITE_DENY
-            if action == sqlite3.SQLITE_READ and first not in tables:
-                return sqlite3.SQLITE_DENY
-            return sqlite3.SQLITE_OK
+            def authorize(action, first, second, database, trigger):
+                if action not in allowed or trigger is not None:
+                    return sqlite3.SQLITE_DENY
+                if action == sqlite3.SQLITE_READ and first not in tables:
+                    return sqlite3.SQLITE_DENY
+                return sqlite3.SQLITE_OK
 
-        connection.set_authorizer(authorize)
-        connection.execute("BEGIN")
-        states = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1 LIMIT 2").fetchall()
-        if (len(states) != 1 or states[0]["mode"] != "PRODUCTION_PAPER"
-                or type(states[0]["real_orders_sent"]) is not int or states[0]["real_orders_sent"] != 0):
-            raise EvidenceError("PAPER_SOURCE_SAFETY_REQUIRED")
-        budget.check()
-        yield connection
-        budget.check()
+            connection.set_authorizer(authorize)
+            connection.execute("BEGIN")
+            states = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1 LIMIT 2").fetchall()
+            if (len(states) != 1 or states[0]["mode"] != "PRODUCTION_PAPER"
+                    or type(states[0]["real_orders_sent"]) is not int or states[0]["real_orders_sent"] != 0):
+                raise EvidenceError("PAPER_SOURCE_SAFETY_REQUIRED")
+            budget.check()
+            yield connection
+            budget.check()
+    except SnapshotError as exc:
+        raise EvidenceError(str(exc)) from None
     except sqlite3.Error:
         if time.monotonic() >= budget.deadline:
             raise EvidenceError("TIME_BUDGET_EXHAUSTED") from None
         raise EvidenceError("SOURCE_READ_FAILED") from None
-    finally:
-        if connection is not None:
-            connection.close()
 
 
 def _projection(column, maximum):

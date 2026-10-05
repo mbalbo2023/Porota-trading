@@ -305,12 +305,17 @@ def test_empty_cohort_pending_not_fabricated_actual_68_151(tmp_path):
         export(path, tmp_path / "package")
 
 
-def test_database_lock_short_timeout_does_not_publish(tmp_path):
+def test_dirty_source_transaction_does_not_publish(tmp_path):
     path = source(tmp_path)
     with sqlite3.connect(path) as blocker:
         blocker.execute("BEGIN EXCLUSIVE")
-        with pytest.raises(EvidenceError, match="SOURCE_READ_FAILED"):
+        # Copy-only export does not request a SQLite lock on source. An unused
+        # exclusive lock has no changing bytes; an active rollback journal is
+        # the actual unsafe capture boundary and must remain fail-closed.
+        blocker.execute("UPDATE paper_positions SET net_pnl='999'")
+        with pytest.raises(EvidenceError, match="SOURCE_SNAPSHOT_BUSY"):
             export(path, tmp_path / "package")
+        blocker.rollback()
     assert not (tmp_path / "package").exists()
 
 
