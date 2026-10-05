@@ -270,7 +270,8 @@ def test_reader_does_not_negotiate_wal_or_take_writer_lock(tmp_path):
     with sqlite3.connect(source, timeout=.01) as writer:
         assert writer.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
         writer.execute("BEGIN IMMEDIATE")
-        writer.execute("UPDATE production_history SET downloaded_at=?", (AS_OF,))
+        # A verified byte copy can read a committed image under an unused
+        # lock. Dirty rollback-journal recovery belongs exclusively to a copy.
         started = monotonic()
         inputs = _read(source)
         assert monotonic()-started < .5
@@ -312,11 +313,12 @@ def test_exclusive_writer_contention_is_bounded_and_explicit(tmp_path):
     source = _make_database(tmp_path/"trading.db")
     with sqlite3.connect(source) as writer:
         writer.execute("BEGIN EXCLUSIVE")
+        writer.execute("UPDATE observer_state SET real_orders_sent=1")
         started = monotonic()
         inputs = _read(source)
         assert monotonic()-started < .5
         assert inputs["history"] == []
-        assert inputs["quality"]["unavailable_sources"] == ["trading:OperationalError"]
+        assert inputs["quality"]["unavailable_sources"] == ["trading:SOURCE_SNAPSHOT_BUSY"]
         writer.rollback()
 
 
@@ -355,3 +357,149 @@ def test_daily_publication_before_close_and_malformed_intraday_clocks_are_reject
     assert inputs["intraday_history"] == []
     assert inputs["quality"]["rejected_inputs"]["INTRADAY_AVAILABILITY_CLOCK_ORDER_INVALID"] == 10
     assert _rank(inputs)["rows"][0]["components"]["activity20"]["value"] is None
+
+
+def _worker_store(tmp_path):
+    from tests.test_rc6_shadow_runtime_wiring import make_store
+    store, _ = make_store(tmp_path, count=1)
+    with store.connect() as connection:
+        connection.execute("UPDATE financial_instrument_catalog SET ticker='A'")
+    return store
+
+
+def _frozen_wal_history(tmp_path, *, adjusted=False):
+    original = tmp_path/"builder.sqlite"
+    writer = sqlite3.connect(original)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE fixture_builder_marker(value TEXT)")
+    writer.commit()
+    try:
+        _history(original)
+        if adjusted:
+            _history(original, volume=9999, source="DATA912", adjusted=True)
+        folder = tmp_path/"frozen-history"
+        folder.mkdir()
+        source = folder/"history.sqlite"
+        source.write_bytes(original.read_bytes())
+        Path(str(source)+"-wal").write_bytes(Path(str(original)+"-wal").read_bytes())
+    finally:
+        writer.close()
+    return folder, source
+
+
+def test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats(tmp_path, monkeypatch):
+    from tests.test_rc6_history_snapshot_copy import inventory
+    from tests.test_rc6_shadow_runtime_wiring import snapshot
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    store = _worker_store(tmp_path)
+    folder, history = _frozen_wal_history(tmp_path)
+    before = inventory(folder)
+    original = sqlite3.connect
+    def guarded(path, *args, **kwargs):
+        assert str(history) not in str(path), "Historical source must never be opened by SQLite"
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(sqlite3, "connect", guarded)
+    worker = ShadowRuntime(store.path, history_database=history, evidence_root=tmp_path/"shadow", source_roots=[])
+    report = worker.tick(AS_OF)
+    _, frozen = snapshot(worker)
+    # The real worker cut is 20:00:00; Friday's receipt at 20:00:02 is later.
+    assert frozen["quality"]["accepted_rows"]["history"] == 19
+    assert frozen["quality"]["cutoff"] == "2026-10-02T20:00:00+00:00"
+    assert frozen["quality"]["unavailable_sources"] == []
+    assert frozen["quality"]["source_snapshot_method"] == "VERIFIED_MAIN_WAL_PRIVATE_COPY_SOURCE_SQLITE_NEVER_OPENED"
+    assert report["provider_requests"] == report["real_orders_sent"] == 0
+    assert inventory(folder) == before
+    assert not Path(str(history)+"-shm").exists()
+
+
+def test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile(tmp_path):
+    from tests.test_rc6_history_snapshot_copy import inventory
+    from tests.test_rc6_shadow_runtime_wiring import snapshot
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    store = _worker_store(tmp_path)
+    folder, history = _frozen_wal_history(tmp_path, adjusted=True)
+    before = inventory(folder)
+    worker = ShadowRuntime(store.path, history_database=history, evidence_root=tmp_path/"shadow", source_roots=[])
+    report = worker.tick(AS_OF)
+    _, frozen = snapshot(worker)
+    for strategy in frozen["frozen"].values():
+        row = next(row for row in strategy["payload"]["rows"] if row["ticker"] == "A")
+        assert row["components"]["median_volume"]["value"] == 100
+        assert row["components"]["median_volume"]["unit"] == "SHARES"
+    assert frozen["quality"]["rejected_inputs"]["HISTORY_PRICE_BASIS_INCOMPARABLE"] == 19
+    assert frozen["quality"]["accepted_rows"]["history"] == 19
+    assert report["provider_requests"] == report["real_orders_sent"] == 0
+    assert inventory(folder) == before
+
+
+def test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision(tmp_path):
+    source = _make_database(tmp_path/"trading.db")
+    history = tmp_path/"history.db"
+    _history(history)
+    with sqlite3.connect(history) as connection:
+        connection.row_factory = sqlite3.Row
+        first = connection.execute("SELECT * FROM history_versions_v2 ORDER BY date LIMIT 1").fetchone()
+    class FixtureStore:
+        @contextmanager
+        def connect(self):
+            connection = sqlite3.connect(history)
+            connection.row_factory = sqlite3.Row
+            try:
+                yield connection
+                connection.commit()
+            finally:
+                connection.close()
+    value = Candle('A', 'ACCIONES', 'BYMA', 'A-24HS', first['date'], 100, 101, 99, 100,
+        101, 'PPI_PRODUCTION_HISTORY', False, CUT,
+        {"currency": "ARS", "volume_unit": "SHARES", "private": "x"*(preopen.MAX_NATIVE_JSON_BYTES+1)},
+        currency='ARS', provider_at=first['provider_at'], volume_kind='QUANTITY')
+    append_many(FixtureStore(), [value])
+    inputs = _read(source, history)
+    assert inputs["history"] == []
+    assert "history_versions_v2_oversized_payload" in inputs["quality"]["truncated_sources"]
+    assert inputs["quality"]["status"] == "NO_VERIFICADO"
+    assert inputs["quality"]["payload_bytes_read"] < preopen.MAX_TOTAL_PAYLOAD_BYTES
+
+
+def test_NEW_preopen_context_deadline_never_publishes_partially_read_history(tmp_path, monkeypatch):
+    from rc6_audit_evidence.sqlite_snapshot import SnapshotError
+    source = _make_database(tmp_path/"trading.db")
+    _production(source)
+    original = preopen._source
+    @contextmanager
+    def expired(path, deadline):
+        with original(path, deadline) as connection:
+            yield connection
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
+    monkeypatch.setattr(preopen, "_source", expired)
+    inputs = _read(source)
+    assert inputs["history"] == inputs["preopen_observations"] == inputs["intraday_history"] == []
+    assert inputs["quality"]["unavailable_sources"] == ["trading:TIME_BUDGET_EXHAUSTED"]
+
+
+def test_NEW_preopen_native_currency_provider_clock_and_unknown_quantity_kind_are_explicit(tmp_path):
+    source = _make_database(tmp_path/"trading.db", catalogue=[A, {**A, "currency": "USD"}])
+    history = tmp_path/"history.db"
+    _history(history)
+    with sqlite3.connect(history) as connection:
+        connection.execute("UPDATE history_versions_v2 SET metadata_json='{}',volume_kind='UNKNOWN'")
+    inputs = _read(source, history)
+    assert len(inputs["history"]) == 20
+    assert {row["currency"] for row in inputs["history"]} == {"ARS"}
+    assert {row["volume_unit"] for row in inputs["history"]} == {"NO_VERIFICADO"}
+    assert {row["source_clock_meaning"] for row in inputs["history"]} == {"EXPLICIT_PROVIDER_EVENT"}
+    assert inputs["quality"]["status"] == "NO_VERIFICADO"
+
+
+def test_NEW_preopen_microsecond_known_cut_and_currency_conflict_are_not_backdated(tmp_path):
+    source = _make_database(tmp_path/"trading.db")
+    history = tmp_path/"history.db"
+    _history(history, available=(datetime.fromisoformat(CUT)+timedelta(microseconds=1)).isoformat())
+    assert _read(source, history)["history"] == []
+    with sqlite3.connect(history) as connection:
+        connection.execute("UPDATE history_versions_v2 SET observed_at=?,version_known_at=?,metadata_json=?",
+                           (CUT, CUT, json.dumps({"currency": "USD", "volume_unit": "SHARES"})))
+    inputs = _read(source, history)
+    assert inputs["history"] == []
+    assert inputs["quality"]["rejected_inputs"]["SOURCE_IDENTITY_NO_VERIFICADO"] == 20

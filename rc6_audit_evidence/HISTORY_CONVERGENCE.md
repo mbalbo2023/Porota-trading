@@ -122,6 +122,52 @@ sessions rather than weekend/future calendar rows. The exclusive-lock export
 fixture now performs a dirty write so a nonempty rollback journal causes a
 real fail-closed copy. No ignores or skipped requirements were added.
 
+The twelve files protected by #344 are ten byte-for-byte files and two declared
+fixture/expectation reconciliations in this convergence. In
+`tests/test_rc4_acceptance.py`, the Candle fixture explicitly declares ARS in
+metadata. Root's `tests/test_candle_archive_v17.py` retains the missing-identity
+denial, empty-history and event assertions, updating its expected marker from
+HISTORY_MARKET_IDENTITY_MISSING to HISTORY_FULL_IDENTITY_MISSING. All original
+assertion purposes remain. This report does not claim twelve literal files.
+
+## Independent preopen review and correction
+
+After the first history convergence, independent review found two additional
+preopen defects: direct source SQLite mode=ro created SHM and changed atime on
+frozen main+WAL without SHM; adjusted Data912 volume9999 replaced RAW PPI
+volume100 because adjusted=True preceded source rank. These are separately
+declared NEW_PREOPEN_U24 and NEW_PREOPEN_AUD06, rather than retroactively
+presenting the first convergence as complete for this additional reader.
+
+Both exact native `ShadowRuntime.tick` regressions were RED with the prior
+reader and GREEN with the correction. The shared readonly_copy helper now
+guards the source. Named SQL columns bound native JSON to 32 KiB per row and
+all JSON reads to 16 MiB. One shared two-second preopen deadline and the 512 MiB
+source ceiling fail closed; data are published only after successful context
+exit. Latest revisions are selected before metadata quality, exact currency
+comes from the native row and provider_at/version_known_at remain explicit.
+Only RAW/RAW_NO_ADJUSTMENT participates in the comparable preopen profile.
+An oversized historical source cannot resurrect old revisions or reconstruct
+partial authority. Source-rank ties use a stable lexical source choice.
+
+The native worker cut is Friday 20:00:00 UTC. Its fixture's final daily receipt
+at 20:00:02 is excluded, leaving nineteen causal rows; the standalone 20:00:05
+cut includes twenty. No clock was backdated to inflate coverage. An unused
+DELETE writer lock permits a verified committed byte copy; a dirty nonempty
+rollback journal instead yields SOURCE_SNAPSHOT_BUSY. The existing bounded
+and empty-result assertions are retained with that sanitized taxonomy.
+
+`history_convergence/preopen_autocorrection.json` retains the exact two RED
+nodes, six new GREEN controls, all native preopen/caller receipts and source
+hashes. The broad historical/caller run passed 249 tests. The independent core
+phase review inspected ec9ea4a5 and passed 41 native regressions, without
+finding another phase defect in that inspected scope. Neither result proves
+live deployment or capacity. Strict all-stat source invariance applies to
+historical/export/preopen copies; active trading SQLite readers have their own
+SQL read_only/query_only and WAL locking contract. This change does not claim
+all-stat invariance for every active runtime reader or copy gigabytes on an
+unmeasured runtime cadence.
+
 ## Copy-only migration and physical recovery
 
 `migrate_copy(source, new_destination, *, currency_map=None, seconds=60,

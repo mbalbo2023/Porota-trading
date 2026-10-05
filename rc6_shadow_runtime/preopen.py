@@ -1,8 +1,8 @@
 """Bounded, causal input bridge for the separate SHADOW preopen runtime.
 
-This module opens existing SQLite sources in read-only mode. It deliberately
-does not instantiate a Store: those constructors negotiate WAL or create
-schemas. History Store v2's ``observed_at`` means ingestion, not a market
+This module opens SQLite only on verified private filesystem copies. It never
+instantiates a Store: those constructors negotiate WAL or create schemas.
+History Store v2's ``version_known_at`` means availability, not a market
 event. Its append-only versions need a separate explicit source clock; a
 date-only canonical row cannot establish one. PPI raw history retains the
 provider's daily session label and the time the engine actually received it.
@@ -22,30 +22,28 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import BYMA_PAPER_SPOT_CLOSE, BYMA_PAPER_SPOT_OPEN
-from cu_history_store_v2_hf6 import source_rank
+from cu_history_store_v2_hf6 import source_rank, utc
+from rc6_audit_evidence.sqlite_snapshot import SnapshotError, readonly_copy
 from rc6_dynamic_universe.common import identity, stamp
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 IDENTITY_FIELDS = ("ticker", "instrument_type", "market", "currency", "settlement")
 MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_PAYLOAD_BYTES = 16 * 1024 * 1024
+MAX_NATIVE_JSON_BYTES = 32 * 1024
 DAILY_SESSIONS = 20
 INTRADAY_SESSIONS = 5
 
 
 @contextmanager
 def _source(database, deadline):
-    path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    try:
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA query_only=ON")
-        connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
-        # One coherent read snapshot, never BEGIN IMMEDIATE or journal negotiation.
+    path = Path(database).absolute()
+    if not path.exists():
+        raise FileNotFoundError("SOURCE_UNAVAILABLE")
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+        # SQLite creates any required WAL index exclusively in private scratch.
         connection.execute("BEGIN")
         yield connection
-    finally:
-        connection.close()
 
 
 def _tables(connection):
@@ -185,6 +183,8 @@ def _fetch(connection, query, parameters, limit, quality, source, *, payload_fie
            byte_budget=None, deadline=None):
     rows, byte_count, count = [], 0, 0
     for row in connection.execute(query, (*parameters, limit + 1)):
+        if deadline is not None and monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         if count == limit:
             quality["truncated_sources"].append(source)
             break
@@ -203,6 +203,8 @@ def _fetch(connection, query, parameters, limit, quality, source, *, payload_fie
             byte_count += size
         rows.append(row)
     quality["source_rows_read"][source] = quality["source_rows_read"].get(source, 0) + count
+    if payload_field is not None:
+        quality["payload_bytes_read"] = quality.get("payload_bytes_read", 0) + byte_count
     return rows
 
 
@@ -219,6 +221,13 @@ def _raw_daily(payload, metadata, *, available_at, source, indexes, sessions, cu
     for raw in payload:
         if not isinstance(raw, dict):
             rejected["HISTORY_ROW_NO_VERIFICADO"] += 1
+            continue
+        # This PPI route supplies RAW history. An explicit contrary basis must
+        # never become a comparable RAW row or supply its quantity profile.
+        basis = str(raw.get("price_basis", metadata.get("price_basis", "RAW"))).upper()
+        adjustment = str(raw.get("adjustment_basis", metadata.get("adjustment_basis", "RAW_NO_ADJUSTMENT")))
+        if raw.get("adjusted", metadata.get("adjusted", False)) or (basis, adjustment) != ("RAW", "RAW_NO_ADJUSTMENT"):
+            rejected["HISTORY_PRICE_BASIS_INCOMPARABLE"] += 1
             continue
         # Provider date is a daily session label; never synthesize midnight or
         # closing timestamps when its timezone/clock is absent.
@@ -246,6 +255,7 @@ def _raw_daily(payload, metadata, *, available_at, source, indexes, sessions, cu
             rejected["DAILY_SESSION_NOT_CLOSED_AT_AVAILABILITY"] += 1
             continue
         result.append({**key, "session": session, "observed_at": clocks[0], "published_at": clocks[1],
+                       "version_known_at": clocks[1], "price_basis": "RAW", "adjustment_basis": "RAW_NO_ADJUSTMENT", "adjusted": False,
                        "source": source, "source_clock_meaning": "PROVIDER_DAILY_SESSION_LABEL",
                        **_daily_metrics(raw, metadata, key, rejected)})
     return result
@@ -311,62 +321,93 @@ def _read_daily(connection, tables, indexes, sessions, cutoff, quality, rejected
     return records
 
 
-def _read_history_versions(connection, tables, indexes, sessions, cutoff, quality, rejected, limit):
+def _read_history_versions(connection, tables, indexes, sessions, cutoff, quality, rejected, limit, deadline):
     if "history_versions_v2" not in tables:
         if "history_canonical_v2" in tables:
             rejected["APPEND_ONLY_HISTORY_VERSIONS_UNAVAILABLE"] += 1
         return []
+    fields = ("id", "symbol", "instrument_type", "market", "currency", "settlement", "date",
+              "price_basis", "adjustment_basis", "open", "high", "low", "close", "volume", "volume_kind",
+              "source", "adjusted", "provider_at", "observed_at", "version_known_at", "metadata_json")
+    if not set(fields) <= _columns(connection, "history_versions_v2"):
+        rejected["HISTORY_SCHEMA_IDENTITY_NO_VERIFICADO"] += 1
+        return []
     slots = ",".join("?" for _ in sessions)
-    rows = _fetch(connection, f"""SELECT * FROM history_versions_v2
-      WHERE date IN ({slots}) AND julianday(observed_at)<=julianday(?)
-      ORDER BY date DESC,julianday(observed_at) DESC,id DESC LIMIT ?""",
-      (*sessions, cutoff.isoformat()), limit, quality, "history_versions_v2")
+    named = ",".join(name for name in fields if name != "metadata_json")
+    # Revision selection precedes metadata/unit quality. A later bad revision
+    # cannot resurrect an earlier acceptable value of the same source/series.
+    rows = _fetch(connection, f"""WITH latest AS (
+        SELECT {named},CASE WHEN length(CAST(metadata_json AS BLOB))<={MAX_NATIVE_JSON_BYTES}
+          THEN metadata_json END AS metadata_json,ROW_NUMBER() OVER (
+            PARTITION BY symbol,instrument_type,market,currency,settlement,date,
+              price_basis,adjustment_basis,source
+            ORDER BY version_known_at DESC,id DESC) revision_order
+        FROM history_versions_v2 WHERE date IN ({slots}) AND version_known_at<=?)
+      SELECT {named},metadata_json FROM latest WHERE revision_order=1
+      ORDER BY date DESC,version_known_at DESC,id DESC LIMIT ?""",
+      (*sessions, utc(cutoff)), limit, quality, "history_versions_v2",
+      payload_field="metadata_json", byte_budget=MAX_TOTAL_PAYLOAD_BYTES-quality.get("payload_bytes_read", 0), deadline=deadline)
     records = []
     for sqlite_row in rows:
         row = dict(sqlite_row)
+        if bool(row["adjusted"]) or (row["price_basis"], row["adjustment_basis"]) != ("RAW", "RAW_NO_ADJUSTMENT"):
+            rejected["HISTORY_PRICE_BASIS_INCOMPARABLE"] += 1
+            continue
         metadata = _object(row.get("metadata_json"))
-        event = metadata.get("source_at") or metadata.get("event_at") or metadata.get("provider_observed_at")
+        event = row["provider_at"] or metadata.get("source_at") or metadata.get("event_at") or metadata.get("provider_observed_at")
         if not event:
             rejected["HISTORY_SOURCE_EVENT_TIME_NO_VERIFICADO"] += 1
             continue
         # The stored clock is the first engine availability of this immutable
         # version; an earlier provider publication never backdates availability.
         try:
-            availability = _availability(row["observed_at"], metadata)
+            availability = _availability(row["version_known_at"], metadata, {"available_to_engine_at": row["observed_at"]})
         except (ValueError, TypeError, OverflowError):
             rejected["SOURCE_TIMESTAMP_NO_VERIFICADO"] += 1
             continue
         clocks = _clock_pair(event, availability, cutoff, rejected)
         if clocks is None:
             continue
-        if clocks[0][:10] != row["date"]:
+        if stamp(clocks[0]).astimezone(TZ).date().isoformat() != row["date"]:
             rejected["SESSION_SOURCE_CLOCK_MISMATCH"] += 1
             continue
         if stamp(clocks[1]) < datetime.combine(date.fromisoformat(row["date"]), BYMA_PAPER_SPOT_CLOSE, TZ):
             rejected["DAILY_SESSION_NOT_CLOSED_AT_AVAILABILITY"] += 1
             continue
-        key = _resolve_identity(row["symbol"], row["instrument_type"], row["settlement"], metadata,
+        if metadata.get("currency") and str(metadata["currency"]).upper() != row["currency"]:
+            rejected["SOURCE_IDENTITY_NO_VERIFICADO"] += 1
+            continue
+        key = _resolve_identity(row["symbol"], row["instrument_type"], row["settlement"], {**metadata, "currency": row["currency"]},
                                 indexes, rejected, market=row["market"])
         if key is not None:
             records.append({**key, "session": row["date"], "observed_at": clocks[0], "published_at": clocks[1],
                             "source": row["source"], "adjusted": bool(row["adjusted"]),
+                            "version_known_at": row["version_known_at"], "price_basis": row["price_basis"],
+                            "adjustment_basis": row["adjustment_basis"],
                             "source_clock_meaning": "EXPLICIT_PROVIDER_EVENT",
                             **_daily_metrics(row, metadata, key, rejected)})
     return records
 
 
-def _read_books(connection, tables, indexes, sessions, cutoff, quality, rejected, limit):
+def _read_books(connection, tables, indexes, sessions, cutoff, quality, rejected, limit, deadline):
     if "market_snapshots" not in tables:
         return []
     needed = {"symbol", "asset_class", "market", "currency", "settlement", "observed_at", "book_at", "bid", "ask", "bid_size", "ask_size"}
-    if not needed <= _columns(connection, "market_snapshots"):
+    columns = _columns(connection, "market_snapshots")
+    if not needed <= columns:
         rejected["BOOK_SCHEMA_NO_VERIFICADO"] += 1
         return []
-    rows = _fetch(connection, """SELECT * FROM market_snapshots
+    named = ",".join(sorted(needed))
+    extra = ",".join(name if name in columns else f"NULL AS {name}" for name in ("source", "depth_unit"))
+    contract = "COALESCE(contract_json,'{}')" if "contract_json" in columns else "'{}'"
+    rows = _fetch(connection, f"""SELECT {named},{extra},
+      CASE WHEN length(CAST({contract} AS BLOB))<={MAX_NATIVE_JSON_BYTES} THEN {contract} END AS contract_json
+      FROM market_snapshots
       WHERE julianday(observed_at)<=julianday(?) AND julianday(book_at)<=julianday(?)
         AND julianday(book_at)>=julianday(?)
       ORDER BY id DESC LIMIT ?""", (cutoff.isoformat(), cutoff.isoformat(), (cutoff-timedelta(minutes=15)).isoformat()),
-      limit, quality, "market_snapshots")
+      limit, quality, "market_snapshots", payload_field="contract_json",
+      byte_budget=MAX_TOTAL_PAYLOAD_BYTES-quality.get("payload_bytes_read", 0), deadline=deadline)
     records = []
     for sqlite_row in rows:
         row = dict(sqlite_row)
@@ -397,17 +438,21 @@ def _read_books(connection, tables, indexes, sessions, cutoff, quality, rejected
     return records
 
 
-def _read_intraday(connection, tables, indexes, sessions, cutoff, quality, rejected, limit):
+def _read_intraday(connection, tables, indexes, sessions, cutoff, quality, rejected, limit, deadline):
     if "ppi_intraday_points" not in tables:
         return []
     recent = sessions[-INTRADAY_SESSIONS:]
     earliest = datetime.combine(date.fromisoformat(recent[0]), BYMA_PAPER_SPOT_OPEN, TZ)
-    rows = _fetch(connection, """SELECT * FROM ppi_intraday_points
+    columns = _columns(connection, "ppi_intraday_points")
+    extra = ",".join(name if name in columns else f"NULL AS {name}"
+                     for name in ("volume_unit", "volume_semantics", "cumulative_volume"))
+    rows = _fetch(connection, f"""SELECT symbol,asset_class,market,currency,settlement,
+      event_at,last_verified_at,first_received_at,price,source,{extra} FROM ppi_intraday_points
       WHERE julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
         AND julianday(first_received_at)<=julianday(?) AND julianday(last_verified_at)<=julianday(?)
       ORDER BY julianday(event_at) DESC,symbol,asset_class,market,currency,settlement LIMIT ?""",
       (earliest.isoformat(), cutoff.isoformat(), cutoff.isoformat(), cutoff.isoformat()),
-      limit, quality, "ppi_intraday_points")
+      limit, quality, "ppi_intraday_points", deadline=deadline)
     records = []
     for sqlite_row in rows:
         row = dict(sqlite_row)
@@ -456,9 +501,13 @@ def _chosen_daily(records):
     # or a later, lower-authority fallback cannot overwrite a prior PPI version.
     chosen = {}
     for row in records:
-        key = (identity(row), row["session"])
-        ordering = (bool(row.get("adjusted")), -source_rank(row["source"]), stamp(row["published_at"]), stamp(row["observed_at"]))
-        if key not in chosen or ordering > chosen[key][0]:
+        basis = (row.get("price_basis"), row.get("adjustment_basis"))
+        if bool(row.get("adjusted")) or basis != ("RAW", "RAW_NO_ADJUSTMENT"):
+            continue
+        key = (identity(row), row["session"], *basis)
+        ordering = (-source_rank(row["source"]), stamp(row["version_known_at"]))
+        old = chosen.get(key)
+        if old is None or ordering > old[0] or (ordering == old[0] and row["source"] < old[1]["source"]):
             chosen[key] = ordering, row
     return [chosen[key][1] for key in sorted(chosen)]
 
@@ -483,6 +532,11 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
                "calendar_audited_at": calendar.CALENDARIO_AUDITADO_EL.isoformat(),
                "cutoff": cut.isoformat(), "source_database_effect": "READ_ONLY",
                "history_database_effect": "READ_ONLY" if history_database is not None else "NOT_CONFIGURED",
+               "source_snapshot_method": "VERIFIED_MAIN_WAL_PRIVATE_COPY_SOURCE_SQLITE_NEVER_OPENED",
+               "source_snapshot_limits": {"maximum_source_bytes": 512*1024*1024,
+                                          "total_seconds": query_budget_seconds,
+                                          "native_json_row_bytes": MAX_NATIVE_JSON_BYTES,
+                                          "total_json_bytes": MAX_TOTAL_PAYLOAD_BYTES},
                "source_rows_read": {}, "truncated_sources": [], "unavailable_sources": [],
                "catalog_view": "ALL_READY_PAPER_IDENTITIES_UNCHANGED",
                "daily_clock_policy": "EXPLICIT_PROVIDER_CLOCK_AND_REAL_ENGINE_AVAILABILITY",
@@ -502,33 +556,47 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
                 raise ValueError("PAPER_SAFETY_REQUIRED")
             catalog = _fetch(connection, """SELECT ticker,instrument_type,market,currency,settlement
               FROM financial_instrument_catalog WHERE status='AVAILABLE' AND capability LIKE 'READY_PAPER%'
-              ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (), row_limit, quality, "catalog")
+              ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (), row_limit, quality, "catalog", deadline=deadline)
             if "catalog" in quality["truncated_sources"]:
                 raise ValueError("CATALOG_READ_TRUNCATED")
             source_catalog = _fetch(connection, """SELECT ticker,instrument_type,market,currency,settlement
               FROM financial_instrument_catalog WHERE status='AVAILABLE'
-              ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (), row_limit, quality, "source_catalog")
+              ORDER BY instrument_type,market,currency,ticker,settlement LIMIT ?""", (), row_limit, quality, "source_catalog", deadline=deadline)
             if "source_catalog" in quality["truncated_sources"]:
                 raise ValueError("SOURCE_CATALOG_READ_TRUNCATED")
             indexes = _identity_indexes([dict(row) for row in catalog], [dict(row) for row in source_catalog])
             quality["ready_catalog_count"] = len(catalog)
             if sessions:
-                records.extend(_read_daily(connection, tables, indexes, set(sessions), cut, quality, rejected, row_limit, deadline))
-                records.extend(_read_history_versions(connection, tables, indexes, sessions, cut, quality, rejected, row_limit))
-                books = _read_books(connection, tables, indexes, set(sessions), cut, quality, rejected, row_limit)
-                intraday = _read_intraday(connection, tables, indexes, sessions, cut, quality, rejected, row_limit)
+                pending_records = _read_daily(connection, tables, indexes, set(sessions), cut, quality, rejected, row_limit, deadline)
+                pending_records.extend(_read_history_versions(connection, tables, indexes, sessions, cut, quality, rejected, row_limit, deadline))
+                pending_books = _read_books(connection, tables, indexes, set(sessions), cut, quality, rejected, row_limit, deadline)
+                pending_intraday = _read_intraday(connection, tables, indexes, sessions, cut, quality, rejected, row_limit, deadline)
+        if sessions:
+            records.extend(pending_records)
+            books, intraday = pending_books, pending_intraday
+    except SnapshotError as exc:
+        quality["unavailable_sources"].append("trading:"+str(exc))
+        if "indexes" in locals():
+            del indexes
     except (sqlite3.Error, OSError) as exc:
         quality["unavailable_sources"].append(f"trading:{type(exc).__name__}")
     if history_database is not None and sessions and "indexes" in locals():
         try:
-            # Opening a second read-only source cannot create a missing history
-            # DB or renegotiate its journal mode. Repeated aliases are harmless.
+            # The historical main/WAL snapshot has independent source guards;
+            # a deadline/copy failure cannot publish partially read evidence.
             with _source(history_database, deadline) as connection:
-                records.extend(_read_history_versions(connection, _tables(connection), indexes, sessions,
-                                                      cut, quality, rejected, row_limit))
+                pending_history = _read_history_versions(connection, _tables(connection), indexes, sessions,
+                                                         cut, quality, rejected, row_limit, deadline)
+            records.extend(pending_history)
+        except SnapshotError as exc:
+            quality["unavailable_sources"].append("history:"+str(exc))
         except (sqlite3.Error, OSError) as exc:
             quality["unavailable_sources"].append(f"history:{type(exc).__name__}")
     history = _chosen_daily(records)
+    if any(source.startswith(("history_versions_v2", "historical_raw_archive", "production_history", "daily_output"))
+           for source in quality["truncated_sources"]):
+        # A partial historical source cannot reconstruct source authority.
+        history = []
     quality["truncated_sources"] = sorted(set(quality["truncated_sources"]))
     quality["rejected_inputs"] = dict(sorted(rejected.items()))
     quality["accepted_rows"] = {"history": len(history), "preopen_observations": len(books), "intraday_history": len(intraday)}
