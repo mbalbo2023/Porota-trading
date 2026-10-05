@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "probe_nonce": "RC6-NIGHT-PROBE-20261005T0113Z",
+  "scope": "SYNTHETIC_ONLY_NOT_A_RELEASE",
+  "a": 17,
+  "b": 25,
+  "sum": 41,
+  "paper_only": true,
+  "real_orders_sent": 0
+}
