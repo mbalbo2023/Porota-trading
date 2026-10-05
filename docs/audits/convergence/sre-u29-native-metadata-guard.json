@@ -1,0 +1,204 @@
+{
+  "baseline_auditor": {
+    "git_blob": "d993a4f5b9c9f1fd1b0b34a570da494e9a65b465",
+    "path": "docs/audits/convergence/evidence/sre-u29-native-metadata-baseline-auditor.txt",
+    "sha256": "ada4bfe1187630f32b39aa8b002a589506dbecf4b78c9fd16fdfb15d5e19eb20"
+  },
+  "baseline_sha": "a3dde1282bb00a93093f91dc01481287d1a288fe",
+  "baseline_tree": "bead2ce1e4168e2ddcc94ca2b49ded974e303772",
+  "corrected_auditor_sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488",
+  "final_frozen_image_closure": "PENDING_FINAL_PREDEPLOY_ACTUAL_IMAGE",
+  "fix": "Count every metadata row before normalization and reject duplicate normalized names; preserve unique count and explicit duplicate_names taxonomy.",
+  "guard_source_sha256": "ea2201023f0aa5cc0a525b1e2814ab08ecdcbaba81af4f82858ab0db34df3a91",
+  "market_effects": "NOT_EXECUTED",
+  "negative_classification": "INSTALLED_METADATA_CARDINALITY_FAIL_OPEN",
+  "negative_observed": "Two native fixtures add a fourth dist-info with wheel or Wheel at the expected version. The prior dict conversion collapsed duplicate names and returned GREEN; both actual guard runs fail in baseline XML.",
+  "production_effects": "NOT_CALLED",
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_prior_hash_installer_environment_readonly_control": {
+    "result": {
+      "duplicate_names": [],
+      "expected_total": 157,
+      "installed_total": 157,
+      "installed_unique_total": 157,
+      "missing": [],
+      "schema": "rc6.installed-distribution-closure.v1",
+      "status": "GREEN",
+      "unexpected": [],
+      "version_mismatch": []
+    },
+    "scope": "Native metadata snapshot of existing actual isolated157-distribution hashed-install environment; no pip or installation performed"
+  },
+  "real_routes": "NOT_CALLED",
+  "receipts": [
+    {
+      "bytes": 4550,
+      "nodes": [
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[wheel]",
+          "outcome": "FAIL"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[Wheel]",
+          "outcome": "FAIL"
+        }
+      ],
+      "path": "docs/audits/convergence/evidence/sre-u29-native-metadata-duplicate-red.xml",
+      "sha256": "aa9002d3f1d6cacc6e4f8087b317ed7551c299c2f48c0e89215cdddfe2f7ca0e",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "2",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "2",
+          "time": "0.124",
+          "timestamp": "2026-10-05T07:41:37.492757+00:00"
+        }
+      ]
+    },
+    {
+      "bytes": 4535,
+      "nodes": [
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[missing_hash]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[changed_hash]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[mutable_action]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[other_action_commit]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[unpinned_base]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[hash_install_disabled]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[build_isolation]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[extra_lock_dependency]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[wrong_platform]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[old_glibc]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[missing_glibc]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[musl_platform]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[bad_build_hash]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[runtime_only_versions]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed[broken_continuation]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_real_checked_in_supply_chain_policy_and_platform_lock_are_green",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools[none]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools[missing]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools[extra]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools[version]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[wheel]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure[Wheel]",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_scoped_cleanup_keeps_active_stopped_stable_and_explicit_pins",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_supply_cleanup.py::test_cleanup_inventory_failure_or_unknown_namespace_never_deletes",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_porota_dependency_repro_audit.py::test_exact_requirement_is_recognized",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_porota_dependency_repro_audit.py::test_source_ranges_are_allowed_when_lock_is_exact",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_porota_dependency_repro_audit.py::test_non_exact_lock_is_reported",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_porota_dependency_repro_audit.py::test_unpinned_base_image_is_reported",
+          "outcome": "PASS"
+        },
+        {
+          "node": "tests/test_porota_dependency_repro_audit.py::test_docker_must_install_the_lock",
+          "outcome": "PASS"
+        }
+      ],
+      "path": "docs/audits/convergence/evidence/sre-u29-native-metadata-duplicate-green.xml",
+      "sha256": "699e4cac10614838b6f018e98a3885b2306bc6e06b9757a5938b7240ee46d62f",
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "29",
+          "time": "0.246",
+          "timestamp": "2026-10-05T07:42:45.270165+00:00"
+        }
+      ]
+    }
+  ],
+  "recorded_at": "2026-10-05T07:44:23.276007+00:00",
+  "requirement": "U29",
+  "reviewed_distribution_versions_changed": false,
+  "schema": "rc6.sre-native-installed-metadata-duplicate-guard.v1",
+  "scope": "ACTUAL_NATIVE_IMPORTLIB_METADATA_PARSER_ON_EXPLICIT_SYNTHETIC_DIST_INFO; no installer, package-module mutation, runtime image or provider",
+  "trust": "Local native replay receipts; file hashes bind saved bytes and do not authenticate themselves externally"
+}

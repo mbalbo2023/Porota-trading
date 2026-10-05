@@ -1,6 +1,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -53,6 +54,32 @@ def test_installed_closure_distinguishes_extra_transitives_and_build_tools(drift
     elif drift == "version": installed["wheel"] = "0.46.0"
     result = installed_distribution_audit(kwargs["supply_chain_policy"], installed)
     assert result["status"] == ("GREEN" if drift == "none" else "REPRODUCIBILITY_GAP")
+
+
+@pytest.mark.parametrize("duplicate_name", ["wheel", "Wheel"])
+def test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure(
+        tmp_path, monkeypatch, duplicate_name):
+    _, _, kwargs = hashed_inputs()
+    # Real importlib.metadata reads these isolated synthetic dist-info files.
+    # No package install, module bytes, interpreter metadata, or pip is changed.
+    monkeypatch.setattr(sys, "path", [str(tmp_path)])
+    for directory, name, version in (("requests", "requests", "2.34.2"),
+                                     ("pandas", "pandas", "2.3.3"),
+                                     ("wheel", "wheel", "0.45.1")):
+        path = tmp_path / (directory + "-" + version + ".dist-info")
+        path.mkdir()
+        (path / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n")
+    positive = installed_distribution_audit(kwargs["supply_chain_policy"])
+    assert positive["status"] == "GREEN" and positive["installed_total"] == 3
+    extra = tmp_path / "duplicate-witness-0.45.1.dist-info"
+    extra.mkdir()
+    (extra / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: " + duplicate_name + "\nVersion: 0.45.1\n")
+    rejected = installed_distribution_audit(kwargs["supply_chain_policy"])
+    assert rejected["status"] == "REPRODUCIBILITY_GAP"
+    assert rejected["installed_total"] == 4
+    assert rejected["duplicate_names"] == ["wheel"]
 
 
 def test_scoped_cleanup_keeps_active_stopped_stable_and_explicit_pins():

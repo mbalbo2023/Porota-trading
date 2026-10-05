@@ -72,23 +72,15 @@ def installed_distribution_audit(policy, installed=None):
     expected = {normalized(row["name"]): row["version"]
                 for row in policy.get("packages", []) + policy.get("build_tools", [])}
     if installed is None:
-        rows = [(distribution.metadata["Name"], distribution.version)
-                for distribution in metadata.distributions()]
-    else:
-        rows = list(installed.items())
-    observed, duplicates = {}, set()
-    for name, version in rows:
-        key = normalized(name)
-        if key in observed:
-            duplicates.add(key)
-        observed[key] = version
+        installed = {distribution.metadata["Name"]: distribution.version
+                     for distribution in metadata.distributions()}
+    observed = {normalized(name): version for name, version in installed.items()}
     missing = sorted(set(expected) - set(observed))
     unexpected = sorted(set(observed) - set(expected))
     versions = sorted(name for name in set(expected) & set(observed) if expected[name] != observed[name])
     return {"schema": "rc6.installed-distribution-closure.v1",
-            "status": "GREEN" if expected and not missing and not unexpected and not versions and not duplicates else "REPRODUCIBILITY_GAP",
-            "expected_total": len(expected), "installed_total": len(rows),
-            "installed_unique_total": len(observed), "duplicate_names": sorted(duplicates),
+            "status": "GREEN" if expected and not missing and not unexpected and not versions else "REPRODUCIBILITY_GAP",
+            "expected_total": len(expected), "installed_total": len(observed),
             "missing": missing, "unexpected": unexpected, "version_mismatch": versions}
 
 
