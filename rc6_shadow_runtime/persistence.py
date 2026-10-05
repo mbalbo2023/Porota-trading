@@ -1,4 +1,4 @@
-"""Durable SHADOW generations; CURRENT is the only publication authority.
+"""Durable SHADOW generations; CURRENT publication is sealed by lineage custody.
 
 Report/checkpoint/status are immutable, hash-linked members of one generation.
 Standalone preopen freezes and failure diagnostics have separate explicit roles.
@@ -78,13 +78,23 @@ def _semantic_safety(values, *, fill=False):
                 raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
         if value.get("real_order_routes", "NOT_CALLED") != "NOT_CALLED":
             raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
-        if "safety" in value and value["safety"] != SAFETY:
+        if value.get("real_money_authorized", False) is not False or value.get("live_decision_authority", False) is not False:
+            raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
+        if "provider_additional_budget" in value:
+            budget = value["provider_additional_budget"]
+            if (not isinstance(budget, dict) or set(budget) != {"current", "book", "intraday"}
+                    or any(type(amount) is not int or amount != 0 for amount in budget.values())):
+                raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
+        if "safety" in value and digest(value["safety"]) != digest(SAFETY):
             raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
         if fill:
             value.update(deepcopy(SAFETY))
             value["safety"] = deepcopy(SAFETY)
-        elif value.get("safety") != SAFETY or any(value.get(key) != expected for key, expected in SAFETY.items()):
+        elif digest(value.get("safety")) != digest(SAFETY) or any(value.get(key) != expected for key, expected in SAFETY.items()):
             raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
+    declared_limits = [value["production_limits_modified"] for value in values.values() if "production_limits_modified" in value]
+    if any(type(value) is not bool for value in declared_limits) or len({digest(value) for value in declared_limits}) > 1:
+        raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
 
 
 def failure_reason(error):
@@ -445,7 +455,7 @@ class EvidenceFiles:
                 raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
             _semantic_sources(report, legacy=legacy)
             _semantic_safety(payloads, fill=legacy)
-            if not legacy and (manifest.get("safety") != SAFETY or manifest.get("as_of") != report["as_of"]):
+            if not legacy and (digest(manifest.get("safety")) != digest(SAFETY) or manifest.get("as_of") != report["as_of"]):
                 raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
             self._validate_authority(pointer, allow_legacy=allow_legacy, recovering=_recovering)
             failure = self._independent("failure.json") if not allow_degraded else None

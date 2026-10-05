@@ -38,6 +38,11 @@ Every role requires SHADOW mode, strict integer zero real orders and provider
 requests, routes/factual execution `NOT_CALLED`, source DB effect `READ_ONLY` and
 PPI Watch `UNTOUCHED`. Supplied contradictions are rejected before fixed fields
 are copied to roles. Source reports also cannot grant live/entry authority.
+Optional real-money/live-authority declarations must be false, and any declared
+additional provider budget must contain strict integer zeros for current, book
+and intraday. Production-limit modification declarations may reflect approved
+PAPER policy but must be booleans that agree across roles. Nested safety vectors
+also preserve JSON types; boolean `false` cannot stand in for integer zero.
 
 The writer and reader recompute `audit_sources(reports=..., as_of=...)`, including
 zero reports. Canonical digests enforce both values and JSON types: boolean

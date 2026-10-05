@@ -129,7 +129,11 @@ def test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2(tmp_path
 
 
 @pytest.mark.parametrize("field,value", [("real_orders_sent", 7), ("real_orders_sent", False),
-    ("real_routes", "CALLED"), ("mode", "REAL"), ("provider_requests", 1), ("ppi_watch", "TOUCHED")])
+    ("real_routes", "CALLED"), ("mode", "REAL"), ("provider_requests", 1), ("ppi_watch", "TOUCHED"),
+    ("provider_additional_budget", {"current": 1, "book": 0, "intraday": 0}),
+    ("provider_additional_budget", {"current": False, "book": 0, "intraday": 0}),
+    ("real_money_authorized", True), ("live_decision_authority", True),
+    ("production_limits_modified", 1), ("safety", {**persistence.SAFETY, "real_orders_sent": False})])
 def test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed(tmp_path, field, value):
     root = tmp_path / "evidence"
     with EvidenceFiles(root) as files:
@@ -145,6 +149,25 @@ def test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed(tmp_path, f
     from rc6_dynamic_universe.promotion import RuntimeCapacityController
     with pytest.raises(ValueError, match="SAFETY_MISMATCH"):
         RuntimeCapacityController(environ={"POROTA_CAPACITY_SHADOW_PATH": str(root / "CURRENT.json")}).shadow_report()
+
+
+def test_u17_production_limit_declarations_must_agree_across_roles(tmp_path):
+    root = tmp_path / "evidence"
+    with EvidenceFiles(root) as files:
+        initial = publish(files, 1)
+        values = {role: {**initial[role], "production_limits_modified": True} for role in ROLES}
+        good = files.commit_generation(values["report"], values["checkpoint"], values["status"],
+            source_watermark=initial["manifest"]["source_watermark"],
+            configuration_fingerprint=initial["manifest"]["configuration_fingerprint"])
+        assert good["report"]["production_limits_modified"] is True
+        values["checkpoint"]["production_limits_modified"] = False
+        with pytest.raises(ValueError, match="SAFETY_MISMATCH"):
+            files.commit_generation(values["report"], values["checkpoint"], values["status"],
+                source_watermark=initial["manifest"]["source_watermark"],
+                configuration_fingerprint=initial["manifest"]["configuration_fingerprint"])
+    rehash_all(root, good, lambda values: values["checkpoint"].update(production_limits_modified=False))
+    with pytest.raises(ValueError, match="SAFETY_MISMATCH"):
+        read_committed_generation(root)
 
 
 def test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor(tmp_path):
