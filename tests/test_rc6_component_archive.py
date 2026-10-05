@@ -58,6 +58,12 @@ def snapshot(root):
     return result
 
 
+def tree_custody(root):
+    info = root.lstat()
+    return ((info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode, info.st_nlink,
+        info.st_size, info.st_blocks, info.st_atime_ns, info.st_mtime_ns, info.st_ctime_ns), snapshot(root))
+
+
 def policy(root, archive, **kwargs):
     return EvidenceRetention(root, archive_root=archive, archive_format="COMPONENT_V3", **kwargs)
 
@@ -106,6 +112,31 @@ def test_repeat_component_verifier_rechecks_bytes_and_never_reuses_a_prior_publi
     raw = bytes_at(packed); packed.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
     with pytest.raises(ValueError, match="HASH_MISMATCH"):
         verifier.restore(receipts[1])
+
+
+@pytest.mark.parametrize("attack", ("pack_bytes", "missing_pack", "missing_base_receipt"))
+def test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody(tmp_path, attack):
+    root, archive, _, directories, receipts = native(tmp_path)
+    value = recipe(archive, receipts[-1])
+    if attack == "missing_base_receipt":
+        (archive / (receipts[0]["generation_id"] + ".receipt.json")).unlink()
+    else:
+        target = archive / value["packs"][0]
+        if attack == "pack_bytes":
+            raw = bytes_at(target)
+            target.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+        else:
+            target.unlink()
+    (root / ("archive-ack-" + receipts[-1]["generation_id"] + ".json")).unlink()
+    protected = (root, root.with_name(root.name + ".authority"), archive)
+    before = {str(path): tree_custody(path) for path in protected}
+    reader = policy(root, archive)
+    with pytest.raises((ValueError, OSError)):
+        reader.restore_generation(receipts[-1]["generation_id"])
+    assert before == {str(path): tree_custody(path) for path in protected}
+    with pytest.raises((ValueError, OSError)):
+        reader.archive_generation(directories[-1])
+    assert before == {str(path): tree_custody(path) for path in protected}
 
 
 @pytest.mark.parametrize("attack", ("pack_bytes", "missing_pack", "missing_base_receipt", "missing_base_recipe"))

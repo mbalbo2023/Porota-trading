@@ -204,7 +204,8 @@ class ComponentArchive:
     def _catalog(self):
         """Headers locate candidate bytes; they never authenticate a component."""
         catalog, count = {}, 0
-        for path in sorted(self.root.glob("*.cas.pack")):
+        for path in sorted(path for path in self.owner._read_only_paths(self.root)
+                           if path.name.endswith(".cas.pack")):
             header, info = read(path, maximum=MAX_PACK_BYTES, header_only=PACK_HEADER.size)
             if len(header) != PACK_HEADER.size:
                 raise ValueError("RETENTION_COMPONENT_PACK_INVALID")

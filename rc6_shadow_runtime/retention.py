@@ -150,7 +150,7 @@ class EvidenceRetention:
         if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.getuid() or stat.S_IMODE(directory.st_mode) != 0o700:
             raise ValueError("RETENTION_ARCHIVE_DIRECTORY_CUSTODY_INVALID")
         count, size, allocated = 0, 0, self.archive_root.stat().st_blocks * 512
-        for path in self.archive_root.iterdir():
+        for path in self._read_only_paths(self.archive_root):
             info = path.lstat()
             if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid()
                     or stat.S_IMODE(info.st_mode) != 0o600):
@@ -257,7 +257,7 @@ class EvidenceRetention:
         """
         head = self._archive_checkpoint()
         paths = []
-        for count, path in enumerate(self.archive_root.iterdir(), 1):
+        for count, path in enumerate(self._read_only_paths(self.archive_root), 1):
             if count > self.archive_maximum_files:
                 raise ValueError("RETENTION_ARCHIVE_INVENTORY_LIMIT")
             if re.fullmatch(r"[0-9a-f]{32}\.receipt\.json", path.name):
@@ -561,7 +561,7 @@ class EvidenceRetention:
         # Every extant source generation is a recovery pin, including a source
         # not yet archived. Expiry cannot race rotation/delete-intent recovery.
         pins = self._pins(supplied)
-        for path in self.root.iterdir():
+        for path in self._read_only_paths(self.root, maximum_files=max(2048, self.policy.maximum_files * 4)):
             match = GENERATION.fullmatch(path.name) or DELETING.fullmatch(path.name)
             if match:
                 pins.add(match[1])
@@ -737,8 +737,9 @@ class EvidenceRetention:
             self._durable_control(self.archive_root / "CHECKPOINT.json", value)
             return {"expired_generations": 0, "deleted_archive_members": 0}
         committed_ids = {receipt["generation_id"] for receipt in receipts}
+        archive_paths = self._read_only_paths(self.archive_root)
         if any(path.name.removesuffix(".recipe.gz") not in committed_ids
-               for path in self.archive_root.glob("*.recipe.gz")):
+               for path in archive_paths if path.name.endswith(".recipe.gz")):
             raise ValueError("RETENTION_ARCHIVE_UNCOMMITTED_RECIPE_RECOVERY_REQUIRED")
         component = ComponentArchive(self)
         graph = component.dependency_graph([r for r in receipts if r["schema"] == V3_SCHEMA])
@@ -778,7 +779,7 @@ class EvidenceRetention:
             ident = receipt["generation_id"]
             add(ident + ".receipt.json")
             add(ident + (".recipe.gz" if receipt["schema"] == V3_SCHEMA else ".tar.gz"))
-        for candidate in sorted(self.archive_root.glob("*.cas.pack")):
+        for candidate in sorted(path for path in archive_paths if path.name.endswith(".cas.pack")):
             if candidate.name not in kept_packs:
                 add(candidate.name)
         if len(targets) > 1024:
@@ -879,12 +880,17 @@ class EvidenceRetention:
                 or self._same_file(info) != self._same_file(target)):
             raise ValueError("RETENTION_FILE_ALIAS_FORBIDDEN")
 
-    def _read_only_paths(self, path):
+    def _read_only_paths(self, path, *, maximum_files=None):
+        """Enumerate through a stable NoAtime descriptor, including on rejection."""
+        archive_namespace = maximum_files is None
+        maximum_files = self.archive_maximum_files if archive_namespace else maximum_files
         descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_NOATIME", 0))
         try:
             before = os.fstat(descriptor)
             names = os.listdir(descriptor)
-            if len(names) > self.archive_maximum_files:
+            if len(names) > maximum_files:
+                if not archive_namespace:
+                    raise RetentionPressure("RETENTION_INVENTORY_LIMIT", {"files": len(names)})
                 raise ValueError("RETENTION_ARCHIVE_INVENTORY_LIMIT")
             if self._same_file(before) != self._same_file(os.fstat(descriptor)) or self._same_file(before) != self._same_file(path.lstat()):
                 raise ValueError("RETENTION_ARCHIVE_NAMESPACE_CHANGED")
@@ -899,7 +905,7 @@ class EvidenceRetention:
             directory, depth = queue.pop()
             if depth > 4:
                 raise RetentionPressure("RETENTION_INVENTORY_DEPTH", {})
-            for path in directory.iterdir():
+            for path in self._read_only_paths(directory, maximum_files=inspection_limit):
                 info = path.lstat()
                 if (stat.S_ISLNK(info.st_mode) or
                         not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)) or
@@ -1076,7 +1082,7 @@ class EvidenceRetention:
 
     def _rotate(self, path):
         ident = _generation_id(path.name)
-        members = set(os.listdir(path))
+        members = {member.name for member in self._read_only_paths(path)}
         if members not in (BASE_MEMBERS, MEMBERS):
             raise ValueError("RETENTION_UNOWNED_TEMP_CONTENT")
         for name in members:
@@ -1104,7 +1110,9 @@ class EvidenceRetention:
 
     def _recover_deletions(self, pins):
         recovered = 0
-        for intent in sorted(self.root.glob("delete-intent-*.json")):
+        maximum_files = max(2048, self.policy.maximum_files * 4)
+        for intent in sorted(path for path in self._read_only_paths(self.root, maximum_files=maximum_files)
+                             if path.name.startswith("delete-intent-") and path.name.endswith(".json")):
             ident = _generation_id(intent.name.removeprefix("delete-intent-").removesuffix(".json"))
             value, _ = self._read_control(intent)
             if value.get("schema") != "RC6_SHADOW_DELETE_INTENT_V2" or value.get("generation_id") != ident or ident in pins:
@@ -1135,7 +1143,8 @@ class EvidenceRetention:
             intent.unlink(); self._sync_root()
             recovered += 1
         # A tombstone without its durable intent is never deletable authority.
-        if any(self.root.glob(".deleting-*")):
+        if any(path.name.startswith(".deleting-")
+               for path in self._read_only_paths(self.root, maximum_files=maximum_files)):
             raise ValueError("RETENTION_DELETE_INTENT_MISSING")
         return recovered
 

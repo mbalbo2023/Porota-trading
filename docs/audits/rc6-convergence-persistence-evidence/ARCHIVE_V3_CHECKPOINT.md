@@ -89,3 +89,19 @@ The attached JSON records exact JUnit and source hashes. These small native
 guards are not a substitute for the complete canonical-factory 12000/60000
 producer, physical 1201-tick/2000-generation horizon, UI one-second/four-MiB or
 SRE two-second measurements. Those requirements remain active software gates.
+
+An independent SRE negative subsequently exposed a directory-atime gap in the
+writer retry on `7e9425e2`: checkpoint repair enumerated the archive through
+`Path.iterdir` before rejecting a corrupt pack. A separate exact-source probe
+confirmed that restore alone preserved custody, while the archive retry changed
+only the archive root's atime. The earlier child-only snapshots did not include
+the root directory itself. This is a verified product failure, preserved in
+`archive_v3_atime_7e9425e2_red.json`.
+
+Retention inventories, checkpoint repair, CAS catalog, GC and live namespace
+enumeration now use the bounded, identity-checked NoAtime directory descriptor.
+The new native guard snapshots each protected root itself, all descendants,
+source authority and original bytes; corrupt packs, missing packs and missing
+base receipts reject without changing any of those values. Final source focal:
+41/41 passed in 10.557 s, with exact XML/source hashes recorded in
+`archive_v3_atime_fix_evidence.json`. Horizon and large-render gates remain open.
