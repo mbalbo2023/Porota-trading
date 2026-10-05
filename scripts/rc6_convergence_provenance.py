@@ -21,6 +21,13 @@ import stat
 import subprocess
 import xml.etree.ElementTree as ET
 
+try:
+    from scripts import rc6_prior_regression_successors as prior_successions
+except ModuleNotFoundError as error:
+    if error.name != "scripts":
+        raise
+    import rc6_prior_regression_successors as prior_successions
+
 INPUT_ROOT = "docs/audits/convergence"
 MANIFEST = "INPUT_MANIFEST_RC6_CONVERGENCIA.json"
 REGISTRY = "REGISTRO_CONVERGENCIA_RC6.csv"
@@ -44,6 +51,7 @@ TEST_344_ADAPTATIONS = {
     "tests/test_rc4_acceptance.py": (b"'2026-09-02T20:00:00+00:00',{})", b"'2026-09-02T20:00:00+00:00',{'currency':'ARS'})"),
 }
 DENIED_ARTIFACTS = {11315198085, 11317509383, 11293625514}
+PRIOR_AUDIT_MATRIX = "docs/audits/ISSUE465_REAUDIT.json"
 ORIGINAL_DIGESTS = {
     MANIFEST: "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4",
     REGISTRY: "9c1432c006516d23418bf059adf8c4f8d37e869186cb0ef15e3bb6768c86df21",
@@ -101,6 +109,38 @@ def tree(root, revision):
 
 def committed_input(root, sha, filename):
     return git(root, "show", sha + ":" + INPUT_ROOT + "/" + filename, binary=True)
+
+
+def prior_frozen_front_inventory(root, anchor, *, fetch_source_refs=False):
+    """Recover historical frozen SHA objects, independently of live branches."""
+    matrix = read_json(git(root, "show", anchor + ":" + PRIOR_AUDIT_MATRIX, binary=True))
+    streams = matrix.get("workstreams", [])
+    require(isinstance(streams, list) and len(streams) == 7
+            and {item.get("id") for item in streams} == set("ABCDEFG"), "PRIOR_FRONT_SET_INVALID")
+    baseline, records, seen_paths = tree(root, anchor), [], set()
+    for stream in streams:
+        head, expected_tree = stream.get("head"), stream.get("tree")
+        require(isinstance(head, str) and re.fullmatch(r"[0-9a-f]{40}", head)
+                and isinstance(expected_tree, str) and re.fullmatch(r"[0-9a-f]{40}", expected_tree),
+                "PRIOR_FRONT_REF_INVALID")
+        if fetch_source_refs:
+            reference = "refs/porota/convergence-prior-front/" + stream["id"]
+            git(root, "fetch", "--no-tags", "--update-shallow", "origin", head + ":" + reference)
+            require(git(root, "rev-parse", reference) == head, "PRIOR_FRONT_FETCH_MISMATCH")
+        require(git(root, "rev-parse", head + "^{tree}") == expected_tree, "PRIOR_FRONT_TREE_MISMATCH")
+        frozen = tree(root, head)
+        paths = stream.get("paths")
+        require(isinstance(paths, list) and bool(paths), "PRIOR_FRONT_SCOPE_INVALID")
+        files = []
+        for path in paths:
+            require(isinstance(path, str) and path not in seen_paths and path in frozen
+                    and frozen[path] == baseline.get(path), "PRIOR_FRONT_NOT_PRESERVED_AT_ANCHOR")
+            seen_paths.add(path)
+            files.append({"path": path, **frozen[path]})
+        records.append({"id": stream["id"], "head_sha": head, "tree_sha": expected_tree,
+                        "anchor_sha": anchor, "files": files, "promotion_authority": False})
+    require(len(seen_paths) == 45, "PRIOR_FRONT_SCOPE_CARDINALITY")
+    return records
 
 
 def original_front_variants(f01_f02, f03_f05):
@@ -265,6 +305,18 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     manifest = read_json(committed_input(root, candidate_sha, MANIFEST))
     sources = manifest["sources"]
     require(len(sources) == 15 and {row["pr"] for row in sources} == SOURCE_PRS, "SOURCE_PR_SET_CHANGED")
+    if fetch_source_refs:
+        for row in sources:
+            reference = "refs/porota/convergence-source/" + str(row["pr"])
+            git(root, "fetch", "--no-tags", "--update-shallow", "origin", "refs/pull/" + str(row["pr"]) + "/head:" + reference)
+            require(git(root, "rev-parse", reference) == row["head_sha"], "SOURCE_PR_HEAD_CHANGED:" + str(row["pr"]))
+            base_reference = "refs/porota/convergence-source-base/" + str(row["pr"])
+            git(root, "fetch", "--no-tags", "--update-shallow", "origin", row["base_sha"] + ":" + base_reference)
+            require(git(root, "rev-parse", base_reference) == row["base_sha"], "SOURCE_BASE_SHA_CHANGED:" + str(row["pr"]))
+    # Recover referenced historical objects before any legacy/source consumer.
+    prior_fronts = prior_frozen_front_inventory(root,
+        next(row["head_sha"] for row in sources if row["pr"] == 466),
+        fetch_source_refs=fetch_source_refs)
     registry = list(csv.DictReader(io.StringIO(committed_input(root, candidate_sha, REGISTRY).decode())))
     require(len(registry) == 55 and {row["id"] for row in registry} == REQUIREMENTS, "ORIGINAL_REGISTRY_CHANGED")
     original_scenarios = read_json(committed_input(root, candidate_sha, SCENARIOS))["rows"]
@@ -331,10 +383,6 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     require(git(root, "rev-parse", product_sha + "^{tree}") == manifest["product"]["tree"], "PRODUCT_TREE_CHANGED")
     for row in sources:
         sha = row["head_sha"]
-        if fetch_source_refs:
-            reference = "refs/porota/convergence-source/" + str(row["pr"])
-            git(root, "fetch", "--no-tags", "origin", "refs/pull/" + str(row["pr"]) + "/head:" + reference)
-            require(git(root, "rev-parse", reference) == sha, "SOURCE_PR_HEAD_CHANGED:" + str(row["pr"]))
         source_trees[str(row["pr"])] = tree(root, sha)
         base_tree = tree(root, row["base_sha"])
         changed = sorted(path for path in set(base_tree) | set(source_trees[str(row["pr"])])
@@ -353,8 +401,24 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                           "comparison": "EXACT_SOURCE_BYTES" if original == final else
                               "EVOLVED_REQUIRES_GUARDED_RECONCILIATION" if original else "SOURCE_REMOVAL_HISTORY"})
         source_reports.append({**row, "tree_sha": git(root, "rev-parse", sha + "^{tree}"),
+                               "base_tree_sha": git(root, "rev-parse", row["base_sha"] + "^{tree}"),
                                "actual_delta_path_count": len(changed), "delta_paths": delta,
                                "final_promotion_authority": False})
+    original_sha = next(row["head_sha"] for row in sources if row["pr"] == 466)
+    original_matrix = read_json(git(root, "show", original_sha + ":" + PRIOR_AUDIT_MATRIX, binary=True))
+    prior_paths = {node.split("::")[0] for node in prior_successions.SUCCESSORS}
+    original_records, current_records = {}, {}
+    for path in sorted(prior_paths):
+        require(path in source_trees["466"] and path in final_tree, "PRIOR_REGRESSION_SOURCE_MISSING:" + path)
+        original_records[path] = {**source_trees["466"][path],
+            "data": git(root, "show", original_sha + ":" + path, binary=True)}
+        current_records[path] = {**final_tree[path],
+            "data": git(root, "show", candidate_sha + ":" + path, binary=True)}
+    try:
+        regression_successions = prior_successions.verify_successions(
+            original_matrix, original_records, current_records, requirements, executed)
+    except prior_successions.SuccessionError as error:
+        raise ConvergenceError(str(error)) from error
     expected_sources = {}
     for pr, rows in manifest["expected_source_paths"].items():
         for row in rows:
@@ -396,6 +460,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     return {"schema": "rc6.final-input-provenance.v1", "candidate_sha": candidate_sha,
             "candidate_tree": candidate_tree, "product": manifest["product"],
             "sources": source_reports, "source_union_paths": len(expected_sources),
+            "prior_frozen_fronts": prior_fronts,
+            "prior_regression_successions": regression_successions,
             "expected_source_paths_preserved": len(expected_sources), "final_path_count": len(paths), "paths": paths,
             "requirements": requirements, "scenarios": scenarios, "original_scenarios": original_scenarios,
             "front_variants": front_variants,

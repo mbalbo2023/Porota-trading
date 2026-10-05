@@ -4,19 +4,48 @@ Status: DESARROLLADO; executed integrated guards and final canonical CI remain
 pending. This record does not authorize merge, deployment or runtime mutation.
 
 The existing Predeploy V2 calls `scripts/rc6_issue465_audit_gate.py` after the
-complete governed suite. Its original gate requires every workstream A–G file
-to equal its earlier released front, so it rejects legitimate convergence
-changes even after all original regression coverage has executed. An exact Git
+complete governed suite. The actual original gate returned
+`REGRESSION_NOT_EXECUTED:tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow`
+against the real 4,802-case, zero-nonpass CPython3.11 receipt for
+`3cfe112bb8061c5492d078e15a7ab41f698e2b0f`. Five original names have explicitly
+typed native successors because their safety contracts were hardened. The old
+names were not executed by that suite; its GREEN status cannot make them so.
+The original matrix and the actual RED receipt remain unchanged.
+
+Its original gate also requires every workstream A–G file to equal its earlier
+released front. An exact Git
 inspection of `3cfe112bb8061c5492d078e15a7ab41f698e2b0f` found 45 frozen file
 records, all preserved at the literal #466 anchor
 `c27dfd963c4fe83465c0f2105347e974fbbe6356`, and 22 evolved records. This is a
-source-contract incompatibility; that inspection is not a successful test run.
+source-contract incompatibility; that inspection is not a successful test run
+or the first failure observed in the actual original gate.
+
+The preserved intermediate receipts are
+`evidence/governed-3cfe112b-py311.xml` (SHA256
+`f61b24e4e2f5637d9721c6e778d2b71869e1c0ad9cbc1d2d9d4b4984ca5d820b`),
+`evidence/governed-3cfe112b-py311.json`, and
+`evidence/issue465-original-gate-red-3cfe112b.json` (SHA256
+`4781c7d23c9c53674e9ca3d9b9a37185791352b7a3c8bb5403835843d576b617`).
+They are diagnostic evidence for that exact intermediate source, not execution
+or acceptance evidence for the changed helper or final candidate.
 
 The successor branch keeps the exact original Issue465 matrix/report bytes,
 their authority, the seven frozen heads/trees, all original clauses, minimum
 executed case counts and external limitations. With no committed convergence
 handoff, changed front bytes remain rejected. Unchanged fronts retain their
 strict source/disk checks.
+
+`scripts/rc6_prior_regression_successors.py` has a fixed five-entry map;
+`PRIOR_REGRESSION_SUCCESSIONS.json` and `.md` disclose each changed contract.
+The full verifier reads original test bytes and the original matrix directly
+from c27 Git objects, current test bytes from the fixed candidate, and execution
+counts from its captured JUnit. It checks both Git blobs, modes, file SHA256,
+unique top-level AST definitions, the original maximum clause minimum, and each
+explicit parent requirement guard. Available original definitions retain
+priority; an absent original can use only its declared successor. Invented old
+JUnit names cannot substitute for missing current execution. The gate reports
+original bindings preserved separately from actual current functions executed.
+AST hashes describe structure and do not claim semantic equivalence.
 
 The original matrix/report anchor is checked whenever a committed convergence
 handoff exists, including a matrix that tries to hide evolved paths behind
@@ -32,6 +61,17 @@ source heads, the 170-file source union, all 55 original requirements, 80
 original scenarios, 90 front clauses, six restored controls, typed additional
 findings and executed native AST guard declarations. Inventory without JUnit
 cannot authorize succession.
+
+The inventory step fetches all fifteen pinned PR heads, literal base SHAs and
+the seven frozen historical front SHAs before any legacy object consumer. It
+checks all 45 original front records against c27 and reports them separately
+from the fifteen-source/170-path input union. A native cold controlled Git
+origin has no candidate ancestry linking to those source heads, forcing actual
+object recovery rather than relying on a warm local object store. An earlier
+fixture failure exposed incomplete historical trees in the bootstrap object
+store; exact original objects were recovered read-only from GitHub, without
+rewriting ROOT refs, shallow history, grafts or replacement objects. That
+recovery is recorded in `evidence/original-git-object-recovery.json`.
 
 Both validators use one immutable bounded JUnit byte snapshot for parsing and
 hashing. Capture uses a nonblocking, no-follow descriptor and requires a stable

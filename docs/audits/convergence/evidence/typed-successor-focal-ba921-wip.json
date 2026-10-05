@@ -1,0 +1,14 @@
+{
+  "cases": 184,
+  "deploy_authorized": false,
+  "errors": 0,
+  "failures": 0,
+  "final_source_acceptance": false,
+  "merge_authorized": false,
+  "schema": "rc6.intermediate-test-receipt.v1",
+  "scope": "INTERMEDIATE_WORKING_TREE_DIAGNOSTIC_ONLY",
+  "skipped": 0,
+  "source_freeze": "NOT_FROZEN_WORKING_TREE",
+  "xml_file": "typed-successor-focal-ba921-wip.xml",
+  "xml_sha256": "ad806f6fc3f70e95ede1d9803ef9b39060119022fbfe75cc0232536cea182b78"
+}

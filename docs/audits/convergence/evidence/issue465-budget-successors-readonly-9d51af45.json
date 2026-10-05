@@ -1,0 +1,129 @@
+{
+  "schema": "rc6.issue465-budget-guard-successor-readonly-identification.v1",
+  "status": "READ_ONLY_PROPOSAL_FOR_ROOT_TYPED_SUCCESSOR_NO_GOVERNED_EXECUTION",
+  "source_sha": "9d51af4585829ecfb1a734717638f806bf80e3ed",
+  "source_tree": "0794b88635212f3ff9f4643c1a94c633ebc4dd60",
+  "old_source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "map_path": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
+  "map_sha256": "80c29163374b820d4aeb47dfce0adce6891d11baf651fcbfbd2dca7f626624cc",
+  "documented_contract_path": "docs/audits/RC6_CONVERGENCE_BUDGET_U01_U02_U05_U07.md",
+  "documented_contract_section": "Replaced incompatible tests",
+  "rows": [
+    {
+      "old": {
+        "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "path": "tests/test_issue465_budget_adversarial.py",
+        "node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow",
+        "line": 89,
+        "file_sha256": "565d399250aa05d6d3ac2fcbef602363996b25b374a92a677f212fd3f2e33b6e",
+        "function_source_sha256": "184013b6207effabe1689a0426659285f4ebc090554f8d34916bbc81fe3bf6e9",
+        "function_ast_dump_sha256": "898da4486ce210a63788535927aeeb3cb757fafbc190768eb7032c116c27fc7f",
+        "ast_hash_algorithm": "sha256(ast.dump(node, annotate_fields=True, include_attributes=False).encode(utf8))",
+        "function_source": "def test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow(tmp_path):\n    clock = Clock()\n    budget = GlobalPPIBudget(tmp_path / \"budget.sqlite\", exit_floor(clock, global_limit=3), clock=clock.now)\n    assert not use(budget, \"current\", priority=\"OPENED_CRITICAL\")[\"allowed\"]\n    assert all(use(budget, \"book\", priority=\"EXIT_CRITICAL\")[\"allowed\"] for _ in range(3))\n    assert not use(budget, \"book\", priority=\"EXIT_CRITICAL\")[\"allowed\"]\n    metrics = budget.metrics()[\"window\"]\n    assert metrics[\"by_endpoint\"][\"book\"][\"reserved_total\"] == 3\n    assert metrics[\"exit_unreserved_demand\"][\"book\"] == 2"
+      },
+      "successor": {
+        "source_sha": "9d51af4585829ecfb1a734717638f806bf80e3ed",
+        "path": "tests/test_issue465_budget_adversarial.py",
+        "node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap",
+        "line": 89,
+        "file_sha256": "26659ee6f56cf7124deec242eaf05a1ac8be89a5a81ea76428ac57e4c770c6c0",
+        "function_source_sha256": "e8f5c8e0eecc4d8221e12256840145435f93717628d5db71b2c8565354ef7de9",
+        "function_ast_dump_sha256": "c27d06e4fc00768172f698e5e3e0406e271cd5eb3bdb56877c40fc9b39734100",
+        "ast_hash_algorithm": "sha256(ast.dump(node, annotate_fields=True, include_attributes=False).encode(utf8))",
+        "function_source": "def test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap(tmp_path):\n    clock = Clock()\n    with pytest.raises(ValueError, match=\"PPI_EXIT_CAPACITY_INSUFFICIENT\"):\n        GlobalPPIBudget(tmp_path / \"budget.sqlite\", exit_floor(clock, global_limit=3), clock=clock.now)\n    assert not (tmp_path / \"budget.sqlite\").exists()"
+      },
+      "same_setup_function_arguments": true,
+      "declared_relation": "PROPOSED_READ_ONLY_IDENTIFICATION_CONTRACT_REPLACEMENT_U05_NOT_ALIAS",
+      "owned_map_new_node_fragments": [
+        {
+          "json_pointer": "/f01_variants/8/test_families/0",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        },
+        {
+          "json_pointer": "/f01_variants/8/test_nodes/0",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        },
+        {
+          "json_pointer": "/historical_scenarios/11/test_families/3",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        },
+        {
+          "json_pointer": "/historical_scenarios/11/test_nodes/0",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        },
+        {
+          "json_pointer": "/receipts/0/executed_nodes/50",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        },
+        {
+          "json_pointer": "/receipts/2/executed_nodes/58",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+        }
+      ],
+      "explicit_old_to_new_declaration_in_owned_json": false,
+      "implementation_own_sha": "e950d3d3b24931b466c8c0ec792e3b96d667ae41",
+      "implementation_root_sha": "5226a3e9f2524516c65f5fbb8f8b7448a51dab22",
+      "invariants_preserved": [
+        "Demand5 cannot be serviced by global cap3",
+        "LOWER never borrows critical capacity",
+        "No cap increase and no dynamic authority construction for an insufficient envelope"
+      ],
+      "legacy_behavior_intentionally_replaced": [
+        "Old accepted3 critical book wires and reported2 unreserved demand",
+        "New exact capacity error before SQLite/bootstrap; no sidecar exists"
+      ]
+    },
+    {
+      "old": {
+        "source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "path": "tests/test_issue465_budget_adversarial.py",
+        "node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_reserves_real_durable_positions_without_paper_authority_change",
+        "line": 1364,
+        "file_sha256": "565d399250aa05d6d3ac2fcbef602363996b25b374a92a677f212fd3f2e33b6e",
+        "function_source_sha256": "e62fdb6dca3ce02dbc48d6e786e856e0f61a355a8cb7ec0f2d6a045072534dd8",
+        "function_ast_dump_sha256": "3efcec66eb5ffdf7cbfa08316a7659454199520d9fddd19c8091e62a2ef77721",
+        "ast_hash_algorithm": "sha256(ast.dump(node, annotate_fields=True, include_attributes=False).encode(utf8))",
+        "function_source": "def test_approved_dynamic_reserves_real_durable_positions_without_paper_authority_change(wire, tmp_path, monkeypatch):\n    values = approved(wire)\n    clock = wire[0]\n    store, _ = native_opened_store(tmp_path, clock, monkeypatch)\n    runtime = RuntimePPIBudget(store.path, controller(values), clock=clock.now)\n    current = runtime._current()\n    assert current.policy[\"open_positions_count\"] == 5\n    assert current.policy[\"priority_reserves\"][\"EXIT_CRITICAL\"][\"book\"] == 15\n    assert not runtime.acquire(\"book\", consumer=\"SCANNER\", priority=\"OPENED_CRITICAL\")[\"allowed\"]\n    assert use(runtime, \"book\", consumer=\"EXIT_READER\", priority=\"EXIT_CRITICAL\")[\"allowed\"]\n    with store.connect() as connection:\n        assert tuple(connection.execute(\"SELECT mode,real_orders_sent FROM observer_state\").fetchone()) == (\"PRODUCTION_PAPER\", 0)\n        assert connection.execute(\"SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'\").fetchone()[0] == 5"
+      },
+      "successor": {
+        "source_sha": "9d51af4585829ecfb1a734717638f806bf80e3ed",
+        "path": "tests/test_issue465_budget_adversarial.py",
+        "node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions",
+        "line": 1360,
+        "file_sha256": "26659ee6f56cf7124deec242eaf05a1ac8be89a5a81ea76428ac57e4c770c6c0",
+        "function_source_sha256": "f46c25d327234b0b16f3001cff701bd2ff17632caa21b5fe4194034a3784ac11",
+        "function_ast_dump_sha256": "d9f35510084bcce942fdfcb5b1524cbd84c7eccb43facaecca15d83be37fdb66",
+        "ast_hash_algorithm": "sha256(ast.dump(node, annotate_fields=True, include_attributes=False).encode(utf8))",
+        "function_source": "def test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions(wire, tmp_path, monkeypatch):\n    values = approved(wire)\n    clock = wire[0]\n    store, _ = native_opened_store(tmp_path, clock, monkeypatch)\n    runtime = RuntimePPIBudget(store.path, controller(values), clock=clock.now)\n    with pytest.raises(BudgetBackpressure, match=\"PPI_EXIT_CAPACITY_INSUFFICIENT\"):\n        runtime._current()\n    assert runtime.activation_contract[\"open_positions_count\"] == 5\n    assert runtime.activation_contract[\"exit_demand\"][\"book\"] == 30\n    assert runtime.activation_contract[\"status\"] == \"ACTIVATION_BLOCKED_EXIT_CAPACITY\"\n    assert runtime.budget is None and not runtime.path.exists()\n    with store.connect() as connection:\n        assert tuple(connection.execute(\"SELECT mode,real_orders_sent FROM observer_state\").fetchone()) == (\"PRODUCTION_PAPER\", 0)\n        assert connection.execute(\"SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'\").fetchone()[0] == 5"
+      },
+      "same_setup_function_arguments": true,
+      "declared_relation": "PROPOSED_READ_ONLY_IDENTIFICATION_CONTRACT_REPLACEMENT_U05_NOT_ALIAS",
+      "owned_map_new_node_fragments": [
+        {
+          "json_pointer": "/receipts/0/executed_nodes/121",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions"
+        },
+        {
+          "json_pointer": "/receipts/2/executed_nodes/129",
+          "recorded_node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions"
+        }
+      ],
+      "explicit_old_to_new_declaration_in_owned_json": false,
+      "implementation_own_sha": "e950d3d3b24931b466c8c0ec792e3b96d667ae41",
+      "implementation_root_sha": "5226a3e9f2524516c65f5fbb8f8b7448a51dab22",
+      "invariants_preserved": [
+        "Native durable OPEN count5 remains5",
+        "Mode PRODUCTION_PAPER and real_orders_sent0 unchanged",
+        "Insufficient source capability does not authorize lower borrowing or paper authority changes"
+      ],
+      "legacy_behavior_intentionally_replaced": [
+        "Old accepted APPROVED_DYNAMIC with truncated book reserve15 and one modeled critical send despite demand30",
+        "New requires activation_contract demand30/statusACTIVATION_BLOCKED_EXIT_CAPACITY and absent runtime budget/sidecar"
+      ],
+      "native_boundary": "Native recommendation/controller/runtime plus actual ephemeral PAPER positions; initial benchmark uses fake SDK HTTP, successor itself calls Runtime._current, not a full native market reader loop. Supplementary U05 real-controller-to-SDK guard is separately mapped."
+    }
+  ],
+  "governed_gate_boundary": "Root must bind an explicit one-to-one replacement to the same final frozen FIP/JUnit with native PASS and exact AST anchors. Historical receipts and AST existence do not imply a current gate PASS. Old original matrix is preserved; no duplicate alias test or skipped original declaration.",
+  "new_tests_executed": 0,
+  "root_or_own_product_mutated": false
+}

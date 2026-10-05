@@ -30,6 +30,8 @@ LEGACY_CASES = sorted(filename + "::" + item.name
     for filename in provenance.PRESERVED_TESTS_344
     for item in ast.parse((REPO / filename).read_bytes()).body
     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test_"))
+SUCCESSOR_CASES = sorted(specification["successor_node"]
+    for specification in provenance.prior_successions.SUCCESSORS.values())
 
 
 def native_git(root, *arguments):
@@ -51,7 +53,7 @@ def write_json(path, value):
 
 
 def junit(path, *, outcome=None, duplicate=False, counters=None):
-    nodes = [GUARD, *LEGACY_CASES]
+    nodes = [GUARD, *LEGACY_CASES, *SUCCESSOR_CASES]
     attrs = {"name": "fixture", "tests": str(len(nodes) * (2 if duplicate else 1)), "errors": "0",
         "failures": "0", "skipped": "0"}
     if outcome:
@@ -99,6 +101,10 @@ def fixture_base(tmp_path_factory):
     original_scenarios = {row["id"]: row for row in
         json.loads((inputs / provenance.SCENARIOS).read_text())["rows"]}
     requirements = rows(provenance.REQUIREMENTS)
+    for specification in provenance.prior_successions.SUCCESSORS.values():
+        for identifier in specification["linked_requirement_ids"]:
+            next(row for row in requirements if row["id"] == identifier)["test_nodes"].append(
+                specification["successor_node"])
     scenarios = rows({f"R{i:02d}" for i in range(1, 81)})
     for row in requirements:
         row["original_requirement"] = original_requirements[row["id"]]
@@ -159,11 +165,15 @@ def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_coun
     assert report["candidate_sha"] == native_git(candidate[0], "rev-parse", "HEAD")
     assert report["candidate_tree"] == native_git(candidate[0], "rev-parse", "HEAD^{tree}")
     assert len(report["sources"]) == 15 and report["source_union_paths"] == 170
+    assert len(report['prior_frozen_fronts']) == 7
+    assert sum(len(row['files']) for row in report['prior_frozen_fronts']) == 45
     assert len(report["requirements"]) == 55 and len(report["scenarios"]) == 80
     assert len(report["front_variants"]) == 90
     assert {row["id"] for row in report["front_variants"]} == provenance.FRONT_VARIANTS
     assert all(row["assertion_scope"] == "EXPLICIT_SYNTHETIC_ONLY" for row in report["front_variants"])
-    assert report["test_execution"]["executed_unique_cases"] == 1 + len(LEGACY_CASES)
+    assert report["test_execution"]["executed_unique_cases"] == 1 + len(LEGACY_CASES) + len(SUCCESSOR_CASES)
+    assert len(report["prior_regression_successions"]) == 5
+    assert all(row["preservation"] == "TYPED_SUCCESSOR" for row in report["prior_regression_successions"])
     assert {row["id"] for row in report["restored_controls"]} == provenance.RESTORED_CONTROLS
     assert len(report["preserved_test_modules_344"]) == 12
     assert sum(row["preservation"] == "EXACT_BYTES" for row in report["preserved_test_modules_344"]) == 10
@@ -218,8 +228,31 @@ def test_prior_audit_gate_accepts_actual_native_convergence_parser_with_controll
     assert result['convergence_baseline'] == 'c27dfd963c4fe83465c0f2105347e974fbbe6356'
     assert len(result['workstream_heads']) == 7
     assert result['evolved_fronts']
+    assert len(result['prior_regression_successions']) == 5
+    assert result['original_test_bindings_preserved'] == result['required_test_functions_executed']
     assert result['convergence_junit_sha256'] == hashlib.sha256(xml.read_bytes()).hexdigest()
     assert result['safety']['deploy'] is False and result['independent_reaudit'] == 'PENDING'
+
+
+def test_phantom_old_JUnit_names_cannot_replace_absent_native_successor_execution(candidate):
+    """Old synthetic case names exist, but cannot authorize missing current guards."""
+    root, xml, _ = candidate
+    governed = prior_audit_parser_fixture(root, xml)
+    target = SUCCESSOR_CASES[0]
+    path, function = target.split('::')
+    document = ET.parse(xml)
+    suite = document.find('.//testsuite')
+    for case in list(suite):
+        if case.get('classname') == path[:-3].replace('/', '.') and case.get('name').split('[', 1)[0] == function:
+            suite.remove(case)
+    count = len(list(suite))
+    suite.set('tests', str(count))
+    document.write(xml, encoding='utf-8', xml_declaration=True)
+    proof = json.loads(governed.read_bytes())
+    proof.update(executed=count, discovered=count)
+    write_json(governed, proof)
+    with pytest.raises(audit465.AuditGateError, match='CONVERGENCE_SUCCESSOR_NOT_VERIFIED'):
+        audit465.verify(root, xml, governed)
 
 
 def test_rewritten_legacy_matrix_cannot_hide_evolved_fronts_behind_unchanged_paths(candidate):
@@ -302,6 +335,8 @@ def test_original_pr_refs_are_checked_by_real_fetch_from_isolated_local_origin(c
     for index, source in enumerate(manifest["sources"]):
         sha = native_git(root, "rev-parse", "HEAD") if wrong_head and index == 0 else source["head_sha"]
         native_git(origin, "update-ref", f"refs/pull/{source['pr']}/head", sha)
+    for stream in json.loads((root / audit465.MATRIX).read_bytes())['workstreams']:
+        native_git(origin, 'update-ref', 'refs/heads/' + stream['branch'], stream['head'])
     native_git(root, "remote", "set-url", "origin", str(origin))
     if wrong_head:
         assert_rejected(candidate, "SOURCE_PR_HEAD_CHANGED", fetch_source_refs=True)
@@ -310,6 +345,68 @@ def test_original_pr_refs_are_checked_by_real_fetch_from_isolated_local_origin(c
         assert result.returncode == 0, result.stderr
         for source in manifest["sources"]:
             assert native_git(root, "rev-parse", f"refs/porota/convergence-source/{source['pr']}") == source["head_sha"]
+        for stream in json.loads((root / audit465.MATRIX).read_bytes())['workstreams']:
+            assert native_git(root, 'rev-parse', 'refs/porota/convergence-prior-front/' + stream['id']) == stream['head']
+
+
+def test_cold_native_fetch_recovers_all_historical_fronts_without_candidate_ancestry(candidate, tmp_path):
+    root, xml, _ = candidate
+    origin = tmp_path / 'cold-origin.git'
+    native_git(root, 'clone', '--quiet', '--bare', '--shared', str(root), str(origin))
+    manifest = json.loads((root / provenance.INPUT_ROOT / provenance.MANIFEST).read_bytes())
+    streams = json.loads((root / audit465.MATRIX).read_bytes())['workstreams']
+    for source in manifest['sources']:
+        native_git(origin, 'update-ref', f"refs/pull/{source['pr']}/head", source['head_sha'])
+    for stream in streams:
+        native_git(origin, 'update-ref', 'refs/heads/' + stream['branch'], stream['head'])
+    # The local bootstrap may contain exact original commit/tree objects but
+    # lack older ancestors. Declare only that actual missing-parent frontier
+    # in this temporary origin; never fabricate history or change ROOT.
+    pending = [native_git(root, 'rev-parse', 'HEAD')]
+    pending += [source[key] for source in manifest['sources'] for key in ('head_sha', 'base_sha')]
+    pending += [stream['head'] for stream in streams]
+    visited, frontier, complete = set(), set(), {}
+    while pending:
+        revision = pending.pop()
+        if revision in visited: continue
+        visited.add(revision)
+        header = native_git(origin, 'cat-file', '-p', revision).split('\n\n', 1)[0]
+        for line in header.splitlines():
+            if not line.startswith('parent '): continue
+            parent = line.split()[1]
+            if parent not in complete:
+                objects = subprocess.run(['git', '-C', str(origin), 'rev-list', '--objects',
+                    '--no-walk', '--missing=print', parent], capture_output=True)
+                complete[parent] = objects.returncode == 0 and not any(
+                    item.startswith(b'?') for item in objects.stdout.splitlines())
+            if not complete[parent]: frontier.add(revision)
+            else: pending.append(parent)
+    if frontier:
+        (origin / 'shallow').write_text('\n'.join(sorted(frontier)) + '\n')
+    cold = tmp_path / 'cold-repo'; native_git(root, 'init', '--quiet', str(cold))
+    native_git(cold, 'remote', 'add', 'origin', str(origin))
+    # An orphan with the same current tree proves fetch ordering without an
+    # inherited c27 commit or any original front/source ancestry.
+    tree_sha = native_git(root, 'rev-parse', 'HEAD^{tree}')
+    sha = native_git(origin, '-c', 'user.name=Offline cold fixture', '-c',
+        'user.email=cold@example.invalid', 'commit-tree', tree_sha, '-m', 'controlled ancestry-free fixture')
+    native_git(origin, 'update-ref', 'refs/heads/controlled-orphan', sha)
+    native_git(cold, 'fetch', '--quiet', '--no-tags', 'origin', sha)
+    native_git(cold, 'checkout', '--quiet', '--detach', 'FETCH_HEAD')
+    assert not (cold / '.git/objects/info/alternates').exists()
+    for head in [source['head_sha'] for source in manifest['sources']] + [stream['head'] for stream in streams]:
+        missing = subprocess.run(['git', '-C', str(cold), 'cat-file', '-e', head + '^{tree}'],
+            capture_output=True, check=False)
+        assert missing.returncode != 0
+    output = tmp_path / 'cold-proof.json'
+    result = cli((cold, xml, output), fetch_source_refs=True)
+    assert result.returncode == 0, result.stderr
+    proof = json.loads(output.read_bytes())
+    assert len(proof['prior_frozen_fronts']) == 7
+    for stream in streams:
+        assert native_git(cold, 'rev-parse', 'refs/porota/convergence-prior-front/' + stream['id']) == stream['head']
+    for source in manifest['sources']:
+        assert native_git(cold, 'rev-parse', 'refs/porota/convergence-source-base/' + str(source['pr'])) == source['base_sha']
 
 
 def test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build():

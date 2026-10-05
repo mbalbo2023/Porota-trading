@@ -74,6 +74,20 @@ def test_gate_binds_current_sha_tree_test_counts_and_external_uncertainty(eviden
     assert result["external_evidence"] == "NO_VERIFICADO"
 
 
+def test_synthetic_JUnit_cannot_authorize_an_absent_native_test_definition(evidence):
+    root, junit, governed, matrix, _, persist = evidence
+    old = "tests/test_evidence.py::test_evidence"
+    for finding in matrix["findings"]:
+        for clause in finding["coverage"]:
+            for binding in clause["tests"]:
+                if binding["node"] == old:
+                    binding["node"] = "tests/test_evidence.py::test_phantom"
+    junit.write_text('<testsuites><testsuite tests="1"><testcase classname="tests.test_evidence" name="test_phantom"/></testsuite></testsuites>')
+    persist()
+    with pytest.raises(AuditGateError, match="REGRESSION_SOURCE_DEFINITION_MISSING"):
+        verify(root, junit, governed)
+
+
 @pytest.mark.parametrize("attack", ["omit_finding", "duplicate_finding", "omit_clause", "omit_test",
     "unexecuted_test", "unexecuted_parameter", "false_external", "false_live_verified",
     "unreleased_owner", "wrong_front_tree", "wrong_report_digest", "real_orders", "undeclared_exclusion",

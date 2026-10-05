@@ -7,6 +7,7 @@ financial verification, provider capacity, or independent audit approval.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -217,6 +218,14 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
     require(isinstance(rows, list) and len(rows) == len(REQUIRED), "MATRIX_FINDING_CARDINALITY")
     ids = [row.get("id") for row in rows]
     require(len(set(ids)) == len(ids) and set(ids) == REQUIRED, "MATRIX_MISSING_OR_DUPLICATE_REQUIREMENT")
+    sha = git(root, "rev-parse", "HEAD")
+    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
+    if git(root, "ls-tree", sha, "--", manifest):
+        _original_convergence_authority(root, sha, matrix_blob)
+    successor = None
+    definitions = {}
+    original_nodes = set()
+    used_successions = {}
     tested_nodes = set()
     for row in rows:
         identifier = row["id"]
@@ -246,17 +255,48 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
                 require(type(minimum) is int and 1 <= minimum <= 100, "INVALID_CASE_COUNT")
                 classname = path[:-3].replace("/", ".")
                 count = actual.get((classname, function), 0)
-                require(count >= minimum, "REGRESSION_NOT_EXECUTED:"+node["node"])
-                tested_nodes.add(node["node"])
+                if path not in definitions:
+                    parsed = ast.parse(git(root, "show", sha + ":" + path), filename=path)
+                    functions = [item.name for item in parsed.body
+                                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                    definitions[path] = {name: functions.count(name) for name in set(functions)}
+                declared = definitions[path].get(function, 0)
+                require(declared <= 1, "DUPLICATE_REGRESSION_DEFINITION:" + node["node"])
+                selected_node = node["node"]
+                if declared == 0:
+                    specification = convergence.prior_successions.SUCCESSORS.get(node["node"])
+                    require(specification is not None, "REGRESSION_SOURCE_DEFINITION_MISSING:" + node["node"])
+                    if successor is None:
+                        successor = _verified_successor(root, junit_receipt, proof, sha)
+                    bindings = [item for item in successor.get("prior_regression_successions", [])
+                                if item.get("original_node") == node["node"]]
+                    require(len(bindings) == 1, "REGRESSION_SUCCESSION_MISSING_OR_DUPLICATE")
+                    binding = bindings[0]
+                    selected_node = specification["successor_node"]
+                    require(binding.get("preservation") == "TYPED_SUCCESSOR"
+                            and binding.get("current_node") == selected_node
+                            and binding.get("status") == "EXECUTED_NATIVE_GREEN",
+                            "REGRESSION_SUCCESSION_NOT_VERIFIED")
+                    selected_path, selected_function = _safe_node(selected_node)
+                    anchor = binding.get("current_anchor", {})
+                    require(selected_path == path and anchor.get("path") == path
+                            and anchor.get("function") == selected_function
+                            and {key: anchor.get(key) for key in ("blob", "git_mode")}
+                                == _source_record(root, sha, path), "REGRESSION_SUCCESSION_SOURCE_MISMATCH")
+                    count = actual.get((classname, selected_function), 0)
+                    require(type(binding.get("minimum_cases")) is int
+                            and binding["minimum_cases"] >= minimum
+                            and type(binding.get("executed_cases")) is int
+                            and binding["executed_cases"] == count
+                            and count >= binding["minimum_cases"], "REGRESSION_SUCCESSION_CASE_MISMATCH")
+                    used_successions[node["node"]] = binding
+                require(count >= minimum, "REGRESSION_NOT_EXECUTED:"+selected_node)
+                original_nodes.add(node["node"])
+                tested_nodes.add(selected_node)
 
     streams = matrix.get("workstreams", [])
     require(isinstance(streams, list) and {item.get("id") for item in streams} == set("ABCDEFG") and
             len(streams) == 7, "INCOMPLETE_WORKSTREAM_PROVENANCE")
-    sha = git(root, "rev-parse", "HEAD")
-    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
-    if git(root, "ls-tree", sha, "--", manifest):
-        _original_convergence_authority(root, sha, matrix_blob)
-    successor = None
     evolved_fronts = []
     for stream in streams:
         require(stream.get("write_owner") == "RELEASED", "FRONT_WRITE_OWNER_NOT_RELEASED")
@@ -293,6 +333,8 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
             "matrix_sha256": hashlib.sha256(matrix_data).hexdigest(),
             "original_report_sha256": authority["original_report_sha256"],
             "governed_executed": proof["executed"], "required_test_functions_executed": len(tested_nodes),
+            "original_test_bindings_preserved": len(original_nodes),
+            "prior_regression_successions": [used_successions[node] for node in sorted(used_successions)],
             "findings": {row["id"]: row["state"] for row in rows},
             "workstream_heads": {stream["id"]: stream["head"] for stream in streams},
             "front_preservation": "GUARDED_CONVERGENCE_SUCCESSOR" if successor else "EXACT_FROZEN_FRONTS",
