@@ -499,10 +499,78 @@ def test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build():
     tests = names.index("Governed automatic test discovery and execution")
     build = names.index("Build candidate exactly once")
     final = names.index("Final convergence input and guard provenance")
-    assert inventory < tests < build < final
+    assert inventory < tests < final < build
     assert "--fetch-source-refs" in steps[inventory]["run"] and "--junit" not in steps[inventory]["run"]
     assert "--junit /tmp/porota-governed-tests.xml" in steps[final]["run"]
+    assert "final_material_receipt_binding(" in steps[final]["run"]
+    assert "Path('/tmp/porota-governed-tests.json')" in steps[final]["run"]
+    assert "Path('/tmp/porota-governed-tests.xml')" in steps[final]["run"]
     assert sum("docker build" in step.get("run", "") for step in steps) == 1
+
+
+@pytest.fixture
+def final_build_receipts(candidate):
+    """Controlled metadata/JUnit inputs; no final source acceptance claim."""
+    root, xml, _ = candidate
+    receipt = provenance.capture_junit(xml)
+    _nodes, count = provenance.executed_cases(receipt)
+    sha = native_git(root, "rev-parse", "HEAD")
+    tree_sha = native_git(root, "rev-parse", "HEAD^{tree}")
+    original = provenance.read_json(provenance.git(root, "show",
+        "c27dfd963c4fe83465c0f2105347e974fbbe6356:" + provenance.PRIOR_AUDIT_MATRIX, binary=True))
+    proof = {"schema": "rc6.final-input-provenance.v1", "candidate_sha": sha,
+        "candidate_tree": tree_sha, "software_status": "EXECUTED_NATIVE_GREEN",
+        "final_candidate_eligible": True, "material_programming_gates_closed": True,
+        "pending_material_programming_gates": [],
+        "test_execution": {"junit_sha256": receipt.sha256, "executed_unique_cases": count}}
+    governed = {"schema_version": 1, "candidate_sha": sha, "candidate_tree": tree_sha,
+        "status": "GREEN", "source_unchanged": True,
+        "scope": "repository-root automatic pytest discovery", "junit_sha256": receipt.sha256,
+        "junit_bytes": len(receipt.data), "discovered": count, "executed": count,
+        "exclusions": original["governed_exclusions"],
+        **{name: 0 for name in ("pytest_exit_code", "failures", "errors", "skipped", "xfail")}}
+    return root, sha, tree_sha, proof, governed, xml
+
+
+def test_final_prebuild_binds_one_governed_capture_and_original_exclusion_authority(final_build_receipts):
+    result = provenance.final_material_receipt_binding(*final_build_receipts)
+    assert result["status"] == "GREEN"
+    assert result["junit_sha256"] == final_build_receipts[3]["test_execution"]["junit_sha256"]
+    assert result["executed_unique_cases"] == final_build_receipts[4]["executed"]
+    assert result["scope"] == "PREBUILD_SOURCE_AND_GOVERNED_RECEIPT_BINDING_ONLY"
+
+
+@pytest.mark.parametrize("mutation,signature", [
+    ("fip_hash", "JUNIT_BINDING_INVALID"), ("fip_count", "JUNIT_BINDING_INVALID"),
+    ("fip_boolean_count", "JUNIT_BINDING_INVALID"), ("junit_changed", "JUNIT_BINDING_INVALID"),
+    ("gov_hash", "GOVERNED_BINDING_INVALID"), ("gov_bytes", "GOVERNED_BINDING_INVALID"),
+    ("gov_count", "GOVERNED_BINDING_INVALID"), ("gov_boolean_zero", "GOVERNED_BINDING_INVALID"),
+    ("gov_head", "GOVERNED_BINDING_INVALID"), ("gov_scope", "GOVERNED_BINDING_INVALID"),
+    ("source_changed", "GOVERNED_BINDING_INVALID"), ("eligible_integer", "GATES_NOT_CLOSED"),
+    ("pending_dict", "GATES_NOT_CLOSED"), ("exclusions_missing", "EXCLUSION_POLICY_DRIFT"),
+    ("exclusions_added", "EXCLUSION_POLICY_DRIFT"), ("exclusions_rebound", "EXCLUSION_POLICY_DRIFT"),
+])
+def test_final_prebuild_rejects_changed_raw_receipts_and_typed_metadata(final_build_receipts, mutation, signature):
+    root, sha, tree_sha, proof, governed, xml = final_build_receipts
+    if mutation == "fip_hash": proof["test_execution"]["junit_sha256"] = "f" * 64
+    elif mutation == "fip_count": proof["test_execution"]["executed_unique_cases"] += 1
+    elif mutation == "fip_boolean_count": proof["test_execution"]["executed_unique_cases"] = True
+    elif mutation == "junit_changed": xml.write_bytes(xml.read_bytes() + b"\n")
+    elif mutation == "gov_hash": governed["junit_sha256"] = "f" * 64
+    elif mutation == "gov_bytes": governed["junit_bytes"] += 1
+    elif mutation == "gov_count": governed["discovered"] += 1
+    elif mutation == "gov_boolean_zero": governed["pytest_exit_code"] = False
+    elif mutation == "gov_head": governed["candidate_sha"] = "f" * 40
+    elif mutation == "gov_scope": governed["scope"] = "focal tests only"
+    elif mutation == "source_changed": governed["source_unchanged"] = False
+    elif mutation == "eligible_integer": proof["final_candidate_eligible"] = 1
+    elif mutation == "pending_dict": proof["pending_material_programming_gates"] = {}
+    elif mutation == "exclusions_missing": governed["exclusions"] = []
+    elif mutation == "exclusions_added": governed["exclusions"] += ["tests/test_finance.py|NEW_OMISSION"]
+    elif mutation == "exclusions_rebound": governed["exclusions"] = [
+        "tests/test_finance.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"]
+    with pytest.raises(provenance.ConvergenceError, match=signature):
+        provenance.final_material_receipt_binding(root, sha, tree_sha, proof, governed, xml)
 
 
 @pytest.mark.parametrize("sha", ["HEAD", "A" * 40, "f" * 40])

@@ -52,6 +52,7 @@ TEST_344_ADAPTATIONS = {
 }
 DENIED_ARTIFACTS = {11315198085, 11317509383, 11293625514}
 DISCOVERED_CONVERGENCE_FINDINGS = frozenset({
+    "NEW_SOURCE_SQLITE_SIDECAR_METADATA_MUTATION", "NEW_CANONICAL_LIVE_FILE_QUOTA_DRIFT",
     "NEW_ARCHIVE_DIRECTORY_ATIME_MUTATION",
     "NEW_SIGNED_ZERO_SUBTREE_COLLAPSE", "NEW_GIT_REPLACEMENT_OBJECT_AUTHORITY",
     "NEW_EXIT_RETAINED_RECEIPT_ACTIVATION", "NEW_HISTORY_EXACT_REVISION_LOOKUP",
@@ -257,6 +258,58 @@ def executed_cases(junit):
         node = classname.replace(".", "/") + ".py::" + name.split("[", 1)[0]
         nodes[node] = nodes.get(node, 0) + 1
     return nodes, len(cases)
+
+
+def final_material_receipt_binding(root, candidate_sha, candidate_tree, proof, governed, junit):
+    """Join final eligibility to the actual approved governed byte capture.
+
+    This source/receipt barrier runs before building. Image execution and
+    external artifact identity remain independent later gates.
+    """
+    require(type(proof) is dict and proof.get("schema") == "rc6.final-input-provenance.v1"
+            and proof.get("candidate_sha") == candidate_sha
+            and proof.get("candidate_tree") == candidate_tree
+            and proof.get("software_status") == "EXECUTED_NATIVE_GREEN",
+            "FINAL_MATERIAL_CANDIDATE_BINDING_INVALID")
+    require(proof.get("final_candidate_eligible") is True
+            and proof.get("material_programming_gates_closed") is True
+            and type(proof.get("pending_material_programming_gates")) is list
+            and not proof["pending_material_programming_gates"],
+            "FINAL_MATERIAL_PROGRAMMING_GATES_NOT_CLOSED")
+    receipt = capture_junit(junit)
+    _nodes, count = executed_cases(receipt)
+    execution = proof.get("test_execution")
+    require(type(execution) is dict and execution.get("junit_sha256") == receipt.sha256
+            and type(execution.get("executed_unique_cases")) is int
+            and execution["executed_unique_cases"] == count,
+            "FINAL_MATERIAL_JUNIT_BINDING_INVALID")
+    require(type(governed) is dict and type(governed.get("schema_version")) is int
+            and governed["schema_version"] == 1 and governed.get("status") == "GREEN"
+            and governed.get("source_unchanged") is True
+            and governed.get("candidate_sha") == candidate_sha
+            and governed.get("candidate_tree") == candidate_tree
+            and governed.get("scope") == "repository-root automatic pytest discovery"
+            and governed.get("junit_sha256") == receipt.sha256
+            and type(governed.get("junit_bytes")) is int
+            and governed["junit_bytes"] == len(receipt.data)
+            and all(type(governed.get(name)) is int and governed[name] == count
+                    for name in ("discovered", "executed"))
+            and all(type(governed.get(name)) is int and governed[name] == 0
+                    for name in ("pytest_exit_code", "failures", "errors", "skipped", "xfail")),
+            "FINAL_MATERIAL_GOVERNED_BINDING_INVALID")
+    raw_manifest = committed_input(root, candidate_sha, MANIFEST)
+    require(hashlib.sha256(raw_manifest).hexdigest() == ORIGINAL_DIGESTS[MANIFEST],
+            "ORIGINAL_HANDOFF_BYTES_CHANGED:" + MANIFEST)
+    sources = read_json(raw_manifest)["sources"]
+    original_sha = next(row["head_sha"] for row in sources if row["pr"] == 466)
+    original_matrix = read_json(git(root, "show", original_sha + ":" + PRIOR_AUDIT_MATRIX, binary=True))
+    require(type(governed.get("exclusions")) is list
+            and all(type(item) is str for item in governed["exclusions"])
+            and governed["exclusions"] == original_matrix["governed_exclusions"],
+            "FINAL_MATERIAL_EXCLUSION_POLICY_DRIFT")
+    return {"status": "GREEN", "junit_sha256": receipt.sha256,
+            "junit_bytes": len(receipt.data), "executed_unique_cases": count,
+            "scope": "PREBUILD_SOURCE_AND_GOVERNED_RECEIPT_BINDING_ONLY"}
 
 
 def guard_rows(rows, expected, final_tree, executed, declared_guards):

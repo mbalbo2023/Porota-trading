@@ -8,6 +8,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import tempfile
 import time
 from queue import SimpleQueue
 
@@ -70,22 +71,33 @@ def test_slow_disk_or_shadow_quota_failure_cannot_block_actual_exit_supervisor(t
         assert result["slow_fsync_exit_isolation_proven"]
 
 
-def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint(tmp_path):
+def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint():
     from rc6_shadow_runtime.worker import ShadowRuntime
     from rc6_shadow_runtime.persistence import shadow_evidence_root, shadow_archive_root
     from unittest.mock import patch
-    result = run_stress(tmp_path / "canonical", catalog_count=20, canonical_runtime=True, slow_disk=True)
-    shadow = result["shadow"]
-    assert result["canonical_runtime_requested"] and shadow["canonical_factory"] and shadow["cycle_completion"]
-    assert result["source_database_unchanged"] and result["slow_fsync_exit_isolation_proven"]
-    assert result["factual_exits"]["sell_fills"] == 5
-    env = shadow["fixture_environment"]
-    with patch.dict(os.environ, env, clear=True):
-        restored = ShadowRuntime.from_environment(result["database"])
-        assert str(shadow_evidence_root(result["database"])) == result["evidence_root"]
-        assert str(shadow_archive_root(result["database"])) == shadow["archive_root"]
-        assert list(map(str, restored.source_roots)) == shadow["source_roots"]
-        assert restored.configuration_fingerprint(AT) == shadow["configuration_fingerprint"]
+    from cg_paper_workspace import artifact_root
+    from rc6_audit_evidence.sqlite_scratch import LOCK
+    from scripts.rc6_sqlite_scratch_guard import runtime_settings
+    # Canonical scratch requires real disk, while pytest's /tmp may be tmpfs.
+    with tempfile.TemporaryDirectory(prefix=".rc6-canonical-stress-", dir=Path.cwd()) as directory:
+        result = run_stress(Path(directory) / "canonical", catalog_count=20, canonical_runtime=True, slow_disk=True)
+        shadow = result["shadow"]
+        assert result["canonical_runtime_requested"] and shadow["canonical_factory"] and shadow["cycle_completion"]
+        assert result["source_database_unchanged"] and result["slow_fsync_exit_isolation_proven"]
+        assert result["source_custody_before"] == result["source_custody_after"]
+        assert result["source_custody_scope"] == "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME"
+        assert result["factual_exits"]["sell_fills"] == 5
+        env = shadow["fixture_environment"]
+        scratch = artifact_root(result["database"]) / "sqlite-read-scratch"
+        assert {name: env[name] for name in runtime_settings(scratch)} == runtime_settings(scratch)
+        assert scratch.stat().st_mode & 0o777 == 0o700
+        assert {path.name for path in scratch.iterdir()} == {LOCK}
+        with patch.dict(os.environ, env, clear=True):
+            restored = ShadowRuntime.from_environment(result["database"])
+            assert str(shadow_evidence_root(result["database"])) == result["evidence_root"]
+            assert str(shadow_archive_root(result["database"])) == shadow["archive_root"]
+            assert list(map(str, restored.source_roots)) == shadow["source_roots"]
+            assert restored.configuration_fingerprint(AT) == shadow["configuration_fingerprint"]
 
 
 def test_wal_writer_lock_does_not_turn_shadow_into_writer_or_unbounded_query(tmp_path):

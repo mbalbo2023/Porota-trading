@@ -319,16 +319,14 @@ jobs:
             --junit /tmp/porota-governed-tests.xml \
             --out /tmp/porota-final-input-provenance.json --fetch-source-refs
           python - <<'PY_FINAL_MATERIAL'
-          import json, os
+          import os
           from pathlib import Path
-          proof = json.loads(Path('/tmp/porota-final-input-provenance.json').read_bytes())
-          assert proof['schema'] == 'rc6.final-input-provenance.v1'
-          assert proof['candidate_sha'] == os.environ['CANDIDATE_SHA']
-          assert proof['candidate_tree'] == os.environ['CANDIDATE_TREE']
-          assert proof['software_status'] == 'EXECUTED_NATIVE_GREEN'
-          assert proof['final_candidate_eligible'] is True, 'FINAL_MATERIAL_PROGRAMMING_GATES_NOT_CLOSED'
-          assert proof['material_programming_gates_closed'] is True
-          assert proof['pending_material_programming_gates'] == []
+          from scripts.rc6_convergence_provenance import read_json, final_material_receipt_binding
+          final_material_receipt_binding(
+              Path('.'), os.environ['CANDIDATE_SHA'], os.environ['CANDIDATE_TREE'],
+              read_json(Path('/tmp/porota-final-input-provenance.json').read_bytes()),
+              read_json(Path('/tmp/porota-governed-tests.json').read_bytes()),
+              Path('/tmp/porota-governed-tests.xml'))
           print('POROTA_FINAL_MATERIAL_PROGRAMMING_GATES=GREEN')
           PY_FINAL_MATERIAL
 

@@ -77,8 +77,13 @@ un cambio legítimo de ocupación no revoca por sí solo la configuración aprob
 
 History Store y preopen usan bases explícitas, selección point-in-time e intentos
 reanudables. Export/preopen copian main/WAL coherentemente sin abrir SQLite en
-la fuente ni crear su SHM. Su prueba de inventario y metadata no se generaliza
-a todos los lectores de una base financiera viva. La lectura grande tiene
+la fuente ni crear su SHM. Los seis consumidores nativos del worker también
+usan copias privadas verificadas bajo sus deadlines originales y conservan
+identidad de origen, claves, cursores y clocks. A igual cuota de512 archivos,
+el cambio de transporte conserva fingerprint, seed y scopes completos; el
+checkpoint de la cuota intermedia8192 no se declara compatible. La prueba
+de custodia incluye MAIN/WAL/SHM/journal y metadata, con rechazo del escritor
+concurrente. La lectura grande tiene
 límite total y cierre sin historia parcial cuando lo agota.
 La inicialización valida primero una copia de la fuente y su schema, antes
 de negociar WAL o escribir DDL. La prueba queda ligada al Store e inode;
@@ -95,7 +100,9 @@ Sus variables explícitas son `POROTA_SQLITE_SCRATCH_ROOT`,
 cuentan contra esa cuota; contenido desconocido o custodia alterada bloquean
 la lectura. No se aumenta el tmpfs de 32 MiB. El preflight antes de transferencia
 usa el mismo estimador de main/WAL/SHM y la misma configuración del launcher.
-Los modos explícitos OFF/DISABLED del contract runner llegan al observador;
+El harness canónico de stress usa el mismo generador de las cuatro variables,
+scratch de disco0700 y captura NoAtime de bytes y todos los campos de custodia
+antes/después; compara los sidecars y el main. Los modos explícitos OFF/DISABLED del contract runner llegan al observador;
 su guard verifica que ese runner no abra fuente ni proveedor.
 
 ## Publicación y lectores

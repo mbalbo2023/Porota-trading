@@ -8,6 +8,7 @@ descriptive; conservative bounds and factual exit completion are the gates.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -19,6 +20,7 @@ from pathlib import Path
 import resource
 from queue import Empty
 import sqlite3
+import stat
 import sys
 import time
 
@@ -38,12 +40,46 @@ class StressResourceLimit(AssertionError):
             "shadow_reason": evidence["shadow"].get("reason")}, sort_keys=True))
 
 
-def sha256(path):
+def source_file_custody(path):
+    """Capture owned source bytes and metadata without changing access time."""
+    path = Path(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
     h = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
+    fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+              "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            raise ValueError("STRESS_SOURCE_CUSTODY_INVALID")
+        size = 0
+        while block := os.read(descriptor, 1024 * 1024):
             h.update(block)
-    return h.hexdigest()
+            size += len(block)
+        after, location = os.fstat(descriptor), path.lstat()
+        if size != before.st_size or any(getattr(before, name) != getattr(after, name)
+                or getattr(before, name) != getattr(location, name) for name in fields):
+            raise ValueError("STRESS_SOURCE_CHANGED_DURING_CAPTURE")
+        return {**{name: getattr(before, name) for name in fields}, "sha256": h.hexdigest()}
+    finally:
+        os.close(descriptor)
+
+
+def sha256(path):
+    return source_file_custody(path)["sha256"]
+
+
+def source_custody_snapshot(database):
+    result = {}
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        path = Path(str(database) + suffix)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            if not suffix:
+                raise
+            continue
+        result[suffix] = source_file_custody(path)
+    return result
 
 
 def io_snapshot():
@@ -75,7 +111,7 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
     store = PaperStore(str(path))
     _support_schema(store)
     init_schema(store)
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (
             (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS", "SYNTHETIC",
              "fixture", PRE.isoformat(), "issue465", "AVAILABLE", "READY_PAPER_SPOT", "{}")
@@ -101,7 +137,7 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
     # No delayed fixture checkpoint can be attributed to the read-only consumer.
     import gc
     gc.collect()
-    with sqlite3.connect(path) as c:
+    with closing(sqlite3.connect(path)) as c, c:
         c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return store
 
@@ -125,6 +161,11 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             os.environ.pop(key, None)
         fixture_environment = {"DATA_DIR": str(Path(database).parent.parent),
             "PAPER_V17_DB_PATH": str(database), "POROTA_DYNAMIC_CAPACITY_MODE": "OFF"}
+        from cg_paper_workspace import artifact_root
+        from scripts.rc6_sqlite_scratch_guard import runtime_settings
+        scratch = artifact_root(database) / "sqlite-read-scratch"
+        scratch.mkdir(mode=0o700, parents=True, exist_ok=False)
+        fixture_environment.update(runtime_settings(scratch))
         os.environ.update(fixture_environment)
     begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
     phases = []
@@ -386,7 +427,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
         output = root / "shadow"
     fixture_database(database, catalog_count=catalog_count,
                      observations_per_identity=observations_per_identity)
-    before = sha256(database)
+    source_before = source_custody_snapshot(database)
+    before = source_before[""]["sha256"]
     ctx = mp.get_context("spawn")
     started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
     child = ctx.Process(target=_shadow_child, args=(str(database), str(output),
@@ -436,7 +478,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
     shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
     shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
-    unchanged = before == sha256(database)
+    source_after = source_custody_snapshot(database)
+    unchanged = source_before == source_after
     fsync = shadow["fsync"]
     slow_proven = bool(slow_disk and fsync["fsync_entered"] and fsync["fsync_completed"]
         and fsync["entered_at_monotonic"] <= exits["started_at_monotonic"]
@@ -451,6 +494,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             "slow_fsync_exit_isolation_proven": slow_proven, "shadow": shadow,
             "factual_exits": exits, "source_database_unchanged": unchanged,
             "source_sha256": before, "real_orders_sent": 0,
+            "source_custody_before": source_before, "source_custody_after": source_after,
+            "source_custody_scope": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
             "canonical_runtime_requested": canonical_runtime, "database": str(database), "evidence_root": str(output),
             "real_routes": "NOT_CALLED", "runtime_touched": False,
             "provider_requests": 0, "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY"}

@@ -1,0 +1,277 @@
+{
+  "acceptance_complete": false,
+  "archive_admission": {
+    "allocated_bytes": 6799360,
+    "allocated_directory_bytes": 0,
+    "files": 14,
+    "free_bytes": 6077894656,
+    "growth_remaining_bytes": 530101476,
+    "inodes": 15,
+    "max_bytes": 536870912,
+    "maximum_files": 32768,
+    "occupied_bytes": 6769436,
+    "owned_temporary_count": 0,
+    "owner_uid": 1000,
+    "schema": "rc6.shadow-archive-namespace-admission.v1",
+    "state": "WITHIN_QUOTA",
+    "verification_level": "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA"
+  },
+  "archive_final": {
+    "allocated_bytes_including_directories": 6799360,
+    "entries_excluding_root": 14,
+    "files": 14,
+    "logical_bytes_including_directories": 6769756,
+    "pending_temporaries_or_intents": 0
+  },
+  "archive_format": "COMPONENT_V3",
+  "archive_maximum_bytes": 536870912,
+  "archive_restore_count": 4,
+  "archive_root": "/tmp/rc6-v3-native-normal4-107a8319/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow-archive",
+  "catalog_count": 1200,
+  "code_source_unchanged": true,
+  "complete": true,
+  "cuts": [
+    {
+      "archive_cpu_seconds": 2.455494245999999,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 2379776,
+        "entries_excluding_root": 5,
+        "files": 5,
+        "logical_bytes_including_directories": 2367838,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 2.455625782997231,
+      "as_of": "2026-10-05T13:20:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": false,
+      "configuration_fingerprint": "acb2689bde77aacd9706c2a0cfe97400acd95e3144868bbc354b00e6b91fca87",
+      "full_cycle_wall_seconds": 17.978126439003972,
+      "generation_id": "28a94624daf34316add507e28189af4e",
+      "live_residence": {
+        "allocated_bytes_including_directories": 3969024,
+        "entries_excluding_root": 10,
+        "files": 9,
+        "logical_bytes_including_directories": 3952925,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 917287,
+        "manifest.json": 5902,
+        "projection.sqlite": 2207744,
+        "report.json.gz": 761982,
+        "status.json": 2728
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "cdaa355524d1bbe7f0cc4b3f1680fec7c9ad7e285efbc8a0fcbaba52fe6edd31",
+        "manifest.json": "cae2dbbaaccc5b68beacca23392aaae069e10190be46b951b8562d38143fa4c5",
+        "projection.sqlite": "511c958eefab0409edef14f62037b25f336030a8f4f43509a82cd6327278cddf",
+        "report.json.gz": "5da7a2a687a1773fd54aab72f0b1d184ad2f5a7813f42dc70895fa7479f99f51",
+        "status.json": "2c6522a330352984c35127d21c028187a607e769a7d73d232f3fa860bf8d9e42"
+      },
+      "phase": "PREOPEN",
+      "pipeline_cpu_seconds": 14.581705944,
+      "pipeline_wall_seconds": 14.587499211003887,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 13254,
+      "retention_status": "OK",
+      "sequence": 1,
+      "tick_index": 0
+    },
+    {
+      "archive_cpu_seconds": 2.7005766969999954,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 5103616,
+        "entries_excluding_root": 8,
+        "files": 8,
+        "logical_bytes_including_directories": 5086721,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 2.7011076290000346,
+      "as_of": "2026-10-05T13:35:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "acb2689bde77aacd9706c2a0cfe97400acd95e3144868bbc354b00e6b91fca87",
+      "full_cycle_wall_seconds": 18.960484153001744,
+      "generation_id": "1af1bafeadd24955b7885a02b69df185",
+      "live_residence": {
+        "allocated_bytes_including_directories": 8261632,
+        "entries_excluding_root": 17,
+        "files": 15,
+        "logical_bytes_including_directories": 8233117,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038080,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 1020560,
+        "status.json": 2772
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "51fae956f86e92471907ac614b935479df4cc3f3afa39b5ee39c9dee49be9ac0",
+        "manifest.json": "0dc7d50f3ebac9eb54886e4ac153244cdae26d62188f96a1f092984bed7e6161",
+        "projection.sqlite": "e91514d7812c2175c6ba33940f3704539403fb3b2f63bbd2b8509eda80c37025",
+        "report.json.gz": "19c1d779502012a32461ce9e29e3aeafd5282c62b434d81b4cb334cf3e86f9a6",
+        "status.json": "de6398439089dae118c7999333954aa42b9ceb33112f954958eb5360d379c892"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 15.305733244999999,
+      "pipeline_wall_seconds": 15.308908159000566,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16339,
+      "retention_status": "OK",
+      "sequence": 2,
+      "tick_index": 1
+    },
+    {
+      "archive_cpu_seconds": 6.348413062999995,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 6385664,
+        "entries_excluding_root": 11,
+        "files": 11,
+        "logical_bytes_including_directories": 6362133,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 6.349910090000776,
+      "as_of": "2026-10-05T13:35:30+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "acb2689bde77aacd9706c2a0cfe97400acd95e3144868bbc354b00e6b91fca87",
+      "full_cycle_wall_seconds": 28.33216060200357,
+      "generation_id": "c3725fb2d7ab4b1986dffc28c640a1c7",
+      "live_residence": {
+        "allocated_bytes_including_directories": 12529664,
+        "entries_excluding_root": 24,
+        "files": 21,
+        "logical_bytes_including_directories": 12490726,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038309,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 997735,
+        "status.json": 2785
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "d55e8a0265e63fed7c05372e6f06134252a770d7f9c7c18434ce0427572dfa74",
+        "manifest.json": "2844332af09613a41f16704eed9ba03c662769f6c07bc7269c588180ccf868b0",
+        "projection.sqlite": "eb4de54944140c96e83d433fc593d386d14ea0cce61c4aadf9ead80455129c1c",
+        "report.json.gz": "3bb801f56dcfd2ce5cecccc020c09eda5170bfe7aaa3153ff4014a4ec4a65dc4",
+        "status.json": "39fa1322307f64858e127bf2cb325be0f6c027dd1ad449688e50a1e37448dacb"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 19.923075581,
+      "pipeline_wall_seconds": 19.928890862000117,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16001,
+      "retention_status": "OK",
+      "sequence": 3,
+      "tick_index": 2
+    },
+    {
+      "archive_cpu_seconds": 2.7864006739999923,
+      "archive_residence": {
+        "allocated_bytes_including_directories": 6799360,
+        "entries_excluding_root": 14,
+        "files": 14,
+        "logical_bytes_including_directories": 6769756,
+        "pending_temporaries_or_intents": 0
+      },
+      "archive_verification_level": "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE",
+      "archive_wall_seconds": 2.786549500997353,
+      "as_of": "2026-10-05T13:36:00+00:00",
+      "catalog_ready_count": 1200,
+      "checkpoint_reused": true,
+      "configuration_fingerprint": "acb2689bde77aacd9706c2a0cfe97400acd95e3144868bbc354b00e6b91fca87",
+      "full_cycle_wall_seconds": 20.493415652003023,
+      "generation_id": "8550f96de4134277b5aa2e1f316c2dad",
+      "live_residence": {
+        "allocated_bytes_including_directories": 16797696,
+        "entries_excluding_root": 31,
+        "files": 27,
+        "logical_bytes_including_directories": 16748567,
+        "pending_temporaries_or_intents": 0
+      },
+      "member_bytes": {
+        "checkpoint.json.gz": 1038315,
+        "manifest.json": 6109,
+        "projection.sqlite": 2211840,
+        "report.json.gz": 997961,
+        "status.json": 2785
+      },
+      "original_member_sha256": {
+        "checkpoint.json.gz": "0977a097dc90c4bc1738d79140b33c81f68fc635a34f4b4848f020227de0e847",
+        "manifest.json": "07869ab930fb5e40dfc3c45885bc141f2d04664c2a4984fac3cf618e43be5eb3",
+        "projection.sqlite": "6200224e982205bee4b86a3a55a53e3971d8bbdf6fc29bb195f4ea7c2254009e",
+        "report.json.gz": "ced1233df1ede9629aaf89fffb20c9653a388818d13eedc98e58bdb12b86a8c4",
+        "status.json": "852534799ed42a26c3e29652b3b2d2209e5edac7705c85dc9c11580b0c8c56ca"
+      },
+      "phase": "OPEN",
+      "pipeline_cpu_seconds": 16.726800513,
+      "pipeline_wall_seconds": 16.72755702699942,
+      "provider_requests": 0,
+      "real_orders_sent": 0,
+      "real_routes": "NOT_CALLED",
+      "recipe_bytes": 16066,
+      "retention_status": "OK",
+      "sequence": 4,
+      "tick_index": 3
+    }
+  ],
+  "elapsed_cpu_seconds": 88.00319833,
+  "elapsed_wall_seconds": 87.9825263849998,
+  "evidence_root": "/tmp/rc6-v3-native-normal4-107a8319/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow",
+  "final_as_of": "2026-10-05T13:36:00+00:00",
+  "final_configuration_fingerprint": "acb2689bde77aacd9706c2a0cfe97400acd95e3144868bbc354b00e6b91fca87",
+  "final_sequence": 4,
+  "fixture_environment": {
+    "DATA_DIR": "/tmp/rc6-v3-native-normal4-107a8319/data",
+    "PAPER_V17_DB_PATH": "/tmp/rc6-v3-native-normal4-107a8319/data/paper_v17/observer_v17.db",
+    "POROTA_DYNAMIC_CAPACITY_MODE": "OFF"
+  },
+  "input_observation_rows": 6000,
+  "live_final": {
+    "allocated_bytes_including_directories": 16797696,
+    "entries_excluding_root": 31,
+    "files": 27,
+    "logical_bytes_including_directories": 16748567,
+    "pending_temporaries_or_intents": 0
+  },
+  "live_maximum_bytes": 134217728,
+  "live_maximum_files": 8192,
+  "peak_archive": {
+    "allocated_bytes_including_directories": 6807552,
+    "entries_excluding_root": 16,
+    "files": 16,
+    "logical_bytes_including_directories": 6770873,
+    "pending_temporaries_or_intents": 2
+  },
+  "peak_live": {
+    "allocated_bytes_including_directories": 16797696,
+    "entries_excluding_root": 31,
+    "files": 27,
+    "logical_bytes_including_directories": 16748567,
+    "pending_temporaries_or_intents": 1
+  },
+  "peak_rss_bytes": 305881088,
+  "provider_requests": 0,
+  "restarts": [],
+  "schema": "rc6.native-archive-v3-profile.v1",
+  "scope": "OFFLINE_SYNTHETIC_CANONICAL_FACTORY_NO_OPEN_AUTHORITY",
+  "source_database": "/tmp/rc6-v3-native-normal4-107a8319/data/paper_v17/observer_v17.db",
+  "source_database_unchanged": false,
+  "source_sha": "107a83197a5f80e299fbe63c9b5ef27f853945be",
+  "source_tree": "85c4e08f0bbd9b48a83e577d0f0c8ae7b6d760dd",
+  "tick_seconds": 30,
+  "ticks_requested": 4
+}
