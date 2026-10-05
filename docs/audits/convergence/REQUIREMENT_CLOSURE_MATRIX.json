@@ -4254,6 +4254,86 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/sre-archive-admission/namespace-focal.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/native-current-green.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/native-factory-probe.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/native-old-red.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/native-sparse-before-red.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/native-sparse-fallback-green.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/precommit-sparse-red-admission-source.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/precommit-sparse-red-live-source.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/sre-final-allocated-regression.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-archive-admission/sre-regression.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-Dockerfile.txt": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -4408,6 +4488,14 @@
         "U11",
         "U25",
         "U29"
+      ]
+    },
+    "docs/audits/convergence/sre-archive-admission.json": {
+      "reason": "Preserve native operational-factory OLD_RED and current controls plus sparse-residence RED/GREEN, exact310-case intermediate SRE regression and source hashes. Final CAS namespace, full horizon and canonical new-generation health remain pending.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U28"
       ]
     },
     "docs/audits/convergence/sre-baseline-bounds.json": {
@@ -6736,6 +6824,8 @@
     "rc6_shadow_runtime/archive_namespace.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
+        "U04",
+        "U13",
         "U14",
         "U15",
         "U18",
@@ -7110,7 +7200,7 @@
       ]
     },
     "scripts/rc6_disk_space_guard.py": {
-      "reason": "Add the measured remaining SQLite scratch allocation to the existing exact image-tar/unpacked/two-bundle formula, preserving one shared2GiB residual reserve and separate filesystem/inode guards.",
+      "reason": "Add remaining SQLite scratch,512MiB archive and128MiB live growth to the exact image-tar/unpacked/two-bundle formula. Discount only min(logical residence,verified allocated blocks); missing allocation gets no discount. Preserve one shared2GiB residual reserve per actual filesystem and separate inode guards.",
       "requirement_ids": [
         "U28"
       ]
@@ -7183,6 +7273,14 @@
       "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
       "requirement_ids": [
         "U13"
+      ]
+    },
+    "scripts/rc6_shadow_live_namespace.py": {
+      "reason": "Admit bounded private live namespace metadata with UID/modes/regular single-link files, shared nonblocking writer lock and repeated stats; measure logical/allocated residence without repair, decoding or a claim of complete generation semantics.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U28"
       ]
     },
     "scripts/rc6_sqlite_scratch_guard.py": {
@@ -7638,6 +7736,14 @@
         "U11",
         "U25",
         "U29"
+      ]
+    },
+    "tests/test_rc6_convergence_sre_archive.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U28"
       ]
     },
     "tests/test_rc6_convergence_sre_binding.py": {
@@ -8803,8 +8909,11 @@
     {
       "code_paths": [
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
+        "scripts/rc6_disk_space_guard.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -8825,6 +8934,18 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_operator_drift_rejects_before_any_runtime_env",
+        "tests/test_rc6_convergence_sre_archive.py::test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+        "tests/test_rc6_convergence_sre_archive.py::test_foreign_archive_namespace_is_not_repaired",
+        "tests/test_rc6_convergence_sre_archive.py::test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+        "tests/test_rc6_convergence_sre_archive.py::test_prepared_archive_is_owned_private_and_reentry_preserves_residue",
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
@@ -9098,9 +9219,12 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
+        "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -9121,6 +9245,18 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_operator_drift_rejects_before_any_runtime_env",
+        "tests/test_rc6_convergence_sre_archive.py::test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+        "tests/test_rc6_convergence_sre_archive.py::test_foreign_archive_namespace_is_not_repaired",
+        "tests/test_rc6_convergence_sre_archive.py::test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+        "tests/test_rc6_convergence_sre_archive.py::test_prepared_archive_is_owned_private_and_reentry_preserves_residue",
         "tests/test_rc6_convergence_sre_health.py::test_actual_dead_process_rejects_fresh_scanner_and_fresh_generation",
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
@@ -9662,6 +9798,8 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_deploy_scoped_cleanup.py",
+        "scripts/rc6_disk_space_guard.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -9690,6 +9828,18 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_operator_drift_rejects_before_any_runtime_env",
+        "tests/test_rc6_convergence_sre_archive.py::test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+        "tests/test_rc6_convergence_sre_archive.py::test_foreign_archive_namespace_is_not_repaired",
+        "tests/test_rc6_convergence_sre_archive.py::test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+        "tests/test_rc6_convergence_sre_archive.py::test_prepared_archive_is_owned_private_and_reentry_preserves_residue",
         "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
         "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
         "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
@@ -10084,9 +10234,12 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
+        "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -12160,8 +12313,11 @@
     {
       "code_paths": [
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
+        "scripts/rc6_disk_space_guard.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -12193,6 +12349,18 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_operator_drift_rejects_before_any_runtime_env",
+        "tests/test_rc6_convergence_sre_archive.py::test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+        "tests/test_rc6_convergence_sre_archive.py::test_foreign_archive_namespace_is_not_repaired",
+        "tests/test_rc6_convergence_sre_archive.py::test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+        "tests/test_rc6_convergence_sre_archive.py::test_prepared_archive_is_owned_private_and_reentry_preserves_residue",
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
@@ -12220,9 +12388,12 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
+        "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -12254,6 +12425,18 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+        "tests/test_rc6_convergence_sre_archive.py::test_archive_operator_drift_rejects_before_any_runtime_env",
+        "tests/test_rc6_convergence_sre_archive.py::test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+        "tests/test_rc6_convergence_sre_archive.py::test_foreign_archive_namespace_is_not_repaired",
+        "tests/test_rc6_convergence_sre_archive.py::test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+        "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+        "tests/test_rc6_convergence_sre_archive.py::test_prepared_archive_is_owned_private_and_reentry_preserves_residue",
         "tests/test_rc6_convergence_sre_health.py::test_actual_dead_process_rejects_fresh_scanner_and_fresh_generation",
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
