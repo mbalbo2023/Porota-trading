@@ -508,3 +508,20 @@ Atime del directorio tests cambió y se registra aparte; no se declara once
 stats de código sin cambios ni bytes de distribuciones autenticados. Scope
 es protocolo con clocks/subprocesos controlados: no Docker real, artifact,
 Gov ni runtime. Recibos originales externos se están preservando en dossier.
+
+Los catorce originales del focal45 OWNbd69 quedaron preservados lossless en
+published-replay-deadline-native con manifest/verificación de4,946,004 bytes
+originales. El commit documental e249 no cambia código ni suma otra ejecución.
+
+La nueva BIG uninstrumented wholeROOT9d32/frozen311157 completó PREOPEN a
+89.741s, sin OPEN dentro del original90s: CLI1/completeFalse/cleanupFalse
+siguen RED. Sus1912 blobs/modos/índice/TAR y ahora once stats reales MAIN
+(incluido st_blocks)+SHA quedaron intactos; WAL/SHM ausentes no equivalen a
+ejercitarlos físicamente. Publication56.736s, prepare41.796/encode10.748/
+metrics3.729/restore8.995 son spans completos inclusivos y se solapan. No
+demuestra ahorro porcentual ni fullcycle completo. Cinco EXIT PAPER ocurrieron
+en0.093806s dentrofsync0.499408s; RSS1,657,999,360B y evidencia36,884,225B
+permanecen dentro de límites. GC/deadlines/cuotas intactos, sin sampler. RAW
+byteexactos/lossless en evidence/native-big-9d32d326-157; imports no auditados
+por ese wrapper externo no se declaran verificados. Continúa RCA sólo de
+fuente para mejora material, sin nueva atribución del SIGSEGV previo.
