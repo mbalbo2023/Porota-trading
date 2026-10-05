@@ -6,6 +6,7 @@ it does not certify market executions or implement all fifty-five requirements.
 Predeploy fetches the original refs before running these network-free tests.
 """
 from copy import deepcopy
+import ast
 import csv
 import hashlib
 import json
@@ -24,6 +25,10 @@ from scripts import rc6_convergence_provenance as provenance
 
 REPO = Path(__file__).resolve().parents[1]
 GUARD = "tests/test_rc6_convergence_sre_binding.py::test_approved_unique_run_attempt_artifact_origin_is_green"
+LEGACY_CASES = sorted(filename + "::" + item.name
+    for filename in provenance.PRESERVED_TESTS_344
+    for item in ast.parse((REPO / filename).read_bytes()).body
+    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test_"))
 
 
 def native_git(root, *arguments):
@@ -45,16 +50,19 @@ def write_json(path, value):
 
 
 def junit(path, *, outcome=None, duplicate=False, counters=None):
-    attrs = {"name": "fixture", "tests": "2" if duplicate else "1", "errors": "0",
+    nodes = [GUARD, *LEGACY_CASES]
+    attrs = {"name": "fixture", "tests": str(len(nodes) * (2 if duplicate else 1)), "errors": "0",
         "failures": "0", "skipped": "0"}
     if outcome:
         attrs[{"failure": "failures", "error": "errors", "skipped": "skipped"}[outcome]] = "1"
     attrs.update(counters or {})
     root = ET.Element("testsuites"); suite = ET.SubElement(root, "testsuite", attrs)
     for _ in range(2 if duplicate else 1):
-        case = ET.SubElement(suite, "testcase", {"classname": "tests.test_rc6_convergence_sre_binding",
-            "name": GUARD.split("::")[1], "time": "0.01"})
-        if outcome: ET.SubElement(case, outcome, {"message": "controlled fixture nonpass"})
+        for node in nodes:
+            filename, function = node.split("::")
+            case = ET.SubElement(suite, "testcase", {"classname": filename[:-3].replace("/", "."),
+                "name": function, "time": "0.01"})
+            if outcome: ET.SubElement(case, outcome, {"message": "controlled fixture nonpass"})
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
@@ -106,6 +114,7 @@ def fixture_base(tmp_path_factory):
     matrix = {"schema": "rc6.convergence-closure.v1", "requirements": requirements,
         "scenarios": scenarios,
         "front_variants": front,
+        "restored_controls": rows(provenance.RESTORED_CONTROLS),
         "path_evolution": {path: {"reason": "Controlled fixture evolution requires a referenced guard.",
             "requirement_ids": ["U01"]} for path in paths}}
     write_json(inputs / provenance.CLOSURE, matrix)
@@ -152,7 +161,10 @@ def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_coun
     assert len(report["front_variants"]) == 90
     assert {row["id"] for row in report["front_variants"]} == provenance.FRONT_VARIANTS
     assert all(row["assertion_scope"] == "EXPLICIT_SYNTHETIC_ONLY" for row in report["front_variants"])
-    assert report["test_execution"]["executed_unique_cases"] == 1
+    assert report["test_execution"]["executed_unique_cases"] == 1 + len(LEGACY_CASES)
+    assert {row["id"] for row in report["restored_controls"]} == provenance.RESTORED_CONTROLS
+    assert len(report["preserved_test_modules_344"]) == 12
+    assert sum(row["preservation"] == "EXACT_BYTES" for row in report["preserved_test_modules_344"]) == 10
     assert report["test_execution"]["overlapping_suite_counts_added"] is False
     assert report["merge_authorized"] is report["deploy_authorized"] is False
     assert report["runtime"] == report["provider_open_capacity"] == "NO_VERIFICADO"
@@ -280,6 +292,26 @@ def test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed
     original[field] = "Fabricated original requirement"
     write_json(path, matrix); commit(root)
     assert_rejected(candidate, "ORIGINAL_CLOSURE_REQUIREMENT_REBOUND")
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_missing_or_duplicated_restored_control_cannot_issue_complete_receipts(candidate, duplicate):
+    root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_text())
+    if duplicate:
+        matrix["restored_controls"][-1] = deepcopy(matrix["restored_controls"][0])
+    else:
+        matrix["restored_controls"].pop()
+    write_json(path, matrix); commit(root)
+    assert_rejected(candidate, ("CLOSURE_CARDINALITY", "CLOSURE_IDS_MISSING_OR_DUPLICATE"))
+
+
+@pytest.mark.parametrize("filename", ["tests/test_dashboard_session.py", "tests/test_candle_archive_v17.py", "tests/test_rc4_acceptance.py"])
+def test_unreviewed_legacy_test_drift_cannot_hide_behind_complete_native_receipts(candidate, filename):
+    root = candidate[0]; source = root / filename
+    raw = source.read_bytes(); assert b"assert " in raw
+    source.write_bytes(raw.replace(b"assert ", b"assert not ", 1)); commit(root)
+    assert_rejected(candidate, "LEGACY_344_UNREVIEWED_DRIFT")
 
 
 def test_missing_original_input_is_not_replaced_by_a_complete_self_asserted_index(candidate):

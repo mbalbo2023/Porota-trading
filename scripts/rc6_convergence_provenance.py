@@ -29,6 +29,19 @@ SOURCE_PRS = {447, 448, 449, 450, 451, 453, 454, 455, 456, 457, 459, 461, 463, 4
 REQUIREMENTS = {f"U{i:02d}" for i in range(1, 30)} | {f"AUD-468-{i:02d}" for i in range(1, 22)} | {f"UX470-I{i:02d}" for i in range(1, 6)}
 FRONT_VARIANTS = ({f"F01-{i:02d}" for i in range(1, 36)} | {f"F02-{i:02d}" for i in range(1, 21)}
                   | {f"F03F05-{i:02d}" for i in range(1, 36)})
+RESTORED_CONTROLS = {"H_LEGACY_ASSET_CLASS_COLLISION", "M_FIXED_INCOME_ANNUAL_LABEL",
+    "M_MAIN_SAMPLE_CADENCE", "S_CRASH_AFTER_VERSION_INSERT", "S_HEARTBEAT_NO_PROGRESS",
+    "U_IOL_ARCHIVED_LIQUIDITY"}
+PRESERVED_TESTS_344 = {"tests/" + name for name in (
+    "test_candle_archive_v17.py", "test_dashboard_daily_responsive_hf6.py",
+    "test_dashboard_decision_evidence_rc6.py", "test_dashboard_live_policy_hf2.py",
+    "test_dashboard_paper_v1634.py", "test_dashboard_session.py", "test_dashboard_v17_rc3.py",
+    "test_history_freshness_metrics_rc5.py", "test_hotfix_rc3_hf6.py", "test_rc4_acceptance.py",
+    "test_rc4_hf2_consolidation.py", "test_rc6_table_headers_visible_sticky.py")}
+TEST_344_ADAPTATIONS = {
+    "tests/test_candle_archive_v17.py": (b"SINID: HISTORY_MARKET_IDENTITY_MISSING", b"SINID: HISTORY_FULL_IDENTITY_MISSING"),
+    "tests/test_rc4_acceptance.py": (b"'2026-09-02T20:00:00+00:00',{})", b"'2026-09-02T20:00:00+00:00',{'currency':'ARS'})"),
+}
 DENIED_ARTIFACTS = {11315198085, 11317509383, 11293625514}
 ORIGINAL_DIGESTS = {
     MANIFEST: "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4",
@@ -167,6 +180,31 @@ def guard_rows(rows, expected, final_tree, executed, declared_guards):
     return result
 
 
+def preserved_legacy_tests(root, candidate_sha, source_sha, executed):
+    result = []
+    for filename in sorted(PRESERVED_TESTS_344):
+        original = git(root, "show", source_sha + ":" + filename, binary=True)
+        current = git(root, "show", candidate_sha + ":" + filename, binary=True)
+        adaptation = TEST_344_ADAPTATIONS.get(filename)
+        if adaptation:
+            old, new = adaptation
+            require(original.count(old) == 1, "LEGACY_344_BASELINE_DRIFT:" + filename)
+            allowed = original.replace(old, new)
+        else:
+            allowed = original
+        require(current == allowed, "LEGACY_344_UNREVIEWED_DRIFT:" + filename)
+        definitions = ast.parse(current, filename=filename).body
+        nodes = [filename + "::" + item.name for item in definitions
+                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test_")]
+        require(bool(nodes), "LEGACY_344_GUARDS_MISSING")
+        require(executed is None or all(executed.get(node, 0) > 0 for node in nodes), "LEGACY_344_NOT_EXECUTED")
+        result.append({"path": filename, "source_sha": source_sha,
+            "original_sha256": hashlib.sha256(original).hexdigest(), "final_sha256": hashlib.sha256(current).hexdigest(),
+            "preservation": "EXACT_BYTES" if not adaptation else "EXPLICIT_SINGLE_ADAPTATION_ALL_OTHER_BYTES_PRESERVED",
+            "test_nodes": nodes, "executed_cases": None if executed is None else sum(executed[node] for node in nodes)})
+    return result
+
+
 def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     root = root.resolve(strict=True)
     require(re.fullmatch(r"[0-9a-f]{40}", candidate_sha) is not None, "CANDIDATE_SHA_INVALID")
@@ -218,7 +256,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     for row in front_rows:
         require(row.get("original_columns") == original_front.get(row.get("id")), "ORIGINAL_FRONT_CLAUSE_REBOUND")
     declared_guards = set()
-    guard_files = {node.split("::")[0] for row in matrix["requirements"] + matrix["scenarios"] + front_rows
+    restored_rows = matrix.get("restored_controls", [])
+    guard_files = {node.split("::")[0] for row in matrix["requirements"] + matrix["scenarios"] + front_rows + restored_rows
                    for node in row.get("test_nodes", []) if isinstance(node, str)}
     for filename in guard_files:
         require(filename in final_tree, "CLOSURE_GUARD_SOURCE_MISSING")
@@ -231,6 +270,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     requirements = guard_rows(matrix["requirements"], REQUIREMENTS, final_tree, executed, declared_guards)
     scenarios = guard_rows(matrix["scenarios"], scenario_ids, final_tree, executed, declared_guards)
     front_variants = guard_rows(front_rows, FRONT_VARIANTS, final_tree, executed, declared_guards)
+    restored_controls = guard_rows(restored_rows, RESTORED_CONTROLS, final_tree, executed, declared_guards)
+    legacy_tests = preserved_legacy_tests(root, candidate_sha, next(row["head_sha"] for row in sources if row["pr"] == 466), executed)
     source_trees, source_reports, source_deltas = {}, [], set()
     product_sha = manifest["product"]["sha"]
     source_trees["product"] = tree(root, product_sha)
@@ -298,6 +339,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
             "expected_source_paths_preserved": len(expected_sources), "final_path_count": len(paths), "paths": paths,
             "requirements": requirements, "scenarios": scenarios, "original_scenarios": original_scenarios,
             "front_variants": front_variants,
+            "restored_controls": restored_controls, "preserved_test_modules_344": legacy_tests,
             "test_execution": {"junit_sha256": hashlib.sha256(junit.read_bytes()).hexdigest() if junit else None,
                                "executed_unique_cases": count, "distinct_attack_ids": 80,
                                "distinct_requirement_ids": 55, "overlapping_suite_counts_added": False},
