@@ -113,7 +113,7 @@ def validate_policy(policy):
 def validate_shadow_policy(policy):
     expected = {
         "private_live_evidence": {"root_suffix": "dynamic-shadow", "max_bytes": LIVE_MAX_BYTES,
-            "maximum_files": 8192, "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,
+            "maximum_files": 512, "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,
             "mode": "0700", "verification_level": "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA"},
         "private_archive": {"root_suffix": "dynamic-shadow-archive", "max_bytes": ARCHIVE_MAX_BYTES,
             "maximum_files": 32768, "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,

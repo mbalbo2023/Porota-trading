@@ -19,10 +19,14 @@ import pytest
 from scripts.porota_predeploy_binding import (
     BASE_BRANCH, BindingRejected, DENIED_ARTIFACTS, DENIED_HEADS, DENIED_RUNS,
     REQUIRED_FILES, REPOSITORY, TRAILERS, WORKFLOW_PATH,
+    CONVERGENCE_HANDOFF, CONVERGENCE_VERIFIER,
     artifact_name, parse_merge_approval, safe_extract, validate_binding, verify_frozen_payload,
+    verify_final_input_provenance,
 )
 from scripts.porota_artifact_provenance import canonical_bytes, create_source_manifest, sha256_file
 from scripts.porota_build_deploy_bundle_v2 import build_bundle
+from scripts import rc6_archive_v3_image_smoke as codec_smoke
+from tests.test_rc6_archive_v3_image_smoke import synthetic_receipt
 from scripts.porota_host_manifest_v2 import build_manifest
 from scripts.porota_host_policy_v2 import validate_policy
 from tests.test_issue465_provenance import candidate, git, write
@@ -139,6 +143,12 @@ def frozen_payload(candidate, tmp_path):
     c = candidate
     policy = {"units": {}}
     write(c["repo"], "ops/policy/host-control-plane-reconciliation-v2.json", canonical_bytes(policy))
+    # This native Git/Docker-save-format fixture checks metadata only. It
+    # never runs Docker or represents execution of the image's codec CLI.
+    source_root = Path(__file__).resolve().parents[1]
+    for name in (*codec_smoke.SOURCE_PATHS, "rc6_shadow_runtime/__init__.py"):
+        write(c["repo"], name, (source_root / name).read_bytes())
+        (c["repo"] / name).chmod(0o644)
     git(c["repo"], "add", "."); git(c["repo"], "commit", "-qm", "fixture host policy")
     c["manifest"] = create_source_manifest(c["repo"])
     c["source"].write_bytes(canonical_bytes(c["manifest"]))
@@ -162,6 +172,14 @@ def frozen_payload(candidate, tmp_path):
         "real_orders_sent_required": 0, "real_order_capability_required": "BLOCKED", "build_once": True,
         "image_size_bytes": 10240, "image_id": image_id, "image_tar_sha256": sha256_file(image),
         "source_manifest_sha256": sha256_file(c["source"])}
+    codec_raw = canonical_bytes(synthetic_receipt(c["manifest"], frozen))
+    codec_path = output / "porota-runtime-codec-smoke.json"
+    codec_path.write_bytes(codec_raw); codec_path.chmod(0o644)
+    source_rows = {row["path"]: row for row in c["manifest"]["files"]}
+    frozen["runtime_codec_smoke"] = {"schema": codec_smoke.SCHEMA,
+        "receipt_sha256": hashlib.sha256(codec_raw).hexdigest(), "image_id": image_id,
+        "script_sha256": source_rows[codec_smoke.SOURCE_PATHS[0]]["sha256"],
+        "fixtures_sha256": {name: source_rows[name]["sha256"] for name in codec_smoke.SOURCE_PATHS[1:3]}}
     (output / "porota-frozen-candidate.json").write_bytes(canonical_bytes(frozen))
     for path, name in ((c["source"], "porota-source-provenance.json"),
                        (c["bundle"], "porota-deploy-bundle-v2.tgz"),
@@ -173,6 +191,14 @@ def frozen_payload(candidate, tmp_path):
     for name, payload in (("porota-host-manifest-v2.json", manifest),
                           ("porota-host-policy-v2.json", validate_policy(manifest, policy))):
         (output / name).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    # Generic source-format controls contain no convergence handoff and make
+    # no governed/FIP execution claim. All primary receipt names are present.
+    generic = {"fixture_scope": "EXPLICIT_SYNTHETIC_METADATA_ONLY_NO_GOVERNED_OR_FINAL_CLOSURE"}
+    for name in ("porota-final-input-provenance.json", "porota-governed-tests.json"):
+        path = output / name; path.write_bytes(canonical_bytes(generic)); path.chmod(0o644)
+    junit = output / "porota-governed-tests.xml"
+    junit.write_bytes(b'<fixture scope="EXPLICIT_SYNTHETIC_METADATA_ONLY_NO_GOVERNED_EVIDENCE"/>\n')
+    junit.chmod(0o644)
     return c, output, binding, frozen
 
 
@@ -181,6 +207,140 @@ def test_full_frozen_payload_source_bundle_image_and_native_host_receipts_are_ve
     result = verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
     assert result["status"] == "GREEN" and set(result["files"]) == set(REQUIRED_FILES)
     assert result["image"]["image_id"] == json.loads((output / "porota-frozen-candidate.json").read_text())["image_id"]
+    assert result["runtime_codec_smoke"]["runtime_approval"] is False
+    assert result["final_input_provenance"]["status"] == "NOT_APPLICABLE"
+
+
+@pytest.fixture
+def self_asserted_final_receipts(frozen_payload):
+    """Attack fixture: closed-looking metadata with no original input closure."""
+    c, output, binding, frozen = frozen_payload
+    root = Path(__file__).resolve().parents[1]
+    write(c["repo"], CONVERGENCE_HANDOFF, b'{"fixture":"ATTACK_METADATA_NOT_ORIGINAL_INPUTS"}\n')
+    write(c["repo"], CONVERGENCE_VERIFIER, (root / CONVERGENCE_VERIFIER).read_bytes())
+    (c["repo"] / CONVERGENCE_VERIFIER).chmod(0o644)
+    git(c["repo"], "add", "."); git(c["repo"], "commit", "-qm", "private self-asserted FIP attack fixture")
+    source = create_source_manifest(c["repo"])
+    (output / "porota-source-provenance.json").write_bytes(canonical_bytes(source))
+    frozen.update(candidate_sha=source["candidate_sha"], candidate_tree_sha=source["candidate_tree_sha"],
+                  source_manifest_sha256=sha256_file(output / "porota-source-provenance.json"))
+    junit = b'<testsuites><testsuite name="pytest" tests="1" failures="0" errors="0" skipped="0"><testcase classname="tests.test_fixture" name="test_case"/></testsuite></testsuites>\n'
+    (output / "porota-governed-tests.xml").write_bytes(junit)
+    fip = {"schema": "rc6.final-input-provenance.v1", "candidate_sha": source["candidate_sha"],
+        "candidate_tree": source["candidate_tree_sha"], "software_status": "EXECUTED_NATIVE_GREEN",
+        "final_candidate_eligible": True, "material_programming_gates_closed": True,
+        "pending_material_programming_gates": [], "test_execution": {
+            "junit_sha256": hashlib.sha256(junit).hexdigest(), "executed_unique_cases": 1},
+        "fixture_scope": "ATTACK_SELF_ASSERTED_STATUS_WITHOUT_ORIGINAL_GIT_INPUT_PROVENANCE"}
+    gov = {"schema_version": 1, "status": "GREEN", "source_unchanged": True,
+        "scope": "repository-root automatic pytest discovery", "candidate_sha": source["candidate_sha"],
+        "candidate_tree": source["candidate_tree_sha"], "junit_sha256": hashlib.sha256(junit).hexdigest(),
+        "junit_bytes": len(junit), "discovered": 1, "executed": 1, "exclusions": [],
+        **{name: 0 for name in ("pytest_exit_code", "failures", "errors", "skipped", "xfail")}}
+    for name, report in (("porota-final-input-provenance.json", fip), ("porota-governed-tests.json", gov)):
+        (output / name).write_bytes(canonical_bytes(report))
+    frozen["final_input_provenance_sha256"] = sha256_file(output / "porota-final-input-provenance.json")
+    return c, output, frozen, source, fip, gov
+
+
+def test_self_asserted_green_final_fip_must_recompute_actual_original_git_closure(self_asserted_final_receipts):
+    c, output, frozen, source, _fip, _gov = self_asserted_final_receipts
+    with pytest.raises(ValueError, match="GIT_SOURCE_UNAVAILABLE|ORIGINAL_INPUT"):
+        verify_final_input_provenance(c["repo"], output, frozen, source)
+
+
+@pytest.mark.parametrize("mutation,signature", [("raw_hash", "DIGEST_MISMATCH"),
+    ("candidate", "CANDIDATE_MISMATCH"), ("tree", "CANDIDATE_MISMATCH"),
+    ("inventory", "CANDIDATE_MISMATCH"), ("eligible_false", "MATERIAL_GATES_OPEN"),
+    ("eligible_integer", "MATERIAL_GATES_OPEN"), ("material_false", "MATERIAL_GATES_OPEN"),
+    ("pending", "MATERIAL_GATES_OPEN"), ("pending_dict", "MATERIAL_GATES_OPEN"),
+    ("junit_hash", "JUNIT_BINDING_INVALID"), ("gov_boolean_zero", "GOVERNED_RECEIPT_BINDING_INVALID"),
+    ("gov_foreign_head", "GOVERNED_RECEIPT_BINDING_INVALID"),
+    ("gov_count", "GOVERNED_RECEIPT_BINDING_INVALID"), ("duplicate_junit", "JUNIT_DUPLICATE_CASE"),
+    ("failed_junit", "JUNIT_NONPASS"), ("junit_alias", None), ("fip_alias", None)])
+def test_final_release_barrier_rejects_pending_wrong_head_and_forged_raw_governed_receipts(self_asserted_final_receipts, mutation, signature):
+    c, output, frozen, source, fip, gov = self_asserted_final_receipts
+    if mutation == "candidate": fip["candidate_sha"] = "f" * 40
+    elif mutation == "tree": fip["candidate_tree"] = "f" * 40
+    elif mutation == "inventory": fip["software_status"] = "INVENTORY_NOT_EXECUTED"
+    elif mutation == "eligible_false": fip["final_candidate_eligible"] = False
+    elif mutation == "eligible_integer": fip["final_candidate_eligible"] = 1
+    elif mutation == "material_false": fip["material_programming_gates_closed"] = False
+    elif mutation == "pending": fip["pending_material_programming_gates"] = [{"id": "U14", "disposition": "MATERIAL_PENDING"}]
+    elif mutation == "pending_dict": fip["pending_material_programming_gates"] = {}
+    elif mutation == "junit_hash": fip["test_execution"]["junit_sha256"] = "f" * 64
+    elif mutation == "gov_boolean_zero": gov["failures"] = False
+    elif mutation == "gov_foreign_head": gov["candidate_sha"] = "f" * 40
+    elif mutation == "gov_count": gov["executed"] = 2
+    elif mutation in {"duplicate_junit", "failed_junit"}:
+        path = output / "porota-governed-tests.xml"
+        raw = path.read_bytes()
+        if mutation == "duplicate_junit":
+            case = b'<testcase classname="tests.test_fixture" name="test_case"/>'
+            raw = raw.replace(b'tests="1"', b'tests="2"').replace(case, case + case)
+            gov["executed"] = gov["discovered"] = fip["test_execution"]["executed_unique_cases"] = 2
+        else: raw = raw.replace(b'name="test_case"/>', b'name="test_case"><failure>actual failure</failure></testcase>')
+        path.write_bytes(raw)
+        gov["junit_sha256"] = fip["test_execution"]["junit_sha256"] = hashlib.sha256(raw).hexdigest()
+        gov["junit_bytes"] = len(raw)
+    (output / "porota-final-input-provenance.json").write_bytes(canonical_bytes(fip))
+    (output / "porota-governed-tests.json").write_bytes(canonical_bytes(gov))
+    frozen["final_input_provenance_sha256"] = sha256_file(output / "porota-final-input-provenance.json")
+    if mutation == "raw_hash": (output / "porota-final-input-provenance.json").write_bytes(b'attack')
+    if mutation in {"junit_alias", "fip_alias"}:
+        name = "porota-governed-tests.xml" if mutation == "junit_alias" else "porota-final-input-provenance.json"
+        path = output / name; target = output / ("original-" + name); path.rename(target); path.symlink_to(target)
+    with pytest.raises((ValueError, OSError), match=signature):
+        verify_final_input_provenance(c["repo"], output, frozen, source)
+
+
+def test_git_replace_objects_are_rejected_before_any_artifact_claim(frozen_payload):
+    c, output, binding, _frozen = frozen_payload
+    original = git(c["repo"], "rev-parse", "HEAD")
+    write(c["repo"], "worker.py", b"VALUE = 'replacement source'\n")
+    git(c["repo"], "add", "."); git(c["repo"], "commit", "-qm", "private replacement")
+    replacement = git(c["repo"], "rev-parse", "HEAD")
+    git(c["repo"], "reset", "--hard", original); git(c["repo"], "replace", original, replacement)
+    with pytest.raises(BindingRejected, match="GIT_REPLACE_REFS_FORBIDDEN"):
+        verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
+
+
+@pytest.mark.parametrize("mutation,signature", [("missing", None), ("alias", None),
+    ("digest", "DIGEST_MISMATCH"), ("script", "SOURCE_MISMATCH"),
+    ("fixture", "SOURCE_MISMATCH"), ("loaded_id", "BINDING_INVALID"),
+    ("missing_case", "CASE_CLOSURE"), ("boolean_counter", "SAFETY"),
+    ("unknown_schema", "NOT_GREEN"), ("root_uid", "CUSTODY"),
+    ("fake_import", "IMPORT_BINDING"), ("self_approve", "SCOPE_ESCALATION"),
+    ("legacy_wire", "CODEC_BYTES"), ("legacy_member", "LEGACY_MEMBER_BINDING"),
+    ("inspector_source", "NAMESPACE_SCOPE"), ("signed_zero_claim", "FLOAT_CONTROL")])
+def test_frozen_tiny_receipt_is_bound_to_raw_bytes_source_fixtures_and_image_id(frozen_payload, mutation, signature):
+    c, output, binding, frozen = frozen_payload
+    path = output / "porota-runtime-codec-smoke.json"
+    report = json.loads(path.read_bytes())
+    if mutation == "missing": path.unlink()
+    elif mutation == "alias":
+        original = output / "receipt-original.json"; path.rename(original); path.symlink_to(original)
+    elif mutation == "digest": path.write_bytes(path.read_bytes() + b" ")
+    elif mutation == "script": frozen["runtime_codec_smoke"]["script_sha256"] = "f" * 64
+    elif mutation == "fixture": frozen["runtime_codec_smoke"]["fixtures_sha256"][codec_smoke.CODEC_FIXTURE] = "f" * 64
+    elif mutation == "loaded_id": frozen["runtime_codec_smoke"]["image_id"] = "sha256:" + "f" * 64
+    else:
+        if mutation == "missing_case": del report["cases"][codec_smoke.CASE_IDS[-1]]
+        elif mutation == "boolean_counter": report["provider_requests"] = False
+        elif mutation == "unknown_schema": report["schema"] = "unsupported"
+        elif mutation == "root_uid": report["execution_uid"] = 0
+        elif mutation == "fake_import": report["imported_source_modules"] = {"rc6_shadow_runtime": {
+            "path": codec_smoke.SOURCE_PATHS[0], "sha256": frozen["runtime_codec_smoke"]["script_sha256"]}}
+        elif mutation == "legacy_wire": report["cases"][codec_smoke.CASE_IDS[0]]["wire_sha256"] = "f" * 64
+        elif mutation == "legacy_member": report["cases"][codec_smoke.CASE_IDS[6]]["member_sha256"]["projection.sqlite"] = "f" * 64
+        elif mutation == "inspector_source": report["cases"][codec_smoke.CASE_IDS[10]]["source_sha256"] = "f" * 64
+        elif mutation == "signed_zero_claim": report["cases"][codec_smoke.CASE_IDS[1]]["signed_zero_and_finite_float_types_exact"] = 1
+        else: report["nine_hour_archive_capacity"] = "APPROVED"
+        path.write_bytes(canonical_bytes(report))
+        frozen["runtime_codec_smoke"]["receipt_sha256"] = sha256_file(path)
+    (output / "porota-frozen-candidate.json").write_bytes(canonical_bytes(frozen))
+    with pytest.raises((ValueError, OSError), match=signature):
+        verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
 
 
 @pytest.mark.parametrize("field,value", [("workflow_id", 999), ("run_id", 999), ("run_attempt", 4),
@@ -204,9 +364,11 @@ def test_payload_safety_and_capacity_metadata_types_fail_closed(frozen_payload, 
         verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
 
 
-def zip_fixture(path, *, extra=None):
+def zip_fixture(path, *, extra=None, omit=()):
     with zipfile.ZipFile(path, "w") as archive:
         for name in REQUIRED_FILES:
+            if name in omit:
+                continue
             archive.writestr("evidence/" + name, b"offline fixture")
         if extra:
             with pytest.warns(UserWarning, match="Duplicate name") if extra in archive.namelist() else nullcontext():
@@ -242,7 +404,7 @@ def test_safe_zip_has_one_required_file_per_basename(tmp_path):
 def test_published_primary_requires_one_original_final_input_provenance_receipt(tmp_path, mutation):
     path = tmp_path / "artifact.zip"
     name = "porota-final-input-provenance.json"
-    binding = zip_fixture(path, extra=None if mutation == "missing" else "evidence/" + name)
+    binding = zip_fixture(path, omit=(name,), extra=None if mutation == "missing" else "evidence/" + name)
     if mutation == "duplicate":
         with zipfile.ZipFile(path, "a") as archive:
             archive.writestr("other/" + name, b"homonymous receipt")

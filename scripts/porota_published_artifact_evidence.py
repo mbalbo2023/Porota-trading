@@ -19,6 +19,7 @@ import tarfile
 import tempfile
 import time
 import urllib.error
+import uuid
 
 try:
     from scripts.porota_artifact_http import api_get, download_artifact, remaining
@@ -26,18 +27,18 @@ try:
         SOURCE_MANIFEST_NAME, canonical_bytes, canonical_file_mode, decode_json, sha256_file)
     from scripts.porota_predeploy_binding import (
         REPOSITORY, WORKFLOW_PATH, REQUIRED_FILES, artifact_name, positive_integer,
-        safe_extract, validate_binding, verify_frozen_payload)
+        safe_extract, validate_binding, verify_frozen_payload, verify_runtime_codec_smoke, codec_smoke)
 except ModuleNotFoundError:
     from porota_artifact_http import api_get, download_artifact, remaining
     from porota_artifact_provenance import (
         SOURCE_MANIFEST_NAME, canonical_bytes, canonical_file_mode, decode_json, sha256_file)
     from porota_predeploy_binding import (
         REPOSITORY, WORKFLOW_PATH, REQUIRED_FILES, artifact_name, positive_integer,
-        safe_extract, validate_binding, verify_frozen_payload)
+        safe_extract, validate_binding, verify_frozen_payload, verify_runtime_codec_smoke, codec_smoke)
 
 MAX_EVIDENCE_BYTES = 24 * 1024**2
 MAX_SECONDARY_ARTIFACT_BYTES = 32 * 1024**2
-PUBLISHED_EXTRA_RECEIPTS = ("porota-final-input-provenance.json",)
+PUBLISHED_EXTRA_RECEIPTS = ()  # FIP/Gov/JUnit are mandatory primary members.
 
 
 def upload_digest(value):
@@ -144,7 +145,7 @@ def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_i
     if output.is_symlink() or output.exists() and any(output.iterdir()): raise ValueError("EVIDENCE_OUTPUT_NOT_EMPTY")
     output.mkdir(parents=True, exist_ok=True)
     for name in REQUIRED_FILES:
-        if name.endswith(".json"): shutil.copyfile(payload["extracted_root"] / name, output / name)
+        if name.endswith((".json", ".xml")): shutil.copyfile(payload["extracted_root"] / name, output / name)
     for name in payload.get("extra_receipts", ()):
         if name not in PUBLISHED_EXTRA_RECEIPTS: raise ValueError("EVIDENCE_EXTRA_RECEIPT_NOT_ALLOWED")
         if (payload["extracted_root"] / name).stat().st_size > MAX_EVIDENCE_BYTES:
@@ -176,19 +177,25 @@ def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_i
 
 
 def verify_loaded_image_and_imports(extracted, *, candidate_sha, image_ref, deadline, run=subprocess.run):
-    """Load the downloaded archive in CI and probe that exact ID offline once."""
+    """Load once, then execute imports and tiny codec recovery on that same ID."""
     frozen = decode_json((extracted / "porota-frozen-candidate.json").read_bytes())
+    source = decode_json((extracted / "porota-source-provenance.json").read_bytes())
+    primary_codec = verify_runtime_codec_smoke(extracted, frozen, source)
     if image_ref != "porota-predeploy-v2:" + candidate_sha:
         raise ValueError("PUBLISHED_IMAGE_REFERENCE_INVALID")
     image = extracted / "porota-predeploy-image.tar.gz"
     with tarfile.open(image, "r:gz") as archive:
         manifest = decode_json(archive.extractfile("manifest.json").read())
     if manifest[0].get("RepoTags") != [image_ref]: raise ValueError("PUBLISHED_IMAGE_TAG_ORIGIN_MISMATCH")
-    def execute(argv, **kwargs):
+    def execute(argv, *, output_limit=1024**2, seconds=None, **kwargs):
+        allowance = remaining(deadline)
         result = run(argv, check=True, text=True, capture_output=True,
-                     timeout=remaining(deadline), **kwargs)
+                     timeout=min(allowance, seconds) if seconds is not None else allowance, **kwargs)
         remaining(deadline)
-        if len(result.stdout.encode()) + len(result.stderr.encode()) > 1024**2:
+        if (type(result.returncode) is not int or result.returncode != 0
+                or not isinstance(result.stdout, str) or not isinstance(result.stderr, str)):
+            raise ValueError("PUBLISHED_IMAGE_EXECUTION_NOT_GREEN")
+        if len(result.stdout.encode()) + len(result.stderr.encode()) > output_limit:
             raise ValueError("PUBLISHED_IMAGE_EXECUTION_OUTPUT_LIMIT")
         return result
     loaded = execute(["docker", "load", "--input", str(image)])
@@ -212,11 +219,45 @@ print('POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN')
                      "--entrypoint", "python", loaded_id, "-"], input=script)
     if "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN" not in smoke.stdout:
         raise ValueError("PUBLISHED_IMAGE_IMPORT_RECEIPT_MISSING")
+    container_name = "porota-rc6-codec-replay-" + uuid.uuid4().hex
+    command = ["docker", "run", "--rm", "--name", container_name, "--pull", "never",
+        "--network", "none", "--read-only", "--user", "1000:1000", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges:true", "--no-healthcheck",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=33554432,uid=1000,gid=1000,mode=1777",
+        "--entrypoint", "python", loaded_id, "-m", "scripts.rc6_archive_v3_image_smoke",
+        "--source-manifest", "/app/POROTA_SOURCE_PROVENANCE.json",
+        "--candidate-sha", candidate_sha, "--tree-sha", frozen["candidate_tree_sha"], "--image-id", loaded_id]
+    try:
+        codec_execution = execute(command, output_limit=codec_smoke.MAX_OUTPUT, seconds=codec_smoke.MAX_SECONDS)
+    except BaseException:
+        # The client timeout alone cannot prove container termination. Cleanup
+        # is restricted to this private, randomly named replay container.
+        try:
+            run(["docker", "rm", "--force", container_name], check=True, text=True,
+                capture_output=True, timeout=5)
+        except Exception as cleanup_error:
+            raise ValueError("PUBLISHED_PRIVATE_CODEC_CONTAINER_CLEANUP_UNCONFIRMED") from cleanup_error
+        raise
+    replay = codec_smoke.loads(codec_execution.stdout.encode())
+    codec_smoke.validate_report(replay, candidate_sha=candidate_sha,
+        tree_sha=frozen["candidate_tree_sha"], image_id=loaded_id,
+        source_manifest_sha256=frozen["source_manifest_sha256"],
+        source_sha256={row["path"]: row["sha256"] for row in source["files"]})
+    replay_raw = codec_execution.stdout.encode()
     return {"schema": "porota.published-exact-image-execution.v1", "status": "GREEN",
             "loaded_image_id": loaded_id, "frozen_image_id": frozen["image_id"],
             "load_exit_code": loaded.returncode, "inspect_exit_code": inspected.returncode,
             "import_and_installed_closure_exit_code": smoke.returncode,
             "import_script_sha256": hashlib.sha256(script.encode()).hexdigest(),
+            "runtime_codec_smoke": {"schema": codec_smoke.SCHEMA, "status": "GREEN",
+                "exit_code": codec_execution.returncode, "actual_image_id": loaded_id,
+                "primary_receipt_sha256": primary_codec["receipt_sha256"],
+                "replay_receipt_sha256": hashlib.sha256(replay_raw).hexdigest(), "replay_report": replay,
+                "case_ids": list(codec_smoke.CASE_IDS), "timeout_seconds": codec_smoke.MAX_SECONDS,
+                "output_limit_bytes": codec_smoke.MAX_OUTPUT, "user": "1000:1000", "read_only": True,
+                "private_tmpfs_bytes": 33554432, "capabilities": "DROPPED_ALL",
+                "no_new_privileges": True, "host_volume_mounts": [], "image_rebuilt": False,
+                "receipt_scope": "OBSERVED_SUBPROCESS_ON_EXACT_LOADED_PRIMARY_IMAGE_ID"},
             "network": "NONE", "host_volume_mounts": [], "image_rebuilt": False,
             "execution_scope": "GITHUB_ACTIONS_RUNNER_EPHEMERAL_OFFLINE_CONTAINER"}
 

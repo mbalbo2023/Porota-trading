@@ -1,5 +1,7 @@
 """Native launcher archive configuration; isolated DATA, no Docker/provider work."""
+from copy import deepcopy
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,8 +17,8 @@ from rc6_shadow_runtime.persistence import EvidenceFiles
 from rc6_shadow_runtime.retention import EvidenceRetention
 from rc6_shadow_runtime.worker import ShadowRuntime
 from scripts.rc6_disk_space_guard import load_policy, required_pretransfer_free
-from scripts.rc6_shadow_live_namespace import inspect_live, LEVEL, MAX_BYTES as LIVE_MAX
-from scripts.rc6_sqlite_scratch_guard import component_hashes, emit_probe, report_metrics
+from scripts.rc6_shadow_live_namespace import inspect_live, LEVEL, MAX_BYTES as LIVE_MAX, MAXIMUM_FILES
+from scripts.rc6_sqlite_scratch_guard import component_hashes, emit_probe, report_metrics, validate_shadow_policy
 from tests.test_issue465_generations import publish
 from tests.test_rc6_convergence_sre_launcher import disk_path, prepare_launcher, read_env, source_fixture
 from tests.test_rc6_convergence_sre_scratch import identity, layout, probe
@@ -159,6 +161,7 @@ def test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all
     observed = probe(primary, data)
     assert observed["status"] == "GREEN" and archived["durable"] is True
     assert observed["live_namespace"]["verification_level"] == LEVEL
+    assert observed["live_namespace"]["maximum_files"] == 512
     assert observed["archive_namespace"]["verification_level"] == "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA"
     assert observed["live_occupied_bytes"] == sum(info.st_size for path, info in before_live.items() if path != str(live))
     assert observed["archive_namespace"]["occupied_bytes"] == sum(info.st_size for path, info in before_archive.items() if path != str(archive))
@@ -176,7 +179,14 @@ def test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all
         cwd=isolated, env={**os.environ, "PYTHONPATH": ""}, capture_output=True, text=True, timeout=20)
     assert run.returncode == 0, run.stdout + run.stderr
     report = json.loads(run.stdout)
-    assert report["candidate_component_sha256"] == component_hashes(REPO)
+    source_paths = {"scratch": "rc6_audit_evidence/sqlite_scratch.py",
+                    "archive": "rc6_shadow_runtime/archive_namespace.py",
+                    "live": "scripts/rc6_shadow_live_namespace.py",
+                    "admission": "scripts/rc6_sqlite_scratch_guard.py"}
+    source_hashes = {name: hashlib.sha256((REPO / path).read_bytes()).hexdigest()
+                     for name, path in source_paths.items()}
+    assert report["candidate_component_sha256"] == source_hashes == component_hashes(REPO)
+    assert report["live_namespace"]["maximum_files"] == 512
     assert report_metrics(report) == sizes
     assert before_live == _metadata(live) and before_archive == _metadata(archive) and before_source == identity(primary)
 
@@ -244,6 +254,40 @@ def test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_a
     monkeypatch.setattr(os, "open", changed)
     with pytest.raises(ValueError): inspect_live(root, owner_uid=os.geteuid())
     assert swapped and root.is_symlink() and (root.with_name("preserved-live") / "writer.lock").is_file()
+
+
+def test_live_admission_accepts_511_entries_and_closes_at_512_without_mutating_custody(disk_path):
+    # Empty owned ACK-shaped controls exercise namespace admission only. Their
+    # contents do not assert valid receipt CRCs or producer publication capacity.
+    root = disk_path / "live-capacity"
+    root.mkdir(mode=0o700)
+    _member(root, "writer.lock")
+    for number in range(510):
+        _member(root, f"archive-ack-{number:032x}.json")
+    before = _metadata(root)
+    observed = inspect_live(root, owner_uid=os.geteuid())
+    assert MAXIMUM_FILES == observed["maximum_files"] == 512
+    assert observed["files"] == 511 and observed["state"] == "WITHIN_QUOTA"
+    assert observed["verification_level"] == LEVEL
+    assert observed["occupied_bytes"] == 0
+    assert before == _metadata(root)
+    _member(root, f"archive-ack-{510:032x}.json")
+    at_capacity = _metadata(root)
+    with pytest.raises(ValueError, match="^LIVE_FILES_CAPACITY_REACHED$"):
+        inspect_live(root, owner_uid=os.geteuid())
+    assert at_capacity == _metadata(root)
+
+
+@pytest.mark.parametrize("proposed_limit", [513, 8192, True])
+def test_admission_rejects_a_relaxed_or_untyped_live_limit_without_changing_other_policy(proposed_limit):
+    policy = load_policy(REPO / "ops/policy/rc6-disk-housekeeping-v1.json")
+    original = deepcopy(policy)
+    assert validate_shadow_policy(policy)["private_live_evidence"]["maximum_files"] == 512
+    policy["shadow"]["private_live_evidence"]["maximum_files"] = proposed_limit
+    with pytest.raises(ValueError, match="^RC6_SHADOW_POLICY_DRIFT$"):
+        validate_shadow_policy(policy)
+    policy["shadow"]["private_live_evidence"]["maximum_files"] = 512
+    assert policy == original
 
 
 @pytest.mark.parametrize("mutation", ["missing_archive", "bool_residence", "rebound_source", "unhonest_level", "contradictory_growth", "recovery_green"])

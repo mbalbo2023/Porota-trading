@@ -18,6 +18,7 @@ from scripts.porota_artifact_http import (
 )
 from scripts.porota_artifact_provenance import canonical_bytes, sha256_file, validate_image_archive
 from scripts.porota_predeploy_binding import artifact_name, validate_binding, verify_frozen_payload
+from scripts import rc6_archive_v3_image_smoke as codec_smoke
 from scripts.porota_published_artifact_evidence import (
     MAX_EVIDENCE_BYTES, MAX_SECONDARY_ARTIFACT_BYTES, current_primary_binding, main,
     verify_loaded_image_and_imports, verify_saved_app_rootfs, write_evidence,
@@ -186,6 +187,9 @@ def test_downloaded_image_load_and_offline_smoke_require_exact_actual_id(frozen_
         calls.append(argv)
         if argv[:3] == ["docker", "image", "inspect"]:
             stdout = "sha256:" + "f"*64 if wrong_id else frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+            assert 0 < kwargs["timeout"] <= 30
         elif argv[:2] == ["docker", "run"]: stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
         else: stdout = "Loaded image"
         return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
@@ -200,7 +204,40 @@ def test_downloaded_image_load_and_offline_smoke_require_exact_actual_id(frozen_
         assert result["status"] == "GREEN" and result["network"] == "NONE"
         assert calls[-1][calls[-1].index("--network") + 1] == "none"
         assert "-v" not in calls[-1] and "--mount" not in calls[-1]
+        assert "--read-only" in calls[-1] and calls[-1][calls[-1].index("--user") + 1] == "1000:1000"
+        assert "size=33554432" in calls[-1][calls[-1].index("--tmpfs") + 1]
+        assert calls[-1][calls[-1].index("--entrypoint") + 2] == frozen["image_id"]
+        assert result["runtime_codec_smoke"]["actual_image_id"] == frozen["image_id"]
     assert not any(argv[1] == "build" for argv in calls)
+
+
+@pytest.mark.parametrize("mutation", ["nonzero", "missing_json", "red", "foreign_image", "source_drift", "oversize", "timeout"])
+def test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt(frozen_payload, mutation):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    primary = json.loads((output / "porota-runtime-codec-smoke.json").read_bytes())
+    calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            if mutation == "timeout": raise __import__("subprocess").TimeoutExpired(argv, 30)
+            if mutation == "nonzero": return SimpleNamespace(returncode=1, stdout="", stderr="RED")
+            row = deepcopy(primary)
+            if mutation == "red": row["status"] = "RED"
+            elif mutation == "foreign_image": row["image_id_argument"] = "sha256:" + "f" * 64
+            elif mutation == "source_drift": row["source_components"][codec_smoke.SOURCE_PATHS[0]] = "f" * 64
+            stdout = "not JSON" if mutation == "missing_json" else "x" * 65537 if mutation == "oversize" else json.dumps(row)
+        elif argv[:2] == ["docker", "run"]: stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises((ValueError, __import__("subprocess").TimeoutExpired)):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:" + binding["candidate_sha"], deadline=time.monotonic()+60, run=docker)
+    assert not any(argv[1] == "build" for argv in calls)
+    if mutation in {"timeout", "nonzero", "oversize"}:
+        assert calls[-1][:3] == ["docker", "rm", "--force"]
+        assert calls[-1][-1] == calls[-2][calls[-2].index("--name") + 1]
 
 
 def test_evidence_only_is_small_and_contains_no_image_or_bundle(frozen_payload, tmp_path):
@@ -211,11 +248,13 @@ def test_evidence_only_is_small_and_contains_no_image_or_bundle(frozen_payload, 
     result = write_evidence(evidence, binding=binding, payload={"extracted_root": output, "receipt": receipt},
         rootfs=rootfs, download={"status": "GREEN"}, loaded_image_id=frozen["image_id"])
     assert result["promotable"] is False and result["evidence_payload_bytes"] < MAX_EVIDENCE_BYTES < MAX_SECONDARY_ARTIFACT_BYTES
-    assert all(path.suffix == ".json" for path in evidence.iterdir())
+    assert {path.name for path in evidence.iterdir() if path.suffix != ".json"} == {"porota-governed-tests.xml"}
+    assert (evidence / "porota-governed-tests.xml").read_bytes() == (output / "porota-governed-tests.xml").read_bytes()
     index = json.loads((evidence / "evidence-inventory.json").read_text())
     assert all(row["sha256"] == sha256_file(evidence/name) for name,row in index["files"].items())
     report = json.loads((evidence / "published-primary-verification.json").read_text())
     assert report["primary"]["artifact_id"] == binding["artifact_id"] and report["image_rebuilt"] is False
+    assert (evidence / "porota-runtime-codec-smoke.json").read_bytes() == (output / "porota-runtime-codec-smoke.json").read_bytes()
 
 
 def test_secondary_preserves_downloaded_primary_final_input_provenance_bytes(frozen_payload, tmp_path):
@@ -226,7 +265,7 @@ def test_secondary_preserves_downloaded_primary_final_input_provenance_bytes(fro
     receipt = verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
     evidence = tmp_path / "secondary"
     write_evidence(evidence, binding=binding,
-        payload={"extracted_root": output, "receipt": receipt, "extra_receipts": (name,)},
+        payload={"extracted_root": output, "receipt": receipt},
         rootfs=verify_saved_app_rootfs(output / "porota-predeploy-image.tar.gz", c["manifest"]),
         download={"status": "GREEN"}, loaded_image_id=frozen["image_id"])
     assert (evidence / name).read_bytes() == raw
@@ -259,6 +298,10 @@ def test_workflow_secondary_cannot_replace_primary_or_trigger_another_build():
     assert "--out /tmp/porota-final-input-provenance.json --fetch-source-refs" in steps[provenance]["run"]
     assert "/tmp/porota-final-input-provenance.json" in steps[primary]["with"]["path"]
     assert "porota-predeploy-image.tar.gz" in steps[primary]["with"]["path"]
-    assert "evidence-only" in steps[secondary]["with"]["name"] and steps[secondary]["with"]["path"].endswith("*.json")
+    assert "evidence-only" in steps[secondary]["with"]["name"]
+    assert steps[secondary]["with"]["path"].splitlines() == [
+        "/tmp/porota-predeploy-published-evidence/*.json",
+        "/tmp/porota-predeploy-published-evidence/*.xml",
+    ]
     assert "docker build" not in steps[replay]["run"]
     assert artifact_name(approved_origin()[0]).startswith("porota-predeploy-v2-" + "a"*40)

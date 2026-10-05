@@ -13,7 +13,7 @@ import stat
 SCHEMA = "rc6.shadow-live-namespace-admission.v1"
 LEVEL = "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA"
 MAX_BYTES = 128 * 1024**2
-MAXIMUM_FILES = 8192
+MAXIMUM_FILES = 512
 _GENERATION = re.compile(r"gen-[0-9a-f]{32}\Z")
 _RESIDUAL_DIRECTORY = re.compile(r"\.generation-[0-9a-f]{32}\.tmp\Z|\.deleting-[0-9a-f]{32}\Z")
 _REGULAR = re.compile(r"(?:CURRENT\.json|writer\.lock|latest\.json\.gz|checkpoint\.json\.gz|"

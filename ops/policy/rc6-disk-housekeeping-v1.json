@@ -82,7 +82,7 @@
     "private_live_evidence": {
       "root_suffix": "dynamic-shadow",
       "max_bytes": 134217728,
-      "maximum_files": 8192,
+      "maximum_files": 512,
       "owner_uid": 1000,
       "owner_gid": 1000,
       "mode": "0700",

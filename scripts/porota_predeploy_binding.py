@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -16,6 +17,10 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
+import time
+import types
+import uuid
 import zipfile
 
 try:
@@ -28,6 +33,11 @@ except ModuleNotFoundError:
         canonical_bytes, decode_json, sha256_file, validate_bundle,
         validate_image_archive, verify_source_manifest,
     )
+
+try:
+    from scripts import rc6_archive_v3_image_smoke as codec_smoke
+except ModuleNotFoundError:
+    import rc6_archive_v3_image_smoke as codec_smoke
 
 REPOSITORY = "mbalbo2023/Porota-trading"
 WORKFLOW_PATH = ".github/workflows/porota-predeploy-v2.yml"
@@ -53,8 +63,13 @@ REQUIRED_FILES = (
     "porota-deploy-bundle-v2.tgz", "porota-deploy-bundle-v2-manifest.json",
     "porota-host-manifest-v2.json", "porota-host-policy-v2.json",
     "porota-source-provenance.json",
+    "porota-runtime-codec-smoke.json",
+    "porota-final-input-provenance.json", "porota-governed-tests.json", "porota-governed-tests.xml",
 )
 MAX_ZIP_BYTES = 8 * 1024**3
+CONVERGENCE_HANDOFF = "docs/audits/convergence/INPUT_MANIFEST_RC6_CONVERGENCIA.json"
+CONVERGENCE_VERIFIER = "scripts/rc6_convergence_provenance.py"
+FINAL_FIP_SCHEMA = "rc6.final-input-provenance.v1"
 
 
 class BindingRejected(ValueError):
@@ -216,7 +231,146 @@ def safe_extract(zip_path, output_root, binding, *, extra_required=()):
     return inventory
 
 
+def reject_git_replacements(repo_root):
+    if os.environ.get("GIT_REPLACE_REF_BASE", "refs/replace/") != "refs/replace/":
+        raise BindingRejected("APPROVED_GIT_REPLACE_REFS_FORBIDDEN")
+    refs = subprocess.check_output(["git", "--no-replace-objects", "-C", str(repo_root),
+                                    "for-each-ref", "--format=%(refname)", "refs/replace/"], text=True)
+    if refs.strip():
+        raise BindingRejected("APPROVED_GIT_REPLACE_REFS_FORBIDDEN")
+
+
+def captured_final_file(extracted, name, limit):
+    raw, proof = codec_smoke.read(Path(extracted) / name, limit=limit, deadline=time.monotonic() + 5)
+    if stat.S_IMODE(proof[2]) != 0o644:
+        raise BindingRejected("FINAL_RECEIPT_MODE_INVALID")
+    return raw
+
+
+def verify_final_input_provenance(repo_root, extracted_root, frozen, source):
+    """Recompute final source closure from Git and one immutable JUnit capture."""
+    rows = {row["path"]: row for row in source["files"]}
+    if CONVERGENCE_HANDOFF not in rows:
+        return {"status": "NOT_APPLICABLE", "scope": "NO_VERSIONED_CONVERGENCE_HANDOFF_IN_APPROVED_SOURCE",
+                "runtime_approval": False}
+    reject_git_replacements(repo_root)
+    fip_raw = captured_final_file(extracted_root, "porota-final-input-provenance.json", 8 * 1024**2)
+    gov_raw = captured_final_file(extracted_root, "porota-governed-tests.json", 256 * 1024)
+    junit_raw = captured_final_file(extracted_root, "porota-governed-tests.xml", 16 * 1024**2)
+    if frozen.get("final_input_provenance_sha256") != codec_smoke.sha(fip_raw):
+        raise BindingRejected("FROZEN_FINAL_INPUT_PROVENANCE_DIGEST_MISMATCH")
+    fip, gov = codec_smoke.loads(fip_raw), codec_smoke.loads(gov_raw)
+    if (type(fip) is not dict or fip.get("schema") != FINAL_FIP_SCHEMA
+            or fip.get("candidate_sha") != frozen["candidate_sha"]
+            or fip.get("candidate_tree") != frozen["candidate_tree_sha"]
+            or fip.get("software_status") != "EXECUTED_NATIVE_GREEN"):
+        raise BindingRejected("FINAL_INPUT_PROVENANCE_CANDIDATE_MISMATCH")
+    if (fip.get("final_candidate_eligible") is not True
+            or fip.get("material_programming_gates_closed") is not True
+            or type(fip.get("pending_material_programming_gates")) is not list
+            or fip["pending_material_programming_gates"]):
+        raise BindingRejected("FINAL_INPUT_PROVENANCE_MATERIAL_GATES_OPEN")
+    execution = fip.get("test_execution")
+    if (type(execution) is not dict or execution.get("junit_sha256") != codec_smoke.sha(junit_raw)
+            or type(execution.get("executed_unique_cases")) is not int or execution["executed_unique_cases"] <= 0):
+        raise BindingRejected("FINAL_INPUT_PROVENANCE_JUNIT_BINDING_INVALID")
+    if (type(gov) is not dict or type(gov.get("schema_version")) is not int or gov["schema_version"] != 1
+            or gov.get("status") != "GREEN" or gov.get("source_unchanged") is not True
+            or gov.get("scope") != "repository-root automatic pytest discovery"
+            or gov.get("candidate_sha") != frozen["candidate_sha"]
+            or gov.get("candidate_tree") != frozen["candidate_tree_sha"]
+            or gov.get("junit_sha256") != codec_smoke.sha(junit_raw)
+            or type(gov.get("junit_bytes")) is not int or gov["junit_bytes"] != len(junit_raw)
+            or any(type(gov.get(name)) is not int or gov[name] != 0
+                   for name in ("pytest_exit_code", "failures", "errors", "skipped", "xfail"))
+            or any(type(gov.get(name)) is not int or gov[name] != execution["executed_unique_cases"]
+                   for name in ("discovered", "executed"))
+            or type(gov.get("exclusions")) is not list
+            or any(type(value) is not str for value in gov["exclusions"])):
+        raise BindingRejected("FINAL_GOVERNED_RECEIPT_BINDING_INVALID")
+    verifier_row = rows.get(CONVERGENCE_VERIFIER)
+    if (type(verifier_row) is not dict or verifier_row.get("image_required") is not True
+            or verifier_row.get("bundle_required") is not True or verifier_row.get("git_mode") != "100644"):
+        raise BindingRejected("FINAL_CONVERGENCE_VERIFIER_SOURCE_REQUIRED")
+    verifier_raw, mode = codec_smoke.read(Path(repo_root) / CONVERGENCE_VERIFIER,
+                                         limit=4 * 1024**2, deadline=time.monotonic() + 5)
+    if (codec_smoke.sha(verifier_raw) != verifier_row["sha256"]
+            or len(verifier_raw) != verifier_row["bytes"] or stat.S_IMODE(mode[2]) != 0o644):
+        raise BindingRejected("FINAL_CONVERGENCE_VERIFIER_SOURCE_CHANGED")
+    source_path = Path(extracted_root) / "porota-source-provenance.json"
+    before = verify_source_manifest(Path(repo_root), source_path, frozen["candidate_sha"], frozen["candidate_tree_sha"])
+    if codec_smoke.canonical(before) != codec_smoke.canonical(source):
+        raise BindingRejected("FINAL_CONVERGENCE_SOURCE_CHANGED")
+    name = "rc6_frozen_convergence_verifier_" + uuid.uuid4().hex
+    module = types.ModuleType(name); module.__file__ = str(Path(repo_root) / CONVERGENCE_VERIFIER)
+    sys.modules[name] = module
+    try:
+        exec(compile(verifier_raw, module.__file__, "exec"), vars(module))
+        receipt = module.JunitReceipt(junit_raw)
+        _nodes, actual_count = module.executed_cases(receipt)
+        if actual_count != execution["executed_unique_cases"]:
+            raise BindingRejected("FINAL_GOVERNED_JUNIT_COUNT_MISMATCH")
+        recomputed = module.verify(Path(repo_root), frozen["candidate_sha"], receipt, fetch_source_refs=False)
+        if codec_smoke.canonical(recomputed) != codec_smoke.canonical(fip):
+            raise BindingRejected("FINAL_INPUT_PROVENANCE_RECOMPUTATION_MISMATCH")
+    finally:
+        if sys.modules.get(name) is module:
+            del sys.modules[name]
+    reject_git_replacements(repo_root)
+    after = verify_source_manifest(Path(repo_root), source_path, frozen["candidate_sha"], frozen["candidate_tree_sha"])
+    if codec_smoke.canonical(after) != codec_smoke.canonical(before):
+        raise BindingRejected("FINAL_CONVERGENCE_SOURCE_CHANGED")
+    return {"schema": FINAL_FIP_SCHEMA, "status": "GREEN",
+        "raw_fip_sha256": codec_smoke.sha(fip_raw), "raw_governed_sha256": codec_smoke.sha(gov_raw),
+        "raw_junit_sha256": codec_smoke.sha(junit_raw), "raw_junit_bytes": len(junit_raw),
+        "executed_unique_cases": actual_count, "verifier_source_sha256": codec_smoke.sha(verifier_raw),
+        "candidate_sha": frozen["candidate_sha"], "candidate_tree": frozen["candidate_tree_sha"],
+        "verification_scope": "RECOMPUTED_SOURCE_CLOSURE_BOUND_TO_DOWNLOADED_GOVERNED_AND_JUNIT_BYTES",
+        "runtime_approval": False}
+
+
+def verify_runtime_codec_smoke(extracted_root, frozen, source):
+    """Bind the raw tiny-smoke receipt to independently verified source and ID.
+
+    This checks published evidence. Docker execution and the external GitHub
+    tuple remain separate caller obligations.
+    """
+    metadata = frozen.get("runtime_codec_smoke")
+    keys = {"schema", "receipt_sha256", "script_sha256", "fixtures_sha256", "image_id"}
+    if (type(metadata) is not dict or set(metadata) != keys
+            or metadata["schema"] != codec_smoke.SCHEMA
+            or metadata["image_id"] != frozen.get("image_id")
+            or DIGEST.fullmatch(str(metadata["image_id"])) is None):
+        raise BindingRejected("FROZEN_RUNTIME_CODEC_BINDING_INVALID")
+    rows = {row["path"]: row for row in source["files"]}
+    for name in codec_smoke.SOURCE_PATHS:
+        row = rows.get(name)
+        if (type(row) is not dict or row.get("image_required") is not True
+                or row.get("bundle_required") is not True or row.get("git_mode") != "100644"):
+            raise BindingRejected("FROZEN_RUNTIME_CODEC_SOURCE_MISSING")
+    fixtures = {name: rows[name]["sha256"] for name in codec_smoke.SOURCE_PATHS[1:3]}
+    if (metadata["script_sha256"] != rows[codec_smoke.SOURCE_PATHS[0]]["sha256"]
+            or metadata["fixtures_sha256"] != fixtures):
+        raise BindingRejected("FROZEN_RUNTIME_CODEC_SOURCE_MISMATCH")
+    raw, proof = codec_smoke.read(Path(extracted_root) / "porota-runtime-codec-smoke.json",
+                                 limit=codec_smoke.MAX_OUTPUT, deadline=time.monotonic() + 2)
+    if stat.S_IMODE(proof[2]) != 0o644 or metadata["receipt_sha256"] != codec_smoke.sha(raw):
+        raise BindingRejected("FROZEN_RUNTIME_CODEC_RECEIPT_DIGEST_MISMATCH")
+    report = codec_smoke.loads(raw)
+    codec_smoke.validate_report(report, candidate_sha=frozen["candidate_sha"],
+        tree_sha=frozen["candidate_tree_sha"], image_id=frozen["image_id"],
+        source_manifest_sha256=frozen["source_manifest_sha256"],
+        source_sha256={name: row["sha256"] for name, row in rows.items()})
+    return {"schema": codec_smoke.SCHEMA, "status": "GREEN",
+        "receipt_sha256": codec_smoke.sha(raw), "receipt_bytes": len(raw),
+        "script_sha256": metadata["script_sha256"], "fixtures_sha256": fixtures,
+        "image_id": frozen["image_id"], "case_ids": list(codec_smoke.CASE_IDS),
+        "verification_scope": "PUBLISHED_RECEIPT_SOURCE_AND_IMAGE_ID_BINDINGS_ONLY",
+        "runtime_approval": False}
+
+
 def verify_frozen_payload(repo_root, extracted_root, binding, tree_sha):
+    reject_git_replacements(repo_root)
     frozen = decode_json((extracted_root / "porota-frozen-candidate.json").read_bytes())
     expected_origin = {name: binding[name] for name in (
         "repository", "workflow_path", "workflow_id", "run_id", "run_attempt", "event", "candidate_sha")}
@@ -234,6 +388,8 @@ def verify_frozen_payload(repo_root, extracted_root, binding, tree_sha):
     source = verify_source_manifest(repo_root, source_path, binding["candidate_sha"], tree_sha)
     if frozen.get("source_manifest_sha256") != sha256_file(source_path):
         raise BindingRejected("FROZEN_SOURCE_MANIFEST_DIGEST_MISMATCH")
+    runtime_codec = verify_runtime_codec_smoke(extracted_root, frozen, source)
+    final_provenance = verify_final_input_provenance(repo_root, extracted_root, frozen, source)
     bundle_receipt = validate_bundle(repo_root, extracted_root / "porota-deploy-bundle-v2.tgz",
         extracted_root / "porota-deploy-bundle-v2-manifest.json", source_path,
         binding["candidate_sha"], tree_sha)
@@ -257,7 +413,8 @@ def verify_frozen_payload(repo_root, extracted_root, binding, tree_sha):
         raise BindingRejected("FROZEN_HOST_CONTROL_PLANE_SOURCE_MISMATCH")
     return {"schema": "porota.approved-artifact-byte-verification.v1", "status": "GREEN",
             "binding": binding, "candidate_tree_sha": tree_sha,
-            "bundle": bundle_receipt, "image": image_receipt,
+            "bundle": bundle_receipt, "image": image_receipt, "runtime_codec_smoke": runtime_codec,
+            "final_input_provenance": final_provenance,
             "files": {name: {"sha256": sha256_file(extracted_root / name),
                               "bytes": (extracted_root / name).stat().st_size} for name in REQUIRED_FILES}}
 
