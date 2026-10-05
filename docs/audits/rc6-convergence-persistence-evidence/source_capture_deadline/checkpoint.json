@@ -1,0 +1,142 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "deployed": false,
+  "developed_code_sha256": {
+    "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+    "rc6_audit_evidence/sqlite_snapshot.py": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea",
+    "rc6_shadow_runtime/persistence.py": "685f0f61cd6e32de124533f1998f31ab0f9e7793e0a68a819ac76d7e8fba0510",
+    "rc6_shadow_runtime/source_reads.py": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189",
+    "tests/test_rc6_source_capture_deadlines.py": "94c573c130a29d5fef5800b85bbcfd6723d102286a94e5008f2e2658681b2657"
+  },
+  "developed_fix": {
+    "deadline": "same absolute deadline checked after complete private_scratch exit, SQLite close and cleanup; existing failure preserved",
+    "deadlines_quotas_sql_math_clocks_unchanged": true,
+    "source_open": "O_NONBLOCK required with NOFOLLOW/NOATIME; fstat identity rejection precedes source read",
+    "taxonomy": "Only exact TIME_BUDGET_EXHAUSTED added; no TIME_ prefix allowed",
+    "whole_tick_cache_or_gc_suppression": false
+  },
+  "isolated_capture_diagnostic": {
+    "captures_wall_seconds": [
+      0.06529749899345916,
+      0.058373656996991485
+    ],
+    "family_instruments": 12000,
+    "gc_during_capture": 0,
+    "gc_policy_changed": false,
+    "interpretation": "Both reduced-heap cases pass .25; they do not reproduce or remediate the original full-tick failure at RSS579264512B. Marker/quota guards are ~.004s and are not optimized.",
+    "planner_holdings_included": false,
+    "source_and_code_unchanged": true,
+    "source_bytes": 23162880
+  },
+  "original_code_sha256": {
+    "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+    "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+    "rc6_shadow_runtime/persistence.py": "37c8d72f491dc1c2ebdc98bafa50b0005d2894b2085fcf0f743761d4ddd9fa2b",
+    "rc6_shadow_runtime/source_reads.py": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+  },
+  "original_distribution_count": 157,
+  "original_interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "original_native_replay": {
+    "alien_product_imports": 0,
+    "all_source_sha_modes_git_blobs_unchanged": true,
+    "consumer_deadline_seconds": 0.25,
+    "controls_passed": 5,
+    "elapsed_seconds": 4.723322076999466,
+    "errors": 0,
+    "failures": 7,
+    "fifo_parent_watchdog_seconds": 1.5,
+    "guard_evolution": "Permanent guard strengthens protected-original byte/10-stat comparisons and uses a valid real descriptor for missing-O_NONBLOCK. Initial external driver remains byte-exact.",
+    "network_attempts": 0,
+    "product_imports": 12,
+    "results": [
+      "connection.close, disk cleanup, offline cleanup return success after absolute deadline",
+      "MAIN and real WAL replacement by FIFO blocks at source os.open until parent terminates child",
+      "missing-O_NONBLOCK precondition guard reaches intercepted open; the initial diagnostic interceptor returns invalidfd, yielding TypeError",
+      "TIME_BUDGET_EXHAUSTED is reduced to SnapshotError",
+      "consumer failure preserved and four unknown TIME strings withheld"
+    ],
+    "skipped": 0,
+    "tests": 12
+  },
+  "original_preflight_scope": "INSTALLED_NAMES_AND_VERSIONS_EXACT_LOCK_SET_NOT_DISTRIBUTION_BYTE_PROOF",
+  "original_product_overlay_count": 0,
+  "original_source_files": 1557,
+  "original_whole_source_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd",
+  "original_whole_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9",
+  "own_parent_sha": "2a04cf611c40766f5966fdab308c578b0b982ce9",
+  "raw_refs": {
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture.log.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/run.log",
+      "original_uncompressed_sha256": "cda265b525e79f5b42dd686edf74d0fb81d762e7995cb14936cc5ebff1bc17c4",
+      "sha256": "764c8a274b6d60fc4848313fe028e184ae978d2c486d9a7af190c87ee77c5d11"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture_probe.py": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/capture_probe.py",
+      "sha256": "caa0141e51bf71513df4f987cc997a1f297b403643d29885d6b26f4f0f132741"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture_receipt.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-f8895434-157-diagnostic-raw/result.json",
+      "sha256": "7504a92ea789ed38993711d943f21466b2493ee92204785cd74f74f56e3cbd80"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_entry_preflight.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/entry-preflight.json",
+      "sha256": "ca5ce570c563e5428f528e9bd22caa148e5cc3b2cd0d76027d2156e345d39e1f"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12.junit.xml.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original-native-guards.xml",
+      "original_uncompressed_sha256": "032cf5c05baabd02ebcc421e27822961f69891f9ccec33f33f476c2c4e023b48",
+      "sha256": "2cd59d4c71a340073c4a98a37f27a6e354d15591237d6e867286a4d01ba19db0"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12.log.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original.log",
+      "original_uncompressed_sha256": "5404af8c3699d97de6cf30f1625065e668f0206416e524472a33ca119bb74693",
+      "sha256": "85b27be44f1770c713eefeef13719f255dd1553d2c00944ce1d77483c4bb7b0a"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12_receipt.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/original-guard-receipt.json",
+      "sha256": "e7b8315a3371c17171b0a34d6fc2d34c42e8fff6cbedf7b546c431aae1d26814"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_guard_driver.py": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/test_rc6_source_capture_deadlines.py",
+      "sha256": "c71e6278a88f8dd237b1aa040eaf5b71e261f1a86d61b5b3f4747a3a2af0b249"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_runner.py": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/run_original_guards.py",
+      "sha256": "02a4e15b8f0bceb2a86df14657430b0a73d995c7721a9a8deee6f7dd79c0f826"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_wrapper_before.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/wrapper-before.json",
+      "sha256": "c9a19d75a96dd7f182ce69fd9efa400c1c5ab3cb5a12d1c720c58fe367a267b8"
+    }
+  },
+  "remaining_uncertainty": [
+    "BIG f889 full native pipeline remains RED before publication; GC/consumed/chunk/deadline trace needed on a new coherent source pin.",
+    "Canonical full1201 ticks/recovery and2000 archive cases remain pending; no nine-hour capacity extrapolation from four cuts.",
+    "12k OPEN/current/slow-fsync+5EXIT acceptance and UX1s/SRE2s remain pending.",
+    "This fix closes bounded-source correctness guards, not measured capture-performance RCA."
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.source-capture-boundary-fix-checkpoint.v1",
+  "scope": "OFFLINE_SYNTHETIC_PAPER_ONLY_NO_PROVIDER_NO_RUNTIME",
+  "state": "DESARROLLADO",
+  "validation": {
+    "fix_native_tests": "NOT_EXECUTED_YET",
+    "permanent_guards": 12,
+    "whole_fix_source_pin": "PENDING"
+  },
+  "workstream_id": "RC6_CONVERGENCE_PERSISTENCE"
+}

@@ -141,7 +141,8 @@ def failure_reason(error):
     code = str(getattr(error, "reason", str(error)))
     prefixes = ("SHADOW_", "RETENTION_", "FUNNEL_", "ENTRY_", "LAB_", "PREOPEN_",
                 "AUDITED_", "SOURCE_", "PAPER_", "CAPACITY_", "PPI_", "FAMILY_")
-    if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", code) and code.startswith(prefixes):
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", code) and (
+            code.startswith(prefixes) or code == "TIME_BUDGET_EXHAUSTED"):
         return code
     if isinstance(error, OSError):
         return {errno.ENOSPC: "SHADOW_EVIDENCE_DISK_FULL", errno.EACCES: "SHADOW_EVIDENCE_PERMISSION_DENIED",

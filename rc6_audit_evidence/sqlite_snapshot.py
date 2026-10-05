@@ -50,9 +50,11 @@ def _inventory(path):
 def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
     # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
     # source-owner capture is required; silently degrading would change it.
-    if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+    if any(not hasattr(os, flag) for flag in ('O_NOFOLLOW', 'O_NOATIME', 'O_NONBLOCK')):
         raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
-    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+    # Inventory and open are separate operations. A substituted FIFO must
+    # reach the metadata check without waiting for a writer at os.open.
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK
     digest = hashlib.sha256()
     try:
         descriptor = os.open(member, flags)
@@ -164,6 +166,10 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
                     guard.check()
             finally:
                 connection.close()
+        # The absolute consumer budget includes closing SQLite and deleting
+        # our private copy. Check after both contexts have exited completely;
+        # an existing caller/custody failure still retains its original code.
+        _check(deadline)
     except sqlite3.Error:
         _check(deadline)
         raise SnapshotError("SOURCE_READ_FAILED") from None
