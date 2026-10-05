@@ -22,7 +22,8 @@ def _snapshots(store):
         rows = connection.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots ORDER BY rowid").fetchall()
     for row in rows:
         assert hashlib.sha256(row[0].encode()).hexdigest() == row[1]
-    return [(json.loads(row[0]), row[1]) for row in rows]
+    return [(value, row[1]) for row in rows
+            if (value := json.loads(row[0])).get("capture_phase") != "ATOMIC_PAPER_ADMISSION"]
 
 
 def test_price_vector_captures_same_native_rows_without_mutable_reconstruction(tmp_path):
@@ -69,6 +70,15 @@ def test_specialized_future_native_clocks_and_vector_survive_decision_capture(tm
     stages = [datetime.fromisoformat(payload[key]) for key in
               ("signal_at", "decision_at", "intent_at", "entry_fill_committed_at")]
     assert stages == sorted(stages) and len(set(stages)) == 4
+    with b.store.connect() as connection:
+        raw = connection.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots ORDER BY rowid").fetchall()
+    assert len(raw) == 2
+    admission = json.loads(raw[0][0])
+    assert admission["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
+    assert admission["entry_fill_committed_at"] is None
+    assert admission["native_decision_key"] == payload["decision_key"]
+    assert payload["inputs_used"]["financial_admission_snapshot_sha256"] == raw[0][1]
+    assert datetime.fromisoformat(admission["intent_at"]) <= datetime.fromisoformat(admission["captured_at"]) <= stages[-1]
     captured = payload["inputs_used"]["entry_signal_inputs"]
     assert captured["price_sample_status"] == "NATIVE_EXACT_VECTOR"
     assert [row["price"] for row in captured["price_samples"]] == [str(1450 + i * 10) for i in range(8)]

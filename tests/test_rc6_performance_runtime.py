@@ -29,7 +29,9 @@ def snapshots(store):
         rows = c.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots ORDER BY rowid").fetchall()
     for payload, expected in rows:
         assert hashlib.sha256(payload.encode()).hexdigest() == expected
-    return [json.loads(row[0]) for row in rows]
+    # Financial admission receipts share the canonical store, but represent a
+    # different phase and cannot substitute for the native decision clocks.
+    return [value for row in rows if (value := json.loads(row[0])).get("capture_phase") != "ATOMIC_PAPER_ADMISSION"]
 
 
 def test_native_decision_precedes_intent_and_committed_fill(tmp_path, monkeypatch):
@@ -56,6 +58,18 @@ def test_native_decision_precedes_intent_and_committed_fill(tmp_path, monkeypatc
              ("signal_at", "decision_at", "intent_at", "entry_fill_committed_at")]
     assert times == sorted(times) and len(set(times)) == 4
     assert times[0] > datetime.fromisoformat(q.observed_at)
+    with store.connect() as connection:
+        raw = connection.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots ORDER BY rowid").fetchall()
+    assert len(raw) == 2
+    receipt = json.loads(raw[0][0])
+    assert receipt["capture_phase"] == "ATOMIC_PAPER_ADMISSION"
+    assert receipt["decision_key"] == "PAPER_ADMISSION:" + data["decision_key"]
+    assert receipt["entry_fill_committed_at"] is receipt["runtime"]["entry_fill_committed_at"] is None
+    assert datetime.fromisoformat(receipt["intent_at"]) <= datetime.fromisoformat(receipt["entry_fill_recorded_at"]) <= times[-1]
+    assert data["inputs_used"]["financial_admission_snapshot_key"] == receipt["decision_key"]
+    assert data["inputs_used"]["financial_admission_snapshot_sha256"] == raw[0][1]
+    assert data["inputs_used"]["entry_signal_inputs"] == receipt["inputs_used"]["entry_signal_inputs"]
+    assert decision_funnel([json.loads(row[0]) for row in raw])["stages"]["OPENED"] == 1
     assert data["runtime"]["git_sha"] is None
     assert len(data["runtime"]["configuration_fingerprint"]) == 64
     row = decision_funnel([data])["lineage"][0]

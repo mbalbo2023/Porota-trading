@@ -243,7 +243,10 @@ def test_aud19_direct_future_fill_captures_evidence_atomically_and_failure_rolls
         assert hashlib.sha256(row[0].encode()).hexdigest()==row[1]
         evidence=json.loads(row[0])
         assert evidence['decision']['paper_id']==key
-        assert evidence['decision_at']==OPEN
+        assert evidence['admission_at']==OPEN
+        assert evidence['capture_phase']=='ATOMIC_PAPER_ADMISSION'
+        assert evidence['entry_fill_committed_at'] is None
+        assert evidence['entry_fill_recorded_at']==evidence['captured_at']==OPEN
         assert evidence['inputs_used']['signal_contract_status']=='DIRECT_CANDIDATE_SIGNAL_VECTOR_UNAVAILABLE'
         assert evidence['inputs_used']['financial_commit']['lifecycle_id']==key
 

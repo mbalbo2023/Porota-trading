@@ -204,6 +204,9 @@ def _native_payload(row, at, *, require_signal=True):
     payload = json.loads(raw)
     if payload.get("decision_key") != row.get("decision_key"):
         raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+    from rc6_performance.common import decision_snapshot_phase
+    if decision_snapshot_phase(payload) == "ATOMIC_PAPER_ADMISSION":
+        return payload
     runtime = payload.get("runtime") or {}
     if runtime.get("clock_mode") != "NATIVE":
         raise ValueError("NATIVE_SIGNAL_CLOCKS_REQUIRED")
@@ -577,6 +580,9 @@ def evaluate_runtime_entry_signals(database, *, as_of, previous=None, row_limit=
                 continue
             try:
                 payload = _native_payload(row, at)
+                if payload.get("capture_phase") == "ATOMIC_PAPER_ADMISSION":
+                    checkpoint["cursors"]["decision_evidence_snapshots"] = row["_rowid"]
+                    continue
                 checkpoint["native_decisions_observed"] += 1
                 strategy = str(payload["runtime"]["strategy_id"]).upper()
                 registry = checkpoint["registries"].get(strategy)

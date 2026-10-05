@@ -211,6 +211,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
     lineage = inputs_used.get("performance_lineage") or {}
     return _evidence_safe({
         "schema": DECISION_EVIDENCE_SCHEMA,
+        "capture_phase": "NATIVE_DECISION",
         "decision_key": decision_key,
         "captured_at": q.observed_at,
         "signal_at": lineage.get("signal_at"),
@@ -257,7 +258,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
         "inputs_used": inputs_used,
     })
 
-def _insert_evidence_snapshot(connection, evidence: dict) -> None:
+def _insert_evidence_snapshot(connection, evidence: dict) -> str:
     """Insert once in the caller's existing transaction; never overwrite evidence."""
     evidence_json = json.dumps(
         evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -267,6 +268,27 @@ def _insert_evidence_snapshot(connection, evidence: dict) -> None:
       VALUES(?,?,?,?,?)""",
       (evidence["decision_key"], evidence["captured_at"], DECISION_EVIDENCE_SCHEMA,
        evidence_hash, evidence_json))
+    return evidence_hash
+
+
+def _atomic_admission_snapshot(q, features, paper_id, at, recorded_at, score, *, financial_commit=None):
+    native_key = features.get("native_decision_key")
+    key = ("PAPER_ADMISSION:" + native_key if native_key else
+           ("PAPER_FUTURE_FILL:" if financial_commit is not None else "PAPER_FILL:") + paper_id)
+    evidence = _decision_evidence_payload(
+        q, key, "APPROVE", "NOT_USED", "APPROVE", "OPENED_SIMULATED",
+        "ATOMIC_PAPER_ADMISSION", paper_id, features, action="BUY", score=score, include_iol=False)
+    evidence.update(capture_phase="ATOMIC_PAPER_ADMISSION", native_decision_key=native_key,
+                    captured_at=recorded_at, admission_at=at, entry_fill_recorded_at=recorded_at,
+                    entry_fill_committed_at=None)
+    evidence["runtime"]["entry_fill_committed_at"] = None
+    if not features.get("entry_signal_inputs"):
+        evidence["inputs_used"]["signal_contract_status"] = "DIRECT_CANDIDATE_SIGNAL_VECTOR_UNAVAILABLE"
+    if financial_commit is not None:
+        evidence["inputs_used"]["financial_commit"] = dict(financial_commit)
+    from rc6_performance.common import decision_snapshot_phase
+    decision_snapshot_phase(evidence)
+    return evidence
 
 
 
@@ -643,6 +665,28 @@ class PaperStore:
         evidence = _decision_evidence_payload(
             q, decision_key, technical, ai, patrimonial, final, reason, paper_id, detail)
         with self.connect() as c:
+            admission_key = detail.get("financial_admission_snapshot_key") if isinstance(detail, dict) else None
+            if final == "OPENED_SIMULATED" and admission_key:
+                receipt = c.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots "
+                                    "WHERE decision_key=?", (admission_key,)).fetchone()
+                if (not receipt or hashlib.sha256(receipt[0].encode()).hexdigest() != receipt[1]
+                        or receipt[1] != detail.get("financial_admission_snapshot_sha256")):
+                    raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
+                frozen = json.loads(receipt[0])
+                from rc6_performance.common import decision_snapshot_phase
+                if (decision_snapshot_phase(frozen) != "ATOMIC_PAPER_ADMISSION"
+                        or frozen.get("native_decision_key") != decision_key
+                        or frozen["decision"].get("paper_id") != paper_id):
+                    raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
+                # Financial inputs and price vectors come from the receipt that
+                # committed with the fill. Only the later native stage clocks
+                # and final gate result are added after the physical COMMIT.
+                evidence["quote_used"] = frozen["quote_used"]
+                evidence["inputs_used"] = frozen["inputs_used"]
+                for field in ("performance_lineage", "reason_code", "financial_admission_snapshot_key",
+                              "financial_admission_snapshot_sha256"):
+                    if field in detail:
+                        evidence["inputs_used"][field] = _evidence_safe(detail[field])
             c.execute("""INSERT OR REPLACE INTO trade_gate_evaluations
               (evaluated_at,decision_key,symbol,technical_gate,ai_gate,
                patrimonial_gate,final_result,reason,paper_id,detail_json)
@@ -1144,7 +1188,8 @@ class PaperBroker:
             return ""
         if not isinstance(key,str) or not key or len(key.encode("utf-8"))>1024:
             return "PAPER_DECISION_KEY_INVALID"
-        if connection.execute("SELECT 1 FROM decision_evidence_snapshots WHERE decision_key=?",(key,)).fetchone():
+        if connection.execute("SELECT 1 FROM decision_evidence_snapshots WHERE decision_key IN (?,?)",
+                              (key, "PAPER_ADMISSION:" + key)).fetchone():
             return "PAPER_DECISION_KEY_ALREADY_COMMITTED"
         return ""
 
@@ -1502,15 +1547,11 @@ class PaperBroker:
             return error
 
         def commit_evidence(connection, result):
-            key=features.get("native_decision_key") or "PAPER_FUTURE_FILL:"+lifecycle_id
-            evidence=_decision_evidence_payload(q,key,"APPROVE","NOT_USED","APPROVE",
-                "OPENED_SIMULATED","ATOMIC_FUTURE_PAPER_ADMISSION",lifecycle_id,features,
-                action="BUY",score=score,include_iol=False)
-            evidence.update(captured_at=at,decision_at=at,intent_at=at,entry_fill_committed_at=at)
-            if not features.get("entry_signal_inputs"):
-                evidence["inputs_used"]["signal_contract_status"]="DIRECT_CANDIDATE_SIGNAL_VECTOR_UNAVAILABLE"
-            evidence["inputs_used"]["financial_commit"]=dict(result)
-            _insert_evidence_snapshot(connection,evidence)
+            evidence = _atomic_admission_snapshot(q, features, lifecycle_id, at,
+                self.execution_time(q), score, financial_commit=result)
+            sha = _insert_evidence_snapshot(connection, evidence)
+            features.update(financial_admission_snapshot_key=evidence["decision_key"],
+                            financial_admission_snapshot_sha256=sha)
 
         try:
             result = self.family_paper.open_future(
@@ -2097,15 +2138,10 @@ class PaperBroker:
                       (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
             spot_liquidity.record(c,fill.lastrowid,q)
-            evidence_key = features.get("native_decision_key") or "PAPER_FILL:" + paper_id
-            evidence = _decision_evidence_payload(
-                q, evidence_key, "APPROVE", "NOT_USED", "APPROVE",
-                "OPENED_SIMULATED", "ATOMIC_PAPER_ADMISSION", paper_id, features,
-                action="BUY", score=score, include_iol=False)
-            evidence.update(captured_at=at, decision_at=at, intent_at=at, entry_fill_committed_at=at)
-            if not features.get("entry_signal_inputs"):
-                evidence["inputs_used"]["signal_contract_status"]="DIRECT_CANDIDATE_SIGNAL_VECTOR_UNAVAILABLE"
-            _insert_evidence_snapshot(c, evidence)
+            evidence = _atomic_admission_snapshot(q, features, paper_id, at, self.execution_time(q), score)
+            sha = _insert_evidence_snapshot(c, evidence)
+            features.update(financial_admission_snapshot_key=evidence["decision_key"],
+                            financial_admission_snapshot_sha256=sha)
             c.execute("INSERT INTO paper_learning_samples VALUES(?,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, STRATEGY_VERSION, q.observed_at,
                        json.dumps(features, ensure_ascii=False, default=str), None, None, None, None))

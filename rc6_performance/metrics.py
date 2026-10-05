@@ -148,6 +148,9 @@ def decision_funnel(snapshots):
     seen, stages, reasons, identities, gaps = set(), defaultdict(int), defaultdict(int), set(), defaultdict(int)
     lineage = []
     for snapshot in snapshots:
+        from .common import decision_snapshot_phase
+        if decision_snapshot_phase(snapshot) == "ATOMIC_PAPER_ADMISSION":
+            continue
         key = snapshot["decision_key"]
         if key in seen:
             continue
