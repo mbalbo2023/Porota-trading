@@ -104,6 +104,8 @@ jobs:
           BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
           IMAGE_UNPACKED_BYTES="$(python -c 'import json; print(int(json.load(open("/tmp/porota-frozen-candidate.json"))["image_size_bytes"]))')"
           SCRATCH_OCCUPIED_BYTES=0
+          ARCHIVE_OCCUPIED_BYTES=0
+          LIVE_OCCUPIED_BYTES=0
           python scripts/rc6_sqlite_scratch_guard.py --emit-probe --repo-root . \
             > /tmp/porota-candidate-sqlite-scratch-probe.py
           compute_required() {
@@ -112,7 +114,9 @@ jobs:
               --image-tar-bytes "$IMAGE_TAR_BYTES" \
               --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
               --bundle-bytes "$BUNDLE_BYTES" \
-              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES")"
+              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES" \
+              --archive-occupied-bytes "$ARCHIVE_OCCUPIED_BYTES" \
+              --live-occupied-bytes "$LIVE_OCCUPIED_BYTES")"
             echo "$REQUIRED_LINE"
             REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
             [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
@@ -138,8 +142,13 @@ jobs:
             SCRATCH_RC=$?
             set -e
             echo "$SCRATCH_OUTPUT"
-            SCRATCH_OCCUPIED_BYTES="$(python -c 'import json,sys; p=json.load(sys.stdin); n=p["occupied_bytes"]; assert p["schema"]=="rc6.sqlite-scratch-admission.v1" and p["status"] in ("GREEN","RED") and type(n) is int and 0<=n<536870912; print(n)' <<< "$SCRATCH_OUTPUT")"
-            SCRATCH_HISTORY_PATH="$(python -c 'import json,re,sys; p=json.load(sys.stdin); v=p["history_container"]; assert re.fullmatch(r"/app/data/[A-Za-z0-9_./-]+",v) and ".." not in v.split("/"); print(v)' <<< "$SCRATCH_OUTPUT")"
+            NAMESPACE_OUTPUT="$(python scripts/rc6_sqlite_scratch_guard.py --validate-report <<< "$SCRATCH_OUTPUT")"
+            mapfile -t NAMESPACE_METRICS <<< "$NAMESPACE_OUTPUT"
+            test "${#NAMESPACE_METRICS[@]}" -eq 4
+            SCRATCH_OCCUPIED_BYTES="${NAMESPACE_METRICS[0]}"
+            ARCHIVE_OCCUPIED_BYTES="${NAMESPACE_METRICS[1]}"
+            LIVE_OCCUPIED_BYTES="${NAMESPACE_METRICS[2]}"
+            SCRATCH_HISTORY_PATH="${NAMESPACE_METRICS[3]}"
             [[ "$SCRATCH_RC" == 0 || "$SCRATCH_RC" == 42 ]]
             compute_required
           }
@@ -152,6 +161,8 @@ jobs:
               --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
               --bundle-bytes "$BUNDLE_BYTES" \
               --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES" \
+              --archive-occupied-bytes "$ARCHIVE_OCCUPIED_BYTES" \
+              --live-occupied-bytes "$LIVE_OCCUPIED_BYTES" \
               --available-bytes "$available" \
               --inode-free-percent "$inode_free" \
               --json

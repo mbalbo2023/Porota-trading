@@ -23,11 +23,20 @@ def required_pretransfer_free(
     bundle_bytes: int,
     policy: dict,
     scratch_occupied_bytes: int = 0,
+    archive_occupied_bytes: int = 0,
+    live_occupied_bytes: int = 0,
 ) -> int:
-    from scripts.rc6_sqlite_scratch_guard import validate_policy
+    from scripts.rc6_sqlite_scratch_guard import validate_policy, validate_shadow_policy
     scratch = validate_policy(policy)
+    shadow = validate_shadow_policy(policy)
     if type(scratch_occupied_bytes) is not int or not 0 <= scratch_occupied_bytes < scratch["max_bytes"]:
         raise ValueError("RC6_SCRATCH_RESIDUE_BYTE_LIMIT")
+    for value, maximum in ((archive_occupied_bytes, shadow["private_archive"]["max_bytes"]),
+                           (live_occupied_bytes, shadow["private_live_evidence"]["max_bytes"])):
+        if type(value) is not int or not 0 <= value < maximum:
+            raise ValueError("RC6_SHADOW_RESIDUE_BYTE_LIMIT")
+    if any(type(value) is not int or value < 0 for value in (image_tar_bytes, image_unpacked_bytes, bundle_bytes)):
+        raise ValueError("RC6_ARTIFACT_SIZE_INVALID")
     deploy = policy["deploy"]["pretransfer_formula"]
     disk = policy["disk"]
     calculated = (
@@ -35,6 +44,8 @@ def required_pretransfer_free(
         + int(image_unpacked_bytes) * int(deploy["image_unpacked_multiplier"])
         + int(bundle_bytes) * int(deploy["bundle_multiplier"])
         + scratch["max_bytes"] - scratch_occupied_bytes
+        + max(0, shadow["private_archive"]["max_bytes"] - archive_occupied_bytes)
+        + max(0, shadow["private_live_evidence"]["max_bytes"] - live_occupied_bytes)
         + max(int(deploy["fixed_headroom_bytes"]), scratch["reserve_bytes"])
     )
     return max(int(disk["deploy_pretransfer_min_free_bytes"]), calculated)
@@ -68,6 +79,8 @@ def main() -> int:
     ap.add_argument("--image-unpacked-bytes", type=int, required=True)
     ap.add_argument("--bundle-bytes", type=int, required=True)
     ap.add_argument("--scratch-occupied-bytes", type=int, default=0)
+    ap.add_argument("--archive-occupied-bytes", type=int, default=0)
+    ap.add_argument("--live-occupied-bytes", type=int, default=0)
     ap.add_argument("--available-bytes", type=int)
     ap.add_argument("--inode-free-percent", type=float)
     ap.add_argument("--json", action="store_true")
@@ -77,6 +90,7 @@ def main() -> int:
     required = required_pretransfer_free(
         args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy,
         args.scratch_occupied_bytes,
+        args.archive_occupied_bytes, args.live_occupied_bytes,
     )
 
     if args.available_bytes is None or args.inode_free_percent is None:

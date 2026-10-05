@@ -19,7 +19,7 @@
       "bundle_multiplier": 2,
       "fixed_headroom_bytes": 2147483648
     },
-    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + two bundles + private SQLite scratch growth (512 MiB minus verified resident scratch) + one shared 2 GiB residual reserve. DATA storage independently admits source MAIN/WAL/reconstructed SHM, the total scratch quota and free inodes. On space RED, safe cleanup runs before frozen-artifact transfer and both gates are re-evaluated."
+    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + two bundles + private SQLite scratch growth (512 MiB minus identified residence) + live SHADOW growth (128 MiB minus bounded verified residence) + private archive growth (512 MiB minus bounded verified residence) + one shared 2 GiB residual reserve per filesystem. DATA storage independently admits source MAIN/WAL/reconstructed SHM, all three derived growth budgets and free inodes. Canonical derived roots must share the DATA filesystem. Archive/live inventory proves metadata and custody only; CRC, logical semantics, recovery and the nine-hour horizon remain producer/reader gates. On space RED, safe cleanup runs before frozen-artifact transfer and both gates are re-evaluated."
   },
   "tmp": {
     "root": "/tmp",
@@ -76,6 +76,27 @@
       "mode": "0700",
       "lease": "NONBLOCKING_SINGLE_READER",
       "crash_residue": "PRESERVE_IDENTIFIED_COUNT_TOWARD_QUOTA"
+    }
+  },
+  "shadow": {
+    "private_live_evidence": {
+      "root_suffix": "dynamic-shadow",
+      "max_bytes": 134217728,
+      "maximum_files": 8192,
+      "owner_uid": 1000,
+      "owner_gid": 1000,
+      "mode": "0700",
+      "verification_level": "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA"
+    },
+    "private_archive": {
+      "root_suffix": "dynamic-shadow-archive",
+      "max_bytes": 536870912,
+      "maximum_files": 32768,
+      "owner_uid": 1000,
+      "owner_gid": 1000,
+      "mode": "0700",
+      "verification_level": "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA",
+      "recovery": "PRODUCER_ONLY_PRESERVE_RESIDUE"
     }
   },
   "safety": {

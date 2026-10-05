@@ -142,6 +142,10 @@ CAPACITY_ENV_KEYS = (
     "POROTA_CAPACITY_APPROVAL_PATH", "POROTA_CAPACITY_SHADOW_PATH",
 )
 CAPACITY_INPUT_ROOTS = (PurePosixPath("/app/ops/policy"), PurePosixPath("/app/data/rc6-capacity"))
+SHADOW_ARCHIVE_ENV_KEYS = (
+    "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES",
+)
+SHADOW_ARCHIVE_MAX_BYTES = 512 * 1024**2
 
 
 def dynamic_capacity_settings(env=None):
@@ -212,6 +216,24 @@ def sqlite_scratch_settings(env=None):
     return sqlite_scratch_runtime_settings(root, env_file() if env is None else env)
 
 
+def shadow_archive_settings(env=None):
+    """A canonical private archive, shared by writer and read-only consumers."""
+    from cg_paper_workspace import artifact_root
+    source = env_file() if env is None else env
+    root = artifact_root(CONTAINER_DB) / "dynamic-shadow-archive"
+    values = dict(zip(SHADOW_ARCHIVE_ENV_KEYS, (str(root), str(SHADOW_ARCHIVE_MAX_BYTES))))
+    for key, value in values.items():
+        if key in source and source[key] != value:
+            raise ValueError("RC6_SHADOW_ARCHIVE_CONFIGURATION_IMMUTABLE:" + key)
+    host = DATA / root.relative_to("/app/data")
+    for part in (host, *host.parents):
+        if part.is_symlink():
+            raise ValueError("RC6_SHADOW_ARCHIVE_PATH_ALIAS")
+        if part == DATA:
+            break
+    return values
+
+
 def history_settings(env=None):
     source = env_file() if env is None else env
     selected = history_container_path(source)
@@ -278,6 +300,48 @@ def prepare_sqlite_scratch_root(env=None):
         timeout=20, check=False)
     if result.returncode != 0:
         raise ValueError("RC6_SCRATCH_NATIVE_ADMISSION_FAILED")
+    return DATA / relative
+
+
+def prepare_shadow_archive_root(env=None):
+    """Prepare a new private root; the combined native probe admits it next."""
+    settings = shadow_archive_settings(env)
+    relative = Path(settings[SHADOW_ARCHIVE_ENV_KEYS[0]]).relative_to("/app/data")
+    if DATA.resolve() != DATA or DATA.is_symlink():
+        raise ValueError("RC6_SHADOW_ARCHIVE_PATH_ALIAS")
+    sqlite_scratch_disk_backed_type(DATA)
+    descriptors = []
+    try:
+        descriptor = os.open(DATA, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptors.append(descriptor)
+        for index, part in enumerate(relative.parts):
+            final = index == len(relative.parts) - 1
+            mode = 0o700 if final else 0o755
+            created = False
+            try:
+                os.mkdir(part, mode, dir_fd=descriptor)
+                created = True
+            except FileExistsError:
+                pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            descriptors.append(child)
+            if created:
+                os.fchown(child, SQLITE_SCRATCH_UID, SQLITE_SCRATCH_GID)
+                os.fchmod(child, mode)
+                os.fsync(child)
+                os.fsync(descriptor)
+            info = os.fstat(child)
+            if (stat.S_IMODE(info.st_mode) & 0o002 or info.st_uid not in {0, SQLITE_SCRATCH_UID}
+                    or (final and (info.st_uid != SQLITE_SCRATCH_UID
+                        or info.st_gid != SQLITE_SCRATCH_GID
+                        or stat.S_IMODE(info.st_mode) != 0o700))):
+                raise ValueError("RC6_SHADOW_ARCHIVE_ROOT_CUSTODY_REQUIRED")
+            descriptor = child
+    except OSError:
+        raise ValueError("RC6_SHADOW_ARCHIVE_ROOT_CUSTODY_REQUIRED") from None
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
     return DATA / relative
 
 
@@ -441,6 +505,7 @@ def dashboard_env(mode, environ=None):
                 "DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS,
                 *CAPACITY_ENV_KEYS, "POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT",
                 "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA", *SQLITE_SCRATCH_ENV_KEYS,
+                *SHADOW_ARCHIVE_ENV_KEYS,
                 "HIST_DB_PATH", "POROTA_PRETRANSFER_HIST_DB_PATH"}):
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
@@ -450,6 +515,7 @@ def dashboard_env(mode, environ=None):
     safe += [f"{key}={value}" for key, value in paper_settings(settings).items()]
     safe += [f"{key}={value}" for key, value in dynamic_capacity_settings(settings).items()]
     safe += [f"{key}={value}" for key, value in sqlite_scratch_settings(settings).items()]
+    safe += [f"{key}={value}" for key, value in shadow_archive_settings(settings).items()]
     safe += [f"{key}={value}" for key, value in history_settings(settings).items()]
     safe += [f"{key}={value}" for key, value in _runtime_build_identity().items()]
     return _write_private_env(target, safe)
@@ -466,6 +532,7 @@ def observer_runtime_env(environ=None):
     values.update(paper_settings(env))
     values.update(dynamic_capacity_settings(env))
     values.update(sqlite_scratch_settings(env))
+    values.update(shadow_archive_settings(env))
     values.update(history_settings(env))
     values.update(_runtime_build_identity())
     # Contract Evidence recolecta PPI read-only para todas las familias auditables.
@@ -543,6 +610,7 @@ def start_dashboard(mode, environ=None):
     settings = env_file() if environ is None else environ
     env_path = dashboard_env(mode, settings)
     input_mounts = capacity_input_mounts(settings)
+    prepare_shadow_archive_root(settings)
     prepare_sqlite_scratch_root(settings)
     # The dashboard image is immutable, but the deployment host is the canonical
     # source staged by the transactional workflow. Mount only the RC6 dashboard
@@ -576,6 +644,7 @@ def simulation():
     dashboard_env("PRODUCTION_PAPER", settings)
     input_mounts = capacity_input_mounts(settings)
     verify_dashboard_source_identity(DASHBOARD_RUNTIME_SOURCES)
+    prepare_shadow_archive_root(settings)
     prepare_sqlite_scratch_root(settings)
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():

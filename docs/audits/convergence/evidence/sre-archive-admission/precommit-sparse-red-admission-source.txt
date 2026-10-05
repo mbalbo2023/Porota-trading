@@ -174,7 +174,7 @@ def disk_backed_type(path):
 def _canonical(path):
     value = Path(path)
     if (not value.is_absolute() or value != value.absolute() or ".." in value.parts
-            or str(value) != str(path)):
+            or str(value) != str(path) or value.resolve() != value):
         raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS")
     for member in (value, *value.parents):
         try:
@@ -183,11 +183,6 @@ def _canonical(path):
             continue
         if stat.S_ISLNK(info.st_mode):
             raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS")
-    try:
-        if value.resolve() != value:
-            raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS")
-    except (OSError, RuntimeError):
-        raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS") from None
     return value
 
 
@@ -238,9 +233,7 @@ def _namespace(root, name, *, owner_uid, owner_gid, device):
     if not root.exists():
         return {"state": "NOT_PRESENT", "occupied_bytes": 0,
                 "growth_remaining_bytes": maximum, "max_bytes": maximum,
-                "verification_level": "NAMESPACE_NOT_PRESENT_FULL_GROWTH_RESERVED",
-                "resident_deduction_bytes": 0,
-                "residence_verification": "CONSERVATIVE_NO_ALLOCATION_DISCOUNT"}
+                "verification_level": "NAMESPACE_NOT_PRESENT_FULL_GROWTH_RESERVED"}
     info = root.lstat()
     if info.st_gid != owner_gid or info.st_dev != device:
         raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_MOUNT_OR_GROUP_DRIFT")
@@ -257,11 +250,7 @@ def _namespace(root, name, *, owner_uid, owner_gid, device):
             or observed.get("growth_remaining_bytes") != maximum - observed["occupied_bytes"]
             or observed.get("state") not in {"WITHIN_QUOTA", "RECOVERY_REQUIRED"}):
         raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_HELPER_DRIFT")
-    if "allocated_bytes" in observed and (type(observed["allocated_bytes"]) is not int or observed["allocated_bytes"] < 0):
-        raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_HELPER_DRIFT")
-    return {**observed, "resident_deduction_bytes": min(observed["occupied_bytes"], observed.get("allocated_bytes", 0)),
-            "residence_verification": "BOUNDED_ALLOCATION_METADATA" if "allocated_bytes" in observed
-                                      else "CONSERVATIVE_NO_ALLOCATION_DISCOUNT"}
+    return observed
 
 
 def probe(database, data_root, *, owner_uid=OWNER_UID, owner_gid=OWNER_GID,
@@ -332,9 +321,7 @@ def probe(database, data_root, *, owner_uid=OWNER_UID, owner_gid=OWNER_GID,
     archive = _namespace(archive_root, "archive", owner_uid=owner_uid, owner_gid=owner_gid, device=device)
     live = _namespace(live_root, "live", owner_uid=owner_uid, owner_gid=owner_gid, device=device)
     growth = MAX_BYTES - occupied
-    archive_growth = ARCHIVE_MAX_BYTES - archive["resident_deduction_bytes"]
-    live_growth = LIVE_MAX_BYTES - live["resident_deduction_bytes"]
-    derived_growth = growth + archive_growth + live_growth
+    derived_growth = growth + archive["growth_remaining_bytes"] + live["growth_remaining_bytes"]
     inode_percent = 100.0 * free_inodes / total_inodes if total_inodes > 0 else 0.0
     safe = (free >= RESERVE_BYTES + derived_growth and inode_percent >= MIN_FREE_INODE_PERCENT
             and archive["state"] != "RECOVERY_REQUIRED" and live["state"] != "RECOVERY_REQUIRED")
@@ -346,11 +333,11 @@ def probe(database, data_root, *, owner_uid=OWNER_UID, owner_gid=OWNER_GID,
             "capture_peak_bytes": peaks, "occupied_bytes": occupied,
             "scratch_growth_bytes": growth, "max_bytes": MAX_BYTES,
             "archive_root": str(archive_root), "archive_namespace": archive,
-            "archive_occupied_bytes": archive["resident_deduction_bytes"],
-            "archive_growth_bytes": archive_growth,
+            "archive_occupied_bytes": archive["occupied_bytes"],
+            "archive_growth_bytes": archive["growth_remaining_bytes"],
             "live_root": str(live_root), "live_namespace": live,
-            "live_occupied_bytes": live["resident_deduction_bytes"],
-            "live_growth_bytes": live_growth,
+            "live_occupied_bytes": live["occupied_bytes"],
+            "live_growth_bytes": live["growth_remaining_bytes"],
             "derived_growth_bytes": derived_growth,
             "shared_filesystem_device": device,
             "candidate_component_sha256": component_hashes(),
@@ -411,13 +398,8 @@ def report_metrics(report):
                     or observation.get("verification_level") != level
                     or (present and observation.get("schema") != "rc6.shadow-" + name + "-namespace-admission.v1")
                     or (not present and value != 0)
-                    or not 0 <= observation["occupied_bytes"] < maximum
-                    or observation.get("max_bytes") != maximum
-                    or ("allocated_bytes" in observation and (type(observation["allocated_bytes"]) is not int or observation["allocated_bytes"] < 0))
-                    or observation.get("resident_deduction_bytes") != value
-                    or value != min(observation["occupied_bytes"], observation.get("allocated_bytes", 0))
-                    or observation.get("residence_verification") != ("BOUNDED_ALLOCATION_METADATA" if "allocated_bytes" in observation else "CONSERVATIVE_NO_ALLOCATION_DISCOUNT")
-                    or observation.get("growth_remaining_bytes") != maximum - observation["occupied_bytes"]
+                    or observation.get("occupied_bytes") != value or observation.get("max_bytes") != maximum
+                    or observation.get("growth_remaining_bytes") != maximum - value
                     or observation.get("state") not in {"WITHIN_QUOTA", "NOT_PRESENT", "RECOVERY_REQUIRED"}
                     or report.get(prefix + "growth_bytes") != maximum - value
                     or (report["status"] == "GREEN" and observation["state"] == "RECOVERY_REQUIRED")):

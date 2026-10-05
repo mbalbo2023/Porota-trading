@@ -239,7 +239,7 @@ def test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headr
     validate_policy(policy)
     resident = 86_016
     required = required_pretransfer_free(100, 1000, 10, policy, resident)
-    assert required == 100 + 1000 + 2 * 10 + MAX_BYTES - resident + RESERVE_BYTES
+    assert required == 100 + 1000 + 2 * 10 + MAX_BYTES - resident + (512 + 128) * 1024**2 + RESERVE_BYTES
     for value in (True, -1, MAX_BYTES, MAX_BYTES + 1):
         with pytest.raises(ValueError, match="RESIDUE_BYTE_LIMIT"):
             required_pretransfer_free(100, 1000, 10, policy, value)
@@ -336,6 +336,9 @@ def test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_hi
     assert "--emit-probe --repo-root ." in block
     assert "sudo -n timeout 20 python3 -" in block
     assert "--scratch-occupied-bytes" in block
+    assert "--archive-occupied-bytes" in block
+    assert "--live-occupied-bytes" in block
+    assert "--validate-report" in block
     assert "RC6_SQLITE_SCRATCH_PRETRANSFER_GATE=GREEN" in block
     assert 'test "$SCRATCH_RC" -eq 0' in block
     assert 'test "${RC6_SQLITE_SCRATCH_PREFLIGHT_GREEN:-0}" = "1"' in text[transfer:]

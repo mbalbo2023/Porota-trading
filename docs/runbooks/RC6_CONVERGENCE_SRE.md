@@ -178,8 +178,40 @@ trust boundary, not an external authentication or WORM claim.
 is aligned. Required free bytes before first transfer are:
 
 ```text
-compressed image tar + exact Docker image size + 2 * bundle size + 2 GiB
+compressed image tar + exact Docker image size + 2 * bundle size
++ (512 MiB - identified resident SQLite scratch)
++ max(0, 128 MiB - bounded verified resident live SHADOW)
++ max(0, 512 MiB - bounded verified resident private archive)
++ one shared 2 GiB residual reserve per filesystem
 ```
+
+The launcher shares canonical archive root
+`artifact_root(PRIMARY)/dynamic-shadow-archive` and cap 512 MiB between observer,
+dashboard and the operational worker factory. It prepares only new directories
+as bot1000, mode 0700, before the combined native admission and before stopping
+either container. Existing aliases, wrong ownership/modes and unknown namespaces
+are rejected without repair or deletion. Recognized archive/live interruptions
+are counted and close admission until their producer recovers them. Missing
+derived roots reserve their full future growth before transfer.
+
+Candidate-native source is embedded verbatim for the remote read-only probe;
+it requires no old host checkout and opens no source with SQLite. Scratch, live
+and archive must share the canonical DATA filesystem. The separate DATA gate
+checks all derived growth plus one 2 GiB reserve and the 10% inode floor; the
+deployment filesystem gate additionally accounts for image and bundle bytes.
+When DATA and deployment share a filesystem these are comparisons against the
+same available bytes, never an addition of two reserve terms. A different DATA
+filesystem independently retains its own reserve.
+
+Archive/live inventory verifies bounded namespace and custody metadata only.
+For disk admission, resident discount is the smaller of logical quota usage and
+verified allocated block bytes, so sparse logical bytes cannot reduce physical
+growth reserve. If allocation metadata is unavailable, discount is zero and the
+full future quota is reserved. Logical usage and block allocation remain separate
+fields in the receipt.
+It does not prove CRC, receipt validity, logical semantics, recovery, external
+authentication or the contracted nine-hour retention horizon. A canonical
+configured destination alone cannot close that retention gate.
 
 The 2 GiB term is residual reserve. There is no reinstated fixed 6 GiB start
 floor. Admission also requires the policy inode floor (10%). On RED, existing
