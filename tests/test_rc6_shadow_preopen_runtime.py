@@ -526,3 +526,41 @@ def test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserv
     assert inputs["quality"]["unavailable_sources"] == ["history:TIME_BUDGET_EXHAUSTED"]
     assert inputs["quality"]["source_snapshot_limits"]["processing_seconds"] == 1.9
     assert inputs["quality"]["source_snapshot_limits"]["cleanup_reserve_seconds"] == .1
+
+
+def test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source(tmp_path, monkeypatch, record_property):
+    from tests.test_rc6_history_convergence import Store
+    from tests.test_rc6_history_snapshot_copy import inventory
+    source = _make_database(tmp_path/"trading.db", catalogue=[A])
+    folder = tmp_path/"historical-source"
+    folder.mkdir()
+    historical = folder/"history.sqlite"
+    for unit,known in (("SHARES","2026-10-01T16:00:00Z"),("UNKNOWN","2026-10-01T17:00:00Z")):
+        append_many(Store(historical),[Candle("A","ACCIONES","BYMA","A-24HS","2026-09-30",
+            100,101,99,100,10,"PPI_API",False,known,{"volume_unit":unit},currency="ARS",
+            volume_kind="QUANTITY",provider_at="2026-09-30T20:00:00Z")])
+    before = inventory(folder)
+    original = sqlite3.connect
+    def guarded(path,*args,**kwargs):
+        assert str(historical) not in str(path), "SQLite must never open the historical source"
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(sqlite3,"connect",guarded)
+    old = preopen.build_preopen_inputs(source,historical,as_of=AS_OF,session_open=OPEN,cutoff="2026-10-01T16:30:00Z")
+    current = preopen.build_preopen_inputs(source,historical,as_of=AS_OF,session_open=OPEN,cutoff="2026-10-01T17:30:00Z")
+    assert len(old["history"])==len(current["history"])==1
+    assert old["history"][0]["volume_unit"]=="SHARES"
+    assert current["history"][0]["volume_unit"]=="UNKNOWN"
+    assert current["history"][0]["version_known_at"]=="2026-10-01T17:00:00.000000+00:00"
+    old_rank = rank_tradeability([A],old["history"],[],cutoff="2026-10-01T16:30:00Z",sessions=old["sessions"])
+    new_rank = rank_tradeability([A],current["history"],[],cutoff="2026-10-01T17:30:00Z",sessions=current["sessions"])
+    assert old_rank["rows"][0]["components"]["median_volume"]["value"]==10
+    assert new_rank["rows"][0]["components"]["median_volume"]["value"] is None
+    assert new_rank["rows"][0]["components"]["median_volume"]["status"]=="NO_VERIFICADO"
+    assert current["quality"]["rejected_inputs"]["VOLUME_UNIT_NO_VERIFICADO"]==1
+    after = inventory(folder)
+    assert after==before
+    record_property("semantic_unit_source_before",str(before))
+    record_property("semantic_unit_source_after",str(after))
+    record_property("semantic_unit_cuts",str({"old":"2026-10-01T16:30:00Z","current":"2026-10-01T17:30:00Z",
+        "old_median_volume":old_rank["rows"][0]["components"]["median_volume"],
+        "new_median_volume":new_rank["rows"][0]["components"]["median_volume"]}))

@@ -38,6 +38,14 @@ partial OHLC and inconsistent OHLC fail before row writes. BYMA holidays are
 audited for 2026; other years carry HOLIDAYS_NO_VERIFICADO. Legacy writes share
 the numeric/session gate but remain advisory when their identity is missing.
 
+Provider metadata is part of revision identity: unit, multiplier, turnover,
+currency provenance or publication changes/removals create a causal version
+even with identical OHLCV. Only engine history_quality,
+session_calendar_status and copy_migration_currency annotations are excluded.
+Existing native payload hashes remain immutable; compatibility/replay compares
+the actual stored payload when an earlier hash lacks metadata coverage. It
+never supplies a missing old unit or moves first_known_at.
+
 `ingest_ppi_payload(..., currency=..., history_store=...)` returns its valid and
 rejected counts after the universal sink gate. PPI close salvage is restricted
 to OHLC/volume defects; it cannot rescue identity, date, clock or conflicting
@@ -85,9 +93,10 @@ below refer to `tests/test_rc6_history_convergence.py` except U24.
 `history_convergence/owned_exact_node_matrix.json` gives each owned finding's
 RCA, final fix paths, exact collected pytest node IDs (including each parameter
 case), PASS receipts and external limits. It contains thirteen assigned
-findings, four separately declared autocorrections and the three
-restored owned scenario IDs. Its 80 distinct native guard nodes are verified
-against the 254-test receipt; they are not interchangeable with scenario or
+findings, six separately declared autocorrections and the three
+restored owned scenario IDs. Its 95 distinct native guard nodes are verified
+against the 268-test broad receipt plus one separate sampler PASS (269 distinct
+nodes); they are not interchangeable with scenario or
 finding counts. The matrix includes verified seed/current hashes for all
 twelve #344 paths from the independent UX preservation receipt. The core
 phase review's exact integration HEAD at test start was not recorded, so its
@@ -226,6 +235,44 @@ and eight actual physical crash/resume stages with the indexed writer. Its
 full source inventories remain unchanged and its quarantine/count/semantic
 digest results reproduce the prior committed dry run. The original receipt is
 retained. No production snapshot, provider request or runtime switch occurred.
+
+## Semantic metadata and resource sampler correction
+
+Independent review after the indexed/deadline correction demonstrated that a
+SHARES→UNKNOWN metadata-only correction retained the original SHARES version.
+The native RED receipt also covers quantity unit/multiplier, volume semantics,
+turnover value/currency, provider currency provenance and publication clocks.
+The digest now includes provider metadata. Its removal and A→missing→A changes
+are causal versions. Typed identity, basis, quantity-kind and provider event
+fields were already included and remain protected.
+
+`history_convergence/semantic_metadata_revision.json` records 14 exact semantic
+guards, source/test hashes and the full native receipt. The actual preopen
+reader returns volume10 SHARES before the correction's known cut; after it,
+the source row is UNKNOWN and median_volume has zero samples, value=None and
+NO_VERIFICADO. Both reads preserve source hash and every recorded stat/member.
+Compatibility tests retain old payload_hash and first_known_at on an identical
+retry, replay the original attempt after a later correction without restoring
+SHARES, and reject a changed semantic payload on the same attempt_key. Missing
+old units are never backfilled from newly supplied unit metadata.
+
+The final broad run is 268 PASS with no skips. Its large cold positive/PIT reads
+take 0.934/0.821 seconds and its actual CPU deadline negative takes 1.935
+seconds, still without partial history. The earlier indexed receipt is retained
+as a dated software control; the latest matrix points to the final receipts.
+
+The physical rerun exposed a separate sampler race: deleting private scratch
+during Path.rglob descent could stop the periodic disk thread while the old
+probe still printed a receipt. The intermediate resource receipt is explicitly
+rejected. The sampler now handles that directory race, synchronizes peak
+updates, reports unexpected failures and requires a completed thread before
+publishing costs. Its native RED→GREEN guard is a separate one-test receipt.
+The accepted rerun completes 176 samples with no errors, three copy migrations
+and eight actual crash/recovery stages. `dry_run_semantic_metadata.json` retains
+unchanged full source inventories. Its repeated new-copy content digests match
+each other; they differ from the earlier digest because full content includes
+the newly generated metadata-aware payload_hash. Existing source hashes are
+not rewritten. Production capacity remains NO_VERIFICADO.
 
 ## Copy-only migration and physical recovery
 

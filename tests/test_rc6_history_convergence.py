@@ -104,6 +104,107 @@ def test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock(tmp
     assert row['event_at']=='2026-09-30'
 
 
+@pytest.mark.parametrize('field,old,new',[
+    ('volume_unit','SHARES','UNKNOWN'),
+    ('quantity_unit','SHARES','UNKNOWN'),
+    ('quantity_multiplier',1,100),
+    ('volume_semantics','CUMULATIVE','INTERVAL'),
+    ('turnover_currency','ARS','UNKNOWN'),
+    ('turnover',100000,200000),
+    ('provider_currency_status','EXPLICIT','REQUESTED_IDENTITY_ONLY'),
+    ('published_at','2026-10-01T16:00:00Z','2026-10-01T17:00:00Z'),
+])
+def test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC(tmp_path,field,old,new):
+    s=Store(tmp_path/'history.sqlite')
+    first=history.append_candle(s,candle(metadata={field:old}))
+    changed=history.append_candle(s,candle(metadata={field:new},observed_at='2026-10-01T17:00:00Z'))
+    assert changed['version_appended'] and changed['version_id']!=first['version_id']
+    assert len(table(s,'history_versions_v2'))==2
+    assert json.loads(exact_read(s,cut='2026-10-01T16:30:00Z')[0]['metadata_json'])[field]==old
+    assert json.loads(exact_read(s,cut='2026-10-01T17:30:00Z')[0]['metadata_json'])[field]==new
+
+
+def test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks(tmp_path):
+    s=Store(tmp_path/'history.sqlite')
+    for metadata,known in (({'volume_unit':'SHARES'},'16'),({},'17'),({'volume_unit':'SHARES'},'18')):
+        history.append_candle(s,candle(metadata=metadata,observed_at=f'2026-10-01T{known}:00:00Z'))
+    assert len(table(s,'history_versions_v2'))==3
+    assert 'volume_unit' not in json.loads(exact_read(s,cut='2026-10-01T17:30:00Z')[0]['metadata_json'])
+    assert json.loads(exact_read(s,cut='2026-10-01T18:30:00Z')[0]['metadata_json'])['volume_unit']=='SHARES'
+
+
+def test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata(tmp_path):
+    s=Store(tmp_path/'history.sqlite')
+    history.append_candle(s,candle(volume_kind='QUANTITY'))
+    result=history.append_candle(s,candle(volume_kind='UNKNOWN',observed_at='2026-10-01T17:00:00Z'))
+    assert result['version_appended'] and len(table(s,'history_versions_v2'))==2
+    assert exact_read(s,cut='2026-10-01T16:30:00Z')[0]['volume_kind']=='QUANTITY'
+    current=exact_read(s,cut='2026-10-01T17:30:00Z')[0]
+    assert current['volume_kind']=='UNKNOWN'
+    assert 'volume_unit' not in json.loads(current['metadata_json'])
+
+
+def test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known(tmp_path):
+    s=Store(tmp_path/'history.sqlite')
+    value=candle(metadata={'volume_unit':'SHARES','copy_migration_currency':{'legacy_version_id':7}})
+    first=history.append_candle(s,value)
+    retry=history.append_candle(s,replace(value,observed_at='2026-10-01T17:00:00Z',metadata={
+        'volume_unit':'SHARES','copy_migration_currency':{'legacy_version_id':999},
+        'history_quality':'IGNORED_INPUT_ANNOTATION','session_calendar_status':'IGNORED_INPUT_ANNOTATION'}))
+    assert not retry['version_appended'] and retry['version_id']==first['version_id']
+    assert len(table(s,'history_versions_v2'))==1
+    row=exact_read(s)[0]
+    assert row['version_known_at']==history.utc(value.observed_at)
+    assert json.loads(row['metadata_json'])['copy_migration_currency']=={'legacy_version_id':7}
+
+
+def test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units(tmp_path):
+    from hashlib import sha256
+    s=Store(tmp_path/'history.sqlite');value=candle(metadata={'volume_unit':'SHARES'})
+    first=history.append_many(s,[value],attempt_key='original-unit-attempt')
+    normalized=value.normalized()
+    body={f:getattr(normalized,f) for f in (*history.SERIES,'open','high','low','close','volume','volume_kind','source','adjusted','provider_at')}
+    body.update({f:(normalized.metadata or {}).get(f) for f in ('adjustment_factor','corporate_actions')})
+    old_hash=sha256(history._canonical_json(body).encode()).hexdigest()
+    with s.connect() as connection:
+        connection.execute('UPDATE history_versions_v2 SET payload_hash=?',(old_hash,))
+        connection.execute('UPDATE history_batch_rows_v2 SET payload_hash=?',(old_hash,))
+    retry=history.append_candle(s,replace(value,observed_at='2026-10-01T16:30:00Z'))
+    assert not retry['version_appended'] and retry['version_id']==first['row_results'][0]['version_id']
+    changed=history.append_candle(s,replace(value,metadata={'volume_unit':'UNKNOWN'},observed_at='2026-10-01T17:00:00Z'))
+    assert changed['version_appended']
+    replay=history.append_many(s,[replace(value,observed_at='2026-10-01T18:00:00Z')],attempt_key='original-unit-attempt')
+    assert replay['replayed_committed_attempt'] and not replay['versions_appended']
+    assert len(table(s,'history_versions_v2'))==2
+    assert json.loads(exact_read(s)[0]['metadata_json'])['volume_unit']=='UNKNOWN'
+    with pytest.raises(ValueError,match='HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT'):
+        history.append_many(s,[replace(value,metadata={'volume_unit':'UNKNOWN'},observed_at='2026-10-01T19:00:00Z')],attempt_key='original-unit-attempt')
+    versions=table(s,'history_versions_v2')
+    assert versions[0]['payload_hash']==old_hash
+    assert versions[0]['version_known_at']==history.utc(value.observed_at)
+
+
+def test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload(tmp_path):
+    from hashlib import sha256
+    s=Store(tmp_path/'history.sqlite');value=candle()
+    history.append_many(s,[value],attempt_key='unknown-unit-original')
+    normalized=value.normalized()
+    body={f:getattr(normalized,f) for f in (*history.SERIES,'open','high','low','close','volume','volume_kind','source','adjusted','provider_at')}
+    body.update(adjustment_factor=None,corporate_actions=None)
+    old_hash=sha256(history._canonical_json(body).encode()).hexdigest()
+    with s.connect() as connection:
+        connection.execute('UPDATE history_versions_v2 SET payload_hash=?',(old_hash,))
+        connection.execute('UPDATE history_batch_rows_v2 SET payload_hash=?',(old_hash,))
+    supplied=replace(value,metadata={'volume_unit':'SHARES'},observed_at='2026-10-01T17:00:00Z')
+    with pytest.raises(ValueError,match='HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT'):
+        history.append_many(s,[supplied],attempt_key='unknown-unit-original')
+    result=history.append_candle(s,supplied)
+    assert result['version_appended'] and len(table(s,'history_versions_v2'))==2
+    assert 'volume_unit' not in json.loads(exact_read(s,cut='2026-10-01T16:30:00Z')[0]['metadata_json'])
+    assert json.loads(exact_read(s,cut='2026-10-01T17:30:00Z')[0]['metadata_json'])['volume_unit']=='SHARES'
+    assert table(s,'history_versions_v2')[0]['payload_hash']==old_hash
+
+
 def test_AUD09_offsets_order_absolute_microsecond_instants_and_replay_stays_causal(tmp_path):
     s=Store(tmp_path/'history.sqlite')
     history.append_candle(s,candle())

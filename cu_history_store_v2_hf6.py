@@ -232,7 +232,25 @@ def _hash(candle):
     value=candle.normalized()
     body={f:getattr(value,f) for f in (*SERIES,"open","high","low","close","volume","volume_kind","source","adjusted","provider_at")}
     body.update({f:(value.metadata or {}).get(f) for f in ("adjustment_factor","corporate_actions")})
+    # Provider metadata carries units, multipliers, turnover, publication and
+    # other evidence semantics. Changing/removing it is a real revision even
+    # when OHLCV is unchanged. Only engine annotations/provenance are omitted.
+    body['metadata']={key:item for key,item in (value.metadata or {}).items()
+                      if key not in {'session_calendar_status','history_quality','copy_migration_currency'}}
     return sha256(_canonical_json(body).encode()).hexdigest()
+
+
+def _same_payload(version,digest):
+    if version['payload_hash']==digest:return True
+    # Native hashes predating provider-metadata coverage remain immutable.
+    # Compare their actual stored values with the new payload; never infer a
+    # missing old unit or rewrite availability/digest to make a retry match.
+    metadata=json.loads(version['metadata_json'])
+    if not isinstance(metadata,dict):raise ValueError('HISTORY_METADATA_INVALID')
+    fields=(*SERIES,'open','high','low','close','volume','volume_kind','source','adjusted','provider_at')
+    stored=Candle(**{field:version[field] for field in fields},
+                  observed_at=version['version_known_at'],metadata=metadata)
+    return _hash(stored)==digest
 
 
 def _prefer(new,current):
@@ -252,7 +270,7 @@ def _append_connection(connection,value):
     digest=_hash(value)
     previous=connection.execute("SELECT * FROM history_versions_v2 WHERE "+_WHERE+
         " AND source=? ORDER BY version_known_at DESC,id DESC LIMIT 1",(*_key(value),value.source)).fetchone()
-    duplicate=previous is not None and previous["payload_hash"]==digest
+    duplicate=previous is not None and _same_payload(previous,digest)
     if previous is not None and not duplicate:
         if value.observed_at<previous["version_known_at"]: raise ValueError("HISTORY_REVISION_BACKDATED")
         if value.observed_at==previous["version_known_at"]: raise ValueError("HISTORY_REVISION_TIME_CONFLICT")
@@ -314,8 +332,14 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
             prior=connection.execute('SELECT ordinal,version_id,payload_hash FROM history_batch_rows_v2 WHERE attempt_key=? ORDER BY ordinal',
                                      (key,)).fetchall() if attempt_key is not None else []
             if prior:
-                if [row['payload_hash'] for row in prior]!=[_hash(value) for value in values]:
+                if len(prior)!=len(values):
                     raise ValueError('HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT')
+                for row,value in zip(prior,values):
+                    digest=_hash(value)
+                    if row['payload_hash']!=digest:
+                        version=connection.execute('SELECT * FROM history_versions_v2 WHERE id=?',(row['version_id'],)).fetchone()
+                        if version is None or not _same_payload(version,digest):
+                            raise ValueError('HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT')
                 checked=max(value.observed_at for value in values)
                 for row,value in zip(prior,values):
                     connection.execute('UPDATE history_checks_v2 SET last_checked_at=MAX(last_checked_at,?) WHERE version_id=?',

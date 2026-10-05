@@ -249,25 +249,38 @@ class PeakDisk:
     def __init__(self, root):
         self.root = root
         self.logical = self.allocated = 0
+        self.samples = 0
+        self.error = None
+        self.lock = threading.Lock()
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
 
     def sample(self):
         logical = allocated = 0
-        for path in self.root.rglob('*'):
-            try:
-                if path.is_file():
+        def walk_error(error):
+            if not isinstance(error,FileNotFoundError):raise error
+        # Private scratch is routinely removed between directory enumeration
+        # and descent. walk handles that race without losing retained siblings.
+        for directory,_,members in os.walk(self.root,onerror=walk_error):
+            for name in members:
+                path=Path(directory)/name
+                try:
                     info = path.stat()
                     logical += info.st_size
                     allocated += info.st_blocks * 512
-            except FileNotFoundError:
-                pass
-        self.logical = max(self.logical, logical)
-        self.allocated = max(self.allocated, allocated)
+                except FileNotFoundError:
+                    pass
+        with self.lock:
+            self.logical = max(self.logical, logical)
+            self.allocated = max(self.allocated, allocated)
+            self.samples += 1
 
     def run(self):
-        while not self.done.wait(.005):
-            self.sample()
+        try:
+            while not self.done.wait(.005):
+                self.sample()
+        except Exception as error:
+            self.error=type(error).__name__
 
 
 def run_probe():
@@ -392,6 +405,10 @@ def run_probe():
                 bundles.append({'bytes':bundle.stat().st_size,
                                 'sha256':sha256(bundle.read_bytes()).hexdigest()})
             peak.sample()
+            peak.done.set()
+            peak.thread.join(timeout=1)
+            if peak.thread.is_alive() or peak.error is not None:
+                raise AssertionError('OFFLINE_DISK_SAMPLER_INCOMPLETE')
             after={source.name:inventory(source) for source in sources}
             assert after==before
             filesystem = os.statvfs(root)
@@ -405,15 +422,17 @@ def run_probe():
                 'resources':{'wall_seconds':time.monotonic()-started,
                     'cpu_seconds_parent':time.process_time()-cpu_started,
                     'peak_disk_logical_bytes':peak.logical, 'peak_disk_allocated_bytes':peak.allocated,
-                    'disk_sampling_interval_seconds':.005, 'python_traced_peak_bytes':python_peak,
+                    'disk_sampling_interval_seconds':.005, 'disk_samples_completed':peak.samples,
+                    'disk_sampler_status':'COMPLETED_WITHOUT_ERRORS', 'python_traced_peak_bytes':python_peak,
                     'peak_rss_parent_bytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
                     'peak_rss_child_bytes':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024,
                     'available_local_disk_bytes':filesystem.f_bavail*filesystem.f_frsize,
                     'probe_bundle_copies':bundles,
                     'production_image_bytes':'NO_VERIFICADO', 'production_reserve_bytes':'NO_VERIFICADO',
                     'production_capacity_gate':'NO_VERIFICADO; requires actual image + reserve + measured copy + two bundles'},
-                'source_code_sha256':{name:sha256(Path(module.__file__).read_bytes()).hexdigest()
-                    for name,module in [('history',history), ('salvage',salvage), ('closes',closes), ('snapshot',snapshots)]}}
+                'source_code_sha256':{**{name:sha256(Path(module.__file__).read_bytes()).hexdigest()
+                    for name,module in [('history',history), ('salvage',salvage), ('closes',closes), ('snapshot',snapshots)]},
+                    'probe':sha256(Path(__file__).read_bytes()).hexdigest()}}
             return result
         finally:
             peak.done.set()
