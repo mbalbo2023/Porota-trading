@@ -85,6 +85,8 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
     """
     if type(max_source_bytes) is not int or max_source_bytes <= 0:
         raise SnapshotError("BOUNDED_SOURCE_BUDGET_REQUIRED")
+    if deadline is None:
+        deadline = time.monotonic() + 10.0
     path = Path(path).absolute()
     if path.resolve() != path or any(parent.is_symlink() for parent in path.parents):
         raise SnapshotError("REGULAR_UNALIASED_FILE_REQUIRED")

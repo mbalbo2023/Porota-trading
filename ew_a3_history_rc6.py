@@ -22,13 +22,13 @@ from fd_a3_identity_mapper_rc6 import A3IdentityError, align_dlr, porota_to_a3_d
 TZ=ZoneInfo('America/Argentina/Buenos_Aires')
 FAMILIES={'FUTUROS','OPCIONES'}
 STATE_DDL='''
-CREATE TABLE IF NOT EXISTS a3_history_ingest_state_rc6(
+CREATE TABLE IF NOT EXISTS a3_history_ingest_state_rc6_v2(
   source TEXT NOT NULL,symbol TEXT NOT NULL,instrument_type TEXT NOT NULL,
-  market TEXT NOT NULL,settlement TEXT NOT NULL,
+  market TEXT NOT NULL,currency TEXT NOT NULL,settlement TEXT NOT NULL,
   last_complete_day TEXT,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,
   empty_observations INTEGER NOT NULL DEFAULT 0,last_attempt_at TEXT,
   last_success_at TEXT,last_error TEXT NOT NULL DEFAULT '',rows_last INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY(source,symbol,instrument_type,market,settlement));
+  PRIMARY KEY(source,symbol,instrument_type,market,currency,settlement));
 '''
 
 
@@ -47,15 +47,21 @@ def load_targets(store):
         cols={r[1] for r in c.execute('PRAGMA table_info(candidate_universe)')}
         needed={'ticker','instrument_type','market','settlement','status'}
         if not needed.issubset(cols): return []
-        select='ticker,instrument_type,market,settlement'
-        rows=c.execute(f'''SELECT {select} FROM candidate_universe
-          WHERE status='AVAILABLE' ORDER BY instrument_type,ticker,market,settlement''').fetchall()
+        if 'candidate_identity_v2' in _tables(c):
+            table='candidate_identity_v2';predicate="can_simulate=1"
+        elif 'financial_instrument_catalog' in _tables(c):
+            table='financial_instrument_catalog';predicate="status='AVAILABLE'"
+        elif 'currency' in cols:
+            table='candidate_universe';predicate="status='AVAILABLE'"
+        else: return []
+        rows=c.execute(f'''SELECT ticker,instrument_type,market,currency,settlement FROM {table}
+          WHERE {predicate} ORDER BY instrument_type,ticker,market,currency,settlement''').fetchall()
     out=[]
     for row in rows:
-        symbol,family,market,settlement=(str(x or '').upper().strip() for x in row)
+        symbol,family,market,currency,settlement=(str(x or '').upper().strip() for x in row)
         if family not in FAMILIES: continue
-        if any(x in {'','UNKNOWN'} for x in (symbol,market,settlement)): continue
-        out.append((symbol,family,market,settlement))
+        if any(x in {'','UNKNOWN'} for x in (symbol,market,currency,settlement)): continue
+        out.append((symbol,family,market,currency,settlement))
     return out
 
 
@@ -96,8 +102,8 @@ def _resolve_source_identity(symbol,family,by_identity):
 def _state(store,target):
     init_state(store)
     with store.connect() as c:
-        row=c.execute('''SELECT * FROM a3_history_ingest_state_rc6 WHERE
-          source='A3_CEM_CLOSING' AND symbol=? AND instrument_type=? AND market=? AND settlement=?''',target).fetchone()
+        row=c.execute('''SELECT * FROM a3_history_ingest_state_rc6_v2 WHERE
+          source='A3_CEM_CLOSING' AND symbol=? AND instrument_type=? AND market=? AND currency=? AND settlement=?''',target).fetchone()
         return dict(row) if row else None
 
 
@@ -107,15 +113,15 @@ def _record(store,target,*,status,day,rows,error='',empty=False,success=False,at
     empty_count=int(prev.get('empty_observations') or 0)+(1 if empty else 0)
     if not empty: empty_count=0
     with store.connect() as c:
-        c.execute('''INSERT INTO a3_history_ingest_state_rc6(
-          source,symbol,instrument_type,market,settlement,last_complete_day,status,attempts,
+        c.execute('''INSERT INTO a3_history_ingest_state_rc6_v2(
+          source,symbol,instrument_type,market,currency,settlement,last_complete_day,status,attempts,
           empty_observations,last_attempt_at,last_success_at,last_error,rows_last)
-          VALUES('A3_CEM_CLOSING',?,?,?,?,?,?,?,?,?,?,?,?)
-          ON CONFLICT(source,symbol,instrument_type,market,settlement) DO UPDATE SET
+          VALUES('A3_CEM_CLOSING',?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(source,symbol,instrument_type,market,currency,settlement) DO UPDATE SET
             last_complete_day=excluded.last_complete_day,status=excluded.status,
-            attempts=a3_history_ingest_state_rc6.attempts+1,
+            attempts=a3_history_ingest_state_rc6_v2.attempts+1,
             empty_observations=excluded.empty_observations,last_attempt_at=excluded.last_attempt_at,
-            last_success_at=CASE WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at ELSE a3_history_ingest_state_rc6.last_success_at END,
+            last_success_at=CASE WHEN excluded.last_success_at IS NOT NULL THEN excluded.last_success_at ELSE a3_history_ingest_state_rc6_v2.last_success_at END,
             last_error=excluded.last_error,rows_last=excluded.rows_last''',
           (*target,day,status,int(prev.get('attempts') or 0)+1,empty_count,now,now if success else None,str(error)[:500],int(rows)))
     return empty_count
@@ -158,7 +164,7 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
            'deterministic_mapped':0}
     per_target=[]
     for target in targets:
-        symbol,family,market,settlement=target
+        symbol,family,market,currency,settlement=target
         meta,source_symbol,alignment_status=_resolve_source_identity(symbol,family,by_identity)
         if meta is None or source_symbol is None:
             stats['unmatched']+=1
@@ -175,7 +181,8 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             for row in raw:
                 if str(row.get('symbol') or '').upper().strip()!=source_symbol: continue
                 try:
-                    candle=closing_to_candle(row,instrument_type=family,market=market,settlement_identity=settlement)
+                    candle=closing_to_candle(row,instrument_type=family,market=market,
+                        currency=currency,settlement_identity=settlement,observed_at=current.isoformat())
                     metadata=dict(candle.metadata or {})
                     metadata.update({'a3_source_symbol':source_symbol,
                                      'porota_canonical_symbol':symbol,

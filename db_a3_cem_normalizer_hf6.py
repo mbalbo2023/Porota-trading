@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from cu_history_store_v2_hf6 import Candle
+from cu_history_store_v2_hf6 import Candle,instant,ART
 
 CEM_HISTORY_SOURCE = "A3_CEM_CLOSING"
 CEM_EXECUTION_ALLOWED = False
@@ -81,7 +81,7 @@ def normalize_symbols(payload: dict[str, Any]) -> list[CEMSymbol]:
 
 
 def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
-                      market: str, settlement_identity: str) -> Candle:
+                      market: str, settlement_identity: str,currency=None,observed_at=None) -> Candle:
     """Convert CEM official EOD OHLC to History Store v2.
 
     `market` and `settlement_identity` must come from verified Porota contract
@@ -98,12 +98,16 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         raise ValueError("CEM_HISTORY_SETTLEMENT_IDENTITY_REQUIRED")
     if not isinstance(row, dict):
         raise ValueError("CEM_CLOSING_NOT_OBJECT")
+    # CEM reference currency may denote the underlying (DLR: USD), while the
+    # quote/compensation currency is ARS. Only explicit quote identity counts.
+    currency=currency or row.get('quoteCurrency')
+    if not currency: raise ValueError('CEM_QUOTE_CURRENCY_IDENTITY_REQUIRED')
     symbol = str(row.get("symbol") or "").strip().upper()
     date_time = str(row.get("dateTime") or "")
     if not symbol or not date_time:
         raise ValueError("CEM_CLOSING_IDENTITY_INCOMPLETE")
     try:
-        day = datetime.fromisoformat(date_time.replace("Z", "+00:00")).date().isoformat()
+        day = instant(date_time).astimezone(ART).date().isoformat()
     except ValueError as exc:
         raise ValueError("CEM_CLOSING_DATE_INVALID") from exc
     close = row.get("close")
@@ -126,6 +130,8 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         "underlying": row.get("underlying"),
         "product": row.get("product"),
         "source_schema": "CEM2 ClosingPriceDto",
+        "cem_reference_currency":row.get('currency'),
+        "currency":currency,
     }
     return Candle(
         symbol=symbol,
@@ -140,7 +146,9 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         volume=None if row.get("volume") is None else float(row.get("volume")),
         source=CEM_HISTORY_SOURCE,
         adjusted=False,
-        observed_at=None,
+        currency=currency,price_basis='RAW',provider_at=date_time,
+        volume_kind=str(row.get('volumeKind') or 'UNKNOWN').upper(),
+        observed_at=observed_at,
         metadata=metadata,
     )
 
