@@ -215,6 +215,20 @@ def _write_private_env(target, values):
     return target
 
 
+def capacity_input_mounts():
+    """The same validated host JSON inputs reach both containers read-only."""
+    values = dynamic_capacity_settings()
+    roots = {"/app/ops/policy": ROOT / "ops/policy"}
+    if any(values[key].startswith("/app/data/rc6-capacity/") for key in CAPACITY_ENV_KEYS[1:5]):
+        roots["/app/data/rc6-capacity"] = DATA / "rc6-capacity"
+    mounts = []
+    for destination, source in roots.items():
+        if not source.is_dir() or source.is_symlink():
+            raise ValueError("RC6_CAPACITY_INPUT_MOUNT_ROOT_INVALID")
+        mounts += ["--mount", f"type=bind,src={source},dst={destination},readonly"]
+    return mounts
+
+
 def _runtime_build_identity():
     """Values come from staged source metadata, never operator environment."""
     from scripts.porota_artifact_provenance import decode_json
@@ -436,6 +450,7 @@ DASHBOARD_RUNTIME_SOURCES = (
 
 def start_dashboard(mode):
     env_path = dashboard_env(mode)
+    input_mounts = capacity_input_mounts()
     # The dashboard image is immutable, but the deployment host is the canonical
     # source staged by the transactional workflow. Mount only the RC6 dashboard
     # modules read-only so a stale /app copy can never mask the exact candidate.
@@ -455,7 +470,7 @@ def start_dashboard(mode):
     run("docker", "run", "-d", "--name", "porota_production_dashboard",
         "--pull", "never", "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
-        "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *source_mounts,
+        "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *input_mounts, *source_mounts,
         "--entrypoint", "python", IMAGE, "o_dashboard.py")
     # Todas las fuentes de dashboard se montan read-only desde el stage
     # canónico. No se usa docker cp sobre un contenedor read-only: así no puede
@@ -465,6 +480,7 @@ def start_dashboard(mode):
 def simulation():
     runtime_env = observer_runtime_env()
     dashboard_env("PRODUCTION_PAPER")
+    input_mounts = capacity_input_mounts()
     verify_dashboard_source_identity(DASHBOARD_RUNTIME_SOURCES)
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
@@ -497,7 +513,7 @@ def simulation():
         "--env-file", str(runtime_env),
         "-e", "PAPER_SCALPING_MODE=ACTIVE_PAPER",
         "-e", "PAPER_CAUCION_SWEEP_MODE=ACTIVE_PAPER",
-        "-v", f"{DATA}:/app/data", "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
+        "-v", f"{DATA}:/app/data", *input_mounts, "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
         "--entrypoint", "python", IMAGE, "bv_paper_runtime.py", capture=True)
     print("RC6_OBSERVER_CREATED_ID=" + created.stdout.strip())
     state = run("docker", "inspect", "-f", "{{.State.Status}}",

@@ -474,6 +474,15 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
+      - name: Final convergence input and guard provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_convergence_provenance.py \
+            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
+            --junit /tmp/porota-governed-tests.xml \
+            --out /tmp/porota-final-input-provenance.json --fetch-source-refs
+
       - name: Upload predeploy evidence
         id: frozen_primary
         if: always()
@@ -501,6 +510,7 @@ jobs:
             /tmp/porota-deploy-bundle-v2-manifest.json
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
+            /tmp/porota-final-input-provenance.json
             /tmp/porota-governed-tests.xml
             /tmp/porota-governed-tests.json
             /tmp/porota-test-collection.txt
@@ -598,4 +608,5 @@ jobs:
           rm -f /tmp/porota-issue465-audit-gate.json
           rm -rf /tmp/porota-predeploy-published-evidence
           rm -f /tmp/porota-installed-dependencies.txt /tmp/porota-predeploy-origin.json
+          rm -f /tmp/porota-final-input-provenance.json
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

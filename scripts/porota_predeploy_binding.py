@@ -169,13 +169,16 @@ def validate_binding(approval, workflow, run, attempt, artifact, run_artifacts, 
             "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
 
 
-def safe_extract(zip_path, output_root, binding):
+def safe_extract(zip_path, output_root, binding, *, extra_required=()):
     """Verify the external ZIP digest/size before reading any artifact claim."""
     if (zip_path.stat().st_size != binding["artifact_size_bytes"]
             or "sha256:" + sha256_file(zip_path) != binding["artifact_digest"]):
         raise BindingRejected("APPROVED_ARTIFACT_BYTES_MISMATCH")
     if output_root.is_symlink() or output_root.exists() and any(output_root.iterdir()):
         raise BindingRejected("ARTIFACT_OUTPUT_ROOT_NOT_EMPTY")
+    required = set(REQUIRED_FILES) | set(extra_required)
+    if any(PurePosixPath(name).name != name for name in required):
+        raise BindingRejected("ARTIFACT_REQUIRED_BASENAME_INVALID")
     with zipfile.ZipFile(zip_path) as archive:
         inventory, paths, total = {}, set(), 0
         if len(archive.infolist()) > 50_000:
@@ -193,11 +196,11 @@ def safe_extract(zip_path, output_root, binding):
             total += entry.file_size
             if total > MAX_ZIP_BYTES:
                 raise BindingRejected("ZIP_UNPACKED_SIZE_LIMIT")
-            if not entry.is_dir() and parsed.name in REQUIRED_FILES:
+            if not entry.is_dir() and parsed.name in required:
                 if parsed.name in inventory:
                     raise BindingRejected("AMBIGUOUS_ZIP_REQUIRED_FILE")
                 inventory[parsed.name] = entry
-        if set(inventory) != set(REQUIRED_FILES):
+        if set(inventory) != required:
             raise BindingRejected("FROZEN_ARTIFACT_REQUIRED_FILE_MISSING")
         if archive.testzip() is not None:
             raise BindingRejected("FROZEN_ARTIFACT_CRC_MISMATCH")

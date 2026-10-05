@@ -105,6 +105,8 @@ def source_fixture(tmp_path, monkeypatch):
         if relative == "rc6_trader_dashboard": path = path / "__init__.py"
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b"# immutable source fixture\n")
     (tmp_path / "rc6_trader_dashboard/projection.py").write_bytes(b"# immutable projection fixture\n")
+    policy_root = tmp_path / "ops/policy"; policy_root.mkdir(parents=True)
+    (policy_root / "rc6-dynamic-capacity-v1.json").write_bytes(b'{"mode":"OFF"}\n')
     for args in (("init", "-q"), ("config", "user.name", "Offline fixture"), ("config", "user.email", "fixture@example.invalid"),
                  ("add", "."), ("commit", "-qm", "exact dashboard mount source")):
         subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
@@ -151,3 +153,38 @@ def test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked
     with pytest.raises(RuntimeError):
         manager.verify_dashboard_source_identity(manager.DASHBOARD_RUNTIME_SOURCES)
     assert not any("rm" in call or "run" in call for call in calls)
+
+
+def test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children(tmp_path, monkeypatch):
+    source_fixture(tmp_path, monkeypatch)
+    report = tmp_path / "data/rc6-capacity/report.json"; report.parent.mkdir(parents=True); report.write_text("{}")
+    prepare_launcher(tmp_path, monkeypatch, {"POROTA_CAPACITY_REPORT_PATH": "/app/data/rc6-capacity/report.json"})
+    secret = tmp_path / ".secrets/ppi_production.json"; secret.parent.mkdir(); secret.write_text("{}")
+    calls = []
+    def docker(*args, **kwargs):
+        calls.append(args)
+        if args[:3] == ("docker", "image", "inspect"):
+            source = json.loads((tmp_path / "POROTA_SOURCE_PROVENANCE.json").read_text())
+            labels = {"porota.commit": source["candidate_sha"], "porota.tree": source["candidate_tree_sha"],
+                "porota.predeploy": "v2", "porota.source-manifest-sha256": hashlib.sha256(canonical_bytes(source)).hexdigest()}
+            return SimpleNamespace(stdout=json.dumps(labels))
+        if args[:3] == ("docker", "inspect", "-f"): return SimpleNamespace(stdout="running")
+        if args[:3] == ("docker", "exec", "porota_production_observer"):
+            path = tmp_path / args[-1].removeprefix("/app/")
+            return SimpleNamespace(stdout=hashlib.sha256(path.read_bytes()).hexdigest() + "  fixture")
+        return SimpleNamespace(stdout="synthetic-container-id")
+    # The two observer invariant modules are fixture-only; no source/provider
+    # runtime is launched. Native Docker argv is captured at the real call site.
+    for name in ("cf_intraday_scalping.py", "co_market_sessions_hf6.py"):
+        (tmp_path / name).write_bytes(b"# fixture\n")
+    monkeypatch.setattr(manager, "run", docker)
+    monkeypatch.setattr(manager, "stop_engines", lambda *args, **kwargs: None)
+    monkeypatch.setattr(manager, "write_mode", lambda *args, **kwargs: None)
+    monkeypatch.setattr(manager, "notify", lambda *args, **kwargs: "OFFLINE")
+    manager.simulation()
+    launchers = [args for args in calls if args[:3] == ("docker", "run", "-d")]
+    assert len(launchers) == 2
+    for args in launchers:
+        assert f"type=bind,src={tmp_path}/ops/policy,dst=/app/ops/policy,readonly" in args
+        assert f"type=bind,src={tmp_path}/data/rc6-capacity,dst=/app/data/rc6-capacity,readonly" in args
+        assert f"{tmp_path}/data:/app/data" in args

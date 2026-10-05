@@ -56,6 +56,14 @@ including opaque/deletion whiteouts and repeated/compressed blobs. Every
 required source byte and full mode plus generated provenance metadata must
 match Git; missing, excluded, extra, or aliased source fails closed.
 
+Before the primary upload, the integrator's convergence provenance CLI verifies
+the original source orders and actual governed JUnit executions and produces
+`porota-final-input-provenance.json`. The primary must contain exactly one such
+receipt. Published replay downloads that original receipt and preserves its
+bytes and hash in the small secondary, without regenerating it. Missing or
+homonymous receipts fail closed. The final reviewer independently validates
+the input source anchors and expanded executed test nodes.
+
 The runner loads that downloaded archive and checks the actual image ID,
 then executes imports and installed-closure checks in an ephemeral container
 with network disabled and no host volume mounts. This does not build a second
@@ -122,7 +130,10 @@ Input roots are `/app/ops/policy` and `/app/data/rc6-capacity`. Paths must be
 absolute, normalized, bounded regular JSON files with no symlink parent, hard
 link alias, executable/special bits, or group/other write permissions. Control
 characters and env/shell injection characters are rejected without logging
-values. The two container mounts provide exactly those host inputs. APPROVED
+values. Both containers bind `/app/ops/policy` read-only; when data inputs are
+configured, the nested `/app/data/rc6-capacity` input root is also mounted
+read-only inside the broader writable data volume. The mounts provide exactly
+the validated host inputs. APPROVED
 requires all three evidence paths before any engine shutdown and retains the
 controller's evidence/fingerprint/digest/expiry checks. Presence of a benchmark
 alone never changes feature authority or enables real order routes.

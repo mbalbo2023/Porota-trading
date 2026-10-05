@@ -218,6 +218,23 @@ def test_evidence_only_is_small_and_contains_no_image_or_bundle(frozen_payload, 
     assert report["primary"]["artifact_id"] == binding["artifact_id"] and report["image_rebuilt"] is False
 
 
+def test_secondary_preserves_downloaded_primary_final_input_provenance_bytes(frozen_payload, tmp_path):
+    c, output, binding, frozen = frozen_payload
+    name = "porota-final-input-provenance.json"
+    raw = b'{\n  "schema": "convergence-fixture",\n  "original_input_order": [15, 55, 80]\n}\n'
+    (output / name).write_bytes(raw)
+    receipt = verify_frozen_payload(c["repo"], output, binding, c["manifest"]["candidate_tree_sha"])
+    evidence = tmp_path / "secondary"
+    write_evidence(evidence, binding=binding,
+        payload={"extracted_root": output, "receipt": receipt, "extra_receipts": (name,)},
+        rootfs=verify_saved_app_rootfs(output / "porota-predeploy-image.tar.gz", c["manifest"]),
+        download={"status": "GREEN"}, loaded_image_id=frozen["image_id"])
+    assert (evidence / name).read_bytes() == raw
+    index = json.loads((evidence / "evidence-inventory.json").read_text())
+    assert index["files"][name]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert index["files"][name]["bytes"] == len(raw)
+
+
 def test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens(monkeypatch, capsys, tmp_path):
     def fail(*args, **kwargs): raise ValueError("https://signed.example?private-token=unit-test-secret")
     monkeypatch.setattr("scripts.porota_published_artifact_evidence.current_primary_binding", fail)
@@ -234,7 +251,13 @@ def test_workflow_secondary_cannot_replace_primary_or_trigger_another_build():
     primary = next(i for i, step in enumerate(steps) if step.get("id") == "frozen_primary")
     replay = next(i for i, step in enumerate(steps) if "Replay exact published primary" in step["name"])
     secondary = next(i for i, step in enumerate(steps) if step.get("id") == "primary_evidence_only")
-    assert primary < replay < secondary
+    provenance = next(i for i, step in enumerate(steps) if step["name"] == "Final convergence input and guard provenance")
+    assert provenance < primary < replay < secondary
+    assert "scripts/rc6_convergence_provenance.py" in steps[provenance]["run"]
+    assert '--candidate-sha "$CANDIDATE_SHA"' in steps[provenance]["run"]
+    assert "--junit /tmp/porota-governed-tests.xml" in steps[provenance]["run"]
+    assert "--out /tmp/porota-final-input-provenance.json --fetch-source-refs" in steps[provenance]["run"]
+    assert "/tmp/porota-final-input-provenance.json" in steps[primary]["with"]["path"]
     assert "porota-predeploy-image.tar.gz" in steps[primary]["with"]["path"]
     assert "evidence-only" in steps[secondary]["with"]["name"] and steps[secondary]["with"]["path"].endswith("*.json")
     assert "docker build" not in steps[replay]["run"]

@@ -37,6 +37,7 @@ except ModuleNotFoundError:
 
 MAX_EVIDENCE_BYTES = 24 * 1024**2
 MAX_SECONDARY_ARTIFACT_BYTES = 32 * 1024**2
+PUBLISHED_EXTRA_RECEIPTS = ("porota-final-input-provenance.json",)
 
 
 def upload_digest(value):
@@ -144,6 +145,13 @@ def write_evidence(output, *, binding, payload, rootfs, download, loaded_image_i
     output.mkdir(parents=True, exist_ok=True)
     for name in REQUIRED_FILES:
         if name.endswith(".json"): shutil.copyfile(payload["extracted_root"] / name, output / name)
+    for name in payload.get("extra_receipts", ()):
+        if name not in PUBLISHED_EXTRA_RECEIPTS: raise ValueError("EVIDENCE_EXTRA_RECEIPT_NOT_ALLOWED")
+        if (payload["extracted_root"] / name).stat().st_size > MAX_EVIDENCE_BYTES:
+            raise ValueError("EVIDENCE_EXTRA_RECEIPT_SIZE_LIMIT")
+        raw = (payload["extracted_root"] / name).read_bytes()
+        decode_json(raw)
+        (output / name).write_bytes(raw)  # Preserve the downloaded primary's bytes exactly.
     report = {"schema": "porota.published-primary-evidence-only.v1", "status": "GREEN",
         "promotable": False, "role": "EVIDENCE_ONLY_NOT_PROMOTION_AUTHORITY",
         "primary": binding, "candidate_tree_sha": frozen["candidate_tree_sha"],
@@ -238,9 +246,11 @@ def main(argv=None):
             download = download_artifact(args.artifact_id, archive, expected_size=binding["artifact_size_bytes"],
                 expected_digest=binding["artifact_digest"], deadline=deadline)
             extracted = root / "extracted"
-            safe_extract(archive, extracted, binding)
+            safe_extract(archive, extracted, binding, extra_required=PUBLISHED_EXTRA_RECEIPTS)
             remaining(deadline)
             receipt = verify_frozen_payload(args.repo_root, extracted, binding, args.tree_sha)
+            receipt["extra_receipt_files"] = {name: {"sha256": sha256_file(extracted / name),
+                "bytes": (extracted / name).stat().st_size} for name in PUBLISHED_EXTRA_RECEIPTS}
             remaining(deadline)
             source = decode_json((extracted / "porota-source-provenance.json").read_bytes())
             rootfs = verify_saved_app_rootfs(extracted / "porota-predeploy-image.tar.gz", source, deadline=deadline)
@@ -248,7 +258,8 @@ def main(argv=None):
             execution = verify_loaded_image_and_imports(extracted, candidate_sha=args.candidate_sha,
                 image_ref=args.image_ref, deadline=deadline)
             result = write_evidence(args.evidence_root, binding=binding,
-                payload={"extracted_root": extracted, "receipt": receipt, "actual_image_execution": execution}, rootfs=rootfs,
+                payload={"extracted_root": extracted, "receipt": receipt, "actual_image_execution": execution,
+                         "extra_receipts": PUBLISHED_EXTRA_RECEIPTS}, rootfs=rootfs,
                 download=download, loaded_image_id=execution["loaded_image_id"])
             remaining(deadline)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, tarfile.TarError, EOFError,

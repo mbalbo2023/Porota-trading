@@ -238,6 +238,25 @@ def test_safe_zip_has_one_required_file_per_basename(tmp_path):
     assert {item.name for item in (tmp_path / "out").iterdir()} == set(REQUIRED_FILES)
 
 
+@pytest.mark.parametrize("mutation", ["none", "missing", "duplicate"])
+def test_published_primary_requires_one_original_final_input_provenance_receipt(tmp_path, mutation):
+    path = tmp_path / "artifact.zip"
+    name = "porota-final-input-provenance.json"
+    binding = zip_fixture(path, extra=None if mutation == "missing" else "evidence/" + name)
+    if mutation == "duplicate":
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("other/" + name, b"homonymous receipt")
+        binding = {"artifact_size_bytes": path.stat().st_size,
+                   "artifact_digest": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()}
+    if mutation == "none":
+        safe_extract(path, tmp_path / "out", binding, extra_required=(name,))
+        assert (tmp_path / "out" / name).read_bytes() == b"attack"
+    else:
+        with pytest.raises(BindingRejected):
+            safe_extract(path, tmp_path / "out", binding, extra_required=(name,))
+        assert not (tmp_path / "out").exists()
+
+
 @pytest.mark.parametrize("same_id", [True, False])
 def test_actual_promotion_id_guards_run_before_any_tag_even_with_valid_tar(tmp_path, same_id):
     text = Path(".github/workflows/porota-deploy-v2-promote.yml").read_text()
