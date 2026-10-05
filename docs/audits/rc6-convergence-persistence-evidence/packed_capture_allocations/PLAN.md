@@ -1,0 +1,105 @@
+# Packed V2 capture allocation workstream
+
+State at this source checkpoint: `DESARROLLADO`; native guards and resource
+measurements have **not run**. This document does not grant pipeline, archive,
+UI, image, deploy or runtime acceptance.
+
+- Workstream: `RC6_PACK_CAPTURE_ALLOCATIONS` / `WRITE_OWNER`.
+- Isolated branch: `work/rc6-packed-capture-allocations-20261005`.
+- Base: `a6d622d784c03707001859d87688ddb9ba5fc4b6`, tree
+  `814ecd05363f3b0fbeeaf1a6b7f56d4da7d72d92`.
+- Original packed producer Git blob:
+  `212b839c443b37bf5a8f9a860ff3736e81ed6f1b`.
+- Scope: `rc6_shadow_runtime/packed_storage.py`, the new capture-allocation
+  regression module and this workstream's evidence. No Root harness writes.
+- Authorization: Root's scoped instruction following the d9 native BIG
+  diagnostic; Source plan approved before native execution.
+
+## Observed input, retained as RED
+
+Root executed the complete d9 source tree with the exact frozen Python 3.11
+interpreter and 157 installed distributions. The 12,000-identity / 60,000-input
+observation diagnostic hit its 90-second deadline before member fsync or any
+committed CURRENT. The child exceeded that deadline while preparing the
+checkpoint. The report preparation returned after 7.225 s; sampled stacks at
+70, 80 and 90 s were in `_parts` / `capture` beneath
+`PreparedPackedStorage.__init__` and `commit_generation`. Measured peak RSS was
+1,289,154,560 bytes. These are observations, not proof that every remaining
+second belongs to Capture allocations.
+
+Raw inputs, owned and preserved by Root:
+
+- `/tmp/rc6-canonical-d9e7fb7d-big-gc-raw/native-big-gc-result.json`
+- `/tmp/rc6-canonical-d9e7fb7d-big-gc-raw/child-stacks.log`
+
+The diagnostic recorded 32,667 GC callback events, including 29 generation-2
+start/stop pairs totaling 16.453 s. No GC event occurred in Source capture;
+that capture returned in approximately 0.071 s. The earlier 0.25-second Source
+capture failure was not reproduced here and its performance cause remains
+unknown. This optimization neither closes nor relabels that failure.
+
+## Change and equivalence boundary
+
+The prior producer creates a frozen Capture object and a `(boundary, capture)`
+tuple for every punctuation, key and scalar token, then retains and combines
+those objects into output captures. Direct recursive append accumulates those
+same tokens in a private bytearray and literal list. It materializes an
+immutable Capture only when the old algorithm would flush, or when the
+unchanged named/alias boundary produces one.
+
+Flush occurs **before the same token** that would exceed `PACK_TARGET`, never
+in the middle of a token. Shared/named subtrees retain the same predicate,
+64-byte boundary test, cached bytes and reference lifetime. Literal marker
+ordinals equal the old cumulative literal offset. Mutable root headers are
+still recaptured; previously frozen static bytes do not become mutable views.
+
+`PACK_TARGET=65536` remains a soft target. One larger scalar token can exceed
+it, just as before; existing independent entry, unique, logical, marker, node,
+depth, durable and expansion limits remain enforced. The change does not
+increase a quota or claim that every pending buffer is at most 64 KiB.
+
+The codec/version, canonical ASCII domain, compression, packet segmentation,
+directory/instance/binding/reference order, all-occurrence SHA, JSON guards and
+decoder remain unchanged. No GC policy or thresholds change. No cross-request
+or cross-cut cache is introduced. No financial values, source clocks,
+deadlines, identity population, math or admission rules change.
+
+## Native guard plan (written, not yet executed)
+
+New module: `tests/test_rc6_packed_capture_allocations.py`.
+
+- `test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire`:
+  reference the original generator loop across four soft targets and typed,
+  volatile, named/aliased and oversized-token inputs; compare exact capture
+  bytes, the complete compressed representation and independent canonical
+  JSON. These are 16 declared parameter combinations.
+- `test_volatile_root_sections_remain_single_exact_literal_capture`: four
+  declared root names, with full literal bytes preserved.
+- `test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens`:
+  count actual Capture constructor calls for 2,000 independent identities;
+  assert new calls equal output chunks and compare with the original loop.
+  This deterministic allocation guard does not assert a CPU time or RSS.
+- `test_prepared_capture_freezes_static_bytes_and_recaptures_mutable_headers`:
+  mutate the original static input and mutable headers after preparation;
+  verify prior and new encoded snapshots preserve their specified bytes.
+- `test_direct_capture_preserves_nonfinite_rejection`: three declared cases.
+- `test_direct_capture_keeps_shape_limits_before_recursion`: cycle, depth,
+  nodes and non-string-key cases.
+- `test_native_worker_publication_full_reader_and_projection_keep_the_same_cut`:
+  native PAPER producer plus worker, full committed reader and derived
+  projection; match all role digests and the committed pointer.
+
+There are 30 declared cases in the new module; actual collection/execution
+counts must come from the future frozen-source JUnit. Relevant existing guards
+are the packed-storage, funnel-storage codec, generation and native runtime
+wiring modules. Native test execution is serialized under a separate CPU slot.
+
+## Pending evidence
+
+No savings have been measured. The next focal must use a whole Git source
+archive, zero product overlays, literal
+`/workspace/venv_rc6_frozen311/bin/python`, exact 157 names/versions checked
+before fixtures, preserved source SHA/modes, blocked network and import
+closure. A subsequent native 12k/60k run requires Root's separate authorization
+and the unchanged 90 s / 2 GiB / live 512 entries / live 128 MiB / archive
+512 MiB / scratch 512 MiB constraints. This source checkpoint is not that run.

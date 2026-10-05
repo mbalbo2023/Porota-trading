@@ -219,6 +219,39 @@ def _combined(captures):
     return Capture(b"".join(parts), tuple(literals))
 
 
+class _CaptureBuffer:
+    """Keep the legacy token cuts without allocating a Capture per token.
+
+    The target remains soft: a single larger token occupies its own chunk,
+    subject to the existing entry and expansion guards. Only immutable bytes
+    escape a flush; the mutable accumulator belongs to one capture call.
+    """
+    def __init__(self):
+        self.result, self.template, self.literals = [], bytearray(), []
+
+    def flush(self):
+        if self.template:
+            self.result.append(Capture(bytes(self.template), tuple(self.literals)))
+            self.template.clear(); self.literals.clear()
+
+    def _room(self, size):
+        if self.template and len(self.template)+size > PACK_TARGET:
+            self.flush()
+
+    def append(self, raw):
+        self._room(len(raw))
+        self.template.extend(raw)
+
+    def bind(self, literal):
+        self._room(5)
+        self.template.extend(b"\0"+struct.pack("!I", len(self.literals)))
+        self.literals.append(literal)
+
+    def boundary(self, capture):
+        self.flush()
+        self.result.append(capture)
+
+
 class _CaptureBuilder:
     """Strong references and immutable byte plans within this publication only."""
     def __init__(self, value, *, cache=None):
@@ -257,7 +290,7 @@ class _CaptureBuilder:
             return match["prefix"]+b"\0"+struct.pack("!I", indices[key])
         return Capture(_VOLATILE.sub(replace, _canonical(value)), tuple(literals))
 
-    def _parts(self, value, name="", *, root=False):
+    def _append(self, value, name, buffer, *, root=False):
         if isinstance(value, (dict, list, tuple)) and not root and (
                 self.incoming.get(id(value), 0) >= 2 or name in _FIELDS):
             cached = self.cache.get(id(value))
@@ -267,43 +300,34 @@ class _CaptureBuilder:
             else:
                 capture = cached[1]
             if len(capture.template) >= 64:
-                yield True, capture; return
+                buffer.boundary(capture); return
         if isinstance(value, dict):
-            yield False, Capture(b"{", ())
+            buffer.append(b"{")
             for ordinal, key in enumerate(sorted(value)):
-                yield False, Capture((b"," if ordinal else b"")+self._scalar(key)+b":", ())
+                buffer.append((b"," if ordinal else b"")+self._scalar(key)+b":")
                 child = value[key]
                 if _root_volatile(key):
-                    yield False, Capture(b"\0"+b"\0"*4, (_canonical(child),))
+                    buffer.bind(_canonical(child))
                 else:
-                    yield from self._parts(child, key)
-            yield False, Capture(b"}", ())
+                    self._append(child, key, buffer)
+            buffer.append(b"}")
         elif isinstance(value, (list, tuple)):
-            yield False, Capture(b"[", ())
+            buffer.append(b"[")
             for ordinal, child in enumerate(value):
                 if ordinal:
-                    yield False, Capture(b",", ())
-                yield from self._parts(child, name)
-            yield False, Capture(b"]", ())
+                    buffer.append(b",")
+                self._append(child, name, buffer)
+            buffer.append(b"]")
         else:
-            yield False, Capture(self._scalar(value), ())
+            buffer.append(self._scalar(value))
 
     def capture(self, value, name=""):
         if _root_volatile(name):
             return (Capture(b"\0"+b"\0"*4, (_canonical(value),)),)
-        result, pending, size = [], [], 0
-        for boundary, capture in self._parts(value, name, root=True):
-            if boundary:
-                if pending:
-                    result.append(_combined(pending)); pending.clear(); size = 0
-                result.append(capture)
-            else:
-                if size+len(capture.template) > PACK_TARGET and pending:
-                    result.append(_combined(pending)); pending.clear(); size = 0
-                pending.append(capture); size += len(capture.template)
-        if pending:
-            result.append(_combined(pending))
-        return tuple(result)
+        buffer = _CaptureBuffer()
+        self._append(value, name, buffer, root=True)
+        buffer.flush()
+        return tuple(buffer.result)
 
 
 class PreparedPackedStorage:
