@@ -32,9 +32,13 @@ def read_env(path):
 
 
 @pytest.fixture
-def disk_path():
+def disk_path(monkeypatch):
     # /tmp may be tmpfs even when its size exceeds the runtime's 32 MiB. Use
     # the repository's actual disk mount, with an isolated disposable layout.
+    # The production constants remain 1000. GitHub's host runner can be 1001;
+    # the synthetic native layout uses its actual owner for O_NOATIME.
+    monkeypatch.setattr(manager, "SQLITE_SCRATCH_UID", os.geteuid())
+    monkeypatch.setattr(manager, "SQLITE_SCRATCH_GID", os.getegid())
     with tempfile.TemporaryDirectory(prefix="rc6-native-disk-",
                                      dir=Path(__file__).resolve().parents[2]) as directory:
         yield Path(directory)

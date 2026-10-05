@@ -24,7 +24,8 @@ from rc6_audit_evidence.sqlite_scratch import inspect_scratch, snapshot_peak_byt
 from scripts.rc6_disk_space_guard import load_policy, required_pretransfer_free
 from scripts.rc6_sqlite_scratch_guard import (
     ENV_KEYS, MAX_BYTES, RESERVE_BYTES, SCHEMA, ScratchAdmissionError,
-    emit_probe, history_container_path, probe, validate_policy,
+    emit_probe, history_container_path, probe as production_probe, validate_policy,
+    OWNER_UID, OWNER_GID,
 )
 from tests.test_rc6_convergence_sre_launcher import (
     disk_path, prepare_launcher, read_env, source_fixture,
@@ -32,6 +33,18 @@ from tests.test_rc6_convergence_sre_launcher import (
 
 REPO = Path(__file__).resolve().parents[1]
 POLICY = REPO / "ops/policy/rc6-disk-housekeeping-v1.json"
+
+
+def probe(database, data, **kwargs):
+    # Explicit ownership adapter for a synthetic filesystem layout. Production
+    # CLI defaults and launcher identities stay 1000 regardless of the CI euid.
+    return production_probe(database, data, owner_uid=os.geteuid(), owner_gid=os.getegid(), **kwargs)
+
+
+def test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid():
+    assert OWNER_UID == OWNER_GID == manager.SQLITE_SCRATCH_UID == manager.SQLITE_SCRATCH_GID == 1000
+    assert "useradd -m -u 1000 botuser" in (REPO / "Dockerfile").read_text()
+    validate_policy(load_policy(POLICY))
 
 
 def make_database(path, *, large=False):
@@ -172,7 +185,8 @@ def test_candidate_stream_probe_runs_with_native_python_without_checkout_and_pre
     before = identity(primary)
     emitted = emit_probe(REPO)
     isolated = disk_path / "no-repository"; isolated.mkdir()
-    result = subprocess.run([sys.executable, "-", "--database", str(primary), "--data-root", str(data)],
+    result = subprocess.run([sys.executable, "-", "--database", str(primary), "--data-root", str(data),
+        "--owner-uid", str(os.geteuid()), "--owner-gid", str(os.getegid())],
         input=emitted, cwd=isolated, env={**os.environ, "PYTHONPATH": ""},
         capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -181,7 +195,7 @@ def test_candidate_stream_probe_runs_with_native_python_without_checkout_and_pre
     assert report["schema"] == SCHEMA and report["status"] == "GREEN"
     assert report["source_sizes"]["primary"][""] == primary.stat().st_size
     assert report["capture_peak_bytes"]["primary"] == snapshot_peak_bytes(primary.stat().st_size)
-    assert report["lease_owner_uid"] == report["lease_owner_gid"] == 1000
+    assert report["lease_owner_uid"] == os.geteuid() and report["lease_owner_gid"] == os.getegid()
     assert report["source_sqlite_opened"] is report["residue_deleted"] is False
     assert not Path(report["scratch_root"]).exists()
     assert identity(primary) == before
@@ -282,7 +296,7 @@ def test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_pr
     for key in ENV_KEYS[1:]: monkeypatch.setenv(key, left[key])
     root = artifact_root(primary) / "sqlite-read-scratch"
     root_info = root.stat()
-    assert root_info.st_uid == root_info.st_gid == 1000
+    assert root_info.st_uid == os.geteuid() and root_info.st_gid == os.getegid()
     assert stat.S_IMODE(root_info.st_mode) == 0o700
     os.utime(primary, ns=(1_000_000_000, primary.stat().st_mtime_ns))
     before = identity(primary)

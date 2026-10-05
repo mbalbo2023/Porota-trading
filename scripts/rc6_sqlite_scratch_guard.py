@@ -61,7 +61,7 @@ def history_host_path(data_root, container_path):
     return _canonical(Path(data_root) / PurePosixPath(container_path).relative_to("/app/data"))
 
 
-def _history_env(repo_root):
+def _history_env(repo_root, *, owner_uid=OWNER_UID):
     path = Path(repo_root) / ".env"
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
@@ -70,7 +70,7 @@ def _history_env(repo_root):
     with os.fdopen(descriptor, "rb") as handle:
         info = os.fstat(handle.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1024**2
-                or info.st_uid not in {0, OWNER_UID} or stat.S_IMODE(info.st_mode) & 0o7133):
+                or info.st_uid not in {0, owner_uid} or stat.S_IMODE(info.st_mode) & 0o7133):
             raise ScratchAdmissionError("RC6_HISTORY_CONFIG_CUSTODY_REQUIRED")
         result = {}
         raw = handle.read(1024**2 + 1)
@@ -192,7 +192,7 @@ def probe(database, data_root, *, owner_uid=OWNER_UID, owner_gid=OWNER_GID,
     sources = {}
     if database.exists() or database.is_symlink() or not allow_empty_primary:
         sources["primary"] = source_sizes(database, owner_uid=owner_uid)
-    selected_history = history_container_path(_history_env(data_root.parent))
+    selected_history = history_container_path(_history_env(data_root.parent, owner_uid=owner_uid))
     if history_container is not None:
         selected_history = history_container_path({"HIST_DB_PATH": history_container})
     history = history_host_path(data_root, selected_history)

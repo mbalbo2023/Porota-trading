@@ -270,7 +270,10 @@ def prepare_sqlite_scratch_root(env=None):
     host_database = DATA / Path(CONTAINER_DB).relative_to("/app/data")
     guard = Path(__file__).resolve().parent / "scripts/rc6_sqlite_scratch_guard.py"
     result = subprocess.run([sys.executable, str(guard), "--database", str(host_database),
-        "--data-root", str(DATA), "--allow-empty-primary", "--history-container", history],
+        "--data-root", str(DATA), "--allow-empty-primary", "--history-container", history,
+        "--owner-uid", str(SQLITE_SCRATCH_UID), "--owner-gid", str(SQLITE_SCRATCH_GID)],
+        # These constants are the image's fixed bot1000 identity, not host euid.
+        # Isolated native tests may pass their fixture owner explicitly.
         capture_output=True, text=True,
         timeout=20, check=False)
     if result.returncode != 0:
