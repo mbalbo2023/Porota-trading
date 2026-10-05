@@ -1,0 +1,37 @@
+{
+  "schema": "rc6.component-raw-custody.v1",
+  "scope": "TWELVE_NATIVE_CODEC_DECODES_ONLY_NOT_FINANCIAL_OR_FULL_SUITE_OR_IMAGE_ACCEPTANCE",
+  "records": [
+    {
+      "original_path": "/tmp/rc6_finance_signed_zero_codec_f383e814_green_receipt.json",
+      "path": "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/native-receipt.json",
+      "bytes": 233253,
+      "sha256": "439600f3f5456334db9d31d66af82981e6fe10cd91494f77161246af37d001e0",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6_finance_signed_zero_codec_f383e814_green_receipt.entry-preflight.json",
+      "path": "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/entry-preflight.json",
+      "bytes": 11785,
+      "sha256": "48b51b26b593d150ff4c99cd4b23bda2aedfb0a7f3eb690aec5cd393b9c7de1a",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6_finance_signed_zero_codec_green_archive_runner_v3.py",
+      "path": "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/runner.py",
+      "bytes": 16918,
+      "sha256": "4e73ea6c94277949f73cf5acb0ba4ea411b189bcc4ef60518da5c3c819e3a473",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6_finance_signed_zero_archive_f383e814.index.json",
+      "path": "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/source.index.json",
+      "bytes": 533706,
+      "sha256": "cf2c6aac21f7723de2a67c0740f25a3feb0b1694870ab14b2f85d06541fe6ce4",
+      "byte_preserved": true
+    }
+  ],
+  "artifact_validated": false,
+  "runtime_validated": false,
+  "final_material_acceptance": false
+}
