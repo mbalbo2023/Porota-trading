@@ -425,6 +425,20 @@ def coverage_inventory(connection, identities, *, as_of, consumer,
             'rows':rows,'readiness_implication':'NONE','runtime_verified':False}
 
 
+def resolve_legacy_currency(explicit, mapped):
+    """Use an explicit row quote or one proven mapping, never a currency guess."""
+    try:
+        monetary=cash_currency(explicit) if explicit else None
+        choices={cash_currency(value) for value in mapped} if isinstance(mapped,(list,tuple,set)) else ({cash_currency(mapped)} if mapped else set())
+    except ValueError:raise ValueError('HISTORY_CURRENCY_UNVERIFIED') from None
+    if monetary:
+        if choices and monetary not in choices:raise ValueError('HISTORY_CURRENCY_MAPPING_CONFLICT')
+        return monetary
+    if not choices:raise ValueError('HISTORY_CURRENCY_UNVERIFIED')
+    if len(choices)!=1:raise ValueError('HISTORY_CURRENCY_AMBIGUOUS')
+    return next(iter(choices))
+
+
 def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_bytes=512*1024*1024,
                  max_rows=1000000):
     """Preserve source and legacy tables; migrate only explicit currency.
@@ -438,7 +452,17 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
     destination_members=[Path(str(destination)+suffix) for suffix in ('','-wal','-shm','-journal')]
     if source==destination or any(path.exists() or path.is_symlink() for path in destination_members):
         raise ValueError("HISTORY_NEW_COPY_DESTINATION_REQUIRED")
-    currency_map=currency_map or {}
+    frozen_map={}
+    for raw_key,mapped in (currency_map or {}).items():
+        if not isinstance(raw_key,tuple) or len(raw_key)!=4:
+            raise ValueError('HISTORY_MIGRATION_MAPPING_KEY_INVALID')
+        key=tuple(str(value or '').strip().upper() for value in raw_key)
+        if any(value in {'','UNKNOWN'} for value in key):raise ValueError('HISTORY_MIGRATION_MAPPING_KEY_INVALID')
+        choices=mapped if isinstance(mapped,(list,tuple,set)) else [mapped]
+        try:frozen_map[key]=tuple(sorted({cash_currency(value) for value in choices}))
+        except ValueError:raise ValueError('HISTORY_CURRENCY_UNVERIFIED') from None
+    currency_map=frozen_map
+    mapping_digest=sha256(_canonical_json(sorted((list(key),value) for key,value in currency_map.items())).encode()).hexdigest()
     if not 0<seconds<=300 or type(max_rows) is not int or not 0<max_rows<=5000000:
         raise ValueError('HISTORY_MIGRATION_BOUNDED_BUDGET_REQUIRED')
     deadline=time.monotonic()+seconds
@@ -482,15 +506,14 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
             check()
             try:
                 metadata=json.loads(row["metadata_json"] or "{}")
-                oldkey=tuple(row[f] for f in ("symbol","instrument_type","market","settlement"))
+                if not isinstance(metadata,dict):raise ValueError('HISTORY_METADATA_INVALID')
+                oldkey=tuple(str(row[f] or '').strip().upper() for f in ("symbol","instrument_type","market","settlement"))
                 mapped=currency_map.get(oldkey)
-                if isinstance(mapped,(list,tuple,set)):
-                    if len(mapped)!=1: raise ValueError("HISTORY_CURRENCY_AMBIGUOUS")
-                    mapped=next(iter(mapped))
                 explicit=metadata.get("currency")
-                if explicit and mapped and cash_currency(explicit)!=cash_currency(mapped): raise ValueError("HISTORY_CURRENCY_MAPPING_CONFLICT")
-                if not (explicit or mapped): raise ValueError("HISTORY_CURRENCY_UNVERIFIED")
-                value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted","observed_at")},metadata=metadata,currency=explicit or mapped)
+                monetary=resolve_legacy_currency(explicit,mapped)
+                metadata['copy_migration_currency']={'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
+                    'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}
+                value=Candle(**{f:row[f] for f in ("symbol","instrument_type","market","settlement","date","open","high","low","close","volume","source","adjusted","observed_at")},metadata=metadata,currency=monetary)
                 result=append_candle(store,value)
                 with store.connect() as c: c.execute("INSERT INTO history_migration_map_v2 VALUES(?,?)",(row["id"],result["version_id"]))
                 migrated+=1
@@ -504,10 +527,12 @@ def migrate_copy(source,destination,*,currency_map=None,seconds=60,max_source_by
         with store.connect() as c:
             c.set_progress_handler(lambda:int(time.monotonic()>=deadline),100)
             from ea_history_close_series_hf2 import migrate_legacy_tables
-            close_migration=migrate_legacy_tables(c,currency_map=currency_map,max_rows=max_rows-len(versions),check=check)
+            close_migration=migrate_legacy_tables(c,currency_map=currency_map,max_rows=max_rows-len(versions),check=check,
+                                                  mapping_digest=mapping_digest)
             if c.execute("PRAGMA quick_check").fetchone()[0]!="ok": raise ValueError("HISTORY_MIGRATION_INTEGRITY_FAILED")
         return {"state":"COPY_MIGRATED","source_rows":len(versions),"migrated_rows":migrated,"quarantined_rows":quarantined,
-                "close_only":close_migration,"source_mutation":False,"full_ingestion_repeated":False}
+                "close_only":close_migration,"currency_mapping_sha256":mapping_digest,
+                "source_mutation":False,"full_ingestion_repeated":False}
     except BaseException:
         for path in destination_members:
             if path.exists():path.unlink()

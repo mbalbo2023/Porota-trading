@@ -7,6 +7,7 @@ changes, rollback journals, aliases and an unbounded source fail closed.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -51,18 +52,28 @@ def _inventory(path):
 def _read(member, expected, *, deadline, destination=None):
     # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
     # source-owner capture is required; silently degrading would change it.
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NOATIME", 0)
+    if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+        raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
     digest = hashlib.sha256()
     try:
         descriptor = os.open(member, flags)
         with os.fdopen(descriptor, "rb") as stream:
             if _metadata(os.fstat(stream.fileno())) != expected:
                 raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
+            consumed = 0
             while True:
                 _check(deadline)
-                chunk = stream.read(1024 * 1024)
+                # Read at most the declared remaining bytes plus one sentinel.
+                # A growing source never causes an oversized scratch write.
+                chunk = stream.read(min(1024 * 1024, expected[4] - consumed + 1))
                 if not chunk:
+                    if consumed != expected[4]:
+                        raise SnapshotError('SOURCE_SNAPSHOT_BUSY')
                     break
+                if consumed + len(chunk) > expected[4]:
+                    raise SnapshotError('SOURCE_SNAPSHOT_BUSY')
+                consumed += len(chunk)
                 digest.update(chunk)
                 if destination is not None:
                     destination.write(chunk)
@@ -87,6 +98,8 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
         raise SnapshotError("BOUNDED_SOURCE_BUDGET_REQUIRED")
     if deadline is None:
         deadline = time.monotonic() + 10.0
+    if isinstance(deadline,bool) or not isinstance(deadline,(int,float)) or not math.isfinite(deadline):
+        raise SnapshotError('BOUNDED_TIME_BUDGET_REQUIRED')
     path = Path(path).absolute()
     if path.resolve() != path or any(parent.is_symlink() for parent in path.parents):
         raise SnapshotError("REGULAR_UNALIASED_FILE_REQUIRED")

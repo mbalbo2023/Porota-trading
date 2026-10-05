@@ -75,6 +75,13 @@ def test_U24_source_copy_honors_deadline_and_byte_budget(tmp_path):
         with readonly_copy(target,max_source_bytes=1):pass
 
 
+@pytest.mark.parametrize('deadline',[float('inf'),float('nan')])
+def test_U24_nonfinite_deadline_cannot_disable_the_time_budget(tmp_path,deadline):
+    _,target=wal_transport(tmp_path)
+    with pytest.raises(SnapshotError,match='BOUNDED_TIME_BUDGET_REQUIRED'):
+        with readonly_copy(target,deadline=deadline):pass
+
+
 def test_U24_source_change_during_stream_capture_is_not_certified(tmp_path,monkeypatch):
     folder,target=wal_transport(tmp_path)
     import rc6_audit_evidence.sqlite_snapshot as snapshots
@@ -92,6 +99,28 @@ def test_U24_source_change_during_stream_capture_is_not_certified(tmp_path,monke
     with pytest.raises(SnapshotError,match='SOURCE_SNAPSHOT_BUSY'):
         with readonly_copy(target):pass
     assert not Path(str(target)+'-shm').exists()
+
+
+def test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget(tmp_path):
+    import rc6_audit_evidence.sqlite_snapshot as snapshots
+    source=tmp_path/'growing.bin';source.write_bytes(b'committed-prefix')
+    expected=snapshots._metadata(source.stat())
+    class Destination:
+        captured=0
+        def write(self,chunk):
+            self.captured+=len(chunk)
+            with source.open('ab') as writer:writer.write(b'x'*(2*1024*1024))
+    destination=Destination()
+    with pytest.raises(SnapshotError,match='SOURCE_SNAPSHOT_BUSY'):
+        snapshots._read(source,expected,deadline=time.monotonic()+1,destination=destination)
+    assert destination.captured==expected[4]
+
+
+def test_U24_platform_without_atime_preservation_fails_closed(tmp_path,monkeypatch):
+    _,target=wal_transport(tmp_path)
+    monkeypatch.delattr(os,'O_NOATIME')
+    with pytest.raises(SnapshotError,match='SOURCE_OWNER_CAPTURE_REQUIRED'):
+        with readonly_copy(target):pass
 
 
 @pytest.mark.parametrize('kind',['symlink','hardlink'])

@@ -404,6 +404,19 @@ def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_
     assert rejected['invalid_targets']==1 and not rejected['ok'] and len(calls)==1
 
 
+def test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch(tmp_path,monkeypatch):
+    monkeypatch.setattr(data912,'_session',lambda:object())
+    def forbidden(*_):raise AssertionError('AMBIGUOUS_REQUEST_MUST_NOT_FETCH')
+    monkeypatch.setattr(data912,'_get_json',forbidden)
+    s=Store(tmp_path/'history.sqlite')
+    result=sink.refresh_identities([('AUDIT','ACCIONES','BYMA','ARS','A-24HS'),
+        ('AUDIT','ACCIONES','BYMA','USD','A-24HS')],batch_limit=1,history_store=s)
+    assert not result['ok'] and result['selected']==0 and result['invalid_targets']==2
+    assert result['ambiguous_provider_requests']==1
+    assert {row['reason'] for row in result['identity_rejections']}=={'HISTORY_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS'}
+    assert table(s,'history_versions_v2')==[]
+
+
 @pytest.mark.parametrize('failure,reason',[('429','DATA912_RATE_LIMIT'),('timeout','DATA912_TIMEOUT')])
 def test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion(monkeypatch,failure,reason):
     calls=[];delays=[]
@@ -474,6 +487,14 @@ def test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_curren
     with sqlite3.connect(target) as c:
         assert c.execute('SELECT currency,close FROM history_close_canonical_v1').fetchone()==('ARS',100)
         assert c.execute('SELECT COUNT(*) FROM history_close_versions_v1_legacy').fetchone()[0]==1
+
+
+def test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort():
+    assert history.resolve_legacy_currency('ARS',['ARS','USD_MEP'])=='ARS'
+    with pytest.raises(ValueError,match='CURRENCY_AMBIGUOUS'):
+        history.resolve_legacy_currency(None,['ARS','USD_MEP'])
+    with pytest.raises(ValueError,match='CURRENCY_MAPPING_CONFLICT'):
+        history.resolve_legacy_currency('USD',['ARS','USD_MEP'])
 
 
 def test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed(tmp_path):

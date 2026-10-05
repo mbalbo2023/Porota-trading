@@ -1,5 +1,6 @@
 """Real SQLite contracts for the causal read-only SHADOW preopen bridge."""
 from datetime import date, datetime, timedelta, timezone
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -7,7 +8,7 @@ from time import monotonic
 
 import pytest
 
-from cu_history_store_v2_hf6 import DDL as HISTORY_DDL
+from cu_history_store_v2_hf6 import Candle, append_many
 from rc6_dynamic_universe.tradeability import anomaly_events, freeze_preopen, rank_tradeability
 from rc6_shadow_runtime import preopen
 
@@ -55,14 +56,23 @@ def _make_database(path, *, catalogue=CATALOG):
 
 
 def _history(path, *, metadata=True, volume=100, available=None, source="PPI_PRODUCTION_HISTORY", adjusted=False):
-    with sqlite3.connect(path) as connection:
-        connection.executescript(HISTORY_DDL)
-        for day in _sessions():
-            data = {"source_at": day+"T20:00:00+00:00", "currency": "ARS", "volume_unit": "SHARES"} if metadata else {}
-            connection.execute("""INSERT INTO history_versions_v2(symbol,instrument_type,market,
-              settlement,date,open,high,low,close,volume,source,adjusted,observed_at,payload_hash,metadata_json)
-              VALUES('A','ACCIONES','BYMA','A-24HS',?,100,101,99,100,?,?,?,?,?,?)""",
-              (day, volume, source, int(adjusted), available or day+"T20:00:02+00:00", day+source, json.dumps(data)))
+    class FixtureStore:
+        @contextmanager
+        def connect(self):
+            connection=sqlite3.connect(path)
+            connection.row_factory=sqlite3.Row
+            try:yield connection;connection.commit()
+            except BaseException:connection.rollback();raise
+            finally:connection.close()
+    records=[]
+    for day in _sessions():
+        data={"source_at":day+"T20:00:00+00:00","currency":"ARS","volume_unit":"SHARES"} if metadata else {}
+        records.append(Candle('A','ACCIONES','BYMA','A-24HS',day,100,101,99,100,
+            volume,source,adjusted,available or day+'T20:00:02+00:00',data,
+            currency='ARS',price_basis='UNKNOWN_ADJUSTED' if adjusted else 'RAW',
+            volume_kind='QUANTITY' if metadata else 'UNKNOWN',
+            provider_at=day+'T20:00:00+00:00' if metadata else None))
+    append_many(FixtureStore(),records)
 
 
 def _books(path, *, explicit_units=False, available=None):
@@ -155,7 +165,9 @@ def test_history_versions_reconstruct_causal_source_authority_at_cutoff(tmp_path
     history = tmp_path/"history.db"
     _history(history)
     _history(history, volume=999, source="DATA912", available=CUT)
-    _history(history, volume=999999, available=AS_OF)
+    # The correction is after the query cut and already in the real past;
+    # the authoritative writer must not ingest a future known_at fixture.
+    _history(history, volume=999999, available=(datetime.fromisoformat(CUT)+timedelta(seconds=1)).isoformat())
     inputs = _read(source, history)
     assert all(row["volume"] == 100 for row in inputs["history"])
     assert all(row["source"] == "PPI_PRODUCTION_HISTORY" for row in inputs["history"])

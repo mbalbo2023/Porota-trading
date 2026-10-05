@@ -14,7 +14,7 @@ from hashlib import sha256
 import json
 from typing import Iterable, Mapping
 from zoneinfo import ZoneInfo
-from cu_history_store_v2_hf6 import Candle,instant,utc
+from cu_history_store_v2_hf6 import Candle,instant,utc,resolve_legacy_currency
 from bs_instrument_contracts import cash_currency
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -220,6 +220,7 @@ def append_close_evidence(store, item: CloseEvidence, *, connection=None) -> dic
         "open_high_low":"NOT_STORED",
         "volume":"NOT_INTERPRETED",
         "currency":item.currency,
+        "copy_migration_currency":item.raw_row.get('copy_migration_currency'),
     })
     c=connection
     if c is not None:
@@ -295,7 +296,8 @@ def append_many(store, rows: Iterable[CloseEvidence]) -> dict:
     return {"versions_appended":versions,"canonical_updates":canonical}
 
 
-def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=lambda:None):
+def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=lambda:None,
+                          mapping_digest=None):
     """Migrate close-only tables in an already isolated destination copy."""
     columns={r[1] for r in connection.execute('PRAGMA table_info(history_close_versions_v1)')}
     if not columns or {'currency','previous_version_id'}<=columns:
@@ -319,18 +321,18 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
         check()
         try:
             meta=json.loads(row['metadata_json'] or '{}')
-            key=tuple(row[f] for f in ('symbol','instrument_type','market','settlement'))
+            if not isinstance(meta,dict):raise ValueError('HISTORY_METADATA_INVALID')
+            key=tuple(str(row[f] or '').strip().upper() for f in ('symbol','instrument_type','market','settlement'))
             mapped=currency_map.get(key)
-            if isinstance(mapped,(list,tuple,set)):
-                if len(mapped)!=1:raise ValueError('HISTORY_CURRENCY_AMBIGUOUS')
-                mapped=next(iter(mapped))
             explicit=row.get('currency') or meta.get('currency')
-            if explicit and mapped and cash_currency(explicit)!=cash_currency(mapped):
-                raise ValueError('HISTORY_CURRENCY_MAPPING_CONFLICT')
-            currency=cash_currency(explicit or mapped)
+            if row.get('currency') and meta.get('currency') and cash_currency(row['currency'])!=cash_currency(meta['currency']):
+                raise ValueError('HISTORY_CURRENCY_CONFLICT')
+            currency=resolve_legacy_currency(explicit,mapped)
             item=CloseEvidence(row['symbol'],row['instrument_type'],row['market'],row['settlement'],
                 row['date'],row['close'],utc(row['observed_at']),meta.get('rejection_reason_full_ohlc','LEGACY_PARTIAL'),
-                int(meta.get('row_index',0)),{'date':row['date'],'price':row['close'],'legacy_raw_row_hash':row['raw_row_hash']},currency)
+                int(meta.get('row_index',0)),{'date':row['date'],'price':row['close'],'legacy_raw_row_hash':row['raw_row_hash'],
+                    'copy_migration_currency':{'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
+                        'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}},currency)
             result=append_close_evidence(None,item,connection=connection)
             connection.execute('INSERT INTO history_close_migration_map_v2 VALUES(?,?)',(row['id'],result['version_id']))
             migrated+=1

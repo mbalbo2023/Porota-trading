@@ -60,6 +60,7 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
 
     normalized = []
     seen = set()
+    request_cohort = {}
     invalid_targets = 0
     for raw in targets:
         if len(raw) != 5:
@@ -73,6 +74,8 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
             str(raw[4] or "").strip().upper(),
         )
         key = (symbol, family, market, currency, settlement)
+        if symbol and family in data912.OPERATIONAL_FAMILIES:
+            request_cohort.setdefault((symbol,family),set()).add(key)
         if (not symbol or family not in data912.OPERATIONAL_FAMILIES or not market or
                 market == "UNKNOWN" or not settlement or settlement == "UNKNOWN" or
                 currency not in {"ARS","USD","USD_MEP","USD_CCL"} or key in seen):
@@ -80,6 +83,13 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
             continue
         seen.add(key)
         normalized.append(key)
+    # The provider request carries ticker/family only. A cohort with multiple
+    # monetary or settlement identities cannot be resolved by that request.
+    # Check the complete cohort before applying a scheduling batch limit.
+    ambiguous_requests={key for key,identities in request_cohort.items() if len(identities)>1}
+    ambiguous_targets=[identity for identity in normalized if identity[:2] in ambiguous_requests]
+    normalized=[identity for identity in normalized if identity[:2] not in ambiguous_requests]
+    invalid_targets+=len(ambiguous_targets)
     if batch_limit is not None:
         normalized = normalized[:max(0, int(batch_limit))]
 
@@ -140,6 +150,9 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
         "source":"DATA912_HISTORICAL_BATCH_V2",
         "selected":len(normalized),
         "invalid_targets":invalid_targets,
+        "ambiguous_provider_requests":len(ambiguous_requests),
+        "identity_rejections":[{'identity':list(identity),'reason':'HISTORY_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS'}
+                               for identity in ambiguous_targets],
         "successful":successful,
         "without_history":empty,
         "failed":failed,
