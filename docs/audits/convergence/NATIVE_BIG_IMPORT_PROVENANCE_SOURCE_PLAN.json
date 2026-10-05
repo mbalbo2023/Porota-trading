@@ -73,7 +73,7 @@
       "import_provenance.worker_exitcode",
       "import_provenance.worker_cleanup_completed"
     ],
-    "incomplete": "Business/resource-complete can coexist with import proof incomplete. In opt-in audit mode incomplete imports raise StressImportProofLimit with lossless evidence/exit1. Missing FINAL, timeout, invalid PID/pin, unknown origin, opaque exec, observer failure or overflow never closes the proof.",
+    "incomplete": "Business/resource-complete can coexist with import proof incomplete. In opt-in audit mode incomplete imports raise StressImportProofLimit with lossless evidence/exit1; business/resource failure uses StressResourceLimit carrying the same aggregate proof. Nonzero worker exits retain actual exitcode, initial proof and any safely captured failure window instead of losing JSON to an untyped AssertionError. Legacy mode retains its original nonzero-child AssertionError. Worker Exception proof emission never converts the exception into exit0; previously received progress/fsync is retained without inventing unobserved work. Missing FINAL, timeout, invalid PID/pin, unknown origin, opaque exec, observer failure or overflow never closes the proof.",
     "legacy": "No binding preserves original business path and reports NOT_AUDITED. Old8764 and other raw epochs remain byteexact and are never relabeled as audited."
   },
   "guards_planned_not_executed": [
@@ -86,6 +86,7 @@
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook", "kind": "EXPLICIT_SNAPSHOT_FAILURE_CONTROL"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer", "variants": ["root_abort", "fixture_abort"], "kind": "ACTUAL_ABORT_OWNER_CLEANUP_WITH_CONTROLLED_PREPARED_BINDING_NOT_RAW_GIT_PASS"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook", "variants": ["child_initial_abort", "child_queue_abort"], "kind": "ACTUAL_CHILD_TARGET_STARTUP_BASEEXCEPTION_WITH_REAL_OBSERVER_AND_CONTROLLED_QUALIFICATION_NOT_ACTUAL157"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence", "kind": "ACTUAL_FORK_CHILD_OBSERVER_INIT_EXCEPTION_EXIT1_REAP_WITH_CONTROLLED_BINDING_SQLITE_WORK_FAILURE_AND_EXIT_STUB_NOT_CANONICAL_SPAWN_BUSINESS_ACCEPTANCE"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import", "kind": "ACTUAL_CLI_PARTIAL_BINDING_REJECTION"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture", "kind": "CONTROLLED_INVALID_INDEX_BINDING_FAILS_BEFORE_ENVIRONMENT_OR_FIXTURE_NOT_RAW_GIT_SUCCESS"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup", "kind": "ACTUAL_TARGET_ENTRY_PID_BINDING_REJECTION_NO_PRODUCT_IMPORT_OR_FIXTURE"},

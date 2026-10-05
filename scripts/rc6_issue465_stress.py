@@ -197,9 +197,35 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
                         "source_index_sha256":source_binding.get("source_index_sha256"),"transient_closure_verified":False,
                         "error_class":type(error).__name__,"reason":str(error)}})
                 return
-        return _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
-            canonical_runtime,diagnostic_stacks,import_observer,
-            child_qualification if source_binding is not None else None)
+        try:
+            return _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
+                canonical_runtime,diagnostic_stacks,import_observer,
+                child_qualification if source_binding is not None else None)
+        except Exception as error:
+            if source_binding is None:
+                raise
+            try:
+                observed_window = import_observer.finish()
+            except Exception as proof_error:
+                observed_window = {"status":"UNVERIFIED_FINAL_BOUNDARY","transient_closure_verified":False,
+                    "error_class":type(proof_error).__name__,"reason":str(proof_error)}
+            failure = {"schema":"rc6.native-import-proof.v1","status":"UNVERIFIED_WORKER_EXCEPTION",
+                "native_pid":os.getpid(),"parent_pid":os.getppid(),
+                "source_sha":source_binding["source_sha"],"source_tree":source_binding["source_tree"],
+                "source_index_sha256":source_binding["source_index_sha256"],
+                "environment_before_product_imports":child_qualification,"transient_closure_verified":False,
+                "error_class":type(error).__name__,"reason":str(error),
+                "observed_window_before_exception":observed_window}
+            started.set()
+            failure_usage = resource.getrusage(resource.RUSAGE_SELF)
+            queue.put({"_probe_event":"FINAL","status":"SHADOW_FAIL_CLOSED","cycle_completion":False,
+                "cycle_handled":False,"reason":"NATIVE_IMPORT_WORKER_EXCEPTION",
+                "elapsed_seconds":time.monotonic()-import_observer.installed_at,
+                "elapsed_clock_scope":"SINCE_IMPORT_HOOK_INSTALLATION_NOT_BUSINESS_CYCLE_COMPLETION",
+                "cpu_seconds":failure_usage.ru_utime+failure_usage.ru_stime,
+                "cpu_clock_scope":"PROCESS_LIFETIME_AT_EXCEPTION",
+                "peak_rss_bytes":failure_usage.ru_maxrss*1024,"import_provenance":failure})
+            raise
     finally:
         if import_observer is not None:
             import_observer.deactivate()
@@ -627,7 +653,12 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
         if event == "IMPORT_PROVENANCE":
             child_import_before = message.get("import_provenance")
         elif event == "FINAL":
-            shadow = message
+            if message.get("reason") == "NATIVE_IMPORT_WORKER_EXCEPTION":
+                # Preserve already received native progress/fsync fields. The
+                # exception wrapper cannot reconstruct unobserved work state.
+                shadow.update(message)
+            else:
+                shadow = message
             completed = True
         elif event in {"PROGRESS", "FSYNC"}:
             shadow.update(message)
@@ -673,7 +704,11 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
         else:
             shadow["child_cleanup_completed"] = True
         if not child.is_alive() and child.exitcode != 0:
-            raise AssertionError(f"SHADOW_CHILD_EXIT:{child.exitcode}")
+            if binding is None:
+                raise AssertionError(f"SHADOW_CHILD_EXIT:{child.exitcode}")
+            shadow.update(status="SHADOW_FAIL_CLOSED",cycle_completion=False,cycle_handled=False,
+                last_native_reason=shadow.get("reason"),reason="NATIVE_IMPORT_WORKER_NONZERO_EXIT",
+                child_exitcode=child.exitcode,child_exit_reason="NATIVE_IMPORT_WORKER_NONZERO_EXIT")
     finally:
         release.set()
         if child.is_alive():

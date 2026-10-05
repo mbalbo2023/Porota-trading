@@ -93,6 +93,38 @@ elif case in ('child_initial_abort','child_queue_abort'):
     exec(compile('VALUE=6','<string>','exec'),{})
     assert next_observer.finish()['event_counts']['opaque_exec']>=1
     assert not (private/'absent.db').exists() and not (private/'absent-output').exists()
+elif case=='nonzero_child':
+    import multiprocessing, sqlite3, time
+    from scripts import rc6_issue465_stress as stress
+    fork=multiprocessing.get_context('fork')
+    stress.mp.get_context=lambda mode: fork
+    proof.prepare_binding=lambda **kwargs: dict(binding,
+        parent_environment_before_fixtures={'test_scope':'CONTROLLED_BINDING_NOT_RAW_GIT_QUALIFICATION'},
+        sys_path_before_fixtures=list(sys.path))
+    def fixture(path,**kwargs):
+        with sqlite3.connect(path) as connection:
+            connection.execute('CREATE TABLE observer_guard(value INTEGER)')
+            connection.execute('INSERT INTO observer_guard VALUES(1)')
+    def failure(*args,**kwargs): raise ImportError('controlled work startup failure')
+    stress.fixture_database=fixture; stress._shadow_child_work=failure
+    stress.factual_exit_probe=lambda path: {'started_at_monotonic':time.monotonic(),
+        'finished_at_monotonic':time.monotonic(),'closed':0,'sell_fills':0,
+        'scope':'CONTROLLED_EXIT_STUB_NO_TRADING_OR_FINANCIAL_ACCEPTANCE'}
+    try:
+        stress.run_stress(private/'nonzero-child',catalog_count=1,observations_per_identity=1,
+            canonical_runtime=True,source_provenance={'test_scope':'CONTROLLED_BINDING'})
+    except stress.StressResourceLimit as error: nonzero_evidence=error.evidence
+    else: raise AssertionError('nonzero child lost typed evidence or became GREEN')
+    assert nonzero_evidence['business_resource_complete'] is False
+    assert nonzero_evidence['import_proof_complete'] is False
+    aggregate=nonzero_evidence['import_provenance']
+    assert aggregate['worker_exitcode']==1
+    assert aggregate['worker_boundary_before']['native_pid']==aggregate['worker_pid']!=os.getpid()
+    assert aggregate['worker_boundary_before']['parent_pid']==os.getpid()
+    assert aggregate['worker_final']['status']=='UNVERIFIED_WORKER_EXCEPTION'
+    assert aggregate['worker_final']['error_class']=='ImportError'
+    assert 'event_counts' in aggregate['worker_final']['observed_window_before_exception']
+    assert nonzero_evidence['shadow']['child_cleanup_completed'] is True
 elif case in ('root_abort','fixture_abort'):
     from scripts import rc6_issue465_stress as stress
     created=[]
@@ -121,6 +153,9 @@ elif case in ('root_abort','fixture_abort'):
 result=observer.finish()
 result.update(test_case=case,test_binding_scope=binding['test_binding_scope'],
   child_pid=os.getpid(),initial_native_pid=initial['native_pid'])
+if case=='nonzero_child':
+    result['nonzero_child_evidence']=nonzero_evidence
+    result['nonzero_child_control_scope']='ACTUAL_FORK_CHILD_OBSERVER_AND_PRIVATE_SQLITE_WITH_WORK_FAILURE_AND_EXIT_STUB_NOT_CANONICAL_SPAWN_BUSINESS_ACCEPTANCE'
 print(json.dumps(result,sort_keys=True))
 '''
 
@@ -188,6 +223,17 @@ def test_stress_early_failure_deactivates_hook_before_next_observer(tmp_path,cas
 @pytest.mark.parametrize('case',['child_initial_abort','child_queue_abort'])
 def test_child_startup_base_exception_deactivates_owned_hook(tmp_path,case):
     _actual_control(tmp_path,case)
+
+
+def test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence(tmp_path):
+    result=_actual_control(tmp_path,'nonzero_child')
+    evidence=result['nonzero_child_evidence']
+    assert evidence['import_provenance']['worker_exitcode']==1
+    assert evidence['import_provenance']['worker_boundary_before']['status']=='IN_PROGRESS_NOT_CLOSED'
+    assert evidence['import_provenance']['worker_final']['status']=='UNVERIFIED_WORKER_EXCEPTION'
+    assert evidence['business_resource_complete'] is False and evidence['import_proof_complete'] is False
+    assert evidence['shadow']['cycle_completion'] is False
+    assert 'ACTUAL_FORK_CHILD' in result['nonzero_child_control_scope']
 
 
 def test_partial_source_cli_is_rejected_before_fixture_or_business_import(tmp_path):
