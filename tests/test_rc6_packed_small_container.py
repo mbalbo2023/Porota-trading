@@ -228,16 +228,27 @@ def test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decod
 
 def test_fresh_short_named_plain_capture_is_reused_only_after_the_strict_filter(monkeypatch):
     value = {"signal": False, "count": 0, "delta": -0.0}
-    original, calls = packed._canonical, []
+    parent = {"stages": value}
+    original, original_named = packed._canonical, packed._CaptureBuilder._named
+    calls, named_calls = [], []
     def tracked(member, **kwargs):
         if member is value:
             calls.append(member)
         return original(member, **kwargs)
+    def tracked_named(self, member):
+        if member is value:
+            named_calls.append(member)
+        return original_named(self, member)
     monkeypatch.setattr(packed, "_canonical", tracked)
-    actual = packed._CaptureBuilder(value).capture(value, "stages")
+    monkeypatch.setattr(packed._CaptureBuilder, "_named", tracked_named)
+    builder = packed._CaptureBuilder(parent)
+    actual = builder.capture(parent)
     assert len(canonical(value)) < 64
+    assert named_calls == [value]
     assert len(calls) == 1
-    assert actual == PriorAppendBuilder(value).capture(value, "stages")
+    assert builder.cache[id(value)][0] is value
+    assert builder.cache[id(value)][1] == packed.Capture(canonical(value), ())
+    assert actual == PriorAppendBuilder(parent).capture(parent)
 
 
 def test_caller_cached_short_capture_cannot_supply_new_plain_bytes_or_hide_mutations():
