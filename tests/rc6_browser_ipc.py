@@ -364,7 +364,7 @@ class ProductClient:
                     "PRODUCT_IPC_ERROR_CONTRACT")
             if failure["gate"] == "DIAGNOSTIC_WINDOW_ENDED":
                 raise ProductDiagnosticWindowEnded()
-            raise GateFailure(failure["gate"], failure.get("details"))
+            raise GateFailure(failure["gate"], {**failure["details"], "remote_error_class": failure["error_class"]})
         require(type(response.get("result")) is dict, "PRODUCT_IPC_RESULT_CONTRACT")
         return response["result"]
 
@@ -421,9 +421,11 @@ class ProductClient:
         return result
 
     def health(self):
-        result = self.request("health", timeout=5)
-        require(self.last_elapsed <= HEALTH_REQUEST_SECONDS, "HEALTH_EXCEEDS_REQUEST_BUDGET")
-        return result
+        try:
+            return self.request("health", timeout=5)
+        finally:
+            require(self.last_elapsed <= HEALTH_REQUEST_SECONDS, "HEALTH_EXCEEDS_REQUEST_BUDGET",
+                    {"elapsed_seconds": self.last_elapsed})
 
     def close(self):
         if self.process is None:

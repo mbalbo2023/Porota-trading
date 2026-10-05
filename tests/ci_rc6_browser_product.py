@@ -1,11 +1,11 @@
-"""Native browser handlers in the exact Python 3.11 / 157-distribution process.
+"""Native browser handlers in the exact Python 3.11/3.12, 157-distribution process.
 
 The driver speaks bounded JSON over stdio. No browser library, product response
 cache, adjusted clock or weakened reader participates in this process.
 """
 import argparse
 from contextlib import ExitStack, redirect_stdout
-from datetime import datetime
+from datetime import datetime, timezone
 import gc
 import hashlib
 import json
@@ -38,6 +38,7 @@ class NativeProduct:
         self.guards, self.resources, self.network, self.source_calls = ExitStack(), ExitStack(), [], []
         self.initialized, self.finished, self.database = False, False, None
         self.native_root, self.custody_before, self.fixture = None, None, None
+        self.live_health = None
         self.require = require
         self.trace = None
         def no_network(*_args, **_kwargs):
@@ -51,16 +52,24 @@ class NativeProduct:
         require(not self.initialized and self.database is None and not self.finished,
                 "PRODUCT_IPC_INITIALIZATION_REPEATED")
         mode = request.get("mode")
-        require(mode in {"LARGE", "NORMAL"}, "PRODUCT_IPC_MODE_INVALID")
+        require(mode in {"LARGE", "NORMAL", "MULTIFAMILY", "HEALTH_LIVE"}, "PRODUCT_IPC_MODE_INVALID")
         # No native import occurs before the environment and whole-source
         # handshake. NORMAL keeps the original writer supervision/GC behavior.
-        if mode == "NORMAL":
+        if mode in {"NORMAL", "MULTIFAMILY", "HEALTH_LIVE"}:
             temporary = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="porota-native-browser-product-"))
-            from tests.rc6_dashboard_native_fixture import native_fixture
-            self.fixture = native_fixture(Path(temporary))
-            self.fixture.broker.supervise_futures(self.fixture.as_of.isoformat())
-            gc.collect()  # Original normal-runner writer finalization, unchanged.
-            self.database, self.native_root, self.cut_at = self.fixture.database, self.fixture.root, self.fixture.as_of
+            from tests.rc6_dashboard_native_fixture import native_fixture, LiveHealthFixture
+            if mode == "HEALTH_LIVE":
+                self.require(self.source_index and self.source_index["pin_complete"], "WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED")
+                self.fixture = self.resources.enter_context(LiveHealthFixture(Path(temporary), self.root, self.index,
+                    executable=sys.executable, source_index=self.source_index))
+                self.live_health = self.fixture
+                self.database, self.native_root = self.fixture.database, self.fixture.root
+            else:
+                options = {"multifamily": True, "count": 35} if mode == "MULTIFAMILY" else {}
+                self.fixture = native_fixture(Path(temporary), **options)
+                self.fixture.broker.supervise_futures(self.fixture.as_of.isoformat())
+                gc.collect()  # Original normal-runner writer finalization, unchanged.
+                self.database, self.native_root, self.cut_at = self.fixture.database, self.fixture.root, self.fixture.as_of
         else:
             require(type(request.get("database")) is str and type(request.get("root")) is str,
                     "PRODUCT_IPC_SOURCE_CONTRACT")
@@ -105,6 +114,9 @@ class NativeProduct:
             "pointer": self.pointer, "source_cut": self.cut_at.isoformat(), "native_generation_roles": sorted(self.manifest["files"]),
             "verification_level": VERIFICATION_LEVEL, "canonical_paths": list(CANONICAL_PATHS), "legacy": LEGACY,
             "source_pin_complete": bool(self.source_index and self.source_index["pin_complete"])}
+        with self.readonly_copy(self.database, validate=False, deadline=monotonic() + 2) as copied:
+            result["catalog_families"] = {row[0]: row[1] for row in copied.execute(
+                "SELECT instrument_type,count(*) FROM financial_instrument_catalog GROUP BY instrument_type ORDER BY instrument_type")}
         if mode == "LARGE":
             with self.readonly_copy(self.database, validate=False, deadline=monotonic() + 2) as copied:
                 catalog_count = copied.execute("SELECT count(*) FROM financial_instrument_catalog").fetchone()[0]
@@ -165,7 +177,8 @@ class NativeProduct:
                         for role in proofs), "RENDER_CHANGED_VERIFIED_MEMBER_DIGESTS")
             observed.append({"pointer": document["pointer"],
                 "source_cut": document["manifest"]["as_of"],
-                "role_digests": {role: proof["payload_digest"] for role, proof in proofs.items()}})
+                "role_digests": {role: proof["payload_digest"] for role, proof in proofs.items()},
+                "funnel_page": document["funnel_scope"]})
             return document
         with patch.object(self.persistence, "read_committed_projection", same_native_cut):
             html, headers = self.build_page(path, params, self.database, now=self.cut_at)
@@ -174,11 +187,18 @@ class NativeProduct:
             "source_cut": datetime.fromisoformat(observed[-1]["source_cut"].replace("Z", "+00:00")).isoformat(),
             "pointer": observed[-1]["pointer"], "native_role_payload_digests": observed[-1]["role_digests"],
             "native_verified_queries": len(observed),
-            "native_elapsed_seconds": perf_counter() - begin, "native_process_cpu_seconds": process_time() - cpu,
             "html_bytes": len(html.encode())}
+        if path == "/en-vivo" and params.get("family"):
+            from rc6_trader_dashboard.projection import funnel_cohort_id
+            scope = observed[-1]["funnel_page"]
+            result["native_funnel_page"] = {key: scope[key] for key in
+                ("as_of", "generation_id", "state", "reason", "total_groups", "groups_offset", "counts", "selected")}
+            result["native_funnel_page"]["groups"] = [
+                {"cohort": funnel_cohort_id(row), "row": row} for row in scope["groups"]]
         # The response is one actual handler result, never a retained HTML/JSON
         # response from a prior request. Oversize is rejected, not truncated.
         self.require(result["html_bytes"] < MAX_FRAME, "RENDER_EXCEEDS_REQUEST_BUDGET")
+        result.update(native_elapsed_seconds=perf_counter() - begin, native_process_cpu_seconds=process_time() - cpu)
         return result
 
     @property
@@ -190,15 +210,25 @@ class NativeProduct:
         self.require(self.initialized and self.source_index is not None, "PRODUCT_HEALTH_SOURCE_INDEX_REQUIRED")
         from scripts.rc6_shadow_health_gate import read_health
         begin = perf_counter()
-        result = read_health(str(self.database), source_sha=self.source_index["source_sha"],
-            tree_sha=self.source_index["candidate_tree_sha"], now=self.cut_at)
-        self.require(perf_counter() - begin <= 2, "HEALTH_EXCEEDS_REQUEST_BUDGET")
+        before = self.live_health.consumer_inventory() if self.live_health else None
+        result = None
+        try:
+            result = read_health(str(self.database), source_sha=self.source_index["source_sha"],
+                tree_sha=self.source_index["candidate_tree_sha"], now=datetime.now(timezone.utc))
+        finally:
+            if before is not None:
+                after = self.fixture.consumer_inventory()
+                self.fixture.health_observation = {"before": before, "after": after, "result": result}
+                self.require(before == after, "HEALTH_CONSUMER_MUTATED_NATIVE_SOURCE")
+            self.require(perf_counter() - begin <= 2, "HEALTH_EXCEEDS_REQUEST_BUDGET")
         return result
 
     def finish(self):
         require(not self.finished, "PRODUCT_IPC_FINISH_REPEATED")
         self.finished = True
         self.guards.close()
+        if self.live_health:
+            self.fixture.close()
         custody_after = self.custody_inventory(self.database, self.native_root) if self.custody_before is not None else None
         after = source_inventory(self.root)
         closure, unexpected = imported_source(self.root, self.before)
@@ -214,6 +244,8 @@ class NativeProduct:
             "native_custody_unchanged": self.custody_before is not None and self.custody_before == custody_after,
             "custody_verification_scope": "SELECTED_NATIVE_SOURCE" if self.custody_before is not None else "NOT_EXERCISED",
             "source_pin_complete": bool(self.source_index and self.source_index["pin_complete"])}
+        if self.live_health:
+            receipt["offline_live_health_fixture"] = self.fixture.receipt()
         if self.trace is not None:
             receipt.update({"stage_aggregates": self.trace.records(), "gc_aggregates": self.trace.gc_records(),
                             "renders": self.trace.state["renders"]})
@@ -225,6 +257,55 @@ def error_response(error):
     return {"gate": "DIAGNOSTIC_WINDOW_ENDED" if isinstance(error, DiagnosticWindowEnded)
             else str(error) if isinstance(error, GateFailure) else "NATIVE_BROWSER_REJECTED",
             "error_class": type(error).__name__, "details": error.details if isinstance(error, GateFailure) else {}}
+
+
+def serve_health_worker(args):
+    """One genuine tick after real spawn; remain alive for the health consumer."""
+    output_stream = sys.stdout.buffer
+    with redirect_stdout(sys.stderr):
+        try:
+            environment = environment_receipt(ROOT, product=True, executable=args.expected_python,
+                python_version=args.expected_python_version)
+            before, source = source_start(ROOT, args.index)
+            require(source and source["pin_complete"], "WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED")
+            network, source_calls = [], []
+            def blocked(*_args, **_kwargs):
+                network.append("BLOCKED")
+                raise GateFailure("PROVIDER_OR_NETWORK_CALLED")
+            with ExitStack() as guards:
+                for owner, name in ((socket.socket, "connect"), (socket.socket, "connect_ex"),
+                                    (socket.socket, "sendto"), (socket, "create_connection"), (socket, "getaddrinfo")):
+                    guards.enter_context(patch.object(owner, name, blocked))
+                guards.enter_context(patch.object(sqlite3, "connect", source_sqlite_guard(args.health_worker_database,
+                    sqlite3.connect, source_calls)))
+                from rc6_shadow_runtime.worker import ShadowRuntime
+                worker = ShadowRuntime.from_environment(args.health_worker_database)
+                at = datetime.now(timezone.utc)
+                report = worker.tick(at)
+                require(report["provider_requests"] == report["real_orders_sent"] == 0
+                        and report["real_routes"] == "NOT_CALLED", "NATIVE_HEALTH_PRODUCER_SAFETY")
+                closure, unexpected = imported_source(ROOT, before)
+                after = source_inventory(ROOT)
+                proof = before == after and not unexpected and not network and "SOURCE_BLOCKED" not in source_calls
+                proof = proof and all(row["matches_archived_blob"] for row in closure)
+                result = {"environment": environment, "pid": os.getpid(), "as_of": at.isoformat(),
+                    "producer_mode": "ONE_REAL_NATIVE_TICK_THEN_SUPERVISED_ALIVE_UNTIL_EOF",
+                    "generation_id": report["generation_id"], "configuration_fingerprint": report["configuration_fingerprint"],
+                    "source_proof_pass": proof, "network_attempts": len(network),
+                    "source_sqlite_attempts": source_calls.count("SOURCE_BLOCKED")}
+            encoded = frame({"protocol": PROTOCOL, "id": 0, "ok": True, "result": result})
+        except Exception as error:
+            encoded = frame({"protocol": PROTOCOL, "id": 0, "ok": False, "error": error_response(error)})
+            output_stream.write(encoded)
+            output_stream.flush()
+            return 1
+        output_stream.write(encoded)
+        output_stream.flush()
+        # stdin belongs to the real supervisor. EOF performs an orderly stop;
+        # this alive state is observed only for the already-published same cut.
+        while sys.stdin.buffer.read(1):
+            pass
+    return 0
 
 
 def serve(args, input_stream=None, output_stream=None):
@@ -291,4 +372,6 @@ if __name__ == "__main__":
     parser.add_argument("--require-complete-index", action="store_true")
     parser.add_argument("--diagnostic", action="store_true")
     parser.add_argument("--diagnostic-deadline", type=float)
-    raise SystemExit(serve(parser.parse_args()))
+    parser.add_argument("--health-worker-database", type=Path)
+    args = parser.parse_args()
+    raise SystemExit(serve_health_worker(args) if args.health_worker_database is not None else serve(args))

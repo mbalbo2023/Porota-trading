@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from tests.rc6_browser_ipc import (
     GateFailure, ProductClient, imported_source, output_guard, require,
 )
+from tests.rc6_browser_coverage import observe_health, verify_family_pages
 
 
 def run(database, root, output, *, product_python=None, index=None, diagnostic=False, product_python_version=None,
@@ -37,6 +38,7 @@ def run(database, root, output, *, product_python=None, index=None, diagnostic=F
         VERIFICATION_LEVEL = preflight["verification_level"]
         catalog_count, observation_count = preflight["catalog_full_identities"], preflight["observations"]
         last_identity, total_groups = preflight["last_identity"], preflight["funnel_groups"]
+        health_observation = observe_health(product)
         # Import/launch occurs only after the large/OPEN gates passed. Small
         # self-tests can prove rejection without starting a browser or writer.
         from playwright.sync_api import sync_playwright
@@ -49,8 +51,10 @@ def run(database, root, output, *, product_python=None, index=None, diagnostic=F
                 context = browser.new_context(viewport={"width": 1440, "height": 980}, reduced_motion="reduce",
                                               service_workers="block")
                 page = context.new_page()
+                latest = {}
                 page.on("pageerror", lambda error: findings.append({"gate": "BROWSER_PAGE_ERROR", "error_class": type(error).__name__}))
                 def serve(route):
+                    nonlocal latest
                     request = route.request
                     parts = urlsplit(request.url)
                     browser_requests.append(request.url)
@@ -70,6 +74,7 @@ def run(database, root, output, *, product_python=None, index=None, diagnostic=F
                         route.fulfill(status=503, content_type="text/html", body="Native request rejected.")
                         return
                     html, headers = response["html"], response["headers"]
+                    latest = {key: value for key, value in response.items() if key not in {"html", "headers"}}
                     require(response["pointer"] == pointer and response["source_cut"] == cut_at, "RENDER_CHANGED_COMMITTED_CUT")
                     elapsed = response["request_wall_seconds_including_ipc_html_json"]
                     record = {"path": parts.path, "filters": params, "width": page.viewport_size["width"],
@@ -163,6 +168,7 @@ def run(database, root, output, *, product_python=None, index=None, diagnostic=F
                 require(page.locator("tr[data-row]").count() == 2 and all(last_identity[0] in text for text in page.locator("tr[data-row]").all_inner_texts()),
                         "LAST_CATALOG_IDENTITY_UNREACHABLE")
                 require(VERIFICATION_LEVEL in page.locator(".data-panel .source-line").inner_text(), "FALSE_BROWSER_VERIFICATION_SCOPE")
+                family_pages = verify_family_pages(page, preflight["catalog_families"], lambda: latest)
                 require(not findings, "BROWSER_RENDER_FAILED", {"findings": findings,
                         "canonical_viewport_checks_completed": checks, "renders_measured": renders})
             except Exception:
@@ -185,6 +191,7 @@ def run(database, root, output, *, product_python=None, index=None, diagnostic=F
         "funnel_groups": total_groups, "widths": widths, "canonical_viewport_checks": checks,
         "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs",
             "interaction during outstanding read", "auto refresh pause", "menu Escape", "cohort pagination and final selection", "last catalog identity"],
+        "family_pagination": family_pages, "health_observation": health_observation,
         "network_attempts": 0, "provider_requests": 0, "source_sqlite_opens": 0,
         "source_custody_inventory_unchanged": True, "source_inventory": native_proof["custody_inventory_before"], "renders": renders,
         "product_proof": native_proof, "product_environment": product.product_environment,

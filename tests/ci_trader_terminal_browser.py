@@ -14,22 +14,26 @@ from urllib.parse import urlsplit, parse_qs
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tests.rc6_browser_ipc import GateFailure, ProductClient, imported_source, output_guard, require
+from tests.rc6_browser_coverage import observe_health, verify_family_pages
 
 
-def run(output, *, product_python=None, index=None, product_python_version=None, require_complete_index=False):
+def run(output, *, product_python=None, index=None, product_python_version=None, require_complete_index=False, multifamily=False):
     output_guard(output)
     findings, requests, renders = [], [], []
     with ProductClient(product_python or sys.executable, index=index, python_version=product_python_version,
                        require_complete_index=require_complete_index) as product:
-        fixture = product.request("initialize", mode="NORMAL")
+        fixture = product.request("initialize", mode="MULTIFAMILY" if multifamily else "NORMAL")
         CANONICAL_PATHS, LEGACY = fixture["canonical_paths"], fixture["legacy"]
+        health_observation = observe_health(product) if index is not None else {"consumer_state": "NOT_EXERCISED_SOURCE_INDEX_ABSENT"}
         from playwright.sync_api import sync_playwright
         output.mkdir(parents=True, exist_ok=False)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
             try:
                 page = browser.new_page(viewport={"width": 1440, "height": 980}, reduced_motion="reduce")
+                latest = {}
                 def serve(route):
+                    nonlocal latest
                     request = route.request
                     requests.append(request.url)
                     parts = urlsplit(request.url)
@@ -48,6 +52,7 @@ def run(output, *, product_python=None, index=None, product_python_version=None,
                         route.fulfill(status=503, content_type="text/html", body="Native request rejected.")
                         return
                     html, headers = response["html"], response["headers"]
+                    latest = {key: value for key, value in response.items() if key not in {"html", "headers"}}
                     require(response["pointer"] == fixture["pointer"] and response["source_cut"] == fixture["source_cut"], "RENDER_CHANGED_COMMITTED_CUT")
                     record = {"path": parts.path, "width": page.viewport_size["width"],
                         "queries": int(headers["X-Porota-Read-Queries"]), "server_timing": headers["Server-Timing"],
@@ -159,6 +164,7 @@ def run(output, *, product_python=None, index=None, product_python_version=None,
                 assert "WIRE_AND_PROJECTION_SEMANTICS" in page.locator(".data-panel .source-line").inner_text()
                 assert set(fixture["native_generation_roles"]) == {"report", "checkpoint", "status", "projection"}
                 page.screenshot(path=str(output / "native-capacity-off.png"), full_page=False)
+                family_pages = verify_family_pages(page, fixture["catalog_families"], lambda: latest)
             except Exception:
                 if findings:
                     raise GateFailure("BROWSER_RENDER_FAILED", {"findings": findings, "renders_measured": renders})
@@ -176,6 +182,7 @@ def run(output, *, product_python=None, index=None, product_python_version=None,
               "native_generation_schema": fixture["pointer"]["schema"], "generation_id": fixture["pointer"]["generation_id"],
               "native_generation_roles": sorted(fixture["native_generation_roles"]),
               "native_generation_verification": "WIRE_AND_PROJECTION_SEMANTICS",
+              "family_pagination": family_pages, "health_observation": health_observation,
               "source_cut": fixture["source_cut"], "native_contract_checks": ["FUT ACTIVE visible", "FUT native supervision intent visible", "same-entry exit lab nonempty", "entry experiment nonempty", "OFF policy separate from OPEN evidence", "unique element IDs", "same four-role sealed generation", "explicit projected verification scope"],
               "as_of": datetime.now(timezone.utc).isoformat(),
               "product_proof": product.finish_receipt, "product_environment": product.product_environment,
@@ -193,6 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--product-python-version", choices=("3.11", "3.12"), default="3.11")
     parser.add_argument("--index", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--multifamily", action="store_true")
     arguments = parser.parse_args()
     try:
         output_guard(arguments.output)
@@ -200,7 +208,7 @@ if __name__ == "__main__":
         parser.error(str(error))
     try:
         run(arguments.output, product_python=arguments.product_python, index=arguments.index,
-            product_python_version=arguments.product_python_version, require_complete_index=True)
+            product_python_version=arguments.product_python_version, require_complete_index=True, multifamily=arguments.multifamily)
     except Exception as error:
         arguments.output.mkdir(parents=True, exist_ok=True)
         (arguments.output/"browser-failure.json").write_text(json.dumps({
