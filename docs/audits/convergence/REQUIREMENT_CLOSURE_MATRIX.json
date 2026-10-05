@@ -2011,6 +2011,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2049,6 +2050,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2087,6 +2089,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2125,6 +2128,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2163,6 +2167,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2201,6 +2206,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2239,6 +2245,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2278,6 +2285,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2316,6 +2324,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2354,6 +2363,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2393,6 +2403,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2431,6 +2442,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2481,6 +2493,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2527,6 +2540,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2566,6 +2580,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2605,6 +2620,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2644,6 +2660,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2683,6 +2700,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2722,6 +2740,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2763,6 +2782,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2802,6 +2822,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2859,6 +2880,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2916,6 +2938,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2957,6 +2980,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2996,6 +3020,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3040,6 +3065,21 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -3054,6 +3094,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3094,6 +3135,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3134,6 +3176,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3175,6 +3218,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3214,7 +3258,22 @@
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
-        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
+        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -3224,6 +3283,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3265,6 +3325,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3308,6 +3369,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3348,6 +3410,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3390,6 +3453,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3433,6 +3497,21 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -3447,6 +3526,7 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3489,7 +3569,22 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
-        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
+        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     }
@@ -4918,6 +5013,22 @@
         "U23"
       ]
     },
+    "docs/audits/rc6_convergence_finance/exact_page_storage_contract.md": {
+      "reason": "Specify bounded portable page/file restoration with mandatory original hashes and depth; archive custody, full physical quota, ACK and sustained horizon remain the owning integration boundary.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/exact_page_storage_prototype_receipt.json": {
+      "reason": "Preserve61 explicitly private byte-storage prototype guard results and measured two-cut source page packs; these receipts do not certify committed successor source, full archives, physical horizon or independent financial scenarios.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
+      ]
+    },
     "docs/audits/rc6_convergence_finance/field_authority_matrix.md": {
       "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
       "requirement_ids": [
@@ -5073,6 +5184,22 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/probes/exact_page_storage_prototype.py": {
+      "reason": "Preserve exact executed isolated prototype bytes for the lossless page storage feasibility receipt, separate from the committed native module and pending source-level execution.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/probes/exact_page_storage_prototype_tests.py": {
+      "reason": "Preserve the exact private61-case prototype guard source and its declared original temporary fixture paths, without presenting synthetic parser/storage cases as actual archive horizon or market evidence.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
       ]
     },
     "docs/audits/rc6_convergence_finance/probes/original_snapshot_sources_archive_probe.py": {
@@ -6916,6 +7043,14 @@
         "AUD-468-19"
       ]
     },
+    "rc6_shadow_runtime/exact_page_storage.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
+      ]
+    },
     "rc6_shadow_runtime/families.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -7322,6 +7457,13 @@
         "U27"
       ]
     },
+    "scripts/rc6_issue465_audit_gate.py": {
+      "reason": "Preserve all original Issue465 authority and executed clauses while accepting only a current native convergence proof with the exact c27 frozen source records and same-SHA/tree/JUnit executed guard receipts; arbitrary successors and mutable legacy authority remain rejected.",
+      "requirement_ids": [
+        "U11",
+        "U25"
+      ]
+    },
     "scripts/rc6_issue465_stress.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -7661,6 +7803,13 @@
         "U26"
       ]
     },
+    "tests/test_issue465_stress_audit_gate.py": {
+      "reason": "Retain every prior audit-gate assertion and add strict source/mode/authority/native-guard attacks for explicitly controlled successor-proof fixtures; native final governed execution is required separately.",
+      "requirement_ids": [
+        "U11",
+        "U25"
+      ]
+    },
     "tests/test_porota_apply_host_control_plane_v2.py": {
       "reason": "Keep the source-bound canonical control plane checks and assert safe scoped cleanup and pinned build provenance without performing host actions.",
       "requirement_ids": [
@@ -7954,6 +8103,14 @@
         "U21",
         "U26",
         "U27"
+      ]
+    },
+    "tests/test_rc6_exact_page_storage.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18"
       ]
     },
     "tests/test_rc6_exit_reader_cadence.py": {
@@ -9406,6 +9563,7 @@
       "code_paths": [
         "rc6_dynamic_universe/live.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -9441,6 +9599,21 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -9452,6 +9625,7 @@
     {
       "code_paths": [
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -9485,7 +9659,22 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
-        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
+        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -9558,6 +9747,7 @@
     {
       "code_paths": [
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py"
@@ -9586,7 +9776,22 @@
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
-        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
+        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -12854,6 +13059,7 @@
     {
       "code_paths": [
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py"
@@ -12893,7 +13099,22 @@
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
-        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
+        "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -12939,6 +13160,7 @@
       "code_paths": [
         "rc6_dynamic_universe/live.py",
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -12985,6 +13207,21 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -12996,6 +13233,7 @@
     {
       "code_paths": [
         "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/exact_page_storage.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -13040,7 +13278,22 @@
         "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
         "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
-        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
+        "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain",
+        "tests/test_rc6_exact_page_storage.py::test_delta_verifies_base_and_complete_zlib_stream",
+        "tests/test_rc6_exact_page_storage.py::test_dictionary_delta_is_smaller_and_binds_original_base",
+        "tests/test_rc6_exact_page_storage.py::test_encoder_rejects_invalid_chain_inputs",
+        "tests/test_rc6_exact_page_storage.py::test_hard_depth_limit_creates_full_anchors_and_never_uses_previous_for_restore",
+        "tests/test_rc6_exact_page_storage.py::test_one_packed_file_restores_all_original_pages_without_encoder",
+        "tests/test_rc6_exact_page_storage.py::test_owner_can_anchor_every_32_generations",
+        "tests/test_rc6_exact_page_storage.py::test_pack_handles_exact_original_file_length_transitions",
+        "tests/test_rc6_exact_page_storage.py::test_pack_original_previous_file_and_verified_depth_are_required",
+        "tests/test_rc6_exact_page_storage.py::test_pack_rejects_wire_and_rehashed_structure_attacks",
+        "tests/test_rc6_exact_page_storage.py::test_page_closed_record_and_typed_fields",
+        "tests/test_rc6_exact_page_storage.py::test_page_encoder_rejects_nonexact_bytes",
+        "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
+        "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
+        "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
       ],
       "workstream": "PERSISTENCE"
     },
