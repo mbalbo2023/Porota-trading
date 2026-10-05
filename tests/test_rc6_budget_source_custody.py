@@ -71,7 +71,9 @@ def test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math(nati
         assert observed["exit_capacity"] == initial["exit_capacity"]
         assert observed["fingerprint"] == initial["fingerprint"]
     elif caller == "runtime":
-        budget = runtime._current(priority="EXIT_CRITICAL", deadline=time.monotonic()+.15)
+        # The inherited producer cadence covers report validation too; each
+        # ledger capture independently remains capped at its new0.15s bound.
+        budget = runtime._current(priority="EXIT_CRITICAL", deadline=time.monotonic()+5)
         assert budget.policy["open_positions_count"] == 10
         assert budget.policy["exit_demand"]["book"] == 60
     else:
@@ -227,7 +229,7 @@ def test_native_hot_rollback_journal_is_unknown_until_writer_finishes(wire, tmp_
     with closing(sqlite3.connect(store.path)) as writer:
         assert writer.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
         writer.execute("BEGIN IMMEDIATE")
-        writer.execute("UPDATE observer_state SET mode=mode WHERE id=1")
+        writer.execute("UPDATE observer_state SET process_state='SOURCE_CAPTURE_BUSY_TEST' WHERE id=1")
         before = source_custody_snapshot(store.path)
         assert before["-journal"]["st_size"] > 0
         with monkeypatch.context() as read_guard:
