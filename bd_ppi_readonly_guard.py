@@ -364,6 +364,13 @@ class ProductionMarketReader:
     def budget_enabled(self):
         return self.__guard.budget is not None
 
+    def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0):
+        """Publish factual EXIT progress through the shared budget authority."""
+        observe = getattr(self.__guard.budget, "observe_exit_round", None)
+        if observe is None:
+            return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
+        return observe(elapsed_seconds=elapsed_seconds, deadline_seconds=deadline_seconds, failures=failures)
+
     @property
     def last_read_error_code(self):
         """Sanitized current-read diagnosis; no response body or global LKG."""

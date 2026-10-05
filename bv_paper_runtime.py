@@ -385,8 +385,21 @@ def run_reader(store, stop):
             detail+=(f"critical_cadence_seconds={cadence}; deadline_missed={missed}"
                 if cadence is not None else "baseline_cadence=NO_VERIFICADO")
             status("DEGRADED" if failures or missed else "READY",detail)
+            if cadence is not None:
+                # Round debt is shared by all engines. Individually quick HTTP
+                # calls cannot hide a slow or incomplete round from LOWER.
+                elapsed=time.monotonic()-round_started
+                round_state=reader.observe_exit_round(elapsed_seconds=elapsed,
+                    deadline_seconds=cadence, failures=failures + int(stop.is_set()))
+                elapsed=time.monotonic()-round_started
+                if elapsed>cadence and round_state.get("status")=="COMPLETE":
+                    round_state=reader.observe_exit_round(elapsed_seconds=elapsed,
+                        deadline_seconds=cadence, failures=failures)
+                if round_state.get("status")!="COMPLETE":
+                    status("DEGRADED", detail+"; exit_round="+str(round_state.get("status", "UNVERIFIED")))
             # Do not add per-position sleeps and a second five-second pause to
             # an approved EXIT round. Slow transport remains observable.
+            elapsed=time.monotonic()-round_started
             stop.wait(max(0.0,cadence-elapsed) if cadence is not None else 5)
     finally:
         try:
