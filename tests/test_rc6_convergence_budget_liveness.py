@@ -384,6 +384,10 @@ def test_u07_unknown_ledger_is_not_misreported_as_zero(tmp_path):
 def test_u05_capacity_cannot_claim_more_identities_than_complete_round_can_observe():
     clock = Clock()
     value = policy(clock, limits=dict(current=1000, book=1000, intraday=1000), global_limit=1000)
+    # Sixty-four identities at five seconds would itself overflow the retained
+    # receipt ceiling. Isolate the distinct tracking bound with a feasible
+    # explicitly configured cadence/quota, rather than claiming that envelope.
+    value.update(critical_book_seconds=60, maximum_bytes=32 * 1024**2)
     state = state_from_policy(value)
     assert exit_capacity_contract(state, opened_count=64)["status"] == "READY"
     blocked = exit_capacity_contract(state, opened_count=65)

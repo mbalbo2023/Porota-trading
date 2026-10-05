@@ -6,9 +6,11 @@ all engines and actual retries. No trading DB, broker or provider is imported.
 from __future__ import annotations
 
 from contextlib import closing, contextmanager, nullcontext
+from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from copy import deepcopy
+from math import ceil
 import fcntl
 import json
 import os
@@ -30,6 +32,13 @@ WINDOW_FIELDS = ("requested", "admitted", "used", "dropped", "borrowed_in", "bor
 BOOK_CACHE_LIMIT = 64
 BOOK_CACHE_BYTES = 16384
 AUTHORITY_LIMIT = 64
+RECEIPT_LIMIT = 20000
+RECEIPT_RETENTION_SECONDS = 3600
+# Fixed receipt labels plus both SQLite b-trees fit this conservative page
+# allowance. Binding state and the largest permitted critical cache payloads
+# receive separate space; this does not enlarge the configured physical quota.
+RECEIPT_STORAGE_BYTES = 512
+CRITICAL_STATE_STORAGE_BYTES = 128 * 1024
 SUPERVISABLE_POSITION_STATES = (("paper_positions", "OPEN"), ("paper_future_positions", "ACTIVE"))
 EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSITIONS_ROUND_V1"})
 
@@ -95,17 +104,33 @@ def exit_capacity_contract(state, *, opened_count=0):
     opened = _int(opened_count)
     envelope, settings = state["global_budget"], state["budget_settings"]
     window, cadence = _int(envelope["window_seconds"], 1), _int(settings["critical_book_seconds"], 1)
-    demand = {"current": 0, "intraday": 0, "book": (opened * window + cadence - 1) // cadence}
+    demand = {"current": 0, "intraday": 0, "book": max(opened, (opened * window + cadence - 1) // cadence)}
     gaps = {e: max(0, demand[e] - _int(envelope["endpoint_limits"][e], 1)) for e in ENDPOINTS}
     global_gap = max(0, sum(demand.values()) - _int(envelope["global_limit"], 1))
     tracking_gap = max(0, opened - BOOK_CACHE_LIMIT)
-    blocked = bool(global_gap or any(gaps.values()) or tracking_gap)
+    retention_rows = opened * (RECEIPT_RETENTION_SECONDS // cadence + 1)
+    maximum_bytes = _int(settings["maximum_bytes"], 1)
+    main_bytes = ((maximum_bytes - 608) // (2 * 4096 + 8)) * 4096
+    retention_bytes = (retention_rows * RECEIPT_STORAGE_BYTES
+        + opened * (BOOK_CACHE_BYTES + 256) + CRITICAL_STATE_STORAGE_BYTES
+        + max(512, maximum_bytes // 64) + 7 * 4096) if opened else 7 * 4096
+    row_gap = max(0, retention_rows - RECEIPT_LIMIT)
+    byte_gap = max(0, retention_bytes - main_bytes)
+    blocked = bool(global_gap or any(gaps.values()) or tracking_gap or row_gap or byte_gap)
     return {"schema": "RC6_EXIT_CAPACITY_CONTRACT_V1", "open_positions_count": opened,
         "exit_demand": demand, "endpoint_gaps": gaps, "global_gap": global_gap,
         "identity_tracking_limit": BOOK_CACHE_LIMIT, "identity_tracking_gap": tracking_gap,
+        "receipt_retention": {"receipt_limit": RECEIPT_LIMIT,
+            "retention_seconds": RECEIPT_RETENTION_SECONDS,
+            "required_exit_receipts": retention_rows, "receipt_gap": row_gap,
+            "required_main_bytes": retention_bytes, "available_main_bytes": main_bytes,
+            "storage_gap_bytes": byte_gap,
+            "storage_allowance": "CONSERVATIVE_FIXED_RECEIPT_AND_CRITICAL_STATE_PAGE_RESERVE"},
         "status": "ACTIVATION_BLOCKED_EXIT_CAPACITY" if blocked else "READY",
         "reason_codes": (["PPI_EXIT_CAPACITY_INSUFFICIENT"] if global_gap or any(gaps.values()) else [])
-            + (["PPI_EXIT_IDENTITY_TRACKING_INSUFFICIENT"] if tracking_gap else []),
+            + (["PPI_EXIT_IDENTITY_TRACKING_INSUFFICIENT"] if tracking_gap else [])
+            + (["PPI_EXIT_RECEIPT_RETENTION_INSUFFICIENT"] if row_gap else [])
+            + (["PPI_EXIT_RECEIPT_STORAGE_INSUFFICIENT"] if byte_gap else []),
         "deadline_seconds": settings["critical_book_seconds"], "real_orders_sent": 0}
 
 
@@ -172,6 +197,166 @@ def validate_policy(policy):
     if any(demand[e] > policy["endpoint_limits"][e] for e in ENDPOINTS) or sum(demand.values()) > policy["global_limit"]:
         raise ValueError("PPI_EXIT_CAPACITY_INSUFFICIENT")
     return policy
+
+
+def _receipt_projection(policy, envelopes, receipts, now):
+    """Peak retained growth of the same critical stream under every authority.
+
+    Exact historic expirations release space only when their one-hour debt
+    retention ends. Used EXIT receipts are not spare capacity: a recent burst
+    may still coexist with a whole new hour of critical reads. An immediate
+    sweep protects the unknown phase of a restarted reader. Older raw policies
+    that promise one sweep per window keep that explicit promise, rather than
+    being silently upgraded to a new cadence. No declared demand reserves only
+    one emergency receipt, without asserting a critical service guarantee.
+    """
+    plans = []
+    for envelope in envelopes:
+        window = _int(envelope["window_seconds"], 1)
+        cadence = _int(envelope.get("critical_book_seconds", policy["critical_book_seconds"]), 1)
+        opened = _int(envelope.get("open_positions_count", 0))
+        expiry = envelope["authority_expires_at"]
+        if isinstance(expiry, bool) or not isinstance(expiry, (int, float)) or not Decimal(str(expiry)).is_finite():
+            raise ValueError("PPI_BUDGET_AUTHORITY_BOUNDS_INVALID")
+        demand = sum(_int(v) for v in envelope.get("exit_demand", {}).values())
+        if not demand:
+            demand = sum(_int(v) for v in envelope.get("priority_reserves", {}).get("EXIT_CRITICAL", {}).values())
+        if not demand or expiry <= now:
+            continue
+        burst = opened or demand
+        period = max(cadence, (burst * window + demand - 1) // demand)
+        waves = min(RECEIPT_RETENTION_SECONDS // period + 1,
+            max(0, ceil((expiry - now) / period)))
+        if waves:
+            plans.append((burst, period, waves))
+    times = {0}
+    for _, period, waves in plans:
+        times.update(range(0, min(RECEIPT_RETENTION_SECONDS, period * (waves - 1)) + 1, period))
+    timestamps = sorted(row["at"] for row in receipts)
+    growth = 1
+    for offset in times:
+        wanted = max([1, *(burst * min(waves, offset // period + 1) for burst, period, waves in plans)])
+        expired = bisect_left(timestamps, now + offset - RECEIPT_RETENTION_SECONDS)
+        growth = max(growth, wanted - expired)
+    burst = max([0, *(p[0] for p in plans)])
+    return {"receipt_limit": RECEIPT_LIMIT, "retention_seconds": RECEIPT_RETENTION_SECONDS,
+        "retained_receipts": len(receipts), "available_rows": max(0, RECEIPT_LIMIT - len(receipts)),
+        "required_exit_growth": growth, "critical_sweep_receipts": burst,
+        "storage_reserve_bytes": growth * RECEIPT_STORAGE_BYTES
+            + (burst * (BOOK_CACHE_BYTES + 256) + CRITICAL_STATE_STORAGE_BYTES
+               + max(512, policy["maximum_bytes"] // 64) if burst else 0)}
+
+
+def _receipt_resources(c, policy, envelopes, receipts, now):
+    result = _receipt_projection(policy, envelopes, receipts, now)
+    page_size = c.execute("PRAGMA page_size").fetchone()[0]
+    maximum_pages = (policy["maximum_bytes"] - 608) // (2 * page_size + 8)
+    available_pages = max(0, maximum_pages - c.execute("PRAGMA page_count").fetchone()[0]
+        + c.execute("PRAGMA freelist_count").fetchone()[0])
+    required_pages = (result["storage_reserve_bytes"] + page_size - 1) // page_size
+    reasons = (["PPI_EXIT_RECEIPT_RESERVE_BACKPRESSURE"]
+        if result["available_rows"] < result["required_exit_growth"] else [])
+    if available_pages < required_pages:
+        reasons.append("PPI_EXIT_RECEIPT_STORAGE_BACKPRESSURE")
+    return result | {"required_pages": required_pages, "available_pages": available_pages,
+        "status": "ACTIVATION_BLOCKED_EXIT_CAPACITY" if reasons else "READY",
+        "reason_codes": reasons,
+        "lower_suspended": result["available_rows"] <= result["required_exit_growth"]
+            or available_pages < ceil((result["storage_reserve_bytes"] + RECEIPT_STORAGE_BYTES) / page_size)}
+
+
+def exit_retention_preflight(database, state, *, opened_count, as_of):
+    """Read-only physical activation guard over canonical retained wire debt.
+
+    A missing sidecar is an empty allocation only when the static critical
+    retention fits the configured quota. Unknown existing state grants no new
+    activation. This never prunes receipts, bootstraps SQLite, sets a clock,
+    changes permissions, or converts a journal mode.
+    """
+    from cg_paper_workspace import artifact_root
+    at = stamp(as_of)
+    contract = exit_capacity_contract(state, opened_count=opened_count)
+    static = contract["receipt_retention"]
+    base = {"status": contract["status"], "reason_codes": contract["reason_codes"],
+        "receipt_limit": RECEIPT_LIMIT, "retention_seconds": RECEIPT_RETENTION_SECONDS,
+        "retained_receipts": None, "required_exit_growth": static["required_exit_receipts"],
+        "available_rows": None, "required_pages": ceil(static["required_main_bytes"] / 4096),
+        "available_pages": static["available_main_bytes"] // 4096,
+        "inspection_mode": "READ_ONLY", "source_status": "UNVERIFIED", "as_of": at.isoformat()}
+    if contract["status"] != "READY":
+        return base
+    try:
+        policy = budget_policy(state | {"status": "APPROVED_DYNAMIC"}, opened_count=opened_count)
+        path = artifact_root(database) / "ppi-budget/global.sqlite"
+        if any(p.is_symlink() for p in [path, *path.parents]):
+            raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        try:
+            metadata = path.stat()
+        except FileNotFoundError:
+            return base | {"source_status": "ABSENT", "retained_receipts": 0, "available_rows": RECEIPT_LIMIT}
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock"):
+            auxiliary = Path(str(path) + suffix)
+            try:
+                aux = auxiliary.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(aux.st_mode) or aux.st_nlink != 1 or suffix in {"-wal", "-shm"}:
+                raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        with path.open("rb") as stream:
+            header = stream.read(32)
+        if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+            raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA query_only=ON")
+            c.set_progress_handler(lambda: 1, 1000000)
+            c.execute("BEGIN")
+            if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
+                raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+            if {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")} != {
+                    "budget_state", "budget_requests", "budget_totals"}:
+                raise ValueError("PPI_BUDGET_SCHEMA_MISMATCH")
+
+            def read(key, default=None):
+                row = c.execute("SELECT value,length(CAST(value AS BLOB)) FROM budget_state WHERE key=?", (key,)).fetchone()
+                if row is None:
+                    return default
+                if row[1] > 65536:
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                return json.loads(row[0])
+
+            if read("schema") != SCHEMA or read("last_clock", at.timestamp()) > at.timestamp():
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            saved = read("reservation_envelopes_v1")
+            if saved is None:
+                previous = read("last_policy")
+                if previous:
+                    previous = validate_policy(previous)
+                    saved = [GlobalPPIBudget._authority(previous,
+                        read("reserve_at", read("last_clock", at.timestamp())))]
+                elif read("reserves"):
+                    raise ValueError("PPI_BUDGET_LEGACY_AUTHORITY_UNKNOWN")
+                else:
+                    saved = []
+            if not isinstance(saved, list) or len(saved) > AUTHORITY_LIMIT:
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            current = GlobalPPIBudget._authority(policy, at.timestamp())
+            envelopes = [item for item in saved if item["retain_until"] > at.timestamp()]
+            # Each authority constrains the same stream, not distinct wires.
+            # Keeping the candidate alongside an old matching envelope is the
+            # conservative union and avoids mutating any stored promise.
+            envelopes.append(current)
+            receipts = list(c.execute("SELECT * FROM budget_requests LIMIT ?", (RECEIPT_LIMIT + 1,)))
+            if len(receipts) > RECEIPT_LIMIT:
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            resources = _receipt_resources(c, policy, envelopes, receipts, at.timestamp())
+            return base | resources | {"source_status": "OBSERVED"}
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, sqlite3.Error):
+        return base | {"status": "ACTIVATION_BLOCKED_EXIT_CAPACITY", "source_status": "UNVERIFIED",
+            "reason_codes": ["PPI_EXIT_RECEIPT_STORAGE_UNVERIFIED"],
+            "retained_receipts": None, "available_rows": None, "available_pages": None}
 
 
 class GlobalPPIBudget:
@@ -325,6 +510,13 @@ class GlobalPPIBudget:
         now = stamp(self.clock()).timestamp()
         if now < self._get(c, "last_clock", now):
             raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
+        # Binding debt is released only after the maximum permitted policy
+        # window. Do this before metadata writes, so legal aging can recover a
+        # full sidecar without deleting any still-live receipt or lease.
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget_requests'").fetchone():
+            active = self._get(c, "inflight")
+            c.execute("DELETE FROM budget_requests WHERE at<? AND lease!=?",
+                (now - RECEIPT_RETENTION_SECONDS, active["lease"] if active else ""))
         c.execute("DELETE FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)<?", (int(now) - 3600,))
         self._trim_telemetry(c, self._telemetry_bytes())
 
@@ -407,6 +599,7 @@ class GlobalPPIBudget:
             retain_until=max(stamp(policy["expires_at"]).timestamp(), now + policy["window_seconds"]),
             priority_reserves=deepcopy(policy.get("priority_reserves", {})),
             open_positions_count=policy.get("open_positions_count", 0),
+            critical_book_seconds=policy["critical_book_seconds"],
             exit_demand=deepcopy(policy.get("exit_demand", {})))
 
     def _envelopes(self, c, now, *, record=False):
@@ -443,6 +636,8 @@ class GlobalPPIBudget:
                 current["retain_until"] = max(old["retain_until"], current["authority_expires_at"],
                     current["observed_at"] + current["window_seconds"])
                 current["open_positions_count"] = max(current["open_positions_count"], old["open_positions_count"])
+                current["critical_book_seconds"] = min(current["critical_book_seconds"],
+                    old.get("critical_book_seconds", current["critical_book_seconds"]))
                 current["exit_demand"] = {e: max(current["exit_demand"].get(e, 0), old["exit_demand"].get(e, 0)) for e in ENDPOINTS}
             envelopes[current["key"]] = current
         if len(envelopes) > AUTHORITY_LIMIT:
@@ -518,6 +713,19 @@ class GlobalPPIBudget:
         # authorities. Do not invent borrowing when any such own floor exists.
         donor = None if None in donors else next((d for d in donors if d[0] != "COMMON"), ("COMMON", endpoint))
         return None, donor
+
+    def _receipt_admission(self, c, priority, receipts, envelopes, now):
+        if priority == "EXIT_CRITICAL":
+            return None
+        resources = _receipt_resources(c, self.policy, envelopes, receipts, now)
+        # The lower claim is additional to all reserved future EXIT writes.
+        if resources["available_rows"] <= resources["required_exit_growth"]:
+            return "PPI_EXIT_RECEIPT_RESERVE_BACKPRESSURE"
+        page_size = c.execute("PRAGMA page_size").fetchone()[0]
+        pages = (resources["storage_reserve_bytes"] + RECEIPT_STORAGE_BYTES + page_size - 1) // page_size
+        if resources["available_pages"] < pages:
+            return "PPI_EXIT_RECEIPT_STORAGE_BACKPRESSURE"
+        return None
 
     def _remaining_reserves(self, reserves, receipts, *, limits, global_limit):
         # Precise remaining promises come from live commitment timestamps and
@@ -614,13 +822,13 @@ class GlobalPPIBudget:
                     self._put(c, "abandoned_lease_observed", True)
                 # Rolling windows prevent a boundary burst. A new policy may
                 # widen the window; retain up to one hour of bounded receipts.
-                c.execute("DELETE FROM budget_requests WHERE at<?", (now - 3600,))
-                if c.execute("SELECT COUNT(*) FROM budget_requests").fetchone()[0] >= 20000:
+                if c.execute("SELECT COUNT(*) FROM budget_requests").fetchone()[0] >= RECEIPT_LIMIT:
                     reason = reason or "PPI_BUDGET_ROW_LIMIT"
-                rows = list(c.execute("SELECT * FROM budget_requests WHERE at>?", (now - 3600,)))
+                rows = list(c.execute("SELECT * FROM budget_requests"))
                 envelopes = self._envelopes(c, now, record=True)
                 constrained, donor = self._admission(endpoint, priority, rows, envelopes, now)
                 reason = reason or constrained
+                reason = reason or self._receipt_admission(c, priority, rows, envelopes, now)
                 if reason:
                     self._total(c, endpoint, consumer, priority, dropped=1)
                     self._window_total(c, now, endpoint, consumer, priority, requested=1, dropped=1, reason=reason)
@@ -660,8 +868,10 @@ class GlobalPPIBudget:
                 circuits = self._get(c, "circuits", {})
                 if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", row["endpoint"])):
                     raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
-                receipts = list(c.execute("SELECT * FROM budget_requests WHERE lease!=? AND at>?", (lease, now - 3600)))
-                reason, _ = self._admission(row["endpoint"], row["priority"], receipts, self._envelopes(c, now, record=True), now)
+                receipts = list(c.execute("SELECT * FROM budget_requests WHERE lease!=?", (lease,)))
+                envelopes = self._envelopes(c, now, record=True)
+                reason, _ = self._admission(row["endpoint"], row["priority"], receipts, envelopes, now)
+                reason = reason or self._receipt_admission(c, row["priority"], receipts, envelopes, now)
                 if reason:
                     raise BudgetBackpressure(reason)
                 # Admission can be paused. Both rolling wire debt and crashed
@@ -1090,6 +1300,8 @@ class GlobalPPIBudget:
             opened = max([self.policy.get("open_positions_count", 0), *(item["open_positions_count"] for item in envelopes)])
             exit_demand = {e: max([self.policy.get("exit_demand", self.policy.get("priority_reserves", {}).get("EXIT_CRITICAL", {})).get(e, 0),
                 *(item.get("exit_demand", {}).get(e, item["priority_reserves"].get("EXIT_CRITICAL", {}).get(e, 0)) for item in envelopes)]) for e in ENDPOINTS}
+            receipt_retention = _receipt_resources(c, self.policy, envelopes,
+                list(c.execute("SELECT * FROM budget_requests")), now)
             exact_envelopes = []
             exact_remaining = []
             free_limits = dict(limits)
@@ -1149,9 +1361,10 @@ class GlobalPPIBudget:
                     "round_guard_active": self._round_guard_active(),
                     "by_identity_digest": self._get(c, "critical_exit_service", {}),
                     "pressure_by_identity_digest": self._get(c, "critical_exit_pressure", {}),
-                    "lower_suspended": self._round_guard_active() or any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
+                    "lower_suspended": receipt_retention["lower_suspended"] or self._round_guard_active() or any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
                         for p in self._get(c, "critical_exit_pressure", {}).values())},
                 "telemetry_retention": self._telemetry_retention(c, now, seconds),
+                "receipt_retention": receipt_retention,
                 "max_parallel_requests": 1, "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
 
     def _telemetry_retention(self, c, now, seconds):
@@ -1244,6 +1457,13 @@ class RuntimePPIBudget:
             "reason_codes": [reason], "deadline_seconds": None,
             "real_orders_sent": 0,
         })
+        self.activation_contract["status"] = "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+        retention = state.get("exit_receipt_capacity")
+        if retention:
+            self.activation_contract["receipt_retention_runtime"] = deepcopy(retention)
+        self.activation_contract["reason_codes"] = list(dict.fromkeys([
+            *self.activation_contract.get("reason_codes", []), reason,
+            *((retention or {}).get("reason_codes", []))]))
         if priority != "EXIT_CRITICAL":
             raise BudgetBackpressure(reason)
         if self.budget is None:
@@ -1257,7 +1477,9 @@ class RuntimePPIBudget:
     def _current(self, *, priority="DISCOVERY"):
         state = self.controller.state(self.clock())
         if state["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY":
-            return self._blocked_activation(state, "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
+            retention_reasons = state.get("exit_receipt_capacity", {}).get("reason_codes", [])
+            return self._blocked_activation(state,
+                retention_reasons[0] if retention_reasons else "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
         if "CAPACITY_OPENED_LEDGER_UNVERIFIED" in state.get("reason_codes", ()):
             return self._blocked_activation(state, "CAPACITY_OPENED_LEDGER_UNVERIFIED", priority)
         if state["status"] != "APPROVED_DYNAMIC":
@@ -1306,6 +1528,13 @@ class RuntimePPIBudget:
         if self.activation_contract["status"] != "READY":
             return self._blocked_activation(state | {"exit_capacity": self.activation_contract},
                 "PPI_EXIT_CAPACITY_INSUFFICIENT", priority)
+        retention = exit_retention_preflight(self.database, state, opened_count=opened, as_of=self.clock())
+        self.activation_contract["receipt_retention_runtime"] = retention
+        if retention["status"] != "READY":
+            self.activation_contract["status"] = "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+            self.activation_contract["reason_codes"] += retention["reason_codes"]
+            return self._blocked_activation(state | {"exit_capacity": self.activation_contract},
+                retention["reason_codes"][0], priority)
         policy = budget_policy(state, opened_count=opened, planned_reservations=planned)
         if self.budget is None:
             protected = [self.database, *self.controller.input_paths]
@@ -1431,7 +1660,7 @@ def runtime_budget_snapshot(database, *, as_of=None):
     result = {"schema": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1", "as_of": at.isoformat(),
         "status": "ABSENT", "reason_codes": ["PPI_BUDGET_NOT_OBSERVED"],
         "inspection_mode": "READ_ONLY", "source_last_clock": None, "age_seconds": None,
-        "global": None, "exit_service": None, "telemetry_retention": None}
+        "global": None, "exit_service": None, "telemetry_retention": None, "receipt_retention": None}
     try:
         path = artifact_root(database) / "ppi-budget/global.sqlite"
         if any(p.is_symlink() for p in [path, *path.parents]):
@@ -1463,7 +1692,7 @@ def runtime_budget_snapshot(database, *, as_of=None):
         with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA query_only=ON")
-            c.set_progress_handler(lambda: 1, 100000)
+            c.set_progress_handler(lambda: 1, 1000000)
             c.execute("BEGIN")
             if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
                 raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
@@ -1494,6 +1723,17 @@ def runtime_budget_snapshot(database, *, as_of=None):
             if (not isinstance(policy, dict) or not isinstance(pressure, dict) or not isinstance(service, dict)
                     or len(set(pressure) - {EXIT_ROUND_PRESSURE_KEY}) > BOOK_CACHE_LIMIT or len(service) > BOOK_CACHE_LIMIT):
                 raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            receipt_retention = None
+            if policy:
+                policy = validate_policy(policy)
+                envelopes = read("reservation_envelopes_v1", [])
+                if not isinstance(envelopes, list) or len(envelopes) > AUTHORITY_LIMIT:
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                envelopes = [item for item in envelopes if item["retain_until"] > at.timestamp()]
+                receipts = list(c.execute("SELECT * FROM budget_requests LIMIT ?", (RECEIPT_LIMIT + 1,)))
+                if len(receipts) > RECEIPT_LIMIT:
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                receipt_retention = _receipt_resources(c, policy, envelopes, receipts, at.timestamp())
             # Emit a fixed whitelist, never arbitrary fields from durable JSON.
             def project(records, fields):
                 output = {}
@@ -1562,19 +1802,22 @@ def runtime_budget_snapshot(database, *, as_of=None):
                 _int(seconds, 1)
             partial = bool(retained.get("dropped_updates") or retained.get("evicted_buckets") and (
                 earliest is None or seconds is None or earliest > int(at.timestamp() - seconds)))
-            return result | {"status": "DEGRADED" if degraded else "OBSERVED",
-                "reason_codes": ["PPI_EXIT_DEADLINE_LOWER_SUSPENDED"] if degraded else [],
+            receipt_blocked = bool(receipt_retention and receipt_retention["status"] != "READY")
+            return result | {"status": "DEGRADED" if degraded or receipt_blocked else "OBSERVED",
+                "reason_codes": (["PPI_EXIT_DEADLINE_LOWER_SUSPENDED"] if degraded else [])
+                    + (receipt_retention["reason_codes"] if receipt_blocked else []),
                 "source_last_clock": last_clock,
                 "age_seconds": at.timestamp() - last_clock if last_clock is not None else None,
                 "global": totals,
+                "receipt_retention": receipt_retention,
                 "exit_service": {"deadline_seconds": policy.get("critical_book_seconds"),
                     "round": round_summary, "round_guard_active": round_guard_active,
-                    "lower_suspended": suspended, "by_identity_digest": service,
+                    "lower_suspended": suspended or bool(receipt_retention and receipt_retention["lower_suspended"]), "by_identity_digest": service,
                     "pressure_by_identity_digest": pressure},
                 "telemetry_retention": {"status": "BOUNDED_PARTIAL" if partial else "COMPLETE_RETAINED_WINDOW",
                     "window_complete": not partial, "earliest_retained_at": earliest,
                     "counter_resolution_seconds": 1,
                     **{key: retained[key] for key in ("evicted_buckets", "dropped_updates", "last_dropped_at") if key in retained}},
                 "authority": "READ_ONLY_OBSERVATION; OPEN_CAPACITY_NOT_CERTIFIED"}
-    except (OSError, ValueError, TypeError, InvalidOperation, sqlite3.Error):
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, InvalidOperation, sqlite3.Error):
         return result | {"status": "UNVERIFIED", "reason_codes": ["PPI_BUDGET_OBSERVATION_UNAVAILABLE"]}
