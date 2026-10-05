@@ -551,3 +551,24 @@ son un subset de95/Python, no cinco adicionales. La preparación90s sucede
 antes del RPC20; render1s/4MiB,health2s y LARGE quedan con sus caps originales.
 La batería95/Python311/312 y Chrome aún no se ejecutaron. El RAW focal está
 externo y se preservará con sus siguientes recibos, sin inventar GREEN total.
+
+WholeROOTd050/frozen311157 BIG volvió RED con original90s/GC/cuotas:
+PREOPEN83.599s, OPEN entró luego pero no terminó; CLI1/cleanupFalse.
+Sus1973 blobs/modos/índice/TAR y once stats reales MAIN+SHA quedaron intactos;
+RSS1,597,972,480B/evidencia36,884,119B están dentro de límites. Cinco EXIT
+PAPER0.116562s ocurrieron dentrofsync0.551785s. Publication51.347/prepare41.255/
+encode7.383/metrics2.943/restore7.621s son spans inclusivos solapados, no
+rendimiento completo ni ahorro causal. Imports nativos no auditados por ese
+wrapper no se declaran verificados. Diez registros exactos/lossless están en
+evidence/native-big-d0507884-157, sin sobrescribir los RED históricos.
+
+La batería UX preparada OWN342/frozen311157 terminó95 nodos únicos JUnit:
+93PASS/1FAIL/1ERROR(teardown),0skip/duplicados,133.631s y1792 blobs/modos
+intactos. Pytest reporta94 callPASS/1callFAIL más1teardownERROR; no se suman
+como96 escenarios. El control health falla antes de tick porque el cliente
+multifamilia de scope module mantiene sqlite3.connect prohibido globalmente;
+su intento genera el error de teardown. No demuestra defecto financiero ni
+del publisher. Se prepara limitar la vida del consumer a cada caso, conservar
+el productor module y cerrar/reap antes de health. No se resetean contadores
+ni se debilitan guards/caps;312/Chrome siguen pendientes. RAW original externo
+será preservado por el dueño; no se presenta el completo como GREEN.
