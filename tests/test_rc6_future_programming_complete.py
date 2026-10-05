@@ -582,7 +582,8 @@ def test_exit_book_collector_reads_active_futures_and_restores_exact_snapshot(tm
     monkeypatch.setattr(catalog, "lookup", lambda *_args, **_kwargs: None)
     assert runtime.collect_exit_books(Reader(), b.store, Policy(), MARK_AT) == 0
     assert calls == [("DLR/OCT26", "FUTUROS", "INMEDIATA")]
-    q = b.store.latest_quote({"symbol": "DLR/OCT26", "asset_class": "FUTUROS", "settlement": "INMEDIATA"})
+    q = b.store.latest_quote({"symbol": "DLR/OCT26", "asset_class": "FUTUROS",
+                              "settlement": "INMEDIATA", "currency": "ARS", "market": "A3"})
     assert q.contract == dlr() and q.market == "A3" and q.currency == "ARS"
     assert q.book_at == MARK_AT and q.bid == D("1510")
     assert q.opening_block_reason == "FUTURES_EXIT_ONLY_DURABLE_CONTRACT"
