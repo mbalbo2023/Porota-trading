@@ -16,24 +16,8 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-05T10:32:46.573Z-hcwz3ectlot",
-    "owner": "SUPERVISOR_AUTOMATICO_GITHUB",
-    "acquired_at": "2026-10-05T10:32:46.573Z",
-    "expires_at": "2026-10-05T10:52:46.573Z",
-    "base_commit": "071962c4103cd03617957702411218176889b9c8",
-    "purpose": "REVALIDATE_OWNER_AND_CANDIDATE"
-  },
-  "pending_action": {
-    "type": "REVALIDATE_OWNER_AND_CANDIDATE",
-    "candidate_sha": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
-    "candidate_tree": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1",
-    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
-    "candidate_prs_found": 0,
-    "owner_comment_id": 5986480121,
-    "latest_coordination_comment_id": 5986721421,
-    "started_at": "2026-10-05T10:32:46.573Z"
-  },
+  "lease": null,
+  "pending_action": null,
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -96,7 +80,7 @@
     "count": 12
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-05T10:02:54.048Z",
+  "last_observed_at": "2026-10-05T10:34:08.330Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -189,27 +173,19 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-05T10:02:54.048Z",
-    "previous_candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "observed_at": "2026-10-05T10:34:08.330Z",
     "candidate_sha": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
     "candidate_tree": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
     "candidate_prs_found": 0,
     "candidate_actions_runs_found": 0,
-    "compare_from_seed": {
-      "status": "ahead",
-      "ahead_by": 109,
-      "behind_by": 0,
-      "total_commits": 109
-    },
     "latest_coordination_comment_id": 5986721421,
     "integration_owner_status": "ACTIVE_NOT_RELEASED",
     "owner_comment_id": 5986480121,
     "exact_release_observed": false,
-    "material_change": true,
-    "external_mutations": "SUPERVISION_RECEIPT_ONLY",
-    "receipt_id": 5992240156,
-    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5992240156"
+    "material_change": false,
+    "external_mutations": "NONE",
+    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5992240156"
   },
   "candidate_tree_observed": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1"
 }
