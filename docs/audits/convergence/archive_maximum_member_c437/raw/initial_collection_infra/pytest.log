@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+_______ ERROR collecting tests/test_rc6_archive_maximum_member_guard.py ________
+ImportError while importing test module '/workspace/porota_rc6_worktrees/sre_maximum_member_c437/tests/test_rc6_archive_maximum_member_guard.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_rc6_archive_maximum_member_guard.py:14: in <module>
+    from scripts.rc6_archive_maximum_member_probe import (
+E   ModuleNotFoundError: No module named 'scripts'
+=========================== short test summary info ============================
+ERROR tests/test_rc6_archive_maximum_member_guard.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.19s

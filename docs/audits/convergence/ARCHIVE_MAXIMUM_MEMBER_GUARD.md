@@ -88,13 +88,46 @@ immutable new receipt bind the two test nodes to the same actual execution.
 Raw receipts remain available. Successful teardown removes only the fresh
 private source and datasets; failed executions retain them for diagnosis.
 
-The source adaptation is developed but has not yet been executed. The earlier
-external witness on rootd9e7fb7d/tree95a95d65 produced66314240B,34 cuts,
+The automatic adaptation executed on the complete integrated root
+`c43782ba33e23cbb813a4a82416f97df9957fc46`, tree
+`04ae55d3eb7eb27ec737134ece91f64c27c872ba`, with1727 exact Git blobs/modes,
+zero overlays, UID1000 and Python3.11.16 with the approved157 distributions.
+Both automatic nodes passed in127.83s and share exactly one fresh native
+execution, nonce `5e78cf77c77c4b83a81a58d67b9bbb06`, child PID206773.
+The actual kernel envelope through output and exit was126.016215961s, and
+real peak RSS was342335488B. The native result retained all34 publications,
+33 archives, actual depth32 and33 original-byte decodes. The first member
+was66314240B, and the public three-large forecast rejected198942720B under
+the original live128MiB/512entry policy without changing current custody.
+
+The first isolated pytest invocation failed during collection because `-I`
+omitted the repository from `sys.path`. It started no fixture or native
+process. Its exact XML, traceback log, PID and parent kernel receipt remain
+preserved as infrastructure evidence. The corrected invocation added only
+`-o pythonpath=.` for the canonical verified checkout; it changed no source,
+overlay, node, quota or assertion. It collected the two exact nodes before
+the fixture and kept plugin autoload and pytest cache disabled. The native
+child retained `-I -B` and its independent whole-source verification.
+
+The [source-bound dossier](archive_maximum_member_c437/DOSSIER.json) and
+[raw manifest](archive_maximum_member_c437/MANIFEST.json) preserve both
+launches, raw XML/logs, actual kernel receipts, the complete source index,
+committed runner and guard bytes, and twelve original component bindings.
+Large raw JSON/source files use lossless gzip with mtime zero; both compressed
+and original byte counts and SHA256 values are recorded. The outer drivers
+are explicitly classified as verbatim reconstructions of executed tool stdin,
+whose body hash was not separately attested before launch. The actual native
+runner was a prebound committed Git blob. The index was copied with NoAtime
+and identical bytes/stat custody before successful fixture cleanup removed
+only the fresh source and datasets. The recorded local run establishes no
+GitHub CI or Docker image execution.
+
+The earlier external witness on rootd9e7fb7d/tree95a95d65 produced66314240B,34 cuts,
 33 archives and33 decodes at depth32; wall126.304216s and RSS340795392B.
 Its exact receipt SHA256 is
 `1c8eecf8089e0e27b95db8d2009689a2157ab6409348b42ce1a619fed93b6da4`.
-That receipt remains historical evidence of its own source, not a passing
-result for the new guard. Its prior `/usr/bin/time` launch failure occurred
+That receipt remains historical evidence of its own source, separate from
+the new automatic result. Its prior `/usr/bin/time` launch failure occurred
 before any child or calibration and remains an infrastructure result. The
 new launcher uses stdlib kernel counters without that executable.
 

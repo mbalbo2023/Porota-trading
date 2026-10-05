@@ -1,4 +1,136 @@
 {
+  "current_automatic_execution": {
+    "actual_kernel_wall_seconds": 126.01621596099722,
+    "automatic_nodes_passed": 2,
+    "dossier_path": "docs/audits/convergence/archive_maximum_member_c437/DOSSIER.json",
+    "dossier_sha256": "5bcfe696daf957b198e4923619ecaf6f34ba11c51c06d3d570d8bb6dd48217d7",
+    "execution_id": "5e78cf77c77c4b83a81a58d67b9bbb06",
+    "junit_raw_sha256": "10f67f80b694e2b344c324fe2b7eba2adc7b84a38f18dc73f882a766fb15349e",
+    "native_executions": 1,
+    "native_pid": 206773,
+    "native_receipt_sha256": "311d6961edb8522bb6f3633ee49e943bc9f9b563ea60a51085c432a6b2dae4f5",
+    "native_report_wall_seconds": 125.84844812899973,
+    "no_assertion_or_policy_weakening": true,
+    "outer_stdin_body_hash_attested_before_launch": false,
+    "overlay_count": 0,
+    "prior_collection_launch": "INFRASTRUCTURE_ERROR_WITH_ZERO_NATIVE_EXECUTIONS_PRESERVED_SEPARATELY",
+    "real_kernel_peak_rss_bytes": 342335488,
+    "scope": "LOCAL_SOURCE_BOUND_CANONICAL_FACTORY_ARCHIVE_MEMORY_AND_LIVE_ADMISSION_ONLY; NO_IMAGE_FULL_WORKER_HORIZON_OR_FINAL_ARTIFACT_CLAIM",
+    "source_index_sha256": "e4c501ff6cdda4ada6af04ddfdf1b62a60c4e09bd320dae168e1728979c67f03",
+    "source_sha": "c43782ba33e23cbb813a4a82416f97df9957fc46",
+    "source_tree": "04ae55d3eb7eb27ec737134ece91f64c27c872ba",
+    "whole_git_files": 1727
+  },
+  "current_runtime_component_bindings": {
+    "ops/policy/rc6-disk-housekeeping-v1.json": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 4060,
+      "git_blob": "48826a1f2edb60638b3b6c1a0e3cee1b9a6f7098",
+      "git_mode": "100644",
+      "sha256": "ebe67c6d0a84685e0c3368d48d778fd6ddf6af07727647569c8fb5a41509e077",
+      "whole_source_index_member_sha256": "ebe67c6d0a84685e0c3368d48d778fd6ddf6af07727647569c8fb5a41509e077"
+    },
+    "ops/policy/rc6-supply-chain-v1.json": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 103636,
+      "git_blob": "a6d4abd5c46358b6b2707e4b209f14e0babb38fb",
+      "git_mode": "100644",
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "whole_source_index_member_sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462"
+    },
+    "rc6_shadow_runtime/archive_components.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 38140,
+      "git_blob": "88655e73546f784480c632294021c85fb88fa6e2",
+      "git_mode": "100644",
+      "sha256": "f25eadbb592b77c7ade5793b269ab513e4681819cf37f139cb695a1a7d8036eb",
+      "whole_source_index_member_sha256": "f25eadbb592b77c7ade5793b269ab513e4681819cf37f139cb695a1a7d8036eb"
+    },
+    "rc6_shadow_runtime/exact_page_storage.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 12818,
+      "git_blob": "4ce6bc21ccc28a2722019cf3afff5eaa55d71b98",
+      "git_mode": "100644",
+      "sha256": "89b48a6df6ce51e2942b6ff7c9bd3e8fb525d375660415934ec60b455132dbb6",
+      "whole_source_index_member_sha256": "89b48a6df6ce51e2942b6ff7c9bd3e8fb525d375660415934ec60b455132dbb6"
+    },
+    "rc6_shadow_runtime/packed_storage.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 28303,
+      "git_blob": "3cf295052c6cccfcaa0113801772586f57aa4e0c",
+      "git_mode": "100644",
+      "sha256": "0048ab32abb64f1f0988bca695cca6e96f9e61a371e3977425442e7609a35e76",
+      "whole_source_index_member_sha256": "0048ab32abb64f1f0988bca695cca6e96f9e61a371e3977425442e7609a35e76"
+    },
+    "rc6_shadow_runtime/persistence.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 60447,
+      "git_blob": "ab37360f245b361f9e4c407a2f19715aec170f6f",
+      "git_mode": "100644",
+      "sha256": "685f0f61cd6e32de124533f1998f31ab0f9e7793e0a68a819ac76d7e8fba0510",
+      "whole_source_index_member_sha256": "685f0f61cd6e32de124533f1998f31ab0f9e7793e0a68a819ac76d7e8fba0510"
+    },
+    "rc6_shadow_runtime/projection.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 24535,
+      "git_blob": "dd07d11679518d687a57d8a594f93d63b76e3238",
+      "git_mode": "100644",
+      "sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07",
+      "whole_source_index_member_sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07"
+    },
+    "rc6_shadow_runtime/retention.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 76408,
+      "git_blob": "270bb74acec4f205ebbbc4a45be03b0188262f0e",
+      "git_mode": "100644",
+      "sha256": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc",
+      "whole_source_index_member_sha256": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc"
+    },
+    "rc6_shadow_runtime/serialization.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 18686,
+      "git_blob": "eb1fcfa31032c8d1b25bd36633f320e83dfd41fa",
+      "git_mode": "100644",
+      "sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99",
+      "whole_source_index_member_sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99"
+    },
+    "rc6_shadow_runtime/worker.py": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 26058,
+      "git_blob": "375e27b82b27f57d82b1baf6f402daedd62dd6ce",
+      "git_mode": "100644",
+      "sha256": "1cb017bc1a5c4e80bc4445602170e5467c9f9c174a405c223fbc9f486be279e3",
+      "whole_source_index_member_sha256": "1cb017bc1a5c4e80bc4445602170e5467c9f9c174a405c223fbc9f486be279e3"
+    },
+    "requirements.lock.txt": {
+      "assertion_scope": "SOURCE_IDENTITY_BINDING; EXECUTION_IMPORTS_ARE_SEPARATELY_RECORDED",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 20883,
+      "git_blob": "c37fb993c92835266eefe5344020e3296a1c064f",
+      "git_mode": "100644",
+      "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce",
+      "whole_source_index_member_sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+    },
+    "tests/test_rc6_component_archive_memory.py": {
+      "assertion_scope": "REFERENCE_SOURCE_ONLY_NOT_EXECUTED_BY_THIS_FOCAL",
+      "authority": "RAW_LITERAL_ROOT_GIT_BLOB_AND_COMPLETE_SOURCE_INDEX_EXACT",
+      "bytes": 4656,
+      "git_blob": "3b2b9cc181c5dfe577e7124eab5d24276f8a8bb9",
+      "git_mode": "100644",
+      "sha256": "9d48f47f32959113b29cbc266fd3c924d4546e39537b4aad4b60e5a8536dd756",
+      "whole_source_index_member_sha256": "9d48f47f32959113b29cbc266fd3c924d4546e39537b4aad4b60e5a8536dd756"
+    }
+  },
   "execution_counts": {
     "actual_dependency_depth": 32,
     "native_archives": 33,
@@ -24,10 +156,7 @@
     "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
     "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation"
   ],
-  "pending": [
-    "OWN_COMMIT_AND_ROOT_INTEGRATION",
-    "FRESH_EXECUTION_ON_ACTUAL_INTEGRATED_SOURCE_DURING_EXPLICIT_CPU_SLOT"
-  ],
+  "pending": [],
   "protocol": {
     "actual_wall_counter": "PARENT_MONOTONIC_LAUNCH_TO_EXACT_PID_KERNEL_REAP; INCLUDES_OUTPUT_EXIT_AND_CONSERVATIVE_POLL_LATENCY",
     "child_alarm_final_tail": "ALARM_ACTIVE_THROUGH_CUSTODY_PROVENANCE_SERIALIZATION_RECEIPT_FLUSH_FSYNC_FINAL_OUTPUT",
@@ -186,7 +315,7 @@
     }
   },
   "source_identity_at_execution": "LITERAL_COMMITTED_HEAD_AND_RAW_TREE; ALL_TRACKED_GIT_BLOBS_AND_EXACT_PHYSICAL_MODES; ZERO_OVERLAYS",
-  "state": "DESARROLLADO_SOURCE_ONLY; NATIVE_ADAPTATION_NOT_EXECUTED",
+  "state": "EXECUTED_NATIVE_GREEN_SCOPED_ON_INTEGRATED_ROOT_C437",
   "unchanged_limits": {
     "archive_bytes": 536870912,
     "archive_entries": 32768,
