@@ -24,7 +24,7 @@ STRATEGY_DETAIL = fields("lifecycle_owner|Lifecycle owner;eligible|Eligible|numb
 def render(p, destination, tab):
     if tab == "resumen":
         page = shadow_rows(p, "strategies")
-        if not page.rows:
+        if not page.rows and page.state != "CONTRACT_ERROR":
             page = family_summary(p)
         return render_table(p, destination, tab, page, "Estrategias & lifecycle por familia", STRATEGIES, STRATEGY_DETAIL,
                             note="ACTIVE_PAPER, SHADOW, OBSERVE_ONLY y NO_VERIFICADO son estados distintos. Readiness no concede entry_authority.")

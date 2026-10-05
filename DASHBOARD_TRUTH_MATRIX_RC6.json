@@ -15,7 +15,10 @@
         "paper_equity_by_currency",
         "paper_daily_risk",
         "paper_positions",
-        "committed SHADOW generation adapter"
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "read_committed_generation V2: operational_funnel"
       ],
       "endpoint": "o_dashboard.dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -48,10 +51,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "o_dashboard.ai_decisions_dashboard",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -81,10 +89,12 @@
       "canonical_view": "analitica/performance",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.annual_analysis",
       "family_dimension": "NOT_APPLICABLE",
@@ -114,10 +124,12 @@
       "canonical_view": "analitica/performance",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -147,10 +159,12 @@
       "canonical_view": "analitica/cierre-diario",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -180,10 +194,12 @@
       "canonical_view": "analitica/experimentos",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -213,10 +229,12 @@
       "canonical_view": "analitica/historico",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -246,10 +264,12 @@
       "canonical_view": "analitica/reportes",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -279,10 +299,12 @@
       "canonical_view": "analitica/salidas",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -312,10 +334,12 @@
       "canonical_view": "analitica/senales",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -977,10 +1001,12 @@
       "canonical_view": "analitica/experimentos",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "o_dashboard.blog_de_aprendizaje",
       "family_dimension": "NOT_APPLICABLE",
@@ -1011,11 +1037,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.config_editor",
       "family_dimension": "NOT_APPLICABLE",
@@ -1046,11 +1073,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.config_save",
       "family_dimension": "NOT_APPLICABLE",
@@ -1081,11 +1109,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.logs_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -1172,10 +1201,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "bg_paper_dashboard.en_vivo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1208,10 +1242,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1244,10 +1283,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1280,10 +1324,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1316,10 +1365,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1352,10 +1406,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1388,10 +1447,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1424,10 +1488,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -1485,10 +1554,12 @@
       "canonical_view": "analitica/historico",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "o_dashboard.datos_historicos",
       "family_dimension": "NOT_APPLICABLE",
@@ -1553,11 +1624,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.infra_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -1590,7 +1662,10 @@
         "paper_equity_by_currency",
         "paper_daily_risk",
         "paper_positions",
-        "committed SHADOW generation adapter"
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "read_committed_generation V2: operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -1882,10 +1957,12 @@
       "canonical_view": "analitica/cierre-diario",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -1942,10 +2019,12 @@
       "canonical_view": "analitica/reportes",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.reports",
       "family_dimension": "NOT_APPLICABLE",
@@ -2035,8 +2114,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "zz_wave8_dashboard_live_rc6.riesgo",
       "family_dimension": "NOT_APPLICABLE",
@@ -2068,8 +2151,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2101,8 +2188,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2134,8 +2225,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2167,8 +2262,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2200,8 +2299,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2233,8 +2336,12 @@
         "paper_daily_risk",
         "paper_equity_by_currency",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
         "paper_exit_intents",
-        "committed SHADOW generation adapter"
+        "paper_future_exit_intents",
+        "read_committed_generation V2: event_risk if published"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2265,11 +2372,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.salud_apis",
       "family_dimension": "NOT_APPLICABLE",
@@ -2333,11 +2441,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2368,11 +2477,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "bg_paper_dashboard.sistema",
       "family_dimension": "NOT_APPLICABLE",
@@ -2403,11 +2513,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2438,11 +2549,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2473,11 +2585,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2508,11 +2621,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2543,11 +2657,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2578,11 +2693,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2613,11 +2729,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2648,11 +2765,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "rc6_trader_dashboard.routes.endpoint",
       "family_dimension": "NOT_APPLICABLE",
@@ -2683,11 +2801,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.sre_dashboard",
       "family_dimension": "NOT_APPLICABLE",
@@ -2718,11 +2837,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "bc_dashboard_v163.telegram",
       "family_dimension": "NOT_APPLICABLE",
@@ -2753,11 +2873,12 @@
       "datasets": [
         "observer_state",
         "api_health",
+        "runtime-health.json: child liveness and runtime_budget_snapshot",
         "canonical worker states",
         "systemd snapshot",
         "bounded sanitized log snapshot",
         "non-secret configuration allowlist",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: independent generation integrity/freshness"
       ],
       "endpoint": "o_dashboard.solapa_testing",
       "family_dimension": "NOT_APPLICABLE",
@@ -3243,10 +3364,12 @@
       "canonical_view": "analitica/experimentos",
       "datasets": [
         "paper_positions",
-        "history_canonical_v2",
-        "production_history",
+        "paper_future_positions",
+        "paper_family_lifecycle_events",
+        "history_versions_v2",
+        "history_checks_v2",
         "report_registry",
-        "committed SHADOW generation adapter"
+        "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
@@ -3279,10 +3402,15 @@
         "observer_state",
         "candidate_identity_v2",
         "paper_positions",
+        "paper_future_positions",
+        "paper_future_marks",
+        "paper_family_lifecycle_events",
+        "paper_future_exit_intents",
         "paper_decisions",
         "decision_evidence_snapshots",
         "trade_gate_evaluations",
-        "committed SHADOW generation adapter"
+        "runtime-health.json",
+        "read_committed_generation V2: operational_funnel/engines"
       ],
       "endpoint": "o_dashboard.actividad_en_vivo",
       "family_dimension": "ticker + familia + mercado + moneda + settlement",
@@ -3303,5 +3431,20 @@
       "write_route": false
     }
   ],
-  "schema": "rc6-dashboard-route-inventory-v1"
+  "schema": "rc6-dashboard-route-inventory-v1",
+  "terminal_contracts": {
+    "annual_fixed_income": "price variation excludes coupon/amortization/accrual/reinvestment; total return/TIR NO_VERIFICADO",
+    "capacity": "native OFF/SHADOW/APPROVED/BASELINE_FAIL_CLOSED policy separate from measured OPEN evidence",
+    "funnel": "rc6.prospective-operational-funnel.v1; one currency/channel/native cohort for widget and stage cards",
+    "generation": "rc6.shadow-evidence-generation.v2; pointer/manifest/members, safety and canonical reader",
+    "greeks": "European Black-Scholes-Merton orientative; explicit exercise/dividend/rate contract; entry_authority=false",
+    "history": "immutable versions selected by known_at/source authority; currency/price_basis/adjustment_basis isolated",
+    "labs": "rc6.runtime-entry-signals.v1 experiments/cohorts; rc6.runtime-shadow-lab.v2 entries; entry_authority=false",
+    "positions": "Spot OPEN and future ACTIVE at exact UTC microsecond cut; full identity, family ledger and currency preserved",
+    "ppi_budget": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1; read-only observed counters/EXIT pressure, never capacity certification",
+    "shadow_root": "shadow_evidence_root(db): artifact_root(db)/dynamic-shadow; matching frozen overrides only",
+    "source_closure": "o_dashboard.py and rc6_trader_dashboard Python package must belong to the same frozen SHA/tree/image",
+    "sqlite": "readonly_copy(validate=False); coherent private main+WAL copy; source is never opened by SQLite",
+    "worker_health": "rc6.runtime-child-health.v1; child liveness, generation freshness and operational readiness are independent"
+  }
 }

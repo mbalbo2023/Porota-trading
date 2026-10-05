@@ -3,17 +3,13 @@ from .components import badge, clock, e, number
 from .design_system import CSS, SCRIPT
 from .navigation import DESTINATIONS, view_path
 from .projection import UNKNOWN, freshness
+from .datasets import policy_state
 from urllib.parse import urlencode
 
 
 def render(destination, tab, projection, content):
     state = projection.runtime
-    policy = projection.shadow["report"].get("capacity_policy", {})
-    selector = policy.get("status", UNKNOWN) if isinstance(policy, dict) else UNKNOWN
-    if selector not in {"OFF", "SHADOW", "APPROVED_DYNAMIC", "BASELINE_FAIL_CLOSED"}:
-        selector = UNKNOWN
-    if freshness(projection.shadow["report"].get("as_of"), projection.now, 30) != "FRESH":
-        selector = UNKNOWN
+    selector = policy_state(projection)
     def current(active):
         return "aria-current='page'" if active else ""
     links = "".join(f"<a href='{item.path}' {current(item.key == destination.key)}><span class='nav-icon' aria-hidden='true'>{item.icon}</span>{item.label}</a>" for item in DESTINATIONS)

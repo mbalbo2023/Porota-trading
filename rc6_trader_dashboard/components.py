@@ -139,6 +139,12 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             sort_keys=True, default=str)
         if key == "{}":
             key = str(index)
+        # A full instrument can appear in two engines or evaluator horizons.
+        # Preserve stable semantic context without including changing metrics.
+        context = {name: row[name] for name in ("ledger", "engine", "strategy", "variant", "horizon_seconds",
+                   "native_strategy_version", "native_configuration_fingerprint", "registry_version",
+                   "session", "entry_hour_art", "hour_art", "channel", "regime") if name in row}
+        key = json.dumps([key, context], sort_keys=True, default=str)
         row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
         cells = "".join(f"<td data-label='{e(f.label)}' class='{'secondary' if i > 2 else ''}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
         drawer_fields = tuple(dict.fromkeys((*IDENTITY, *columns, *extra, *EVIDENCE)))

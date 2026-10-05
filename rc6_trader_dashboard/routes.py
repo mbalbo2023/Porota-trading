@@ -19,16 +19,16 @@ from . import views_home, views_live, views_trading, views_universe, views_instr
 VIEWS = {"inicio": views_home, "en-vivo": views_live, "trading": views_trading,
          "universo": views_universe, "instrumentos": views_instruments,
          "riesgo": views_risk, "analitica": views_analytics, "sistema": views_system}
-FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "channel"}
+FILTERS = {"q", "family", "market", "currency", "settlement", "strategy", "state", "identity", "offset", "channel", "session", "cohort", "lab", "price_basis", "adjustment_basis"}
 
 
-def build_page(path, params, database_path):
+def build_page(path, params, database_path, *, now=None):
     destination, tab = resolve(path, params)
     if destination is None or tab is None:
         raise HTTPException(404, "Subview no disponible")
     filters = {k: str(v)[:(512 if k == "identity" else 80)] for k, v in params.items() if k in FILTERS}
     start = perf_counter()
-    with Store(database_path) as store:
+    with Store(database_path, now=now) as store:
         projection = Projection(store, filters)
         content = VIEWS[destination.key].render(projection, destination, tab)
         if path in {"/observacion", "/testing"}:
@@ -37,6 +37,12 @@ def build_page(path, params, database_path):
             content = "<p class='source-line'>Trading — Cauciones · Historial PAPER y readiness actual se muestran separados.</p>" + content
         document = shell(destination, tab, projection, content)
         count = store.query_count
+    if "SOURCE_SNAPSHOT_REJECTED" in store.errors:
+        from .components import notice
+        store.schema.clear()
+        projection = Projection(store, filters)
+        projection.shadow = {"state": "NO_VERIFICADO", "reason": "SOURCE_SNAPSHOT_REJECTED", "report": {}}
+        document = shell(destination, tab, projection, notice("NO_VERIFICADO · Corte de lectura no disponible dentro del presupuesto."))
     return document, {"X-Porota-Projection": SCHEMA, "X-Porota-Read-Queries": str(count),
                       "Server-Timing": f"projection;dur={(perf_counter() - start) * 1000:.2f}"}
 

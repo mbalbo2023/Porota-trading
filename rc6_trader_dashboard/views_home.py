@@ -13,7 +13,7 @@ def attention(p, positions):
     for row in positions.rows:
         if row.get("freshness") != "FRESH":
             alerts.append(("Book de salida sin frescura verificada", row.get("symbol", UNKNOWN), "/riesgo/liquidez"))
-        if row.get("exit_state") in {None, "BLOCKED", "STALE"}:
+        if row.get("exit_state") in {None, "BLOCKED", "STALE", UNKNOWN}:
             alerts.append(("Revisar supervisión de salida", row.get("symbol", UNKNOWN), "/en-vivo/workers"))
     for row in p.risk().rows:
         if row.get("state") in {"HARD_STOP", "SOFT_STOP", "STALE", "BLOCKED"}:
@@ -38,9 +38,9 @@ def render(p, destination, tab):
                       metric("Exposición · " + currency, row.get("exposure"), "Límite: NO_VERIFICADO", kind="money", currency=currency)))
     if not cards:
         cards.append(metric("Patrimonio / caja por moneda", None, "Ledger por moneda no publicado"))
-    cards.extend((metric("Operaciones abiertas", counts.get("open_positions"), "paper_positions · OPEN", kind="number"),
-                  metric("HOT observados", counts.get("HOT"), "Alta prioridad de análisis · HOT ≠ BUY", kind="number"),
-                  metric("Señales candidatas", counts.get("SIGNAL"), "Signal no implica economics/risk PASS", kind="number"),
+    cards.extend((metric("Operaciones abiertas", counts.get("open_positions"), "Spot OPEN + FUTUROS ACTIVE · corte exacto", kind="number"),
+                  metric("HOT alcanzados en el scope", counts.get("HOT"), str(counts.get("funnel_scope")) + " · HOT ≠ BUY", kind="number"),
+                  metric("Señales candidatas", counts.get("SIGNAL"), str(counts.get("funnel_scope")) + " · signal no implica economics/risk PASS", kind="number"),
                   metric("Alertas para revisar", count, "Hasta cinco alertas priorizadas", kind="number"),
                   metric("Tiempo a cierre / EOD", None, "Requiere reloj de cierre publicado")))
     performance = p.performance(today=True)

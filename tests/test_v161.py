@@ -120,6 +120,11 @@ def test_una_prima_al_doble_de_la_volatilidad_historica_se_descarta(monkeypatch)
     monkeypatch.setattr(deriv, "_volatilidad_historica", lambda x: 0.20)
     spec = _confirmar_strike_api(deriv.parse_option_ticker(
         "GFGC7500O", today=HOY, tipo_subyacente="ACCIONES"))
+    # This synthetic BS fixture declares its mathematical contract. A real
+    # UNKNOWN/AMERICAN series cannot silently acquire European IV authority.
+    spec.exercise_style = "EUROPEAN"
+    spec.dividend_yield = 0.0
+    spec.risk_free_rate = 0.29
     spec = deriv.assess_option(spec, premium=700.0, underlying_price=7100.0, spread_pct=1.0)
     assert spec.capable is False
     assert spec.blocking_code == "PRIMA_MUY_CARA_VS_VOLATILIDAD"

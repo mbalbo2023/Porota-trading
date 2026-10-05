@@ -1,0 +1,29 @@
+{
+  "schema": "rc6.ux-native-writer-custody-rca.v1",
+  "observed_failure": {
+    "test": "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+    "full_suite": {
+      "passed": 204,
+      "failed": 1
+    },
+    "source_main_bytes_before": 4096,
+    "source_main_bytes_after": 610304,
+    "wal_before": true,
+    "wal_after": false
+  },
+  "independent_reproduction": {
+    "operation": "gc.collect() immediately after native fixture; no dashboard render",
+    "gc_objects_collected": 41,
+    "source_changed": true,
+    "source_main_bytes_before": 4096,
+    "source_main_bytes_after": 610304,
+    "wal_before": true,
+    "wal_after": false,
+    "second_gc_objects_collected": 0,
+    "second_gc_source_stable": true
+  },
+  "rca": "Native SQLite transaction context commits but does not close its connection; UDF cycles defer last writer close/WAL checkpoint until garbage collection.",
+  "fixture_fix": "Finalize writer connections after returning from builder and before read inventory. Preserve all hash/stat/atime invariants and add a source SQLite open guard.",
+  "regression_receipt": "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
+  "production_change": "NONE"
+}

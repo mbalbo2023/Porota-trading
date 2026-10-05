@@ -99,14 +99,14 @@ def classify(path: str) -> tuple[list[str], list[str], str, str]:
 
 
 TERMINAL_DATASETS = {
-    "inicio": (["runtime", "safety"], ["observer_state", "paper_equity_by_currency", "paper_daily_risk", "paper_positions", "committed SHADOW generation adapter"]),
-    "en-vivo": (["runtime", "strategy_eligibility", "readiness"], ["observer_state", "candidate_identity_v2", "paper_positions", "paper_decisions", "decision_evidence_snapshots", "trade_gate_evaluations", "committed SHADOW generation adapter"]),
+    "inicio": (["runtime", "safety"], ["observer_state", "paper_equity_by_currency", "paper_daily_risk", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "read_committed_generation V2: operational_funnel"]),
+    "en-vivo": (["runtime", "strategy_eligibility", "readiness"], ["observer_state", "candidate_identity_v2", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_future_exit_intents", "paper_decisions", "decision_evidence_snapshots", "trade_gate_evaluations", "runtime-health.json", "read_committed_generation V2: operational_funnel/engines"]),
     "trading": (["readiness", "strategy_eligibility", "contract"], ["candidate_identity_v2", "financial_instrument_catalog", "contract_evidence_v2_current", "committed SHADOW generation adapter"]),
     "universo": (["readiness", "strategy_eligibility", "catalog"], ["candidate_identity_v2", "financial_instrument_catalog", "committed SHADOW generation adapter"]),
     "instrumentos": (["catalog", "readiness", "contract"], ["financial_instrument_catalog", "candidate_identity_v2", "contract_evidence_v2_current", "contract_evidence_v2_snapshots", "market_snapshots"]),
-    "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_exit_intents", "committed SHADOW generation adapter"]),
-    "analitica": (["history", "learning_history"], ["paper_positions", "history_canonical_v2", "production_history", "report_registry", "committed SHADOW generation adapter"]),
-    "sistema": (["runtime", "timers"], ["observer_state", "api_health", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "committed SHADOW generation adapter"]),
+    "riesgo": (["runtime", "safety"], ["paper_daily_risk", "paper_equity_by_currency", "paper_positions", "paper_future_positions", "paper_future_marks", "paper_family_lifecycle_events", "paper_exit_intents", "paper_future_exit_intents", "read_committed_generation V2: event_risk if published"]),
+    "analitica": (["history", "learning_history"], ["paper_positions", "paper_future_positions", "paper_family_lifecycle_events", "history_versions_v2", "history_checks_v2", "report_registry", "read_committed_generation V2: entry_signal_lab/economic_exit_lab/operational_funnel"]),
+    "sistema": (["runtime", "timers"], ["observer_state", "api_health", "runtime-health.json: child liveness and runtime_budget_snapshot", "canonical worker states", "systemd snapshot", "bounded sanitized log snapshot", "non-secret configuration allowlist", "read_committed_generation V2: independent generation integrity/freshness"]),
 }
 
 
@@ -146,6 +146,21 @@ def inventory() -> dict[str, Any]:
         "route_count": len(routes),
         "registered_paths": len({row["path"] for row in routes}),
         "routes": routes,
+        "terminal_contracts": {
+            "generation": "rc6.shadow-evidence-generation.v2; pointer/manifest/members, safety and canonical reader",
+            "shadow_root": "shadow_evidence_root(db): artifact_root(db)/dynamic-shadow; matching frozen overrides only",
+            "sqlite": "readonly_copy(validate=False); coherent private main+WAL copy; source is never opened by SQLite",
+            "positions": "Spot OPEN and future ACTIVE at exact UTC microsecond cut; full identity, family ledger and currency preserved",
+            "funnel": "rc6.prospective-operational-funnel.v1; one currency/channel/native cohort for widget and stage cards",
+            "labs": "rc6.runtime-entry-signals.v1 experiments/cohorts; rc6.runtime-shadow-lab.v2 entries; entry_authority=false",
+            "history": "immutable versions selected by known_at/source authority; currency/price_basis/adjustment_basis isolated",
+            "annual_fixed_income": "price variation excludes coupon/amortization/accrual/reinvestment; total return/TIR NO_VERIFICADO",
+            "worker_health": "rc6.runtime-child-health.v1; child liveness, generation freshness and operational readiness are independent",
+            "capacity": "native OFF/SHADOW/APPROVED/BASELINE_FAIL_CLOSED policy separate from measured OPEN evidence",
+            "ppi_budget": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1; read-only observed counters/EXIT pressure, never capacity certification",
+            "greeks": "European Black-Scholes-Merton orientative; explicit exercise/dividend/rate contract; entry_authority=false",
+            "source_closure": "o_dashboard.py and rc6_trader_dashboard Python package must belong to the same frozen SHA/tree/image",
+        },
     }
 
 

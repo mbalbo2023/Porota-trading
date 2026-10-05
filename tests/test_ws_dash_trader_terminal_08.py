@@ -2,11 +2,13 @@
 import ast
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
 from time import perf_counter
+import tempfile
 
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
@@ -173,7 +175,9 @@ def test_missing_candidate_contract_and_database_fail_closed(database, tmp_path)
         p = Projection(s)
         assert p.catalog().rows[0]["readiness"] == "NO_VERIFICADO"
         assert "READY" not in p.counts()
-        assert p.shadow["state"] == generation.AWAITING
+        assert p.shadow["state"] == "NO_VERIFICADO"
+        assert p.shadow["reason"] == "COMMITTED_GENERATION_REJECTED"
+        assert p.shadow["report"] == {}
     missing = tmp_path / "never-create.db"
     html, _ = build_page("/", {}, missing)
     assert not missing.exists()
@@ -219,22 +223,17 @@ def test_source_scope_score_and_trajectory_semantics(database):
     assert freshness((NOW + timedelta(seconds=1)).isoformat(), NOW) == "NO_VERIFICADO"
 
 
+@lru_cache(maxsize=1)
+def _native_coherent_cut():
+    from tests.rc6_dashboard_native_fixture import native_fixture
+    with tempfile.TemporaryDirectory(prefix="rc6-dashboard-native-cut-") as directory:
+        return native_fixture(Path(directory)).cut
+
+
 def coherent_cut():
-    ident = "a" * 32
-    metadata = {"generation_id": ident, "source_watermark": {"as_of": STAMP}, "configuration_fingerprint": "fixture-config", "as_of": STAMP}
-    report = {**metadata, "real_orders_sent": 0, "real_routes": "NOT_CALLED", "engines": {
-        "EQUITY_SPOT": {"telemetry": [{"identity": ["T000", "ACCIONES", "BYMA", "ARS", "INMEDIATA"],
-            "state": "HOT", "rank": 1, "tradeability_score": "80", "strategy": "S1",
-            "entry_authority": True, "strategy_source_at": STAMP, "rejection_reason": []}]}}}
-    manifest = {**metadata, "sequence": 1}
-    pointer = {"generation_id": ident, "sequence": 1, "manifest_sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()}
-    return seal_cut({"pointer": pointer, "manifest": manifest, "report": report, "checkpoint": dict(metadata), "status": dict(metadata)})
-
-
-def seal_cut(cut):
-    cut["manifest"]["files"] = {role: {"payload_digest": hashlib.sha256(json.dumps(cut[role], sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()} for role in ("report", "checkpoint", "status")}
-    cut["pointer"]["manifest_sha256"] = hashlib.sha256(json.dumps(cut["manifest"], sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-    return cut
+    # Integrity adversaries mutate independent copies of a real V2 writer/read
+    # result. Native producer shapes are never invented in this test module.
+    return deepcopy(_native_coherent_cut())
 
 
 def test_adapter_uses_only_canonical_reader_and_never_promotes_shadow(database):
@@ -286,17 +285,30 @@ def test_canonical_reader_rejection_has_no_legacy_fallback(tmp_path):
     assert "private-token" not in json.dumps(result)
 
 
+def test_missing_canonical_reader_preserves_awaiting_reconciliation(tmp_path, monkeypatch):
+    def unavailable(_name):
+        raise ImportError("reader absent")
+    monkeypatch.setattr(generation, "import_module", unavailable)
+    result = generation.read_shadow(tmp_path)
+    assert result["state"] == generation.AWAITING
+    assert result["report"] == {}
+
+
 def test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency(database):
     cut = coherent_cut()
-    cut["report"]["operational_funnel"] = {"as_of": STAMP, "by_currency_channel": [
-        {"currency": "ARS", "channel": "NATIVE_FACTUAL", "stages": {"CATALOG_READY": 3, "PAPER_OPENED": 1}},
-        {"currency": "USD", "channel": "SHADOW", "stages": {"CATALOG_READY": 99, "PAPER_OPENED": 9}}]}
-    seal_cut(cut)
+    native = next(row for row in cut["report"]["operational_funnel"]["by_currency_channel"]
+                  if row["currency"] == "ARS" and row["channel"] == "NATIVE_FACTUAL")
     with Store(database, now=NOW) as s:
         p = Projection(s, generation_reader=lambda *args, **kwargs: cut)
         html = committed_funnel(p)
+        counts = p.counts()
+        assert counts["PAPER"] == native["stages"]["PAPER_OPENED"]
+        assert p.funnel_scope["selected"] == native
+        absent = Projection(s, {"currency": "USD_CCL", "channel": "NATIVE_FACTUAL"}, generation_reader=lambda *args, **kwargs: cut)
+        assert absent.funnel_scope["counts"] == {}
+        assert absent.funnel_scope["reason"] == "FUNNEL_SCOPE_NOT_PUBLISHED"
     assert "ARS / NATIVE_FACTUAL" in html
-    assert "<b>3</b>" in html and "<b>99</b>" not in html and "<b>25</b>" not in html
+    assert f"<b>{native['stages']['PAPER_OPENED']}</b>" in html and "<b>25</b>" not in html
 
 
 def test_read_only_snapshot_parameterization_and_large_catalog(database):
@@ -417,10 +429,12 @@ def test_digest_valid_contract_does_not_validate_derived_metrics(database, prove
 
 
 def test_external_canonical_history_is_read_only_and_cannot_change_ready(database, tmp_path, monkeypatch):
+    from be_paper_engine import PaperStore
+    from cu_history_store_v2_hf6 import Candle, append_many
     history = tmp_path / "market_history.db"
-    with sqlite3.connect(history) as c:
-        c.execute("CREATE TABLE history_canonical_v2(symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,trading_date TEXT,observed_at TEXT,source_class TEXT,quality_state TEXT)")
-        c.executemany("INSERT INTO history_canonical_v2 VALUES('T000','ACCIONES','BYMA','INMEDIATA',?,?, 'PPI','FULL_OHLC')", ((f"2026-09-{i:02d}", STAMP) for i in range(1, 10)))
+    writer = PaperStore(str(history))
+    append_many(writer, [Candle("T000", "ACCIONES", "BYMA", "INMEDIATA", f"2026-09-{i:02d}",
+        100, 105, 95, 102, 1000, "PPI_API", observed_at="2026-09-30T16:00:00+00:00", currency="ARS") for i in (1, 2, 3, 4, 7, 8, 9, 10, 11)])
     monkeypatch.setenv("HIST_DB_PATH", str(history))
     before = hashlib.sha256(history.read_bytes()).hexdigest()
     with Store(database, now=NOW) as s:
@@ -448,7 +462,8 @@ def test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default(d
         return coherent_cut()
     with Store(database, now=NOW) as s:
         Projection(s, generation_reader=reader).shadow
-    assert calls == [str(database) + ".shadow"]
+    from rc6_shadow_runtime.persistence import shadow_evidence_root
+    assert calls == [str(shadow_evidence_root(database))]
     page = Page("fixture", [{"features": {"api_key": "do-not-display", "account_id": "private-account", "spread": "0.1"}}], 1, "AVAILABLE")
     html = table(page, "Detail", fields("features|Evidencia"))
     assert "do-not-display" not in html and "private-account" not in html

@@ -166,6 +166,9 @@ class DerivativeSpec:
     # griegas) sin que nadie lo marque. Ahora se marca, y si no viene de la
     # API el instrumento queda no operable con código propio.
     strike_source: str = "ticker"     # "api" | "ticker"
+    exercise_style: str = "UNKNOWN"
+    dividend_yield: Optional[float] = None
+    risk_free_rate: Optional[float] = None
     contract_multiplier: Optional[float] = None
     paper_margin_policy: str = ""
     paper_margin_rate: Optional[float] = None
@@ -472,7 +475,9 @@ def assess_option(spec: DerivativeSpec, premium: float, underlying_price: Option
         vol_hist = _volatilidad_historica(spec.underlying)
         g = greeks.calcular(prima=premium, precio_subyacente=underlying_price or 0,
                             strike=spec.strike or 0, dias_al_vencimiento=spec.days_to_expiry,
-                            es_call=(spec.right == "CALL"), volatilidad_historica=vol_hist)
+                            es_call=(spec.right == "CALL"), volatilidad_historica=vol_hist,
+                            tasa_libre_riesgo=spec.risk_free_rate,
+                            exercise_style=spec.exercise_style, dividend_yield=spec.dividend_yield)
         spec.greeks = g.to_dict()
         if g.convergio:
             if g.ratio_iv_historica and g.ratio_iv_historica >= 2.0:

@@ -11,9 +11,9 @@ def render(p, destination, tab):
     if tab == "resumen":
         counts = p.counts()
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
-            ("open_positions", "Operaciones abiertas", "paper_positions · OPEN"),
-            ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT ahora", "Observación SHADOW; HOT ≠ BUY"),
-            ("SIGNAL", "Señales candidatas", "Cut SHADOW comprometido")))
+            ("open_positions", "Operaciones abiertas", "Spot OPEN + FUTUROS ACTIVE · corte exacto"),
+            ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT alcanzados en el scope", str(counts.get("funnel_scope")) + " · HOT ≠ BUY"),
+            ("SIGNAL", "Señales candidatas", str(counts.get("funnel_scope")))))
         summary = p.performance(today=True)
         cards += "".join(metric("PnL neto hoy · " + r["currency"], r.get("net_pnl"), r["strategy"], kind="money", currency=r["currency"]) for r in summary.rows)
         workers = p.workers()

@@ -9,14 +9,14 @@ def render(p, destination, tab):
     if tab == "resumen":
         counts = p.counts()
         cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
-            ("READY", "Catalog READY", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", "cut SHADOW comprometido"),
-            ("TRADEABLE", "Tradeable", "cut SHADOW; no señal direccional"), ("HOT", "HOT", "prioridad de observación")))
+            ("READY", "RUNTIME_READY · catálogo factual", "candidate_identity_v2"), ("ELIGIBLE", "Strategy eligible", str(counts.get("funnel_scope"))),
+            ("TRADEABLE", "Tradeable", str(counts.get("funnel_scope")) + " · no señal direccional"), ("HOT", "HOT", str(counts.get("funnel_scope")))))
         return "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p) + render_table(
             p, destination, tab, family_summary(p), "Distribución por familia", fields("family|Familia;candidates|Identidades|number;ready|RUNTIME_READY|number"),
             fields("market|Mercado;currency|Moneda;touched_fraction|Coverage touched;discovery_age|Discovery age;as_of|Readiness as_of|time"))
     if tab == "familias":
         page = shadow_rows(p, "families")
-        if not page.rows:
+        if not page.rows and page.state != "CONTRACT_ERROR":
             page = family_summary(p)
         return render_table(p, destination, tab, page, "Routing & policy por familia", STRATEGIES,
                             (*STRATEGY_DETAIL, *fields("cadence_class|Cadence class;deep_analysis_eligibility|Deep-analysis eligibility;reason|Por qué OBSERVE_ONLY")))

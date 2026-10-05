@@ -1,5 +1,7 @@
 # WS-DASH-TRADER-TERMINAL-08 — implementación y handoff
 
+Nota de convergencia 2026-10-05: este documento describe el candidato aislado #470. Los contratos de root, capacidad, labs, funnel, futuros y gates combinados están sustituidos por [RC6_CONVERGENCE_UX470_AUD14_15_16.md](RC6_CONVERGENCE_UX470_AUD14_15_16.md). Las evidencias antiguas conservan su corte histórico.
+
 Issue contractual: [#467](https://github.com/mbalbo2023/Porota-trading/issues/467).
 Especificación íntegra: `WS_DASH_TRADER_TERMINAL_08_ARCHITECTURE_2026-10-04.md`, preservada sin cambios.
 Branch exclusiva: `work/ws-dash-trader-terminal-08-20261004`.

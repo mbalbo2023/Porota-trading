@@ -6,7 +6,7 @@ The exact Python/financial contract remains automatically discovered pytest.
 """
 import argparse
 from datetime import datetime, timezone
-import importlib.util
+import gc
 import json
 from pathlib import Path
 import sys
@@ -17,17 +17,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from rc6_trader_dashboard.navigation import CANONICAL_PATHS, LEGACY
 from rc6_trader_dashboard.routes import build_page
+from tests.rc6_dashboard_native_fixture import native_fixture
 
 
 def run(output):
     from playwright.sync_api import sync_playwright
-    fixture = importlib.util.spec_from_file_location("ws08_browser_fixture", ROOT / "tests/test_ws_dash_trader_terminal_08.py")
-    module = importlib.util.module_from_spec(fixture)
-    fixture.loader.exec_module(module)
     output.mkdir(parents=True, exist_ok=True)
     findings, requests, renders = [], [], []
     with tempfile.TemporaryDirectory(prefix="porota-ws08-browser-") as temporary:
-        database = module.database.__wrapped__(Path(temporary))
+        fixture = native_fixture(Path(temporary))
+        fixture.broker.supervise_futures(fixture.as_of.isoformat())
+        gc.collect()  # Finalize the native writer before browser read custody.
+        database = fixture.database
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
             page = browser.new_page(viewport={"width": 1440, "height": 980}, reduced_motion="reduce")
@@ -35,14 +36,18 @@ def run(output):
                 request = route.request
                 requests.append(request.url)
                 parts = urlsplit(request.url)
+                if parts.hostname != "terminal.test":
+                    findings.append({"network": "UNEXPECTED_EXTERNAL_RESOURCE", "host": parts.hostname})
+                    route.abort()
+                    return
                 if parts.path == "/favicon.ico":
                     route.fulfill(status=204)
                     return
                 params = {key: values[-1] for key, values in parse_qs(parts.query).items()}
-                html, headers = build_page(parts.path, params, database)
+                html, headers = build_page(parts.path, params, database, now=fixture.as_of)
                 renders.append({"path": parts.path, "width": page.viewport_size["width"], "queries": int(headers["X-Porota-Read-Queries"]), "server_timing": headers["Server-Timing"]})
                 route.fulfill(status=200, content_type="text/html", body=html, headers=headers)
-            page.route("http://terminal.test/**", serve)
+            page.route("**/*", serve)
             page.on("pageerror", lambda error: findings.append({"error": str(error)}))
             checks = 0
             for width in (1440, 1280, 1024, 800, 600, 360):
@@ -56,6 +61,9 @@ def run(output):
                         findings.append({"path": path, "width": width, "navigation": "not eight"})
                     if page.locator("tr[data-row]").count() > 10:
                         findings.append({"path": path, "width": width, "rows": "over ten"})
+                    duplicate_ids = page.locator("[id]").evaluate_all("els => {const seen=new Set();return els.map(el=>el.id).filter(id=>seen.has(id)||!seen.add(id))}")
+                    if duplicate_ids:
+                        findings.append({"path": path, "width": width, "duplicate_ids": duplicate_ids})
                     unnamed = page.locator("button, a, summary, input, select").evaluate_all("els => els.filter(el => !el.textContent.trim() && !el.getAttribute('aria-label') && !el.labels?.length).map(el=>el.outerHTML)")
                     if unnamed:
                         findings.append({"path": path, "width": width, "unnamed": unnamed})
@@ -113,11 +121,26 @@ def run(output):
             for path in LEGACY:
                 page.goto("http://terminal.test" + path)
                 assert page.locator("#terminal-content").get_attribute("data-view") == "/".join(LEGACY[path])
+            page.goto("http://terminal.test/en-vivo/posiciones?family=FUTUROS")
+            assert page.locator("tr[data-row]").count() == 1
+            assert "DLR/OCT26" in page.locator("tr[data-row]").inner_text()
+            assert page.locator("tr[data-row] [data-status='WATCH_NO_QUOTE']").count() >= 1
+            page.goto("http://terminal.test/analitica/salidas?lab=shadow")
+            assert page.locator("tr[data-row]").count() == 1
+            assert "T000" in page.locator("tr[data-row]").inner_text()
+            page.goto("http://terminal.test/analitica/experimentos")
+            assert page.locator("tr[data-row]").count() == 1
+            page.goto("http://terminal.test/en-vivo/capacidad")
+            assert page.locator("tr[data-row]").count() == 2
+            assert page.locator("tr[data-row] > td:nth-child(2) [data-status='OFF']").count() == 2
+            page.screenshot(path=str(output / "native-capacity-off.png"), full_page=False)
             browser.close()
     result = {"schema": "rc6.trader-terminal-browser-gate.v1", "status": "GREEN" if not findings else "RED",
               "widths": [1440, 1280, 1024, 800, 600, 360], "canonical_viewport_checks": checks,
               "legacy_checks": len(LEGACY), "interaction_checks": ["manual focus", "scroll", "details", "filters", "deep link", "dirty inputs", "interaction during outstanding read", "auto refresh pause", "menu Escape"],
-              "network": "all HTTP intercepted synthetic fixtures; provider_requests=0", "findings": findings, "renders": renders,
+              "network": "all HTTP intercepted; native offline PAPER/SHADOW writers; provider_requests=0", "findings": findings, "renders": renders,
+              "native_generation_schema": fixture.cut["pointer"]["schema"], "generation_id": fixture.cut["pointer"]["generation_id"],
+              "source_cut": fixture.as_of.isoformat(), "native_contract_checks": ["FUT ACTIVE visible", "FUT native supervision intent visible", "same-entry exit lab nonempty", "entry experiment nonempty", "OFF policy separate from OPEN evidence", "unique element IDs"],
               "as_of": datetime.now(timezone.utc).isoformat()}
     (output / "browser-gate.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     assert not findings, json.dumps(findings)
@@ -127,4 +150,13 @@ def run(output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    run(parser.parse_args().output)
+    arguments = parser.parse_args()
+    try:
+        run(arguments.output)
+    except Exception as error:
+        arguments.output.mkdir(parents=True, exist_ok=True)
+        (arguments.output/"browser-failure.json").write_text(json.dumps({
+            "schema": "rc6.trader-terminal-browser-failure.v1", "status": "RED",
+            "error_class": type(error).__name__, "message": str(error)[:2000],
+            "as_of": datetime.now(timezone.utc).isoformat()}, sort_keys=True, indent=2)+"\n")
+        raise
