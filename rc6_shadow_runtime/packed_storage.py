@@ -38,6 +38,9 @@ _VOLATILE = re.compile(
     rb'(?P<value>"(?:[^"\\]|\\.)*"|-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?|true|false|null)')
 _KEYS = {"schema", "codec", "packets", "templates_count", "literals_count", "directory", "instances",
          "bindings", "references", "logical_bytes", "logical_sha256", "storage_sha256"}
+_SMALL_ITEMS = 16
+_SMALL_STRING = 256
+_SMALL_INTEGER_BITS = 4096
 
 
 def _canonical(value, *, ascii=True):
@@ -144,6 +147,35 @@ def _root_volatile(name):
     return (name.endswith("_at") or name.endswith("_seconds") or name in
         {"as_of", "last_as_of", "sequence", "generation_id", "cross_payload_hashes", "report_digest",
          "checkpoint_digest", "evidence_retention", "logical_sha256", "storage_sha256", "sha256", "payload"})
+
+
+def _small_plain(value):
+    """A bounded encoding shortcut; every other value takes the prior walk."""
+    kind = type(value)
+    if kind is dict:
+        if len(value) > _SMALL_ITEMS:
+            return False
+        for key in value:
+            if type(key) is not str or len(key) > _SMALL_STRING or _root_volatile(key):
+                return False
+        members = value.values()
+    elif kind in (list, tuple):
+        if len(value) > _SMALL_ITEMS:
+            return False
+        members = value
+    else:
+        return False
+    for member in members:
+        scalar = type(member)
+        if scalar is str:
+            if len(member) > _SMALL_STRING:
+                return False
+        elif scalar is int:
+            if member.bit_length() > _SMALL_INTEGER_BITS:
+                return False
+        elif scalar not in (type(None), bool, float):
+            return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -296,16 +328,27 @@ class _CaptureBuilder:
         return Capture(_VOLATILE.sub(replace, _canonical(value)), tuple(literals))
 
     def _append(self, value, name, buffer, *, root=False):
-        if isinstance(value, (dict, list, tuple)) and not root and (
+        container = isinstance(value, (dict, list, tuple))
+        short_raw = None
+        if container and not root and (
                 self.incoming.get(id(value), 0) >= 2 or name in _FIELDS):
             cached = self.cache.get(id(value))
-            if cached is None or cached[0] is not value:
+            fresh = cached is None or cached[0] is not value
+            if fresh:
                 capture = self._named(value)
                 self.cache[id(value)] = value, capture
             else:
                 capture = cached[1]
             if len(capture.template) >= 64:
                 buffer.boundary(capture); return
+            if fresh and not capture.literals:
+                short_raw = capture.template
+        if container and _small_plain(value):
+            raw = short_raw if short_raw is not None else _canonical(value)
+            # With no bindings and the whole value fitting, every original
+            # token also fits. Append once without moving any legacy cut.
+            if len(raw) <= PACK_TARGET-len(buffer.template):
+                buffer.append(raw); return
         if isinstance(value, dict):
             buffer.append(b"{")
             for ordinal, key in enumerate(sorted(value)):
