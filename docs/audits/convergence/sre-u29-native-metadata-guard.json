@@ -9,6 +9,11 @@
   "corrected_auditor_sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488",
   "final_frozen_image_closure": "PENDING_FINAL_PREDEPLOY_ACTUAL_IMAGE",
   "fix": "Count every metadata row before normalization and reject duplicate normalized names; preserve unique count and explicit duplicate_names taxonomy.",
+  "format_validation": {
+    "code_diff": "CLEAN",
+    "raw_receipt_byte_preservation": "The original pytest RED traceback contains two whitespace-only E lines (28 and 59). They are preserved exactly and their hashes bind the raw XML. These are evidence formatting exceptions, not test exclusions or altered results.",
+    "raw_whitespace_exception_path": "docs/audits/convergence/evidence/sre-u29-native-metadata-duplicate-red.xml"
+  },
   "guard_source_sha256": "ea2201023f0aa5cc0a525b1e2814ab08ecdcbaba81af4f82858ab0db34df3a91",
   "market_effects": "NOT_EXECUTED",
   "negative_classification": "INSTALLED_METADATA_CARDINALITY_FAIL_OPEN",
