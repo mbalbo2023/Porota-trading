@@ -86,15 +86,11 @@ def test_reverse_order_burst_endpoint_and_global_remain_coherent(tmp_path, exit_
     assert not use(budget, "intraday", priority="SCALPING_HOT")["allowed"]
 
 
-def test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow(tmp_path):
+def test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap(tmp_path):
     clock = Clock()
-    budget = GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock, global_limit=3), clock=clock.now)
-    assert not use(budget, "current", priority="OPENED_CRITICAL")["allowed"]
-    assert all(use(budget, "book", priority="EXIT_CRITICAL")["allowed"] for _ in range(3))
-    assert not use(budget, "book", priority="EXIT_CRITICAL")["allowed"]
-    metrics = budget.metrics()["window"]
-    assert metrics["by_endpoint"]["book"]["reserved_total"] == 3
-    assert metrics["exit_unreserved_demand"]["book"] == 2
+    with pytest.raises(ValueError, match="PPI_EXIT_CAPACITY_INSUFFICIENT"):
+        GlobalPPIBudget(tmp_path / "budget.sqlite", exit_floor(clock, global_limit=3), clock=clock.now)
+    assert not (tmp_path / "budget.sqlite").exists()
 
 
 def test_independent_opened_floor_precedes_scalping_and_discovery(tmp_path):
@@ -122,7 +118,7 @@ def test_other_process_policy_cannot_lower_promised_exit_floor(tmp_path):
 
 def test_exit_demand_metrics_are_independent_of_planned_lower_reservations():
     clock = Clock()
-    original = policy(clock, limits=dict(current=5, book=5, intraday=5))
+    original = policy(clock, limits=dict(current=5, book=30, intraday=5))
     state = dict(status="APPROVED_DYNAMIC", global_budget={name: original[name] for name in
         ("window_seconds", "endpoint_limits", "global_limit", "safety_reserve")},
         budget_settings={name: original[name] for name in ("critical_book_seconds", "lease_seconds",
@@ -132,7 +128,7 @@ def test_exit_demand_metrics_are_independent_of_planned_lower_reservations():
     value = budget_policy(state, opened_count=5, planned_reservations={
         "SCALPING_HOT": {"current": 1}, "STRATEGY_HOT": {"book": 3}, "WARM": {"intraday": 2}})
     assert value["exit_demand"] == dict(current=0, book=30, intraday=0)
-    assert value["priority_reserves"]["EXIT_CRITICAL"] == dict(current=0, book=5, intraday=0)
+    assert value["priority_reserves"]["EXIT_CRITICAL"] == dict(current=0, book=30, intraday=0)
 
 
 @pytest.mark.parametrize("replacement_window", [15, 60])
@@ -1361,16 +1357,17 @@ def test_exact_native_exit_caller_survives_all_five_opened_book_denials(wire, tm
     assert sum("/Book?" in url for _, url in calls) == 5
 
 
-def test_approved_dynamic_reserves_real_durable_positions_without_paper_authority_change(wire, tmp_path, monkeypatch):
+def test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions(wire, tmp_path, monkeypatch):
     values = approved(wire)
     clock = wire[0]
     store, _ = native_opened_store(tmp_path, clock, monkeypatch)
     runtime = RuntimePPIBudget(store.path, controller(values), clock=clock.now)
-    current = runtime._current()
-    assert current.policy["open_positions_count"] == 5
-    assert current.policy["priority_reserves"]["EXIT_CRITICAL"]["book"] == 15
-    assert not runtime.acquire("book", consumer="SCANNER", priority="OPENED_CRITICAL")["allowed"]
-    assert use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    with pytest.raises(BudgetBackpressure, match="PPI_EXIT_CAPACITY_INSUFFICIENT"):
+        runtime._current()
+    assert runtime.activation_contract["open_positions_count"] == 5
+    assert runtime.activation_contract["exit_demand"]["book"] == 30
+    assert runtime.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+    assert runtime.budget is None and not runtime.path.exists()
     with store.connect() as connection:
         assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == ("PRODUCTION_PAPER", 0)
         assert connection.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] == 5
@@ -1650,6 +1647,7 @@ def test_changed_policy_fingerprint_forces_new_native_book_probe(tmp_path):
 def test_process_kill_during_book_flight_fails_closed_until_durable_lease_expires(tmp_path):
     clock = Clock()
     config = exit_floor(clock)
+    config["critical_book_seconds"] = 1
     path = str(tmp_path / "budget.sqlite")
     budget = GlobalPPIBudget(path, config, clock=clock.now)
     context = multiprocessing.get_context("fork")
@@ -1663,7 +1661,7 @@ def test_process_kill_during_book_flight_fails_closed_until_durable_lease_expire
     identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
     def forbidden():
         raise AssertionError("killed flight was reused before lease expiry")
-    with pytest.raises(BudgetBackpressure, match="SINGLE_FLIGHT_BACKPRESSURE"):
+    with pytest.raises(BudgetBackpressure, match="EXIT_DEADLINE_EXCEEDED"):
         budget.coalesced_book(identity, forbidden, consumer="EXIT_READER", priority="EXIT_CRITICAL")
     clock.advance(61)
     assert budget.coalesced_book(identity, lambda: book_payload(clock), consumer="EXIT_READER", priority="EXIT_CRITICAL")["date"] == clock.now().isoformat()

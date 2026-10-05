@@ -11,12 +11,12 @@ from decimal import Decimal, InvalidOperation
 from copy import deepcopy
 import fcntl
 import json
-import math
 import os
 from pathlib import Path
 import re
 import sqlite3
 import stat
+import threading
 import time
 import uuid
 
@@ -30,6 +30,30 @@ WINDOW_FIELDS = ("requested", "admitted", "used", "dropped", "borrowed_in", "bor
 BOOK_CACHE_LIMIT = 64
 BOOK_CACHE_BYTES = 16384
 AUTHORITY_LIMIT = 64
+SUPERVISABLE_POSITION_STATES = (("paper_positions", "OPEN"), ("paper_future_positions", "ACTIVE"))
+
+
+def supervisable_position_count(database, unverified=None):
+    """Count every exit-supervised family in one verified PAPER snapshot.
+
+    None means unknown, never zero. Readers and capacity approval can consume
+    the same table/state contract without importing a broker or provider.
+    """
+    try:
+        with closing(sqlite3.connect(Path(database).resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
+            c.execute("PRAGMA query_only=ON")
+            c.set_progress_handler(lambda: 1, 100000)
+            c.execute("BEGIN")
+            state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
+                raise ValueError("PPI_BUDGET_PAPER_SOURCE_UNVERIFIED")
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "paper_positions" not in tables:
+                raise ValueError("PPI_BUDGET_OPENED_LEDGER_UNAVAILABLE")
+            return sum(c.execute(f"SELECT COUNT(*) FROM {table} WHERE status=?", (status,)).fetchone()[0]
+                for table, status in SUPERVISABLE_POSITION_STATES if table in tables)
+    except (OSError, ValueError, sqlite3.Error):
+        return unverified
 
 
 class BudgetBackpressure(RuntimeError):
@@ -42,6 +66,22 @@ def _int(value, minimum=0):
     return value
 
 
+def exit_capacity_contract(state, *, opened_count=0):
+    """Fail activation before a truncated reserve can promise impossible exits."""
+    opened = _int(opened_count)
+    envelope, settings = state["global_budget"], state["budget_settings"]
+    window, cadence = _int(envelope["window_seconds"], 1), _int(settings["critical_book_seconds"], 1)
+    demand = {"current": 0, "intraday": 0, "book": (opened * window + cadence - 1) // cadence}
+    gaps = {e: max(0, demand[e] - _int(envelope["endpoint_limits"][e], 1)) for e in ENDPOINTS}
+    global_gap = max(0, sum(demand.values()) - _int(envelope["global_limit"], 1))
+    blocked = bool(global_gap or any(gaps.values()))
+    return {"schema": "RC6_EXIT_CAPACITY_CONTRACT_V1", "open_positions_count": opened,
+        "exit_demand": demand, "endpoint_gaps": gaps, "global_gap": global_gap,
+        "status": "ACTIVATION_BLOCKED_EXIT_CAPACITY" if blocked else "READY",
+        "reason_codes": ["PPI_EXIT_CAPACITY_INSUFFICIENT"] if blocked else [],
+        "deadline_seconds": settings["critical_book_seconds"], "real_orders_sent": 0}
+
+
 def budget_policy(state, *, opened_count=0, planned_reservations=None):
     """Reserve actual critical demand, then planned high-priority deep tasks."""
     if state.get("status") != "APPROVED_DYNAMIC":
@@ -50,9 +90,11 @@ def budget_policy(state, *, opened_count=0, planned_reservations=None):
     settings = state["budget_settings"]
     limits = envelope["endpoint_limits"]
     opened = _int(opened_count)
-    exit_demand = {"current": 0, "intraday": 0,
-        "book": math.ceil(opened * envelope["window_seconds"] / settings["critical_book_seconds"])}
-    critical = {e: min(limits[e], exit_demand[e]) for e in ENDPOINTS}
+    exit_contract = exit_capacity_contract(state, opened_count=opened)
+    if exit_contract["status"] != "READY":
+        raise ValueError("PPI_EXIT_CAPACITY_INSUFFICIENT")
+    exit_demand = exit_contract["exit_demand"]
+    critical = dict(exit_demand)
     reserves = {"EXIT_CRITICAL": critical}
     # OPENED is a separate claimant. Its reads can never discharge EXIT's
     # indelegable floor, even when the requests refer to the same position.
@@ -97,6 +139,9 @@ def validate_policy(policy):
         if endpoint not in ENDPOINTS:
             raise ValueError("PPI_BUDGET_EXIT_DEMAND_INVALID")
         _int(value)
+    demand = {e: policy.get("exit_demand", {}).get(e, 0) for e in ENDPOINTS}
+    if any(demand[e] > policy["endpoint_limits"][e] for e in ENDPOINTS) or sum(demand.values()) > policy["global_limit"]:
+        raise ValueError("PPI_EXIT_CAPACITY_INSUFFICIENT")
     return policy
 
 
@@ -111,6 +156,7 @@ class GlobalPPIBudget:
         self.path = Path(path).absolute()
         self.policy = validate_policy(policy)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.deadline_alarm_unavailable = False
         try:
             self.protected = {Path(p).resolve() for p in protected if p is not None}
             self._bootstrap()
@@ -221,7 +267,10 @@ class GlobalPPIBudget:
         # max_page_count belongs to this connection. Set it only after native
         # write admission, avoiding a competing pre-transaction lock upgrade.
         page_size = c.execute("PRAGMA page_size").fetchone()[0]
-        c.execute(f"PRAGMA max_page_count={self.policy['maximum_bytes'] // (2 * page_size)}")
+        # DELETE journal needs a header and an eight-byte receipt per page.
+        # Bound DB+worst-case full journal, rather than half the DB alone.
+        pages = (self.policy["maximum_bytes"] - 512) // (2 * page_size + 8)
+        c.execute(f"PRAGMA max_page_count={pages}")
 
     def _begin_write(self, c):
         # A changing SQLite writer may finish during this bounded 50ms wait.
@@ -229,6 +278,45 @@ class GlobalPPIBudget:
         # fails closed; the durable wire lease remains independent of it.
         c.execute("BEGIN IMMEDIATE")
         self._limit_pages(c)
+        self._maintenance(c)
+
+    def _maintenance(self, c):
+        """Housekeeping precedes even the durable clock/telemetry writes.
+
+        Telemetry is disposable evidence with an explicit retained horizon.
+        Wire receipts, reservations, circuits and leases never make room for
+        it. A full older sidecar can DELETE stale telemetry without INSERT.
+        """
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget_state'").fetchone():
+            return
+        now = stamp(self.clock()).timestamp()
+        if now < self._get(c, "last_clock", now):
+            raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
+        c.execute("DELETE FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)<?", (int(now) - 3600,))
+        self._trim_telemetry(c, self._telemetry_bytes())
+
+    def _telemetry_bytes(self):
+        # Sparse seconds remain exact while retained. Under storage pressure
+        # trim the oldest evidence, not the physical call-debt authority.
+        return max(512, self.policy["maximum_bytes"] // 64)
+
+    def _trim_telemetry(self, c, maximum, *, keep=None):
+        rows = list(c.execute("SELECT key,length(CAST(value AS BLOB)) AS size FROM budget_state WHERE key LIKE 'window:%' ORDER BY CAST(substr(key,8) AS INTEGER)"))
+        size = sum(r["size"] for r in rows)
+        removed = 0
+        for row in rows:
+            if size <= maximum:
+                break
+            if row["key"] == keep:
+                continue
+            c.execute("DELETE FROM budget_state WHERE key=?", (row["key"],))
+            size -= row["size"]
+            removed += 1
+        if removed:
+            pressure = self._get(c, "telemetry_pressure", {"evicted_buckets": 0, "dropped_updates": 0})
+            pressure["evicted_buckets"] += removed
+            self._put(c, "telemetry_pressure", pressure)
+        return size
 
     @staticmethod
     def _get(c, key, default=None):
@@ -266,8 +354,16 @@ class GlobalPPIBudget:
             row[name] += count
         if reason:
             row["denial_reason"][reason] = row["denial_reason"].get(reason, 0) + 1
+        maximum = self._telemetry_bytes()
+        encoded = len(json.dumps(value, separators=(",", ":")).encode())
+        if encoded > maximum:
+            pressure = self._get(c, "telemetry_pressure", {"evicted_buckets": 0, "dropped_updates": 0})
+            pressure.update(last_dropped_at=now, dropped_updates=pressure["dropped_updates"] + 1)
+            self._put(c, "telemetry_pressure", pressure)
+            return
+        previous = c.execute("SELECT length(CAST(value AS BLOB)) FROM budget_state WHERE key=?", (bucket,)).fetchone()
+        self._trim_telemetry(c, maximum - encoded + (previous[0] if previous else 0), keep=bucket)
         self._put(c, bucket, value)
-        c.execute("DELETE FROM budget_state WHERE key LIKE 'window:%' AND CAST(substr(key,8) AS INTEGER)<?", (int(now) - 3600,))
 
     @staticmethod
     def _authority(policy, now):
@@ -465,6 +561,10 @@ class GlobalPPIBudget:
                 now = self._clock(c)
                 self._total(c, endpoint, consumer, priority, requested=1)
                 reason = None
+                pressure = self._get(c, "critical_exit_pressure", {})
+                if priority != "EXIT_CRITICAL" and any(
+                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values()):
+                    reason = "PPI_EXIT_DEADLINE_LOWER_SUSPENDED"
                 if now >= stamp(self.policy["expires_at"]).timestamp():
                     reason = "PPI_CAPACITY_EXPIRED_BACKPRESSURE"
                 circuit = self._get(c, "circuits", {})
@@ -617,7 +717,9 @@ class GlobalPPIBudget:
         Only successful fresh native depth is shared, for at most one exit
         cadence (5s). Provider calls still pass acquire/start/finish in the
         existing HTTP guard. SQLite is never locked during fetch or polling.
-        A follower waits at most 50ms, then reports explicit backpressure.
+        EXIT followers wait up to their critical cadence. A slow existing
+        wire call is joined, never preempted or duplicated. Waiting/degraded
+        EXIT pressure suspends subsequent lower-priority admissions.
         """
         if priority not in {"EXIT_CRITICAL", "OPENED_CRITICAL"}:
             return fetch()
@@ -629,7 +731,9 @@ class GlobalPPIBudget:
         authority = digest({k: self.policy[k] for k in ("configuration_fingerprint", "recommendation_digest")})
         age = min(5, self.policy["critical_book_seconds"])
         token = uuid.uuid4().hex
-        deadline = time.monotonic() + .05
+        critical = priority == "EXIT_CRITICAL"
+        started = time.monotonic()
+        deadline = started + (self.policy["critical_book_seconds"] if critical else .05)
         try:
             # The valid authority was observed even when its ensuing read
             # meets a breaker or occupied flight. Commit the promise before
@@ -658,7 +762,17 @@ class GlobalPPIBudget:
                     cache = {k: v for k, v in cache.items() if 0 <= now - v["received_at"] <= age and v["authority"] == authority}
                     cached = cache.get(key)
                     if cached and self._safe_book(cached["book"], now, age) is not None:
+                        elapsed = time.monotonic() - started
+                        if critical and elapsed >= self.policy["critical_book_seconds"]:
+                            # Commit the observed authority before recording
+                            # degradation in its own transaction. Raising
+                            # inside this transaction would erase the alarm.
+                            c.commit()
+                            self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", elapsed)
+                            raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
                         self._window_total(c, now, "book", consumer, priority, coalesced=1)
+                        if critical:
+                            self._exit_served(c, key, now, elapsed)
                         return deepcopy(cached["book"])
                     cache.pop(key, None)
                     flights = {k: v for k, v in flights.items() if v["until"] > now}
@@ -666,13 +780,27 @@ class GlobalPPIBudget:
                     if active is None:
                         if len(flights) >= BOOK_CACHE_LIMIT:
                             raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_CAPACITY")
-                        flights[key] = {"lease": token, "until": now + self.policy["lease_seconds"]}
+                        flights[key] = {"lease": token, "until": now + self.policy["lease_seconds"],
+                            "owner_priority": priority, "started_at": now}
                         self._put(c, "critical_books", cache)
                         self._put(c, "critical_book_flights", flights)
+                        if critical:
+                            self._exit_waiting(c, key, now, active)
                         break
+                    if critical:
+                        self._exit_waiting(c, key, now, active)
                 if time.monotonic() >= deadline:
+                    if critical:
+                        self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
+                        raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
                     raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_BACKPRESSURE")
-                time.sleep(.005)
+                time.sleep(min(.005, max(0, deadline - time.monotonic())))
+            monitor = None
+            if critical:
+                monitor = threading.Timer(max(0, deadline - time.monotonic()),
+                    self._monitor_exit_deadline, args=(key, token, started, deadline))
+                monitor.daemon = True
+                monitor.start()
             try:
                 result = fetch()
             except BaseException:
@@ -680,10 +808,78 @@ class GlobalPPIBudget:
                 # cannot manufacture concurrency or silently use an old book.
                 self._complete_book(key, token, authority, age, None)
                 raise
+            finally:
+                if monitor is not None:
+                    monitor.cancel()
             self._complete_book(key, token, authority, age, result)
+            if critical:
+                elapsed = time.monotonic() - started
+                if elapsed >= self.policy["critical_book_seconds"]:
+                    self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", elapsed)
+                    raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
+                with closing(self._connect()) as c, c:
+                    self._begin_write(c)
+                    now = self._clock(c)
+                    if self._safe_book(result, now, age) is not None:
+                        self._exit_served(c, key, now, elapsed)
             return result
         except (OSError, ValueError, sqlite3.Error) as error:
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
+
+    def _exit_waiting(self, c, key, now, owner):
+        pressure = self._get(c, "critical_exit_pressure", {})
+        old = pressure.get(key, {})
+        if key not in pressure and len(pressure) >= BOOK_CACHE_LIMIT:
+            # Never erase an unresolved identity to admit new lower activity.
+            raise BudgetBackpressure("PPI_BOOK_EXIT_PRESSURE_CAPACITY")
+        pressure[key] = old | {"status": old.get("status", "WAITING"),
+            "first_wait_at": old.get("first_wait_at", now),
+            "until": max(old.get("until", 0), now + self.policy["lease_seconds"]),
+            "owner_priority": (owner or {}).get("owner_priority", "EXIT_CRITICAL"),
+            "deadline_seconds": self.policy["critical_book_seconds"]}
+        self._put(c, "critical_exit_pressure", pressure)
+
+    def _exit_served(self, c, key, now, elapsed):
+        self.deadline_alarm_unavailable = False
+        pressure = self._get(c, "critical_exit_pressure", {})
+        pressure.pop(key, None)
+        self._put(c, "critical_exit_pressure", pressure)
+        service = self._get(c, "critical_exit_service", {})
+        service[key] = {"last_served_at": now, "elapsed_seconds": elapsed,
+            "deadline_seconds": self.policy["critical_book_seconds"], "status": "SERVED"}
+        while len(service) > BOOK_CACHE_LIMIT:
+            del service[min(service, key=lambda item: service[item]["last_served_at"])]
+        self._put(c, "critical_exit_service", service)
+
+    def _exit_degraded(self, key, reason, elapsed):
+        with closing(self._connect()) as c, c:
+            self._begin_write(c)
+            now = self._clock(c)
+            self._mark_exit_degraded(c, key, now, reason, elapsed)
+
+    def _mark_exit_degraded(self, c, key, now, reason, elapsed):
+        self._exit_waiting(c, key, now, None)
+        pressure = self._get(c, "critical_exit_pressure", {})
+        pressure[key].update(status="DEGRADED", reason=reason, elapsed_seconds=elapsed, degraded_at=now)
+        self._put(c, "critical_exit_pressure", pressure)
+
+    def _monitor_exit_deadline(self, key, token, started, deadline):
+        """Alarm during an existing HTTP body, without manipulating its owner."""
+        try:
+            if time.monotonic() < deadline:
+                return
+            with closing(self._connect()) as c, c:
+                self._begin_write(c)
+                now = self._clock(c)
+                flight = self._get(c, "critical_book_flights", {}).get(key)
+                # A timer racing successful completion must not resurrect a
+                # pressure record for a flight that no longer owns the token.
+                if flight and flight["lease"] == token:
+                    self._mark_exit_degraded(c, key, now, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
+        except (OSError, ValueError, sqlite3.Error, BudgetBackpressure):
+            # IO uncertainty does not release the wire lock/lease or permit a
+            # duplicate request. Expose failure to the current worker health.
+            self.deadline_alarm_unavailable = True
 
     def _complete_book(self, key, token, authority, age, payload):
         with closing(self._connect()) as c, c:
@@ -788,7 +984,24 @@ class GlobalPPIBudget:
                 "policy_authority": self.policy.get("authority", "EXPLICIT_APPROVED_OPEN_CAPACITY"),
                 "by_endpoint": {e: {name: sum(r[name] for r in rows if r["endpoint"] == e) for name in totals} for e in ENDPOINTS},
                 "circuits": self._get(c, "circuits", {}), "last_backpressure": self._get(c, "last_backpressure"),
+                "exit_service": {"deadline_seconds": self.policy["critical_book_seconds"],
+                    "deadline_alarm_unavailable": self.deadline_alarm_unavailable,
+                    "by_identity_digest": self._get(c, "critical_exit_service", {}),
+                    "pressure_by_identity_digest": self._get(c, "critical_exit_pressure", {}),
+                    "lower_suspended": any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
+                        for p in self._get(c, "critical_exit_pressure", {}).values())},
+                "telemetry_retention": self._telemetry_retention(c, now, seconds),
                 "max_parallel_requests": 1, "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
+
+    def _telemetry_retention(self, c, now, seconds):
+        earliest = c.execute("SELECT MIN(CAST(substr(key,8) AS INTEGER)) FROM budget_state WHERE key LIKE 'window:%'").fetchone()[0]
+        pressure = self._get(c, "telemetry_pressure", {})
+        partial = bool(pressure.get("dropped_updates") or pressure.get("evicted_buckets") and (
+            earliest is None or earliest > int(now - seconds)))
+        return {"status": "BOUNDED_PARTIAL" if partial else "COMPLETE_RETAINED_WINDOW",
+            "maximum_telemetry_bytes": self._telemetry_bytes(), "earliest_retained_at": earliest,
+            "counter_resolution_seconds": 1, "window_complete": not partial,
+            "authority": "NON_BINDING; exact rolling wire debt is budget_requests", **pressure}
 
 
 def _native_integer(env, name, default):
@@ -812,8 +1025,8 @@ def baseline_budget_policy(previous, *, opened_count, as_of, environ=None):
     scalping = max(8, min(40, _native_integer(env, "PAPER_INTRADAY_BATCH_LIMIT", 40)))
     window = min(3600, max(15, _native_integer(env, "PAPER_OBSERVER_INTERVAL_SECONDS", 60)),
         max(60, _native_integer(env, "PAPER_INTRADAY_SCAN_SECONDS", 180)))
-    critical = {"current": 0, "intraday": 0,
-        "book": math.ceil(opened * window / previous["critical_book_seconds"])}
+    cadence = _int(previous["critical_book_seconds"], 1)
+    critical = {"current": 0, "intraday": 0, "book": (opened * window + cadence - 1) // cadence}
     limits = {"current": max(equity, opened), "intraday": max(scalping, opened),
         "book": max(equity, opened) + critical["book"]}
     inputs = {"equity_limit": equity, "scalping_limit": scalping,
@@ -836,23 +1049,10 @@ class RuntimePPIBudget:
         self.controller = controller
         self.budget = None
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.activation_contract = None
 
     def _opened(self, unverified):
-        try:
-            with closing(sqlite3.connect(self.database.resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
-                c.execute("PRAGMA query_only=ON")
-                c.set_progress_handler(lambda: 1, 100000)
-                state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
-                if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
-                    raise ValueError("PPI_BUDGET_PAPER_SOURCE_UNVERIFIED")
-                tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if "paper_positions" not in tables:
-                    raise ValueError("PPI_BUDGET_OPENED_LEDGER_UNAVAILABLE")
-                counts = [c.execute(f"SELECT COUNT(*) FROM {table} WHERE status='OPEN'").fetchone()[0]
-                    for table in ("paper_positions", "paper_future_positions") if table in tables]
-                return sum(counts)
-        except (OSError, ValueError, sqlite3.Error):
-            return unverified
+        return supervisable_position_count(self.database, unverified)
 
     def _previous(self):
         if not self.path.exists():
@@ -905,6 +1105,9 @@ class RuntimePPIBudget:
         # Reserve positions from the existing durable ledger too; unavailable
         # shadow state cannot allow discovery to steal opened books.
         opened = max(opened, self._opened(max(state["global_budget"]["endpoint_limits"].values())))
+        self.activation_contract = exit_capacity_contract(state, opened_count=opened)
+        if self.activation_contract["status"] != "READY":
+            raise BudgetBackpressure("PPI_EXIT_CAPACITY_INSUFFICIENT")
         policy = budget_policy(state, opened_count=opened, planned_reservations=planned)
         if self.budget is None:
             protected = [self.database, *self.controller.input_paths]
@@ -959,3 +1162,138 @@ def budget_from_environment(database=None, *, clock=None):
         if not (artifact_root(database) / "ppi-budget/global.sqlite").exists():
             return None
     return RuntimePPIBudget(database, controller, clock=clock)
+
+
+def runtime_budget_snapshot(database, *, as_of=None):
+    """Inspect committed budget evidence without constructing a writer.
+
+    No bootstrap, clock update, maintenance, permission change or directory
+    creation occurs. Missing/foreign/contested evidence stays distinguishable
+    from a healthy budget; this is an observation, not OPEN authorization.
+    """
+    from cg_paper_workspace import artifact_root
+    at = stamp(as_of or datetime.now(timezone.utc))
+    result = {"schema": "RC6_RUNTIME_BUDGET_SNAPSHOT_V1", "as_of": at.isoformat(),
+        "status": "ABSENT", "reason_codes": ["PPI_BUDGET_NOT_OBSERVED"],
+        "inspection_mode": "READ_ONLY", "source_last_clock": None, "age_seconds": None,
+        "global": None, "exit_service": None, "telemetry_retention": None}
+    try:
+        path = artifact_root(database) / "ppi-budget/global.sqlite"
+        if any(p.is_symlink() for p in [path, *path.parents]):
+            raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        try:
+            metadata = path.stat()
+        except FileNotFoundError:
+            return result
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        for suffix in ("-journal", "-wal", "-shm"):
+            auxiliary = Path(str(path) + suffix)
+            try:
+                aux_metadata = auxiliary.lstat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(aux_metadata.st_mode) or aux_metadata.st_nlink != 1:
+                raise ValueError("PPI_BUDGET_PATH_ALIAS")
+            if suffix in {"-wal", "-shm"}:
+                raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+        # Refuse a WAL main before SQLite can create a missing SHM companion.
+        with path.open("rb") as stream:
+            header = stream.read(32)
+        if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+            raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA query_only=ON")
+            c.set_progress_handler(lambda: 1, 100000)
+            c.execute("BEGIN")
+            if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
+                raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if tables != {"budget_state", "budget_requests", "budget_totals"}:
+                raise ValueError("PPI_BUDGET_SCHEMA_MISMATCH")
+
+            def read(key, default=None):
+                row = c.execute("SELECT value,length(CAST(value AS BLOB)) FROM budget_state WHERE key=?", (key,)).fetchone()
+                if row is None:
+                    return default
+                if row[1] > 65536:
+                    raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                return json.loads(row[0])
+
+            if read("schema") != SCHEMA:
+                raise ValueError("PPI_BUDGET_SCHEMA_MISMATCH")
+            last_clock = read("last_clock")
+            if last_clock is not None and (isinstance(last_clock, bool)
+                    or not isinstance(last_clock, (int, float)) or not Decimal(str(last_clock)).is_finite()):
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            if last_clock is not None and last_clock > at.timestamp():
+                raise ValueError("PPI_BUDGET_CLOCK_AHEAD_OF_INSPECTION")
+            policy = read("last_policy", {})
+            pressure = read("critical_exit_pressure", {})
+            service = read("critical_exit_service", {})
+            if (not isinstance(policy, dict) or not isinstance(pressure, dict) or not isinstance(service, dict)
+                    or len(pressure) > BOOK_CACHE_LIMIT or len(service) > BOOK_CACHE_LIMIT):
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            # Emit a fixed whitelist, never arbitrary fields from durable JSON.
+            def project(records, fields):
+                output = {}
+                for key, record in records.items():
+                    if not re.fullmatch(r"[0-9a-f]{64}", key) or not isinstance(record, dict):
+                        raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                    for field in fields:
+                        if field not in record:
+                            continue
+                        value = record[field]
+                        if field == "status":
+                            if value not in {"WAITING", "DEGRADED", "SERVED"}:
+                                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                        elif field == "owner_priority":
+                            if value not in PRIORITIES:
+                                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                        elif field == "reason":
+                            if not isinstance(value, str) or not re.fullmatch(r"PPI_[A-Z0-9_]{1,95}", value):
+                                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                        elif (isinstance(value, bool) or not isinstance(value, (int, float))
+                                or not Decimal(str(value)).is_finite() or value < 0):
+                            raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                        elif field in {"first_wait_at", "last_served_at", "degraded_at"} and value > at.timestamp():
+                            raise ValueError("PPI_BUDGET_CLOCK_AHEAD_OF_INSPECTION")
+                    output[key] = {field: record[field] for field in fields if field in record}
+                return output
+
+            pressure = project(pressure, ("status", "first_wait_at", "until", "owner_priority",
+                "deadline_seconds", "reason", "elapsed_seconds", "degraded_at"))
+            service = project(service, ("status", "last_served_at", "elapsed_seconds", "deadline_seconds"))
+            suspended = any(p.get("status") == "DEGRADED" or p.get("until", 0) > at.timestamp() for p in pressure.values())
+            degraded = any(p.get("status") == "DEGRADED" for p in pressure.values())
+            totals = dict.fromkeys(("requested", "allowed", "used", "dropped"), 0)
+            for row in c.execute("SELECT requested,allowed,used,dropped FROM budget_totals"):
+                for key in totals:
+                    totals[key] += _int(row[key])
+            retained = read("telemetry_pressure", {})
+            if not isinstance(retained, dict):
+                raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+            for key in ("evicted_buckets", "dropped_updates"):
+                _int(retained.get(key, 0))
+            earliest = c.execute("SELECT MIN(CAST(substr(key,8) AS INTEGER)) FROM budget_state WHERE key LIKE 'window:%'").fetchone()[0]
+            seconds = policy.get("window_seconds")
+            if seconds is not None:
+                _int(seconds, 1)
+            partial = bool(retained.get("dropped_updates") or retained.get("evicted_buckets") and (
+                earliest is None or seconds is None or earliest > int(at.timestamp() - seconds)))
+            return result | {"status": "DEGRADED" if degraded else "OBSERVED",
+                "reason_codes": ["PPI_EXIT_DEADLINE_LOWER_SUSPENDED"] if degraded else [],
+                "source_last_clock": last_clock,
+                "age_seconds": at.timestamp() - last_clock if last_clock is not None else None,
+                "global": totals,
+                "exit_service": {"deadline_seconds": policy.get("critical_book_seconds"),
+                    "lower_suspended": suspended, "by_identity_digest": service,
+                    "pressure_by_identity_digest": pressure},
+                "telemetry_retention": {"status": "BOUNDED_PARTIAL" if partial else "COMPLETE_RETAINED_WINDOW",
+                    "window_complete": not partial, "earliest_retained_at": earliest,
+                    "counter_resolution_seconds": 1,
+                    **{key: retained[key] for key in ("evicted_buckets", "dropped_updates", "last_dropped_at") if key in retained}},
+                "authority": "READ_ONLY_OBSERVATION; OPEN_CAPACITY_NOT_CERTIFIED"}
+    except (OSError, ValueError, TypeError, InvalidOperation, sqlite3.Error):
+        return result | {"status": "UNVERIFIED", "reason_codes": ["PPI_BUDGET_OBSERVATION_UNAVAILABLE"]}
