@@ -7,6 +7,7 @@ from contextlib import closing, contextmanager
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import gc
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -345,30 +346,22 @@ def test_late_native_round_keeps_only_its_verified_first_admission_count(native_
         reader.close()
 
 
-def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(wire, tmp_path, monkeypatch):
+def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(native_ledger, wire):
     from bd_ppi_readonly_guard import ProductionMarketReader
-    import bf_production_paper_observer as observer
-    from be_paper_engine import D, PaperBroker, PaperStore
+    from be_paper_engine import D, PaperBroker
     from tests.test_production_paper_v1634 import quote
-    from tests.test_rc6_convergence_budget_liveness import seed_offline_pending_futures
-    clock = wire[0]
-    policy, recommendation, report, approval = reviewed_native_capacity(wire)
-    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
-    store = PaperStore(str(tmp_path/"paper.sqlite"))
-    observer._support_schema(store)
-    # Explicit synthetic capital covers the whole worst-case FUT reserve.
-    # Every economic/risk/fee/calendar guard remains active on the real API;
-    # this is not a current account balance or six admissible DLR contracts.
-    broker = PaperBroker(store, initial_cash="1000000000", clock_fn=lambda: clock.now().isoformat())
-    for symbol in ("GGAL", "EXIT1", "EXIT2", "EXIT3", "EXIT4"):
-        q = quote(symbol=symbol, at=clock.now().isoformat())
-        store.add_quote(q)
-        opened = broker._open(q, D(".8"), {})
-        assert opened[0], opened
-    seed_offline_pending_futures(store, monkeypatch)
-    gc.collect()  # Finalize fixture writer cycles before the first read seam.
-    controller = RuntimeCapacityController(store.path, environ={}, policy=policy,
-        recommendation=recommendation, report=report, approval=approval)
+    clock, store, controller = native_ledger
+    initial = controller.state(clock.now())
+    assert initial["status"] == "APPROVED_DYNAMIC"
+    assert initial["exit_capacity"]["open_positions_count"] == 10
+    # Precondition comes from the real capacity arithmetic, with the default
+    # quota unchanged. Endpoint66 is feasible; its retained receipts are not.
+    growth_contract = budgets.exit_capacity_contract(initial, opened_count=11)
+    assert initial["budget_settings"]["maximum_bytes"] == 8 * 1024**2
+    assert growth_contract["exit_demand"]["book"] == 66
+    assert growth_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+    assert growth_contract["reason_codes"] == ["PPI_EXIT_RECEIPT_STORAGE_INSUFFICIENT"]
+    assert growth_contract["receipt_retention"]["storage_gap_bytes"] > 0
     runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
     reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
     # Use the actual durable five-key contracts, including their settlement;
@@ -381,28 +374,79 @@ def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_s
         reader.login_once()
         for identity in identities:
             assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+        original_policy = deepcopy(runtime.budget.policy)
+        assert original_policy["open_positions_count"] == 10
+        assert original_policy["exit_demand"]["book"] == 60
+        with closing(sqlite3.connect(runtime.path)) as c:
+            receipts = c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall()
+        # A fresh quote cannot remove the five futures' overnight carry. The
+        # actual admission API must preserve its risk veto and count10.
         q = quote(symbol="EXIT_FIRST_ADMISSION_CHANGE", at=clock.now().isoformat())
         store.add_quote(q)
+        broker = PaperBroker(store, clock_fn=lambda: clock.now().isoformat())
         opened = broker._open(q, D(".8"), {})
-        assert opened[0], opened
+        assert opened == (False, "DAILY_RISK_STALE_MARKS", None)
+        assert budgets.supervisable_position_count(store.path) == 10
+        # DRIVER_ADVERSARIAL_PRIMARY_LEDGER_WRITER, NO_ENTRY_AUTHORITY:
+        # inject one well-typed five-key row into this isolated PRIMARY only.
+        # This is a ledger growth attack, never a financial fill or authority
+        # to enter. Cash, risk, contracts, fills and all other tables are kept.
+        with closing(store.connect()) as c, c:
+            columns = [row[1] for row in c.execute("PRAGMA table_info(paper_positions)")]
+            row = dict(c.execute("SELECT * FROM paper_positions WHERE symbol='GGAL' AND status='OPEN'").fetchone())
+            row.update(paper_id="PAPER-ADVERSARIAL-NO-ENTRY-AUTHORITY", symbol=q.symbol,
+                asset_class="ACCIONES", market="BYMA", currency="ARS", settlement="A-24HS",
+                status="OPEN", opened_at=clock.now().isoformat(),
+                features_json=json.dumps({"fixture_kind": "DRIVER_ADVERSARIAL_PRIMARY_LEDGER_WRITER",
+                    "entry_authority": False, "real_orders_sent": 0}, sort_keys=True))
+            for name in ("closed_at", "exit_price", "exit_cost", "gross_pnl", "net_pnl", "close_reason"):
+                row[name] = None
+            def sql_name(name):
+                return '"' + name.replace('"', '""') + '"'
+            other_tables = [name for name, in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                if name != "paper_positions"]
+            before_tables = {name: [tuple(r) for r in c.execute("SELECT * FROM " + sql_name(name))]
+                for name in other_tables}
+            c.execute("INSERT INTO paper_positions (" + ",".join(map(sql_name, columns)) + ") VALUES ("
+                + ",".join("?" for _ in columns) + ")", [row[name] for name in columns])
+            assert {name: [tuple(r) for r in c.execute("SELECT * FROM " + sql_name(name))]
+                for name in other_tables} == before_tables
+            assert tuple(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == ("PRODUCTION_PAPER", 0)
         assert len(store.open_positions()) == 6 and len(store.active_future_positions()) == 5
-        gc.collect()  # The admission writer has completed before observation.
+        gc.collect()  # The adversarial fixture writer is complete, not a fill.
         assert budgets.supervisable_position_count(store.path) == 11
+        assert len(budgets._supervisable_identity_digests(store.path)) == 11
+        changed = controller.state(clock.now())
+        assert changed["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+        assert changed["exit_capacity"] == growth_contract
         observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
         assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
         assert observed["reason"] == "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED"
         assert observed["frozen_admission_scope"]["identity_count"] == 10
-        assert observed["required_identities_count"] == observed["fresh_required_count"] == 11
-        assert observed["required_scope_verified_current"] is True
-        assert observed["covered_identities_count"] == 10
-        assert runtime.budget.policy["exit_demand"]["book"] == 66
-        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
-        # The next generation genuinely captures11; it cannot resurrect the
-        # ten identities of a previous observation after finally consumed it.
+        assert observed["required_identities_count"] == 10
+        assert observed["fresh_required_count"] is None
+        assert observed["required_scope_verified_current"] is False
+        assert observed["required_scope_basis"] == "FROZEN_AT_FIRST_ADMISSION"
+        assert observed["covered_identities_count"] == 0
+        assert runtime.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+        assert "PPI_EXIT_RECEIPT_STORAGE_INSUFFICIENT" in runtime.activation_contract["reason_codes"]
+        assert runtime.budget.policy == original_policy
+        metrics = runtime.budget.metrics()
+        assert metrics["exit_service"]["lower_suspended"]
+        assert metrics["window"]["by_endpoint"]["book"]["exit_demand"] == 60
+        with closing(sqlite3.connect(runtime.path)) as c:
+            assert c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall() == receipts
+        wires = len(wire[1])
+        with pytest.raises(budgets.BudgetBackpressure, match="PPI_EXIT_CAPACITY_INSUFFICIENT"):
+            runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")
+        assert len(wire[1]) == wires
+        # Warm EXIT retains the old budget. A blocked next generation cannot
+        # mint an approved11 scope or inherit the consumed historical10.
         reader.discard_exit_round_scope()
         assert scoped_book(reader, identities[0], "EXIT_CRITICAL")["bids"]
         late = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
-        assert late["required_identities_count"] == 11
+        assert late["required_identities_count"] is None
+        assert late["frozen_admission_scope"] is None
         assert late["fresh_required_count"] is None and not late["required_scope_verified_current"]
         assert late["status"] == "DEGRADED" and late["lower_suspended"]
     finally:
