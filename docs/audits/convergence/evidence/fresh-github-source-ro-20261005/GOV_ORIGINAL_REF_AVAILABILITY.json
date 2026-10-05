@@ -1,0 +1,191 @@
+{
+  "fetch_executed": false,
+  "original_manifest_raw_sha256": "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4",
+  "physical_whole_checkout_created_or_tested": false,
+  "product_verifier_executed": false,
+  "refs": [
+    {
+      "locally_available": true,
+      "pr": 447,
+      "role": "head_sha",
+      "sha": "251fac4cf73981a4fd3feb123c97a37bf10ad02d"
+    },
+    {
+      "locally_available": true,
+      "pr": 447,
+      "role": "base_sha",
+      "sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f"
+    },
+    {
+      "locally_available": true,
+      "pr": 448,
+      "role": "head_sha",
+      "sha": "3e7819963f65de443421152f0f5614ef1356fb41"
+    },
+    {
+      "locally_available": true,
+      "pr": 448,
+      "role": "base_sha",
+      "sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f"
+    },
+    {
+      "locally_available": true,
+      "pr": 449,
+      "role": "head_sha",
+      "sha": "9ca8cb13bfc6664597e313e5d1874710e3263ec4"
+    },
+    {
+      "locally_available": true,
+      "pr": 449,
+      "role": "base_sha",
+      "sha": "e9cf3fdbd9e6a71a0aa72365ff3b2727378db10f"
+    },
+    {
+      "locally_available": true,
+      "pr": 450,
+      "role": "head_sha",
+      "sha": "0311dcc10139777f8be988f4fe8c3efabc86d1a9"
+    },
+    {
+      "locally_available": true,
+      "pr": 450,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 451,
+      "role": "head_sha",
+      "sha": "c4e939eea7aab4d662a268c98e0fb8282520b92d"
+    },
+    {
+      "locally_available": true,
+      "pr": 451,
+      "role": "base_sha",
+      "sha": "1607b3e887d1dfe088de66ce22d815e701ca1150"
+    },
+    {
+      "locally_available": true,
+      "pr": 453,
+      "role": "head_sha",
+      "sha": "2b36429013ec5e3accf4176cf3beaabfd5e33232"
+    },
+    {
+      "locally_available": true,
+      "pr": 453,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 454,
+      "role": "head_sha",
+      "sha": "ee1b22996907f282f77d3c31956104bd52cba858"
+    },
+    {
+      "locally_available": true,
+      "pr": 454,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 455,
+      "role": "head_sha",
+      "sha": "84528216cd85060075b63be25e71876e1b742b0c"
+    },
+    {
+      "locally_available": true,
+      "pr": 455,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 456,
+      "role": "head_sha",
+      "sha": "b8c95c10459cb8ede2925da491730f5988b29561"
+    },
+    {
+      "locally_available": true,
+      "pr": 456,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 457,
+      "role": "head_sha",
+      "sha": "77c4e13768b252a8e7a614a0653b0b0dabb1ed02"
+    },
+    {
+      "locally_available": true,
+      "pr": 457,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 459,
+      "role": "head_sha",
+      "sha": "c48960e105640c385d94ac03461b0c936ebf95a7"
+    },
+    {
+      "locally_available": true,
+      "pr": 459,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 461,
+      "role": "head_sha",
+      "sha": "fa3a8d64f74fa45181808bd46d8a75131d5450cf"
+    },
+    {
+      "locally_available": true,
+      "pr": 461,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 463,
+      "role": "head_sha",
+      "sha": "caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423"
+    },
+    {
+      "locally_available": true,
+      "pr": 463,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 466,
+      "role": "head_sha",
+      "sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356"
+    },
+    {
+      "locally_available": true,
+      "pr": 466,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    },
+    {
+      "locally_available": true,
+      "pr": 470,
+      "role": "head_sha",
+      "sha": "4a5fc6384260b31f9a07e791093add6ee83102a1"
+    },
+    {
+      "locally_available": true,
+      "pr": 470,
+      "role": "base_sha",
+      "sha": "da697c6e6c2274579f9e4a112fabc4327475dd35"
+    }
+  ],
+  "schema": "rc6.gov-source-git-ref-availability-readonly.v1",
+  "source_sha": "d05078845cd40b37ef75744ea80a1695c2b37dbb",
+  "source_tree": "e852da3496e7356fbf0a11cc50c697d69309e6d4"
+}

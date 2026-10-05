@@ -572,3 +572,45 @@ del publisher. Se prepara limitar la vida del consumer a cada caso, conservar
 el productor module y cerrar/reap antes de health. No se resetean contadores
 ni se debilitan guards/caps;312/Chrome siguen pendientes. RAW original externo
 será preservado por el dueño; no se presenta el completo como GREEN.
+
+La corrección UX9e36 limita a cada caso el consumidor multifamilia y preserva
+su productor module318/10ticks. Pasaron interacción familia→health2/2 y
+95/95 en311+95/95 en312, idénticos nodos y1792 blobs/modos intactos,157 por
+intérprete, custodia/imports/offline/driver guards intactos y procesos cerrados.
+El Source342 previo conserva93PASS/1FAIL/1ERROR JUnit sin duplicados; su error
+se produce antes de health tick por bloqueo global SQLite, no por publisher.
+Los95 por versión son la misma cobertura en entornos distintos; Chrome,
+BIGOPEN y Gov de ROOT final siguen pendientes. Dossier documental en preparación.
+
+El leaf dispatch OWN270 cambia sólo _append y usa exactamente el mismo scalar
+más append individual para hojas builtin, después de volatile; fallback íntegro.
+Pasaron365/365 únicos sobre wholeOWN1975/frozen311157:94 nuevos más271 previos
+solapados,98 imports propios y0 alien/network/SourceSQLite. Oracle d55e liga
+operaciones,orden,cortes,literals,wire completo y full reader; no hay nueva cache,
+batching,cuota,GC ni deadline. La integración prepara otro BIG90, sin afirmar
+ahorro ni aceptación antes de medir. Dossier separado queda en preparación.
+
+El driver externo full1201 y su plan OWN2e3468 tienen revisión independiente
+cerrada, sólo SOURCE/AST, cero ejecución. Sus bytes deben existir como miembro
+rawGit del futuro S y coincidir con la copia externa. Requiere1202 llamadas
+nativas reales, joins read-clock/cut y stale desdecut,30s completos originales,
+cuotas/GC/full5/11stats+SHA/157 y wait4 RSS/reap. Watchdog sólo cubre hasta reap
+observado; Source/log/proof/emisión final quedan fuera y el elapsed es parcial
+explícito. Los seis ajustes WIP previos a Native se conservan en historia,
+sin relabel como errores de producto ejecutados. No reemplaza1201 con NORMAL4.
+
+Los dossiers OWN270365 y UX342/9e36 quedaron integrados y verificados byteexactos:
+16 originales de packed_scalar_dispatch y70 de UX, sin datos DB/runtime.
+Los commits documentales0f89/2308 no agregan ejecuciones ni califican ROOT.
+
+La actualización GitHub SOURCE-only se preservó como61 payloads sanitizados,
+control original y README/CUSTODY separados en fresh-github-source-ro-20261005.
+Root ejecutó el helper de copia con salida0 y comprobación final:64 archivos,
+CUSTODY ace17d28eeebfab7cce0787f84f0fe83c6c029f4dcbaecab0a78af4e8d09c3de.
+Los15 snapshots Python usan sufijo archival .source, con mapping explícito y
+bytes/modos originales íntegros; no carpeta oculta ni nueva exclusión pytest.
+ProductoDA y owner471 ACTIVE siguen,473 expiró/deshabilitado; compatibilidad
+f4 es estática intermedia, no Gov final. Runtime29MB y stderr con URLs firmadas
+quedan externos; su BLOCKED histórico y descargasForbidden/0bytes no se
+convierten en runtime/artifact/DockerGREEN. El atime durante copia se acredita
+por11stats; no implica custodia desde una ejecución anterior ni permiso deploy.
