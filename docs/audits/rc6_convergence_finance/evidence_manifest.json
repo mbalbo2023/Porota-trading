@@ -1,0 +1,55 @@
+{
+  "custody": "LOCAL_PRODUCER_MANIFEST_NOT_INDEPENDENT_AUTHENTICATION",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "files": {
+    "docs/audits/rc6_convergence_finance/acceptance_review.md": {
+      "bytes": 10822,
+      "sha256": "5f702fb5ca4375e8a3b4d43ca9391641b79b3f0c386827f38eac2bfc6c2ca89b"
+    },
+    "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
+      "bytes": 3752,
+      "sha256": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00"
+    },
+    "docs/audits/rc6_convergence_finance/core_finance_review_tests.xml": {
+      "bytes": 1967,
+      "sha256": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267"
+    },
+    "docs/audits/rc6_convergence_finance/field_authority_matrix.md": {
+      "bytes": 9900,
+      "sha256": "9deeb140c1943e41a760757dbbe20b8e8080706d1c46cfa2ab51f2b93ab5dade"
+    },
+    "docs/audits/rc6_convergence_finance/finance_focused_receipt.json": {
+      "bytes": 5254,
+      "sha256": "a0ebdde8d10e3befc0df796105ee3b9515cb07eedbaffbf758120696289858cf"
+    },
+    "docs/audits/rc6_convergence_finance/finance_focused_tests.xml": {
+      "bytes": 17133,
+      "sha256": "a4ff398b7aa063a9f9fcc697737d3e74cc52025ad4b79e39f88f458c3a98fe2f"
+    },
+    "docs/audits/rc6_convergence_finance/green_integrated_worktree.json": {
+      "bytes": 8446,
+      "sha256": "235105563bddc4bb7cf0d497230a24bf8b7f164c350a6dbd4ee52c65f5b6873d"
+    },
+    "docs/audits/rc6_convergence_finance/integrated_native_tests.xml": {
+      "bytes": 26356,
+      "sha256": "8cfb848ce1a6f7f5075793190fc3983816bf47bc9272980defdf2ebfaab8782f"
+    },
+    "docs/audits/rc6_convergence_finance/red_c27dfd9.json": {
+      "bytes": 8423,
+      "sha256": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c"
+    },
+    "tests/probes/rc6_convergence_finance_probe.py": {
+      "bytes": 10925,
+      "sha256": "e014a6a7a2e6a7e3e4a4913575780b97a1c15237c4755546534e0b2083497e6e"
+    },
+    "tests/test_rc6_convergence_finance_review.py": {
+      "bytes": 10947,
+      "sha256": "eadfd415ea3d3bd1728b54da7a8720cf8ee6d889df0eadbd6b18ea9848b4d38b"
+    }
+  },
+  "frozen_integrated_final_receipt": "REQUIRED_PENDING_PARENT_FREEZE",
+  "producer": "FINANCE_REVIEW_AGENT_OFFLINE",
+  "schema": "rc6.finance-evidence-manifest.v1",
+  "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY"
+}
