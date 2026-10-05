@@ -28,8 +28,8 @@
       "sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e"
     },
     "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
-      "bytes": 82787,
-      "sha256": "0840d73de86b93889120fb4bb25fc2e0b2866b2aabc8f5e4d63a02ad00140318"
+      "bytes": 97999,
+      "sha256": "509df8880e84801b6a8b854178f8e5b6411129f5aacdc2a20f8aa85a5d732c01"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -75,6 +75,14 @@
       "bytes": 10996,
       "sha256": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7"
     },
+    "docs/audits/rc6_convergence_finance/original_core_audit_replay_review.md": {
+      "bytes": 7455,
+      "sha256": "147244772b3309417e152360e81a422dccfecb98c7a40d65d60595fb36b6a2e8"
+    },
+    "docs/audits/rc6_convergence_finance/original_core_c27dfd9_replay_receipt.json": {
+      "bytes": 361934,
+      "sha256": "617090f4a4ac927fd8171eabab26253d20a61b61b94aa3a93a8324a6ef265313"
+    },
     "docs/audits/rc6_convergence_finance/persistence_independent_review.md": {
       "bytes": 3872,
       "sha256": "4b5a2d47b37fb8932f80155af7a8c35299f154ee8cfea0270a8838eb795d9464"
@@ -107,9 +115,25 @@
       "bytes": 2096,
       "sha256": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
     },
+    "tests/probes/fixtures/original_core_audits/issue468_adversarial_harness.py": {
+      "bytes": 26816,
+      "sha256": "a9d2ea84ae48bbff0ccf07bcee85a346e5fe874446edfdb4cf3ad95225845595"
+    },
+    "tests/probes/fixtures/original_core_audits/issue469_f01_f02_probes.py": {
+      "bytes": 15352,
+      "sha256": "dd3c1efeb06133cea6aad69b70de6120597bf063d67fe1cbecc1d2b6500f4bf5"
+    },
+    "tests/probes/fixtures/original_core_audits/issue469_scalping_economics_probe.py": {
+      "bytes": 11550,
+      "sha256": "553128c430c5b9f71efcf34882df96bebb26f01264f2bd6c990fc1c91a51d1fe"
+    },
     "tests/probes/rc6_convergence_finance_probe.py": {
       "bytes": 10925,
       "sha256": "e014a6a7a2e6a7e3e4a4913575780b97a1c15237c4755546534e0b2083497e6e"
+    },
+    "tests/probes/rc6_original_core_archive_probe.py": {
+      "bytes": 15897,
+      "sha256": "ec4cc015a2142423305968179993ce1629a14396c9b064eac9e2484fc3c9cf1d"
     },
     "tests/probes/rc6_projection_index_derivation_probe.py": {
       "bytes": 7414,
