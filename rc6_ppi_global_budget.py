@@ -199,7 +199,7 @@ def validate_policy(policy):
     return policy
 
 
-def _receipt_projection(policy, envelopes, receipts, now):
+def _receipt_projection(policy, envelopes, receipts, now, *, protected_lease=None):
     """Peak retained growth of the same critical stream under every authority.
 
     Exact historic expirations release space only when their one-hour debt
@@ -232,7 +232,7 @@ def _receipt_projection(policy, envelopes, receipts, now):
     times = {0}
     for _, period, waves in plans:
         times.update(range(0, min(RECEIPT_RETENTION_SECONDS, period * (waves - 1)) + 1, period))
-    timestamps = sorted(row["at"] for row in receipts)
+    timestamps = sorted(row["at"] for row in receipts if row["lease"] != protected_lease)
     growth = 1
     for offset in times:
         wanted = max([1, *(burst * min(waves, offset // period + 1) for burst, period, waves in plans)])
@@ -248,7 +248,21 @@ def _receipt_projection(policy, envelopes, receipts, now):
 
 
 def _receipt_resources(c, policy, envelopes, receipts, now):
-    result = _receipt_projection(policy, envelopes, receipts, now)
+    active_row = c.execute("SELECT value,length(CAST(value AS BLOB)) FROM budget_state WHERE key='inflight'").fetchone()
+    if active_row and active_row[1] > 65536:
+        raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+    active = json.loads(active_row[0]) if active_row else None
+    if active is not None and (not isinstance(active, dict) or not isinstance(active.get("lease"), str)):
+        raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+    active_lease = active["lease"] if active else None
+    # Admission performs exactly this legal deletion before any growth. A
+    # readonly activation probe may credit aged rows, but never an inflight
+    # token or hypothetical free pages; those still require factual cleanup.
+    live = [row for row in receipts if row["at"] >= now - RECEIPT_RETENTION_SECONDS
+        or row["lease"] == active_lease]
+    result = _receipt_projection(policy, envelopes, live, now, protected_lease=active_lease) | {
+        "physically_stored_receipts": len(receipts),
+        "legally_expired_receipts": len(receipts) - len(live)}
     page_size = c.execute("PRAGMA page_size").fetchone()[0]
     maximum_pages = (policy["maximum_bytes"] - 608) // (2 * page_size + 8)
     available_pages = max(0, maximum_pages - c.execute("PRAGMA page_count").fetchone()[0]

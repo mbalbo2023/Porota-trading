@@ -110,6 +110,12 @@ def test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_
         assert cold.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
         assert debt_digest(arbiter.path) == before
         clock.advance(12)  # Only now may the oldest historic receipts age out.
+        recoverable = exit_retention_preflight(store.path, ctl.state(clock.now()), opened_count=5, as_of=clock.now())
+        assert recoverable["status"] == "READY"
+        assert recoverable["physically_stored_receipts"] == 20000
+        assert recoverable["legally_expired_receipts"] > 0
+        assert recoverable["retained_receipts"] < 20000
+        assert debt_digest(arbiter.path) == before  # The probe did not prune.
         assert scoped_book(reader, identity, "EXIT_CRITICAL")
         assert len(market_sends(calls)) == sends + 1
         assert arbiter.budget.metrics()["receipt_retention"]["retained_receipts"] < 20000
@@ -297,6 +303,7 @@ def test_existing_retention_preflight_unknown_state_grants_no_authority_and_chan
     state, value = measured_shape(clock)
     database = tmp_path / "paper.sqlite"
     budget = GlobalPPIBudget(artifact_root(database) / "ppi-budget/global.sqlite", value, clock=clock.now)
+    assert use(budget, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
     blocker = None
     if condition == "busy":
         blocker = sqlite3.connect(budget.path)
@@ -308,17 +315,44 @@ def test_existing_retention_preflight_unknown_state_grants_no_authority_and_chan
         (tmp_path / "hardlink.sqlite").hardlink_to(budget.path)
     else:
         broken = GlobalPPIBudget._authority(value, clock.now().timestamp())
-        broken["critical_book_seconds"] = 0
+        broken.pop("retain_until")
         with closing(sqlite3.connect(budget.path)) as c, c:
-            c.execute("INSERT INTO budget_state VALUES('reservation_envelopes_v1',?)", (json.dumps([broken]),))
+            c.execute("UPDATE budget_state SET value=? WHERE key='reservation_envelopes_v1'", (json.dumps([broken]),))
     try:
         files = {p: (p.read_bytes(), p.stat().st_mode) for p in budget.path.parent.iterdir()}
         guarded = exit_retention_preflight(database, state, opened_count=5, as_of=clock.now())
         assert guarded["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
         assert guarded["source_status"] == "UNVERIFIED"
         assert guarded["reason_codes"] == ["PPI_EXIT_RECEIPT_STORAGE_UNVERIFIED"]
+        assert runtime_budget_snapshot(database, as_of=clock.now())["status"] == "UNVERIFIED"
         assert {p: (p.read_bytes(), p.stat().st_mode) for p in budget.path.parent.iterdir()} == files
     finally:
         if blocker:
             blocker.rollback()
             blocker.close()
+
+
+def test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages(tmp_path):
+    clock = Clock()
+    state, value = measured_shape(clock)
+    database = tmp_path / "paper.sqlite"
+    budget = GlobalPPIBudget(artifact_root(database) / "ppi-budget/global.sqlite", value, clock=clock.now)
+    pending = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert pending["allowed"]
+    budget.start(pending["lease"])
+    historic_lower_receipts(budget, clock, count=19999)
+    clock.advance(3601)
+    before = debt_digest(budget.path)
+    guarded = exit_retention_preflight(database, state, opened_count=5, as_of=clock.now())
+    assert guarded["retained_receipts"] == 1
+    assert guarded["physically_stored_receipts"] == 20000
+    assert guarded["legally_expired_receipts"] == 19999
+    assert guarded["available_rows"] == 19999
+    assert guarded["required_exit_growth"] == 3600  # No credit for uncertain active expiry.
+    assert guarded["available_pages"] < guarded["required_pages"]
+    assert guarded["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+    assert guarded["reason_codes"] == ["PPI_EXIT_RECEIPT_STORAGE_BACKPRESSURE"]
+    assert debt_digest(budget.path) == before
+    with closing(sqlite3.connect(budget.path)) as c:
+        assert c.execute("SELECT used FROM budget_requests WHERE lease=?", (pending["lease"],)).fetchone() == (1,)
+        assert json.loads(c.execute("SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])["lease"] == pending["lease"]
