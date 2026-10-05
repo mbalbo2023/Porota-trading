@@ -78,14 +78,28 @@ corrigió conservando los inputs adversos:
    una fuente1h futura. La comparación por UTC microsegundos distingue ambos
    instantes, también para receipt stale; fuente/recepción frescas pasan.
 
+Se reprodujo además una colisión de evidencia en la API pública: tras cerrar
+una posición, otro fill con el mismo native_decision_key se aceptaba y
+`INSERT OR IGNORE` dejaba sólo el snapshot del primer paper_id. El integrador
+agregó el guard atómico de key ya comprometido para spot y futuros. Dos
+regresiones adicionales conservan el snapshot original y cero nueva posición
+ante reuse; una key nueva con el mismo book válido sigue abriendo y captura
+su propio paper_id. La suite de revisión ahora tiene12 casos; el receipt10
+anterior se conserva como evidencia de esa fase, nunca como rerun final.
+
 Además, snapshot del `admit_paper_candidate` directo guardaba decision_at=null
 por ausencia de lineage del caller. El integrador fija decision_at del lock y
 marca explícitamente inputs de señal no proporcionados; no inventa un vector.
 Las entradas main/scalping conservan sus propios inputs nativos y clocks.
 Futuros usa el callback atómico para capturar la evidencia del fill con su
-contrato y vector disponible. La nueva suite
-`tests/test_rc6_convergence_finance_review.py` tiene10 controles que pasan en
-el root integrado de trabajo; el receipt final se repite tras freeze.
+contrato y vector disponible. Los10 controles iniciales de
+`tests/test_rc6_convergence_finance_review.py` pasaron con receipt explícito;
+las dos regresiones de reuse agregadas también pasan en el root de trabajo.
+El receipt final de los12 casos se repite tras freeze.
+
+La [revisión independiente de persistencia](persistence_independent_review.md)
+retiene otro RED→GREEN sobre SIGKILL antes de ACK1, archive2 y retry1: la cadena
+permanece en2 y el ACK antiguo se regenera sólo con prueba de pertenencia.
 
 La suite incluye FUT U08 en ambas colisiones: USD_MEP/A3 o ARS/OTHER más nuevos
 por1µs que el book ARS/A3 que cruza stop, después de restart. El supervisor

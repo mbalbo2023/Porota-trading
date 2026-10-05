@@ -4,8 +4,8 @@
   "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
   "files": {
     "docs/audits/rc6_convergence_finance/acceptance_review.md": {
-      "bytes": 10822,
-      "sha256": "5f702fb5ca4375e8a3b4d43ca9391641b79b3f0c386827f38eac2bfc6c2ca89b"
+      "bytes": 11749,
+      "sha256": "2693edd5402b0b6497d81f7f7e8b99f20db4679e98a77560455f0de206ca53f5"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -35,17 +35,37 @@
       "bytes": 26356,
       "sha256": "8cfb848ce1a6f7f5075793190fc3983816bf47bc9272980defdf2ebfaab8782f"
     },
+    "docs/audits/rc6_convergence_finance/persistence_independent_review.md": {
+      "bytes": 3872,
+      "sha256": "4b5a2d47b37fb8932f80155af7a8c35299f154ee8cfea0270a8838eb795d9464"
+    },
     "docs/audits/rc6_convergence_finance/red_c27dfd9.json": {
       "bytes": 8423,
       "sha256": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c"
+    },
+    "docs/audits/rc6_convergence_finance/retention_ack_resume_green_b82666db.json": {
+      "bytes": 2054,
+      "sha256": "34b9fe26024749ea8838e05e5462b6d6eb204cf0073f16ee11186ce619305e88"
+    },
+    "docs/audits/rc6_convergence_finance/retention_ack_resume_green_worktree.json": {
+      "bytes": 2028,
+      "sha256": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330"
+    },
+    "docs/audits/rc6_convergence_finance/retention_ack_resume_red_2fb29369.json": {
+      "bytes": 2096,
+      "sha256": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
     },
     "tests/probes/rc6_convergence_finance_probe.py": {
       "bytes": 10925,
       "sha256": "e014a6a7a2e6a7e3e4a4913575780b97a1c15237c4755546534e0b2083497e6e"
     },
+    "tests/probes/rc6_retention_ack_resume_probe.py": {
+      "bytes": 6127,
+      "sha256": "308d6e20b34a39ecb3c6e6ea09b3142f46c9f6901b86a88ebb135234a72b22e7"
+    },
     "tests/test_rc6_convergence_finance_review.py": {
-      "bytes": 10947,
-      "sha256": "eadfd415ea3d3bd1728b54da7a8720cf8ee6d889df0eadbd6b18ea9848b4d38b"
+      "bytes": 13415,
+      "sha256": "aa213cad2f458ab2cd93a1aa2f8ecdf1b1362f49de1a502749b8ac42f3d84d7c"
     }
   },
   "frozen_integrated_final_receipt": "REQUIRED_PENDING_PARENT_FREEZE",
