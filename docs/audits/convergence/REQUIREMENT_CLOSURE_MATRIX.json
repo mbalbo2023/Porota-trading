@@ -10203,6 +10203,97 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/CUSTODY.json": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/DOCUMENTARY_CONTROLS.json": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/PRESERVATION_INPUTS.json": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/README.md": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/SOURCE_ONLY_PLAN.json": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/STATIC_REVIEW.json": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/raw/controls.stderr": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/raw/controls.stdout": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/raw/source-after.sha256": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/raw/source-before.sha256": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/rc6_register_helpers_v3_controls.py.source": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/rc6_remediation_register_generate_v3.py.source": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/register-helper-v3-documentary-controls-20261005/rc6_root_supplemental_named_findings_generate_v2.py.source": {
+      "reason": "Preserve eleven exact original helper sources, source review/plan, private documentary control receipt and four RAW records, plus preservation inputs and actual copy-time custody. Sixty-four bounded synthetic Git/JSON/XML/ref controls passed with unchanged helper/driver bytes; this is not Native product, governed, market or image execution and is not added to previous overlapping controls. New discovery covers JSON.gz, log/source archival gzip and literal SRE manifest paths resolved through committed CUSTODY mappings for fifteen .py.source members. All original findings, receipt scopes and protected historical helper capsules remain unchanged; final S-D-C register is not generated.",
+      "requirement_ids": [
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/restored-controls-provenance-green.xml": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [

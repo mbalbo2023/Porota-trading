@@ -643,3 +643,17 @@ Su `CUSTODY.json`, SHA256
 verifica los bytes originales y los once atributos de cada fuente durante
 la copia. Esa comprobación corresponde al momento de preservación; no
 reemplaza el alcance de la ejecución documentada en el recibo.
+
+La cápsula `evidence/register-helper-v3-documentary-controls-20261005/`
+preserva once originales y los controles documentales actualizados. Pasaron
+64 controles de referencias Git, JSON/XML comprimidos y mapping explícito
+de los quince scripts `.py.source` de la evidencia SRE. Los bytes de los
+helpers y del driver permanecieron iguales antes y después. El recibo original
+tiene SHA256 `2c28598fa8f622539deccaae11536657713762661116f08562307237fe4f1cd6`.
+El tiempo de 0,945 segundos proviene del resultado del orquestador; el RAW del
+driver no emite una medición propia de duración. La preservación comprobó
+los once atributos y los bytes de cada fuente durante la copia; su CUSTODY
+tiene SHA256 `16519258925c8c62f28d3625a5565d4965e0096210ff6e15bb991c239ac632a6`.
+Los programas se archivan como `.py.source`, sin nuevas exclusiones de pytest.
+Estos controles no son Native ni Gov y no se suman a los controles anteriores
+superpuestos. El registro final S→D→C sigue pendiente de estabilizar el producto.
