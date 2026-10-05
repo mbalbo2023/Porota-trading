@@ -1,0 +1,437 @@
+{
+  "count": 86,
+  "execution_id": "44b98585ea3b48ed8b8fc033f1667a5f",
+  "items": [
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_fifo_control_is_rejected_before_blocking_for_a_writer",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_fifo_control_is_rejected_before_blocking_for_a_writer"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_docker_removal_failure_is_red_and_retains_private_evidence[operation0]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_docker_removal_failure_is_red_and_retains_private_evidence[operation0]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_docker_removal_failure_is_red_and_retains_private_evidence[operation1]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_docker_removal_failure_is_red_and_retains_private_evidence[operation1]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_successful_command_with_remaining_owned_image_is_red",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_successful_command_with_remaining_owned_image_is_red"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[tag]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[tag]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[digest]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[digest]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[foreign_reference]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[foreign_reference]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_missing_capture_after_finished_build_requires_complete_owned_image_binding",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_missing_capture_after_finished_build_requires_complete_owned_image_binding"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.commit]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.commit]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.tree]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.tree]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-id]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-id]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-attempt]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-attempt]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.source-manifest-sha256]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.source-manifest-sha256]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_early_failure_without_build_cleans_only_private_files_and_claims_no_image",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_early_failure_without_build_cleans_only_private_files_and_claims_no_image"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_early_phase_cannot_hide_an_unexpected_owned_image",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_early_phase_cannot_hide_an_unexpected_owned_image"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_foreign_candidate_tag_never_grants_cleanup_ownership",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_foreign_candidate_tag_never_grants_cleanup_ownership"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_container_binding_is_verified_before_any_removal[labels]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_container_binding_is_verified_before_any_removal[labels]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_container_binding_is_verified_before_any_removal[image]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_container_binding_is_verified_before_any_removal[image]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_container_binding_is_verified_before_any_removal[mount]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_container_binding_is_verified_before_any_removal[mount]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_private_namespace_alias_never_deletes_external_data[symlink]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[symlink]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_private_namespace_alias_never_deletes_external_data[hardlink]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[hardlink]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_private_namespace_alias_never_deletes_external_data[same_device_mount]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_private_namespace_alias_never_deletes_external_data[same_device_mount]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_changed_source_manifest_is_retained_with_all_private_data",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_changed_source_manifest_is_retained_with_all_private_data"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[repo_root]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[repo_root]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[runner_temp]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[runner_temp]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[private_root]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[private_root]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[owner_uuid]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[owner_uuid]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_cli_output_rejection_precedes_cleanup[wrong_path]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cli_output_rejection_precedes_cleanup[wrong_path]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_cli_output_rejection_precedes_cleanup[existing]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cli_output_rejection_precedes_cleanup[existing]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_cli_output_rejection_precedes_cleanup[symlink]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cli_output_rejection_precedes_cleanup[symlink]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_cli_rejects_uuid_mismatch_before_mutating",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_cli_rejects_uuid_mismatch_before_mutating"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[2147483647-1000]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[2147483647-1000]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[4294967296-199]",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[4294967296-199]"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_negative_filesystem_delta_is_not_reported_as_reclaimed_bytes",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_negative_filesystem_delta_is_not_reported_as_reclaimed_bytes"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_total_deadline_expiry_cannot_certify_success_or_delete_remaining_evidence",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_total_deadline_expiry_cannot_certify_success_or_delete_remaining_evidence"
+    },
+    {
+      "classname": "tests.test_rc6_predeploy_scoped_cleanup",
+      "name": "test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order",
+      "nodeid": "tests/test_rc6_predeploy_scoped_cleanup.py::test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order"
+    },
+    {
+      "classname": "tests.test_deploy_v2_frozen_artifact_contract",
+      "name": "test_frozen_artifact_is_exported_only_after_paper_safety",
+      "nodeid": "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_is_exported_only_after_paper_safety"
+    },
+    {
+      "classname": "tests.test_deploy_v2_frozen_artifact_contract",
+      "name": "test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
+      "nodeid": "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped"
+    },
+    {
+      "classname": "tests.test_deploy_v2_frozen_artifact_contract",
+      "name": "test_ready_for_review_retriggers_final_predeploy",
+      "nodeid": "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy"
+    },
+    {
+      "classname": "tests.test_deploy_v2_frozen_artifact_contract",
+      "name": "test_governed_pytest_isolated_from_runner_entrypoints",
+      "nodeid": "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_native_urllib_redirect_does_not_forward_authorization",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_native_urllib_redirect_does_not_forward_authorization"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_existing_download_file_is_never_deleted_or_overwritten",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_existing_download_file_is_never_deleted_or_overwritten"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_metadata_response_is_bounded_and_uses_fixed_repository_url",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_metadata_response_is_bounded_and_uses_fixed_repository_url"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_current_upload_binding_is_evidence_only_until_completed_success",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_current_upload_binding_is_evidence_only_until_completed_success"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_real_saved_layer_replay_matches_git_bytes_and_all_modes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_real_saved_layer_replay_matches_git_bytes_and_all_modes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_completed_load_past_total_deadline_cannot_start_image_or_emit_green",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_completed_load_past_total_deadline_cannot_start_image_or_emit_green"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_import_timeout_cleans_only_its_private_container_without_starting_codec",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_import_timeout_cleans_only_its_private_container_without_starting_codec"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_completes_cleanup_and_flushed_result_within_original_total_budget",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_completes_cleanup_and_flushed_result_within_original_total_budget"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_evidence_only_is_small_and_contains_no_image_or_bundle",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_evidence_only_is_small_and_contains_no_image_or_bundle"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_secondary_preserves_downloaded_primary_final_input_provenance_bytes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_secondary_preserves_downloaded_primary_final_input_provenance_bytes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_workflow_secondary_cannot_replace_primary_or_trigger_another_build",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_workflow_secondary_cannot_replace_primary_or_trigger_another_build"
+    }
+  ],
+  "phase": "pytest_collection_finish_before_fixtures"
+}
