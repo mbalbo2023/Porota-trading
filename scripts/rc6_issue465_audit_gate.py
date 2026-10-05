@@ -161,6 +161,12 @@ def _guarded_front_path(root, path, frozen, current, successor):
 
 def verify(root: Path, junit: Path, governed: Path) -> dict:
     root = root.resolve(strict=True)
+    sha = git(root, "rev-parse", "HEAD")
+    candidate_tree = git(root, "rev-parse", sha + "^{tree}")
+    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
+    convergence_handoff = bool(git(root, "ls-tree", sha, "--", manifest))
+    if convergence_handoff:
+        require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
     matrix_path = root / MATRIX
     matrix_data = load(matrix_path, raw=True)
     matrix_blob = hashlib.sha1(b"blob " + str(len(matrix_data)).encode() + b"\0" + matrix_data).hexdigest()
@@ -200,10 +206,14 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
         junit_receipt = convergence.capture_junit(junit)
     except (convergence.ConvergenceError, OSError) as error:
         raise AuditGateError("JUNIT_INPUT_INVALID") from error
-    tree = ET.fromstring(junit_receipt.data)
-    cases = list(tree.iter("testcase"))
+    try:
+        _, cases = convergence.governed_junit_cases(junit_receipt)
+        if convergence_handoff:
+            convergence.executed_cases(junit_receipt)
+    except convergence.ConvergenceError as error:
+        raise AuditGateError("JUNIT_GOVERNED_SUITE_SHAPE") from error
     require(len(cases) == proof["executed"], "JUNIT_EXECUTED_MISMATCH")
-    require(all(case.find(kind) is None for case in cases for kind in ("failure", "error", "skipped")),
+    require(all(case.find(".//" + kind) is None for case in cases for kind in ("failure", "error", "skipped")),
             "JUNIT_NONPASS")
     actual = {}
     identities = set()
@@ -218,11 +228,18 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
     require(isinstance(rows, list) and len(rows) == len(REQUIRED), "MATRIX_FINDING_CARDINALITY")
     ids = [row.get("id") for row in rows]
     require(len(set(ids)) == len(ids) and set(ids) == REQUIRED, "MATRIX_MISSING_OR_DUPLICATE_REQUIREMENT")
-    sha = git(root, "rev-parse", "HEAD")
-    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
-    if git(root, "ls-tree", sha, "--", manifest):
+    if convergence_handoff:
         _original_convergence_authority(root, sha, matrix_blob)
-    successor = None
+        require(proof.get("candidate_sha") == sha
+                and proof.get("candidate_tree") == candidate_tree
+                and proof.get("junit_sha256") == junit_receipt.sha256
+                and type(proof.get("junit_bytes")) is int
+                and proof["junit_bytes"] == len(junit_receipt.data)
+                and proof.get("source_unchanged") is True,
+                "GOVERNED_EXACT_RECEIPT_MISMATCH")
+    # A committed convergence handoff always needs the complete proof, even if
+    # its particular legacy fronts and original node names happen to be exact.
+    successor = _verified_successor(root, junit_receipt, proof, sha) if convergence_handoff else None
     definitions = {}
     original_nodes = set()
     used_successions = {}
@@ -327,6 +344,8 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
             require(stat.S_IMODE(info.st_mode) == (0o755 if current["git_mode"] == "100755" else 0o644),
                     "FROZEN_DISK_MODE_MISMATCH")
     require(git(root, "rev-parse", "HEAD") == sha, "CANDIDATE_CHANGED_DURING_VERIFICATION")
+    if convergence_handoff:
+        require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
     candidate_tree = git(root, "rev-parse", sha+"^{tree}")
     return {"schema": "rc6.issue465-audit-gate.v1", "status": "GREEN",
             "candidate_sha": sha, "candidate_tree": candidate_tree,

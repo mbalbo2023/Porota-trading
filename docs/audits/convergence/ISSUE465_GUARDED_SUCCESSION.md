@@ -3,6 +3,18 @@
 Status: DESARROLLADO; executed integrated guards and final canonical CI remain
 pending. This record does not authorize merge, deployment or runtime mutation.
 
+The first integrated working-tree diagnostic passed184 tests; the later
+receipt/source-shape focal passed212 tests with no failures, errors or omissions.
+Their immutable raw XML and descriptive JSON are preserved under `evidence/`.
+They are explicitly unfrozen intermediate diagnostics, not acceptance of the
+final source. Two intervening focal receipts retain five test-fixture failures
+each: positive-path assertions were misplaced in a negative-path test, then
+fully restored to the positive test without removing any assertion. The native
+old-Git counterexample itself passed during that diagnostic: Gate003dccb5
+accepted controlled case metadata despite a false declared source/tree/JUnit
+digest, while the corrected gate rejected it. Controlled XML does not attest
+execution of the case names it contains.
+
 The existing Predeploy V2 calls `scripts/rc6_issue465_audit_gate.py` after the
 complete governed suite. The actual original gate returned
 `REGRESSION_NOT_EXECUTED:tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow`
@@ -88,6 +100,28 @@ blob/mode, a declared evolution reason, valid original requirement IDs and
 positive integer executed receipts for every linked native guard. The physical
 file must still match the committed candidate. Original audit authority cannot
 be rewritten even with a newly computed convergence proof.
+
+Independent source review found that the separate governed JSON previously
+asserted GREEN/counts without binding its own source identity and JUnit bytes.
+Canonical CI now verifies its source manifest again after testing and emits
+candidate SHA/tree, JUnit SHA256/length and `source_unchanged=true`. The gate
+requires those exact fields for every committed convergence handoff, snapshots
+the candidate before loading evidence, and checks the entire tracked checkout
+both before and after verification. A late mutation outside the45 frozen front
+files cannot reuse an earlier successful FIP.
+
+Both validators share one-suite case topology: every testcase must be a direct
+child of that suite, and failure/error/skipped records cannot occur outside a
+testcase. Convergence always validates the complete summary and recomputes the
+full FIP, even if old nodes and fronts are unchanged. Known13 additional
+findings are an explicit minimum inventory; new typed findings may be added,
+but known findings cannot disappear through a self-derived expected set.
+
+Mapped executed guards alone do not close material programming requirements.
+FIP exposes pending material gates separately and keeps final eligibility false
+for inventory, an in-progress closure, or any remaining physical archive/browser
+gate. At this cut U14 and UX470-I01/I02/I03/I05 remain materially pending;
+external dataset/master/provider/OOS limitations remain separately unverified.
 
 Permanent guards retain the original negative controls and add controlled
 verifier-result attacks against source, modes, authority, execution, receipts

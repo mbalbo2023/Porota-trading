@@ -88,6 +88,33 @@ def test_synthetic_JUnit_cannot_authorize_an_absent_native_test_definition(evide
         verify(root, junit, governed)
 
 
+@pytest.mark.parametrize('attack', ['detached_case', 'nested_case', 'wrapper', 'extra_suite',
+                                  'detached_failure', 'detached_error', 'detached_skipped'])
+def test_only_direct_cases_of_one_governed_suite_are_accepted(evidence, attack):
+    root, junit, governed, _, _, _ = evidence
+    document = ET.parse(junit)
+    top = document.getroot()
+    suite = document.find('.//testsuite')
+    if attack in {'detached_case', 'nested_case'}:
+        case = suite.find('testcase')
+        suite.remove(case)
+        destination = top if attack == 'detached_case' else ET.SubElement(suite, 'properties')
+        destination.append(case)
+    elif attack == 'wrapper':
+        wrapper = ET.Element('unrecognized_wrapper')
+        wrapper.append(top)
+        document = ET.ElementTree(wrapper)
+    elif attack == 'extra_suite':
+        ET.SubElement(top, 'testsuite', tests='0', failures='0', errors='0', skipped='0')
+    else:
+        ET.SubElement(suite, attack.removeprefix('detached_'))
+    document.write(junit, encoding='utf-8', xml_declaration=True)
+    with pytest.raises(gate.convergence.ConvergenceError, match='JUNIT_GOVERNED_SUITE_SHAPE'):
+        gate.convergence.executed_cases(junit)
+    with pytest.raises(AuditGateError, match='JUNIT_GOVERNED_SUITE_SHAPE'):
+        verify(root, junit, governed)
+
+
 @pytest.mark.parametrize("attack", ["omit_finding", "duplicate_finding", "omit_clause", "omit_test",
     "unexecuted_test", "unexecuted_parameter", "false_external", "false_live_verified",
     "unreleased_owner", "wrong_front_tree", "wrong_report_digest", "real_orders", "undeclared_exclusion",
@@ -201,11 +228,19 @@ def controlled_successor(evidence, monkeypatch):
     manifest = root / gate.convergence.INPUT_ROOT / gate.convergence.MANIFEST
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text('{"controlled_verifier_fixture": true}\n')
+    document = ET.parse(junit)
+    document.find('.//testsuite').attrib.update(failures='0', errors='0', skipped='0')
+    document.write(junit, encoding='utf-8', xml_declaration=True)
     def commit():
         subprocess.run(["git", "-C", str(root), "add", "."], check=True)
         subprocess.run(["git", "-C", str(root), "-c", "user.name=Offline fixture",
                         "-c", "user.email=offline@example.invalid", "commit", "-qm", "controlled successor"], check=True)
-        return gate.git(root, "rev-parse", "HEAD")
+        sha = gate.git(root, "rev-parse", "HEAD")
+        proof.update(candidate_sha=sha, candidate_tree=gate.git(root, "rev-parse", sha + "^{tree}"),
+                     junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest(),
+                     junit_bytes=junit.stat().st_size, source_unchanged=True)
+        governed.write_text(json.dumps(proof))
+        return sha
     baseline = commit()
     monkeypatch.setattr(gate, "CONVERGENCE_BASELINE", baseline)
     path = "tests/test_evidence.py"
@@ -245,6 +280,44 @@ def test_guarded_successor_recomputes_proof_and_preserves_original_fronts(contro
     assert result["convergence_junit_sha256"] == successor["test_execution"]["junit_sha256"]
     assert result["independent_reaudit"] == "PENDING"
     assert result["safety"]["deploy"] is False
+
+
+@pytest.mark.parametrize('field,value', [('candidate_sha', '0' * 40), ('candidate_tree', '0' * 40),
+    ('junit_sha256', '0' * 64), ('junit_bytes', 0), ('junit_bytes', True),
+    ('source_unchanged', False), ('source_unchanged', 1)])
+def test_governed_successor_receipt_must_bind_source_and_immutable_JUnit(controlled_successor, field, value):
+    root, junit, governed, _, calls, _ = controlled_successor
+    proof = json.loads(governed.read_bytes())
+    proof[field] = value
+    governed.write_text(json.dumps(proof))
+    with pytest.raises(AuditGateError, match='GOVERNED_EXACT_RECEIPT_MISMATCH'):
+        verify(root, junit, governed)
+    assert calls == []
+
+
+@pytest.mark.parametrize('field', ['candidate_sha', 'candidate_tree', 'junit_sha256', 'junit_bytes', 'source_unchanged'])
+def test_missing_governed_source_binding_cannot_fall_back_to_case_counts(controlled_successor, field):
+    root, junit, governed, _, calls, _ = controlled_successor
+    proof = json.loads(governed.read_bytes())
+    del proof[field]
+    governed.write_text(json.dumps(proof))
+    with pytest.raises(AuditGateError, match='GOVERNED_EXACT_RECEIPT_MISMATCH'):
+        verify(root, junit, governed)
+    assert calls == []
+
+
+@pytest.mark.parametrize('field', ['tests', 'failures', 'errors', 'skipped'])
+def test_convergence_receipt_always_validates_counters_before_provenance(controlled_successor, field):
+    root, junit, governed, _, calls, _ = controlled_successor
+    document = ET.parse(junit)
+    document.find('.//testsuite').set(field, '2')
+    document.write(junit, encoding='utf-8', xml_declaration=True)
+    proof = json.loads(governed.read_bytes())
+    proof.update(junit_sha256=hashlib.sha256(junit.read_bytes()).hexdigest(), junit_bytes=junit.stat().st_size)
+    governed.write_text(json.dumps(proof))
+    with pytest.raises(AuditGateError, match='JUNIT_GOVERNED_SUITE_SHAPE'):
+        verify(root, junit, governed)
+    assert calls == []
 
 
 @pytest.mark.parametrize("attack", ["inventory_only", "wrong_sha", "wrong_tree", "wrong_junit",

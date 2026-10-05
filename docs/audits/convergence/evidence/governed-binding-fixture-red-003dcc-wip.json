@@ -1,0 +1,25 @@
+{
+  "base_sha": "003dccb5d07ebf7f443e58e0bb6499837a0a8a52",
+  "cases": 156,
+  "deploy_authorized": false,
+  "errors": 0,
+  "failures": 5,
+  "final_source_acceptance": false,
+  "merge_authorized": false,
+  "schema": "rc6.intermediate-test-receipt.v1",
+  "scope": "INTERMEDIATE_WORKING_TREE_DIAGNOSTIC_ONLY",
+  "skipped": 0,
+  "source_freeze": "NOT_FROZEN_WORKING_TREE",
+  "suite": {
+    "errors": "0",
+    "failures": "5",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "156",
+    "time": "74.666",
+    "timestamp": "2026-10-05T11:22:31.621230+00:00"
+  },
+  "xml_file": "governed-binding-fixture-red-003dcc-wip.xml",
+  "xml_sha256": "c938fa754967793615fbb694c026927f0aaf8417af7e638e0d42710b34137c1e"
+}

@@ -15,6 +15,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import types
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -122,7 +123,8 @@ def fixture_base(tmp_path_factory):
         "scenarios": scenarios,
         "front_variants": front,
         "restored_controls": rows(provenance.RESTORED_CONTROLS),
-        "additional_findings": [{**rows({"RC6_INT_RECEIPT_PARSER"})[0], "linked_requirement_ids": ["U11"]}],
+        "additional_findings": [{**row, "linked_requirement_ids": ["U11"]}
+                                for row in rows(provenance.DISCOVERED_CONVERGENCE_FINDINGS | {"RC6_INT_RECEIPT_PARSER"})],
         "path_evolution": {path: {"reason": "Controlled fixture evolution requires a referenced guard.",
             "requirement_ids": ["U01"]} for path in paths}}
     write_json(inputs / provenance.CLOSURE, matrix)
@@ -173,6 +175,7 @@ def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_coun
     assert all(row["assertion_scope"] == "EXPLICIT_SYNTHETIC_ONLY" for row in report["front_variants"])
     assert report["test_execution"]["executed_unique_cases"] == 1 + len(LEGACY_CASES) + len(SUCCESSOR_CASES)
     assert len(report["prior_regression_successions"]) == 5
+    assert provenance.DISCOVERED_CONVERGENCE_FINDINGS <= {row['id'] for row in report['additional_findings']}
     assert all(row["preservation"] == "TYPED_SUCCESSOR" for row in report["prior_regression_successions"])
     assert {row["id"] for row in report["restored_controls"]} == provenance.RESTORED_CONTROLS
     assert len(report["preserved_test_modules_344"]) == 12
@@ -181,6 +184,7 @@ def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_coun
     assert report["merge_authorized"] is report["deploy_authorized"] is False
     assert report["runtime"] == report["provider_open_capacity"] == "NO_VERIFICADO"
     assert report["economic_edge"] == "NO_DEMOSTRADO"
+    assert report['final_candidate_eligible'] is False
     assert report["assertion_scope"] == "OFFLINE_CODE_AND_FROZEN_TEST_RECEIPTS; NOT_RUNTIME_ATTESTATION"
 
 
@@ -191,6 +195,40 @@ def test_native_inventory_without_junit_cannot_claim_executed_guards(candidate):
     assert report["software_status"] == "INVENTORY_NOT_EXECUTED"
     assert report["test_execution"]["executed_unique_cases"] is None
     assert all(row["software_status"] == "NOT_EXECUTED" for row in report["requirements"])
+
+
+@pytest.mark.parametrize('all_rows', [False, True])
+def test_previously_discovered_findings_cannot_be_omitted_from_a_clean_candidate(candidate, all_rows):
+    root = candidate[0]
+    path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_bytes())
+    if all_rows:
+        matrix['additional_findings'] = []
+    else:
+        target = sorted(provenance.DISCOVERED_CONVERGENCE_FINDINGS)[0]
+        matrix['additional_findings'] = [row for row in matrix['additional_findings'] if row['id'] != target]
+    write_json(path, matrix)
+    commit(root)
+    assert_rejected(candidate, 'DISCOVERED_CONVERGENCE_FINDING_OMITTED')
+
+
+def test_executed_mapped_guards_do_not_close_pending_material_programming_gates(candidate):
+    root = candidate[0]
+    path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_bytes())
+    row = next(row for row in matrix['requirements'] if row['id'] == 'U14')
+    row['disposition'] = 'MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION'
+    row['remaining_uncertainty'] = 'Explicit controlled missing complete physical archive horizon.'
+    matrix['status'] = 'CLOSED_WITH_NATIVE_RESOURCE_GATES'
+    write_json(path, matrix)
+    commit(root)
+    result = cli(candidate)
+    assert result.returncode == 0, result.stderr
+    report = json.loads(candidate[2].read_bytes())
+    assert report['software_status'] == 'EXECUTED_NATIVE_GREEN'
+    assert report['material_programming_gates_closed'] is False
+    assert report['final_candidate_eligible'] is False
+    assert [row['id'] for row in report['pending_material_programming_gates']] == ['U14']
 
 
 def prior_audit_parser_fixture(root, xml):
@@ -213,6 +251,10 @@ def prior_audit_parser_fixture(root, xml):
     document.write(xml, encoding='utf-8', xml_declaration=True)
     governed = root.parent / 'controlled-prior-audit-governed.json'
     write_json(governed, {'scope': 'repository-root automatic pytest discovery', 'status': 'GREEN',
+        'candidate_sha': native_git(root, 'rev-parse', 'HEAD'),
+        'candidate_tree': native_git(root, 'rev-parse', 'HEAD^{tree}'),
+        'junit_sha256': hashlib.sha256(xml.read_bytes()).hexdigest(), 'junit_bytes': xml.stat().st_size,
+        'source_unchanged': True,
         'pytest_exit_code': 0, 'executed': count, 'discovered': count, 'failures': 0, 'errors': 0,
         'skipped': 0, 'xfail': 0, 'exclusions': matrix['governed_exclusions']})
     return governed
@@ -249,9 +291,49 @@ def test_phantom_old_JUnit_names_cannot_replace_absent_native_successor_executio
     suite.set('tests', str(count))
     document.write(xml, encoding='utf-8', xml_declaration=True)
     proof = json.loads(governed.read_bytes())
-    proof.update(executed=count, discovered=count)
+    proof.update(executed=count, discovered=count,
+                 junit_sha256=hashlib.sha256(xml.read_bytes()).hexdigest(), junit_bytes=xml.stat().st_size)
     write_json(governed, proof)
     with pytest.raises(audit465.AuditGateError, match='CONVERGENCE_SUCCESSOR_NOT_VERIFIED'):
+        audit465.verify(root, xml, governed)
+
+
+def test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance(candidate, monkeypatch):
+    """Real validators and Git; XML is an explicit controlled parser input."""
+    root, xml, _ = candidate
+    governed = prior_audit_parser_fixture(root, xml)
+    original = audit465._guarded_front_path
+    helper = root / 'scripts/rc6_prior_regression_successors.py'
+    assert not any(helper.relative_to(root).as_posix() in row['paths']
+                   for row in json.loads((root / audit465.MATRIX).read_bytes())['workstreams'])
+    changed = []
+    def mutate_after_full_proof(*args):
+        result = original(*args)
+        if not changed:
+            helper.write_bytes(helper.read_bytes() + b'\n# controlled late tracked mutation\n')
+            changed.append(True)
+        return result
+    monkeypatch.setattr(audit465, '_guarded_front_path', mutate_after_full_proof)
+    with pytest.raises(audit465.AuditGateError, match='TRACKED_CHECKOUT_CHANGED'):
+        audit465.verify(root, xml, governed)
+    assert changed == [True]
+
+
+def test_original_gate_receipt_binding_counterexample_and_current_native_rejection(candidate):
+    """Real old/current validators; controlled XML is not execution authentication."""
+    root, xml, _ = candidate
+    governed = prior_audit_parser_fixture(root, xml)
+    proof = json.loads(governed.read_bytes())
+    proof.update(candidate_sha='0' * 40, candidate_tree='0' * 40, junit_sha256='0' * 64)
+    write_json(governed, proof)
+    old_sha = '003dccb5d07ebf7f443e58e0bb6499837a0a8a52'
+    old_source = provenance.git(REPO, 'show', old_sha + ':scripts/rc6_issue465_audit_gate.py', binary=True)
+    old = types.ModuleType('controlled_original_receipt_binding_gate')
+    exec(compile(old_source, old_sha + ':scripts/rc6_issue465_audit_gate.py', 'exec'), old.__dict__)
+    # Preserve the actual native validator counterexample at its immutable old
+    # source, without presenting synthetic case metadata as a real governed run.
+    assert old.verify(root, xml, governed)['status'] == 'GREEN'
+    with pytest.raises(audit465.AuditGateError, match='GOVERNED_EXACT_RECEIPT_MISMATCH'):
         audit465.verify(root, xml, governed)
 
 

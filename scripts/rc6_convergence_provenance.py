@@ -51,6 +51,14 @@ TEST_344_ADAPTATIONS = {
     "tests/test_rc4_acceptance.py": (b"'2026-09-02T20:00:00+00:00',{})", b"'2026-09-02T20:00:00+00:00',{'currency':'ARS'})"),
 }
 DENIED_ARTIFACTS = {11315198085, 11317509383, 11293625514}
+DISCOVERED_CONVERGENCE_FINDINGS = frozenset({
+    "NEW_EXIT_RETAINED_RECEIPT_ACTIVATION", "NEW_HISTORY_EXACT_REVISION_LOOKUP",
+    "NEW_HISTORY_SEMANTIC_METADATA_REVISION", "NEW_INSTALLED_DISTRIBUTION_METADATA_DUPLICATE",
+    "NEW_LEGACY_INIT_PRE_WAL_MUTATION", "NEW_OBSERVER_HISTORY_DIAGNOSTIC",
+    "NEW_PREOPEN_AUD06", "NEW_PREOPEN_PROCESSING_DEADLINE", "NEW_PREOPEN_U24",
+    "NEW_PROBE_SCRATCH_SAMPLER_RACE", "NEW_RUNTIME_DISK_SCRATCH_QUOTA_CUSTODY",
+    "NEW_SOURCE_GIT_MODE_EVOLUTION", "NEW_SUPERSEDED_AUDIT_FRONT_FREEZE",
+})
 PRIOR_AUDIT_MATRIX = "docs/audits/ISSUE465_REAUDIT.json"
 ORIGINAL_DIGESTS = {
     MANIFEST: "3295e3d001e6a28e21fb227f5aed98a5119337d68abb5c2c1b50ee8e528d1ec4",
@@ -214,20 +222,33 @@ def capture_junit(junit):
         os.close(descriptor)
 
 
-def executed_cases(junit):
+def governed_junit_cases(junit):
+    """Use only direct cases of one governed suite; reject detached/nested cases."""
     receipt = capture_junit(junit)
     document = ET.fromstring(receipt.data)
+    require(document.tag in {"testsuites", "testsuite"}, "JUNIT_GOVERNED_SUITE_SHAPE")
     suites = list(document.iter("testsuite"))
     require(len(suites) == 1, "JUNIT_GOVERNED_SUITE_SHAPE")
-    cases = list(document.iter("testcase"))
+    suite = suites[0]
+    require(document is suite or list(document) == [suite], "JUNIT_GOVERNED_SUITE_SHAPE")
+    cases = list(suite.findall("testcase"))
+    require(list(document.iter("testcase")) == cases, "JUNIT_GOVERNED_SUITE_SHAPE")
+    for tag in ("failure", "error", "skipped"):
+        require(list(document.iter(tag)) == [outcome for case in cases for outcome in case.iter(tag)],
+                "JUNIT_GOVERNED_SUITE_SHAPE")
+    return suite, cases
+
+
+def executed_cases(junit):
+    suite, cases = governed_junit_cases(junit)
     for field in ("tests", "failures", "errors", "skipped"):
-        value = suites[0].get(field, "")
+        value = suite.get(field, "")
         require(re.fullmatch(r"[0-9]+", value) is not None, "JUNIT_SUMMARY_INVALID")
         require(int(value) == (len(cases) if field == "tests" else 0), "JUNIT_SUMMARY_MISMATCH")
     require(bool(cases), "JUNIT_EMPTY")
     identities, nodes = set(), {}
     for case in cases:
-        require(all(case.find(tag) is None for tag in ("failure", "error", "skipped")), "JUNIT_NONPASS")
+        require(all(case.find(".//" + tag) is None for tag in ("failure", "error", "skipped")), "JUNIT_NONPASS")
         name, classname = case.get("name", ""), case.get("classname", "")
         require((classname, name) not in identities, "JUNIT_DUPLICATE_CASE")
         identities.add((classname, name))
@@ -361,6 +382,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                 and re.fullmatch(r"[A-Z][A-Z0-9_-]+", row["id"]) is not None
                 and isinstance(row.get("linked_requirement_ids"), list) and bool(row["linked_requirement_ids"])
                 and set(row["linked_requirement_ids"]) <= REQUIREMENTS, "ADDITIONAL_FINDINGS_INVALID")
+    require(DISCOVERED_CONVERGENCE_FINDINGS <= {row["id"] for row in additional_rows},
+            "DISCOVERED_CONVERGENCE_FINDING_OMITTED")
     guard_files = {node.split("::")[0] for row in matrix["requirements"] + matrix["scenarios"] + front_rows + restored_rows + additional_rows
                    for node in row.get("test_nodes", []) if isinstance(node, str)}
     for filename in guard_files:
@@ -376,6 +399,10 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     front_variants = guard_rows(front_rows, FRONT_VARIANTS, final_tree, executed, declared_guards)
     restored_controls = guard_rows(restored_rows, RESTORED_CONTROLS, final_tree, executed, declared_guards)
     additional_findings = guard_rows(additional_rows, {row["id"] for row in additional_rows}, final_tree, executed, declared_guards)
+    pending_material = [{"id": row["id"], "disposition": row["disposition"],
+                         "remaining_uncertainty": row["remaining_uncertainty"]}
+                        for row in requirements
+                        if row.get("disposition") == "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION"]
     legacy_tests = preserved_legacy_tests(root, candidate_sha, next(row["head_sha"] for row in sources if row["pr"] == 466), executed)
     source_trees, source_reports, source_deltas = {}, [], set()
     product_sha = manifest["product"]["sha"]
@@ -467,6 +494,11 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
             "front_variants": front_variants,
             "restored_controls": restored_controls, "preserved_test_modules_344": legacy_tests,
             "additional_findings": additional_findings,
+            "pending_material_programming_gates": pending_material,
+            "material_programming_gates_closed": not pending_material,
+            "final_candidate_eligible": not pending_material and junit is not None
+                and matrix.get("status") == "CLOSED_WITH_NATIVE_RESOURCE_GATES",
+            "final_eligibility_scope": "SOURCE_GUARDS_ONLY; IMMUTABLE_ARTIFACT_AND_INDEPENDENT_REAUDIT_BOUND_SEPARATELY",
             "test_execution": {"junit_sha256": junit_receipt.sha256 if junit_receipt is not None else None,
                                "executed_unique_cases": count, "distinct_attack_ids": 80,
                                "distinct_requirement_ids": 55, "overlapping_suite_counts_added": False},

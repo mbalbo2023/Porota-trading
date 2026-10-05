@@ -180,11 +180,19 @@ jobs:
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
           from pathlib import Path
-          import json, os, re, xml.etree.ElementTree as ET
+          import hashlib, json, os, re, subprocess, xml.etree.ElementTree as ET
+          from scripts.porota_artifact_provenance import verify_source_manifest
+
+          candidate_sha = os.environ['CANDIDATE_SHA']
+          candidate_tree = os.environ['CANDIDATE_TREE']
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == candidate_sha
+          assert subprocess.check_output(['git', 'rev-parse', candidate_sha + '^{tree}'], text=True).strip() == candidate_tree
+          verify_source_manifest(Path('.'), Path('POROTA_SOURCE_PROVENANCE.json'), candidate_sha, candidate_tree)
+          junit_bytes = Path('/tmp/porota-governed-tests.xml').read_bytes()
 
           collection = Path('/tmp/porota-test-collection.txt').read_text(encoding='utf-8')
           discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
-          suite = ET.parse('/tmp/porota-governed-tests.xml').find('.//testsuite')
+          suite = ET.fromstring(junit_bytes).find('.//testsuite')
           tests = int(suite.get('tests', 0))
           failures = int(suite.get('failures', 0))
           errors = int(suite.get('errors', 0))
@@ -194,6 +202,11 @@ jobs:
           exclusions = [line for line in Path('/tmp/porota-test-exclusions.txt').read_text(encoding='utf-8').splitlines() if line]
           result = {
               'schema_version': 1,
+              'candidate_sha': candidate_sha,
+              'candidate_tree': candidate_tree,
+              'junit_sha256': hashlib.sha256(junit_bytes).hexdigest(),
+              'junit_bytes': len(junit_bytes),
+              'source_unchanged': True,
               'scope': 'repository-root automatic pytest discovery',
               'discovered': discovered,
               'executed': tests,
