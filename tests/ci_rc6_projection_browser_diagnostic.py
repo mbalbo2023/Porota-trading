@@ -4,22 +4,163 @@ Timing wrappers return native values unchanged. GC state, byte verification,
 deadline, selector and source remain untouched. This cannot certify acceptance.
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import gc
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import sqlite3
 import sys
-from threading import get_ident
+from threading import get_ident, local
 from time import monotonic, perf_counter, process_time, thread_time
 from urllib.parse import unquote, urlsplit
+from functools import wraps
+from unittest.mock import patch
 
 
 class DiagnosticWindowEnded(Exception):
     pass
+
+
+def require_then_window_end(require, value, gate, details=None, *, end=None):
+    """A real native/browser failure takes precedence over diagnostic stopping."""
+    require(value, gate, details)
+    if end is not None and monotonic() >= end:
+        raise DiagnosticWindowEnded()
+
+
+class DiagnosticTrace:
+    """Aggregate observations only; native bytes, arguments and results pass through.
+
+    Codec context is thread-local because report and checkpoint verification
+    can run together. No literal, template, packet or expanded JSON is retained
+    by this observer. Nested elapsed/CPU times must not be added.
+    """
+    STORAGE_SCHEMAS = {"rc6.lossless-json-storage.v1", "rc6.lossless-json-storage.v2"}
+    HEX = re.compile(r"[0-9a-f]{64}\Z")
+
+    def __init__(self, digest_roles, state):
+        self.digest_roles = dict(digest_roles)
+        self.role_digests = {role: digest for digest, role in digest_roles.items()}
+        self.state = state
+        self.context = local()
+        self.aggregates = {}
+        self.gc_aggregates = {}
+        self.pending_gc = {}
+
+    def codec_metadata(self, value, keywords):
+        if not isinstance(value, dict):
+            return {}
+        digest = value.get("logical_sha256")
+        digest = digest if isinstance(digest, str) and self.HEX.fullmatch(digest) else None
+        schema = value.get("schema")
+        logical_bytes, retain = value.get("logical_bytes"), keywords.get("retain", False)
+        metadata = {"role": self.digest_roles.get(digest), "logical_sha256": digest,
+                    "storage_schema": schema if isinstance(schema, str) and schema in self.STORAGE_SCHEMAS else "UNSUPPORTED",
+                    "logical_bytes_declared": logical_bytes if type(logical_bytes) is int and logical_bytes >= 0 else None,
+                    "retain": retain if type(retain) is bool else None}
+        if schema == "rc6.lossless-json-storage.v2":
+            def count(name):
+                member = value.get(name)
+                declared = member.get("count") if isinstance(member, dict) else None
+                return declared if type(declared) is int and declared >= 0 else None
+            metadata["codec_counts_declared"] = {
+                "packets": len(value["packets"]) if isinstance(value.get("packets"), list) else None,
+                **{name.removesuffix("_count"): value[name] if type(value.get(name)) is int and value[name] >= 0 else None
+                   for name in ("templates_count", "literals_count")},
+                **{name: count(name) for name in ("directory", "instances", "bindings", "references")}}
+        return metadata
+
+    def record(self, label, began, cpu, thread_cpu, error=None, *, metadata=None, returned_bytes=None):
+        metadata = metadata if metadata is not None else getattr(self.context, "codec", {})
+        thread_id, render = get_ident(), self.state["render"]
+        key = (label, render, thread_id, metadata.get("role"), metadata.get("logical_sha256"))
+        if key not in self.aggregates:
+            self.aggregates[key] = {"label": label, "render": render, "thread_id": thread_id,
+                "scope": "PREFLIGHT_OR_OUTSIDE_RENDER" if render is None else "RENDER",
+                "metadata_last_declared": metadata, "calls": 0, "completed_calls": 0,
+                "errors_by_class": {}, "elapsed_seconds_total": 0., "elapsed_seconds_max": 0.,
+                "process_cpu_seconds_total_overlap_not_additive": 0., "thread_cpu_seconds_total": 0.,
+                "returned_bytes_total": 0}
+        aggregate = self.aggregates[key]
+        elapsed = perf_counter() - began
+        aggregate["calls"] += 1
+        aggregate["metadata_last_declared"] = metadata
+        aggregate["elapsed_seconds_total"] += elapsed
+        aggregate["elapsed_seconds_max"] = max(aggregate["elapsed_seconds_max"], elapsed)
+        aggregate["process_cpu_seconds_total_overlap_not_additive"] += process_time() - cpu
+        aggregate["thread_cpu_seconds_total"] += thread_time() - thread_cpu
+        if error is None:
+            aggregate["completed_calls"] += 1
+        else:
+            aggregate["errors_by_class"][error] = aggregate["errors_by_class"].get(error, 0) + 1
+        if returned_bytes is not None:
+            aggregate["returned_bytes_total"] += returned_bytes
+
+    def timed(self, label, function, *, codec=False, member_roles=None):
+        @wraps(function)
+        def wrapped(*positional, **keywords):
+            metadata = None
+            if member_roles is not None:
+                role = member_roles.get(Path(positional[1]).name)
+                if role is None:
+                    return function(*positional, **keywords)
+                metadata = {"role": role, "logical_sha256": self.role_digests.get(role)}
+            previous = getattr(self.context, "codec", {})
+            if codec:
+                metadata = self.codec_metadata(positional[0] if positional else None, keywords)
+                self.context.codec = metadata
+            began, cpu, thread_cpu = perf_counter(), process_time(), thread_time()
+            error, returned_bytes = None, None
+            try:
+                result = function(*positional, **keywords)
+                if member_roles is not None and isinstance(result, bytes):
+                    returned_bytes = len(result)
+                return result
+            except BaseException as failure:
+                error = type(failure).__name__
+                raise
+            finally:
+                try:
+                    self.record(label, began, cpu, thread_cpu, error, metadata=metadata,
+                                returned_bytes=returned_bytes)
+                finally:
+                    if codec:
+                        self.context.codec = previous
+        return wrapped
+
+    def collect(self, phase, info):
+        thread_id = get_ident()
+        key = thread_id, info["generation"]
+        if phase == "start":
+            self.pending_gc[key] = perf_counter(), thread_time(), self.state["render"]
+        elif phase == "stop" and key in self.pending_gc:
+            began, cpu, render = self.pending_gc.pop(key)
+            bucket = (thread_id, info["generation"], render)
+            if bucket not in self.gc_aggregates:
+                self.gc_aggregates[bucket] = {"thread_id": thread_id, "generation": info["generation"],
+                    "render": render, "collections": 0, "elapsed_seconds_total": 0.,
+                    "elapsed_seconds_max": 0., "thread_cpu_seconds_total": 0., "collected": 0, "uncollectable": 0}
+            aggregate = self.gc_aggregates[bucket]
+            elapsed = perf_counter() - began
+            aggregate["collections"] += 1
+            aggregate["elapsed_seconds_total"] += elapsed
+            aggregate["elapsed_seconds_max"] = max(aggregate["elapsed_seconds_max"], elapsed)
+            aggregate["thread_cpu_seconds_total"] += thread_time() - cpu
+            aggregate["collected"] += info["collected"]
+            aggregate["uncollectable"] += info["uncollectable"]
+
+    def records(self):
+        return sorted(self.aggregates.values(), key=lambda row: (
+            -1 if row["render"] is None else row["render"], row["label"], row["thread_id"],
+            row["metadata_last_declared"].get("role") or ""))
+
+    def gc_records(self):
+        return sorted(self.gc_aggregates.values(), key=lambda row: (
+            -1 if row["render"] is None else row["render"], row["generation"], row["thread_id"]))
 
 
 def protected_bytes(path):
@@ -72,42 +213,32 @@ def run(args):
             raise AssertionError("SOURCE_SQLITE_FORBIDDEN")
         return original_connect(value, *positional, **keywords)
 
-    socket.socket.connect = no_network
-    socket.create_connection = no_network
-    sqlite3.connect = private_connect
-    sys.path.insert(0, str(root))
+    with ExitStack() as guards:
+        guards.enter_context(patch.object(socket.socket, "connect", no_network))
+        guards.enter_context(patch.object(socket, "create_connection", no_network))
+        guards.enter_context(patch.object(sqlite3, "connect", private_connect))
+        previous_path = sys.path[:]
+        sys.path.insert(0, str(root))
+        try:
+            return run_archived(args, index, root, database, native_root, runner,
+                                before, hashes, network, source_sqlite)
+        finally:
+            sys.path[:] = previous_path
+
+
+def run_archived(args, index, root, database, native_root, runner, before, hashes, network, source_sqlite):
+    output = args.output.resolve()
     from tests import ci_rc6_projection_large_browser as browser
-    from rc6_shadow_runtime import persistence, serialization
+    from rc6_shadow_runtime import packed_storage, persistence, serialization
     import rc6_audit_evidence.sqlite_snapshot as snapshot
 
     custody_before = browser.custody_inventory(database, native_root)
     pointer = json.loads(protected_bytes(native_root / "CURRENT.json"))
     manifest = json.loads(protected_bytes(native_root / ("gen-" + pointer["generation_id"]) / "manifest.json"))
     digest_roles = {record["payload_digest"]: role for role, record in manifest["files"].items()}
-    stages, renders, collections, pending_gc = [], [], [], {}
+    renders = []
     state = {"render": None, "end": None}
-
-    def record(label, began, cpu, thread_cpu, error=None, **metadata):
-        stages.append({"label": label, "render": state["render"], "thread_id": get_ident(),
-                       "elapsed_seconds": perf_counter() - began, "process_cpu_seconds_overlap_not_additive": process_time() - cpu,
-                       "thread_cpu_seconds": thread_time() - thread_cpu, "error_class": error, **metadata})
-
-    def timed(label, function):
-        def wrapped(*positional, **keywords):
-            began, cpu, thread_cpu = perf_counter(), process_time(), thread_time()
-            error, metadata = None, {}
-            if label == "storage" and positional and isinstance(positional[0], dict):
-                value = positional[0]
-                metadata = {"logical_bytes": value.get("logical_bytes"), "logical_sha256": value.get("logical_sha256"),
-                            "role": digest_roles.get(value.get("logical_sha256")), "retain": keywords.get("retain")}
-            try:
-                return function(*positional, **keywords)
-            except BaseException as failure:
-                error = type(failure).__name__
-                raise
-            finally:
-                record(label, began, cpu, thread_cpu, error, **metadata)
-        return wrapped
+    trace = DiagnosticTrace(digest_roles, state)
 
     original_copy = snapshot.readonly_copy
 
@@ -118,28 +249,18 @@ def run(args):
         try:
             connection = context.__enter__()
         except BaseException as failure:
-            record("source_capture_enter", began, cpu, thread_cpu, type(failure).__name__)
+            trace.record("source_capture_enter", began, cpu, thread_cpu, type(failure).__name__)
             raise
-        record("source_capture_enter", began, cpu, thread_cpu)
+        trace.record("source_capture_enter", began, cpu, thread_cpu)
         try:
             yield connection
         except BaseException:
             exception = sys.exc_info()
-            close = timed("source_capture_exit", context.__exit__)
+            close = trace.timed("source_capture_exit", context.__exit__)
             if not close(*exception):
                 raise
         else:
-            timed("source_capture_exit", context.__exit__)(None, None, None)
-
-    def collect(phase, info):
-        key = get_ident(), info["generation"]
-        if phase == "start":
-            pending_gc[key] = perf_counter(), thread_time(), state["render"]
-        elif phase == "stop" and key in pending_gc:
-            began, cpu, render = pending_gc.pop(key)
-            collections.append({"render": render, "generation": info["generation"], "elapsed_seconds": perf_counter() - began,
-                                "thread_cpu_seconds": thread_time() - cpu, "collected": info["collected"],
-                                "uncollectable": info["uncollectable"]})
+            trace.timed("source_capture_exit", context.__exit__)(None, None, None)
 
     original_build = browser.build_page
 
@@ -165,29 +286,36 @@ def run(args):
     original_require = browser.require
 
     def bounded_require(value, gate, details=None):
-        original_require(value, gate, details)
-        if state["end"] is not None and monotonic() >= state["end"]:
-            raise DiagnosticWindowEnded()
+        return require_then_window_end(original_require, value, gate, details, end=state["end"])
 
-    snapshot.readonly_copy = traced_copy
-    serialization._storage_bytes = timed("storage", serialization._storage_bytes)
-    persistence.EvidenceFiles._wire_generation = timed("wire_generation", persistence.EvidenceFiles._wire_generation)
-    persistence.read_committed_projection = timed("canonical_query", persistence.read_committed_projection)
-    browser.build_page = traced_build
-    browser.require = bounded_require
-    gc.callbacks.append(collect)
+    replacements = [(snapshot, "readonly_copy", traced_copy),
+        (serialization, "_storage_bytes", trace.timed("storage_v1", serialization._storage_bytes, codec=True)),
+        (packed_storage, "unpack_wire", trace.timed("fresh_unpack_wire", packed_storage.unpack_wire, codec=True))]
+    for name in ("_slots", "_expanded", "_array", "_inflate"):
+        replacements.append((packed_storage, name, trace.timed("packed" + name, getattr(packed_storage, name))))
+    member_roles = {name: role for role, name in persistence.GENERATION_ROLES.items()}
+    replacements.extend([
+        (persistence.EvidenceFiles, "_bytes", trace.timed("member_bytes", persistence.EvidenceFiles._bytes,
+                                                        member_roles=member_roles)),
+        (persistence.EvidenceFiles, "_wire_generation", trace.timed("wire_generation", persistence.EvidenceFiles._wire_generation)),
+        (persistence, "read_committed_projection", trace.timed("canonical_query", persistence.read_committed_projection)),
+        (browser, "build_page", traced_build), (browser, "require", bounded_require)])
     result, error_class, details = "NO_FAILURE_OBSERVED_WITHIN_DIAGNOSTIC_WINDOW", None, {}
-    try:
-        state["end"] = monotonic() + 60
-        browser.run(database, native_root, output / "browser")
-    except DiagnosticWindowEnded:
-        pass
-    except BaseException as error:
-        result, error_class = "NATIVE_OR_BROWSER_FAILURE_RETAINED", type(error).__name__
-        details = {"gate": str(error) if isinstance(error, browser.GateFailure) else "DIAGNOSTIC_CALL_FAILED",
-                   "native_details": error.details if isinstance(error, browser.GateFailure) else {}}
-    finally:
-        gc.callbacks.remove(collect)
+    with ExitStack() as instrumentation:
+        for owner, name, replacement in replacements:
+            instrumentation.enter_context(patch.object(owner, name, replacement))
+        gc.callbacks.append(trace.collect)
+        try:
+            state["end"] = monotonic() + 60
+            browser.run(database, native_root, output / "browser")
+        except DiagnosticWindowEnded:
+            pass
+        except BaseException as error:
+            result, error_class = "NATIVE_OR_BROWSER_FAILURE_RETAINED", type(error).__name__
+            details = {"gate": str(error) if isinstance(error, browser.GateFailure) else "DIAGNOSTIC_CALL_FAILED",
+                       "native_details": error.details if isinstance(error, browser.GateFailure) else {}}
+        finally:
+            gc.callbacks.remove(trace.collect)
     custody_after, after = browser.custody_inventory(database, native_root), hashes()
     closure, unexpected = [], []
     for name, module in sorted(sys.modules.items()):
@@ -204,18 +332,20 @@ def run(args):
             unexpected.append(str(path))
     proof = before == after and custody_before == custody_after and not network and not source_sqlite and not unexpected
     proof = proof and all(record["matches_archived_blob"] for record in closure)
-    receipt = {"schema": "rc6.native-browser-components-diagnostic.v1", "status": "DIAGNOSTIC_ONLY_" + result,
+    receipt = {"schema": "rc6.native-browser-components-diagnostic.v2", "status": "DIAGNOSTIC_ONLY_" + result,
                "acceptance_complete": False, "native_gate_acceptance_claim": False, "source_sha": index["source_sha"],
                "candidate_tree_sha": index["candidate_tree_sha"], "archive_sha256": index["archive_sha256"], "overlays": [],
                "runtime_instrumentation": "TIMING_WRAPPERS_AND_GC_CALLBACK_ONLY; ORIGINAL_NATIVE_RETURNS_DEADLINE_AND_GC_STATE_UNCHANGED",
                "runner_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(), "error_class": error_class,
-               "details": details, "renders": renders, "stages": stages, "gc_collections": collections,
+               "details": details, "renders": renders, "stage_aggregates": trace.records(), "gc_aggregates": trace.gc_records(),
                "source_proof_pass": proof, "tracked_source_files": len(before), "tracked_source_hashes_unchanged": before == after,
                "custody_inventory_before": custody_before, "custody_inventory_after": custody_after,
                "native_custody_unchanged": custody_before == custody_after, "imported_product_modules": closure,
                "unexpected_product_imports": unexpected, "network_attempts": len(network), "source_sqlite_attempts": len(source_sqlite),
                "scope_limits": ["60s diagnostic window, no acceptance even if no failure was observed.",
-                                "Overlapping process CPU per stage cannot be added; thread CPU excludes separateSHA workers.",
+                                "Nested and overlapping stage elapsed/CPU totals cannot be added; thread CPU excludes other workers.",
+                                "Codec counts are declarations captured before native verification; completed_calls and errors are reported separately.",
+                                "Member read counts observe calls, not an independent proof of cache absence or logical semantics.",
                                 "cgroup counters include all processes in this container; timing wrappers add diagnostic overhead."]}
     output.mkdir(parents=True, exist_ok=True)
     with (output / "diagnostic.json").open("x") as stream:
