@@ -284,12 +284,13 @@ def test_late_native_round_keeps_only_its_verified_first_admission_count(native_
         if scenario == "unverified_source":
             # A warm budget retains its old EXIT floor; a missing native
             # source cannot create first-admission evidence from that policy.
-            held = store.path.with_suffix(".held-offline-fixture")
-            store.path.rename(held)
+            primary = Path(store.path)
+            held = primary.with_suffix(".held-offline-fixture")
+            primary.rename(held)
             try:
                 assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
             finally:
-                held.rename(store.path)
+                held.rename(primary)
         elif scenario == "read_error":
             wire[2]["status"] = 503
             with pytest.raises(Exception):
@@ -303,6 +304,7 @@ def test_late_native_round_keeps_only_its_verified_first_admission_count(native_
             receipts = c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall()
         # No producer deadline remains. Even diagnostics must not capture a
         # new PRIMARY snapshot just to recover the historical display count.
+        actual_copy = source_reads.readonly_copy
         monkeypatch.setattr(source_reads, "readonly_copy", lambda *a, **kw: pytest.fail("Late round captured source"))
         if scenario == "foreign_observer":
             with ThreadPoolExecutor(max_workers=1) as pool:
@@ -330,12 +332,15 @@ def test_late_native_round_keeps_only_its_verified_first_admission_count(native_
         assert budget.policy == original_policy
         with closing(sqlite3.connect(runtime.path)) as c:
             assert c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall() == receipts
-        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
         # Consumed, discarded, failed and foreign scopes never leak into the
         # following producer round, even while the old policy still says10.
         following = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
         assert following["required_identities_count"] is None
         assert following["frozen_admission_scope"] is None and following["lower_suspended"]
+        # A later LOWER decision has its own .15s custody bound; it may read
+        # current scope, but cannot borrow the unresolved EXIT round's floor.
+        monkeypatch.setattr(source_reads, "readonly_copy", actual_copy)
+        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
     finally:
         reader.discard_exit_round_scope()
         reader.close()
