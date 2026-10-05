@@ -7,7 +7,7 @@
   "production_branch": "deploy/rc6-pr69-isolated-20260915",
   "coordination_issue": 471,
   "supervision_issue": 473,
-  "automation_id": null,
+  "automation_id": "6ac30186bc40819199bfbfd32244aca5",
   "automation_title": "Convergencia RC6 nocturna",
   "status": "WAITING_OWNER",
   "candidate_pr": null,
@@ -37,5 +37,12 @@
     "model_selection": "NOT_EXPOSED",
     "branch_protection_details": "403 Resource not accessible by integration",
     "large_artifact_transfer": "32 MiB transfer cap; signed URL HTTP403 error code1010; verified runner evidence path not yet implemented"
-  }
+  },
+  "schedule": {
+    "timezone": "America/Buenos_Aires",
+    "dtstart": "2026-10-04T23:30:00-03:00",
+    "frequency": "HOURLY",
+    "count": 12
+  },
+  "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa"
 }
