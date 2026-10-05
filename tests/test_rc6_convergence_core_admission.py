@@ -1,4 +1,5 @@
 """Native caller regressions for 468/469; synthetic PAPER only, no provider IO."""
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
 import hashlib
@@ -60,6 +61,27 @@ def test_u03_recovery_completion_cannot_precede_durable_start_or_survive_restart
     with restarted.connect() as c:
         assert c.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0]==0
         assert c.execute('SELECT COUNT(*) FROM ppi_intraday_points').fetchone()[0]==0
+
+
+def test_f02_recovered_native_worker_keeps_stale_book_closed_after_real_warmup(tmp_path, monkeypatch):
+    from tests.test_issue465_capability_cache import DAY, Harness, missing_once
+    harness = Harness(tmp_path, monkeypatch,
+        times=[DAY+timedelta(minutes=value) for value in (0, 15, 21, 24, 31)], behavior=missing_once)
+    monkeypatch.setenv('PAPER_SCALPING_MODE', 'ACTIVE_OBSERVE')
+    harness.run()
+    assert harness.cuts[-1]['states'][0]['state'] == 'CONFIRMED_INTERVAL_VOLUME'
+    assert harness.cuts[-1]['candidates'][-1]['action'] == 'BUY_CANDIDATE'
+    assert harness.cuts[-1]['fills'] == 0
+    cut = harness.times[-1]
+    stale = replace(quote(cut, bid='121.5', ask='121.55'),
+                    book_at=(cut-timedelta(minutes=3)).isoformat())
+    harness.store.add_quote(stale)
+    monkeypatch.setenv('PAPER_SCALPING_MODE', 'ACTIVE_PAPER')
+    assert scalping.promote_paper_candidate(harness.store, harness.records[0], at=cut) == 'STALE_BOOK'
+    assert scalping.evaluate_candidate(harness.store, harness.records[0], at=cut+timedelta(seconds=1)) == 'HOLD'
+    with harness.store.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
+        assert connection.execute('SELECT real_orders_sent FROM observer_state').fetchone()[0] == 0
 
 
 def test_u06_full_scalping_caller_recomputes_binding_economics_and_never_falsifies_passed(tmp_path,monkeypatch):
