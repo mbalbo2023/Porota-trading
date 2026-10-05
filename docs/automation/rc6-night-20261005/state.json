@@ -16,27 +16,29 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-05T01:49:18.627Z-bec4a0e74b201",
-    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
-    "purpose": "BOOTSTRAP_ONLY",
-    "acquired_at": "2026-10-05T01:49:18.627Z",
-    "expires_at": "2026-10-05T02:09:18.627Z"
-  },
-  "pending_action": {
-    "kind": "BOOTSTRAP_RECEIPT",
-    "marker": "NIGHT_SUPERVISOR_BOOT_RECEIPT=WS-RC6-NIGHT-CONVERGENCE-20261005",
-    "issue": 473
-  },
+  "lease": null,
+  "pending_action": null,
   "predeploy": null,
   "deploy": null,
-  "first_run_receipt": null,
+  "first_run_receipt": {
+    "marker": "NIGHT_SUPERVISOR_BOOT_RECEIPT=WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "comment_id": 5986740552,
+    "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986740552",
+    "created_at": "2026-10-05T01:49:53Z",
+    "state_write_commit": "96e9f8c3212e4e1fe907f11606ab7dded5e1a8ee"
+  },
   "deadline_utc": "2026-10-05T11:30:00Z",
   "observation_end_utc": "2026-10-05T13:30:00Z",
   "mode": "PAPER_SHADOW_ONLY",
   "real_orders_sent": 0,
   "model_configuration": "PLATFORM_DEFAULT_NOT_EXPOSED_BY_AUTOMATIONS_API",
-  "evidence": [],
+  "evidence": [
+    {
+      "type": "bootstrap",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986740552",
+      "observed_at": "2026-10-05T01:50:20.170Z"
+    }
+  ],
   "blockers": [
     "INTEGRATION_OWNER_ACTIVE",
     "FINAL_CANDIDATE_NOT_DELIVERED"
@@ -77,5 +79,7 @@
       "workflows": "write"
     },
     "permissions_note": "GitHub app metadata observed; not an independent execution test of merge/deploy/workflow mutation"
-  }
+  },
+  "bootstrap_completed_at": "2026-10-05T01:50:20.170Z",
+  "bootstrap_result": "VALIDATED_GITHUB_READ_CONTROL_COMMIT_COMMENT"
 }
