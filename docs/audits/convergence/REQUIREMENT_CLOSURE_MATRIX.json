@@ -1820,6 +1820,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1846,7 +1847,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "F-03 baseline ENOSPC entre archivos #463",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_checkpoint_compression_disk_failure_cannot_publish_new_report_with_old_checkpoint"
       ],
@@ -1855,6 +1856,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1881,7 +1883,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "7 fronteras report\u2192checkpoint\u2192status\u2192fsync\u2192CURRENT",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_every_commit_failure_boundary_exposes_only_one_valid_cut"
       ],
@@ -1890,6 +1892,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1916,7 +1919,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "SIGKILL real en fronteras de commit",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_real_sigkill_at_every_boundary_never_exposes_staging_as_current"
       ],
@@ -1925,6 +1928,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1951,7 +1955,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "restart worker tras kill",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_canonical_worker_restart_after_kill_reuses_only_committed_checkpoint"
       ],
@@ -1960,6 +1964,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1986,7 +1991,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ENOSPC de `fsync`",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_enospc_from_real_fsync_does_not_change_current"
       ],
@@ -1995,6 +2000,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2021,7 +2027,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "EACCES/directorio read-only",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_actual_read_only_directory_permission_failure_preserves_current"
       ],
@@ -2030,6 +2036,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2056,7 +2063,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "gzip truncado/zip expansion",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_compressed_payload_expansion_is_bounded_even_when_hashes_match",
         "tests/test_issue465_generations.py::test_truncated_gzip_rejected_even_with_individual_wire_hash_rebound"
@@ -2066,6 +2073,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2092,7 +2100,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "member symlink/hardlink/FIFO",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_hostile_aliases_fail_closed_without_modifying_external_inputs"
       ],
@@ -2101,6 +2109,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2127,7 +2136,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "manifest traversal",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_manifest_path_traversal_cannot_select_any_external_input"
       ],
@@ -2136,6 +2145,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2162,7 +2172,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "UUID collision/clock rollback",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_clock_rollback_never_reuses_generation_id_or_future_worker_checkpoint",
         "tests/test_issue465_generations.py::test_uuid_collision_cannot_overwrite_existing_generation"
@@ -2172,6 +2182,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2198,7 +2209,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "dos writers + reader durante writer",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_generations.py::test_shared_reader_lock_is_nonblocking_and_does_not_create_files"
       ],
@@ -2207,6 +2218,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2233,9 +2245,10 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "rehash integral malicioso",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
@@ -2247,6 +2260,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2273,7 +2287,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "rollback CURRENT + nuevo commit",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
@@ -2287,6 +2301,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2314,7 +2329,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "PPI \u00fanico y counts",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_native_ppi_only_is_audited_without_reingesting_observations"
       ],
@@ -2323,6 +2338,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2350,7 +2366,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "PPI vs IOL contradictorios",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_ppi_iol_disagreement_preserves_primary_path_units_clocks_and_conflict"
       ],
@@ -2359,6 +2375,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2386,7 +2403,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "BYMA scraper",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_byma_scraper_remains_observe_only_and_linked"
       ],
@@ -2395,6 +2412,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2422,7 +2440,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "provider clock missing/stale/future",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_rejected_source_still_has_truthful_nonempty_audit"
       ],
@@ -2431,6 +2449,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2458,7 +2477,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "IOL parcial",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_partial_iol_is_visible_with_unknown_availability_instead_of_provider_zero"
       ],
@@ -2467,6 +2486,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2494,7 +2514,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "texto arbitrario en error IOL",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
       ],
@@ -2503,6 +2523,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2530,7 +2551,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "report counts/cutoff/row shape falsos",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_incoherent_source_reports_are_rejected"
       ],
@@ -2539,6 +2560,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2566,12 +2588,16 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "report no vac\u00edo + audit vac\u00edo/misleading",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -2579,6 +2605,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2606,12 +2633,16 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "reports vac\u00edos + audit ghost",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -2619,6 +2650,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2646,7 +2678,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "report duplicado",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
       ],
@@ -2655,6 +2687,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2682,7 +2715,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "bounds 64 reports/100k rows",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_audit.py::test_source_audit_capacity_is_bounded_and_never_silently_truncates"
       ],
@@ -2691,6 +2724,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2719,16 +2753,20 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "cuota files 512\u2192513",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_513_files_never_deleted_without_ack_and_shadow_degrades",
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart"
+        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2757,7 +2795,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "bytes l\u00f3gicos >128MiB/sparse",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_logical_bytes_above_128mib_are_counted_even_for_sparse_files"
       ],
@@ -2766,6 +2804,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2794,7 +2833,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "no ACK bajo presi\u00f3n",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_no_ack_never_rotates_committed_generation_even_under_pressure"
       ],
@@ -2803,6 +2842,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2831,7 +2871,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK v\u00e1lido + pin/current",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
         "tests/test_issue465_source_retention_policy.py::test_pinned_generation_survives_valid_ack_and_hard_pressure"
@@ -2841,6 +2881,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2869,7 +2910,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK autoafirmado/URI inexistente",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -2879,6 +2920,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2907,7 +2949,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "temporales propios/unknown",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_owned_staging_and_exclusive_old_temporaries_are_cleaned_safely",
         "tests/test_issue465_source_retention_policy.py::test_unowned_content_in_staging_is_preserved_and_degrades"
@@ -2917,6 +2959,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2945,7 +2988,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "low disk/ENOSPC/EACCES/EIO",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_no_space_and_permission_denied_cannot_be_silent_or_delete_evidence",
         "tests/test_rc6_convergence_persistence.py::test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume",
@@ -2957,6 +3000,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2985,7 +3029,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "concurrent retention durante writer",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_active_writer_staging_cannot_be_cleaned_by_another_caller"
       ],
@@ -2994,6 +3038,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3022,7 +3067,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "EIO tras primer unlink de rotaci\u00f3n",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume",
         "tests/test_rc6_convergence_persistence.py::test_u19_eio_every_rotation_boundary_is_reentrant_after_restart",
@@ -3033,6 +3078,7 @@
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3061,15 +3107,19 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "caller real sin archivo",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart"
+        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
         "iol_shadow_collector_rc6.py",
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3098,7 +3148,7 @@
       ],
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK ledger post-rotaci\u00f3n",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
@@ -3517,6 +3567,26 @@
         "U11",
         "U25",
         "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-scratch-projection-cross-layer-green.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-scratch-projection-cross-layer.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
       ]
     },
     "docs/audits/convergence/evidence/native-capacity-retention-green.xml": {
@@ -4630,6 +4700,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/disk_scratch_native.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/dry_run.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -4778,9 +4863,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/sqlite_scratch.py": {
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
+      "requirement_ids": [
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/sqlite_snapshot.py": {
       "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
       "requirement_ids": [
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
         "U24"
       ]
     },
@@ -4793,7 +4890,9 @@
     "rc6_dynamic_universe/live.py": {
       "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
       "requirement_ids": [
-        "AUD-468-04"
+        "AUD-468-04",
+        "U14",
+        "U21"
       ]
     },
     "rc6_dynamic_universe/orchestrator.py": {
@@ -5303,6 +5402,20 @@
         "U27"
       ]
     },
+    "scripts/rc6_issue465_stress.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "scripts/rc6_ppi_capacity_benchmark.py": {
       "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
       "requirement_ids": [
@@ -5512,6 +5625,20 @@
         "U26"
       ]
     },
+    "tests/test_issue465_stress.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "tests/test_porota_apply_host_control_plane_v2.py": {
       "reason": "Keep the source-bound canonical control plane checks and assert safe scoped cleanup and pinned build provenance without performing host actions.",
       "requirement_ids": [
@@ -5547,15 +5674,8 @@
     "tests/test_rc6_budget_receipt_retention.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
-        "U14",
-        "U15",
-        "U16",
-        "U17",
-        "U18",
-        "U19",
-        "U20",
-        "U21",
-        "U26"
+        "U02",
+        "U05"
       ]
     },
     "tests/test_rc6_capacity_retention_activation.py": {
@@ -5784,6 +5904,14 @@
         "U10"
       ]
     },
+    "tests/test_rc6_freeze_only_native.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "AUD-468-04",
+        "U14",
+        "U21"
+      ]
+    },
     "tests/test_rc6_funnel_storage_codec.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -5902,6 +6030,15 @@
         "U27"
       ]
     },
+    "tests/test_rc6_sqlite_disk_scratch.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "U24"
+      ]
+    },
     "tests/test_v161.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -6018,7 +6155,10 @@
         "tests/test_rc6_approved_factual_callers.py::test_disabled_factual_scalping_batch_is_byte_equivalent",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows",
         "tests/test_rc6_dynamic_orchestrator.py::test_dense_hot_and_fair_discovery_have_different_cadence_and_measured_coverage",
-        "tests/test_rc6_dynamic_orchestrator.py::test_runtime_ready_view_keeps_every_ready_family_and_does_not_mutate_catalog"
+        "tests/test_rc6_dynamic_orchestrator.py::test_runtime_ready_view_keeps_every_ready_family_and_does_not_mutate_catalog",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "CORE"
     },
@@ -6204,6 +6344,8 @@
       "code_paths": [
         "cu_history_store_v2_hf6.py",
         "historical_candle_shadow_rc6.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_shadow_runtime/preopen.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -6236,7 +6378,16 @@
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_append_only_raw_history_survives_later_mutable_production_revision",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff"
+        "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -6244,6 +6395,8 @@
       "code_paths": [
         "cu_history_store_v2_hf6.py",
         "historical_candle_shadow_rc6.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_shadow_runtime/preopen.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -6274,7 +6427,16 @@
         "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -6451,7 +6613,9 @@
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
         "ea_history_close_series_hf2.py",
-        "rc6_audit_evidence/history_probe.py"
+        "rc6_audit_evidence/history_probe.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
+        "rc6_audit_evidence/sqlite_snapshot.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -6481,7 +6645,16 @@
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
         "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -6623,6 +6796,16 @@
       "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
       "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
       "test_nodes": [
+        "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+        "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
+        "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_pending_lower_start_rechecks_new_retained_exit_floor_without_using_receipt",
+        "tests/test_rc6_budget_receipt_retention.py::test_physical_retention_preflight_blocks_small_quota_without_bootstrap_and_keeps_baseline",
+        "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
+        "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
+        "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes",
@@ -6703,6 +6886,16 @@
       "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
       "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
       "test_nodes": [
+        "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+        "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
+        "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_pending_lower_start_rechecks_new_retained_exit_floor_without_using_receipt",
+        "tests/test_rc6_budget_receipt_retention.py::test_physical_retention_preflight_blocks_small_quota_without_bootstrap_and_keeps_baseline",
+        "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
+        "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
+        "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
@@ -6950,6 +7143,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/live.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/serialization.py",
@@ -6968,9 +7162,12 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart"
+        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -6993,7 +7190,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACKs durables se acumulaban dentro de livequota.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
@@ -7021,7 +7218,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Texto arbitrario en errores de source se copiaba downstream.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
       ],
@@ -7046,9 +7243,10 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Hashes autocontenidos sin anclaje y safety crossrole inconsistente.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
@@ -7076,7 +7274,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -7102,7 +7300,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Borrar directamente gen completa dejaba retry inv\u00e1lido con member faltante.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume",
         "tests/test_rc6_convergence_persistence.py::test_u19_eio_every_rotation_boundary_is_reentrant_after_restart",
@@ -7129,7 +7327,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Secuencia tomada de CURRENT restaurable; fork/duplicaci\u00f3n tras rollback.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
@@ -7142,6 +7340,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -7160,12 +7359,16 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Digest de reports no impon\u00eda significado de audit.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -7228,6 +7431,7 @@
       "code_paths": [
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_shadow_runtime/preopen.py"
       ],
@@ -7260,7 +7464,16 @@
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve"
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence"
       ],
       "workstream": "HISTORY"
     },
@@ -7320,7 +7533,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
       ],
@@ -7444,6 +7657,7 @@
       "rca": "La UX aislada derivaba db+'.shadow', diferente de artifact_root(db)/dynamic-shadow del writer; esto ocultaba generaciones reales. El reader deb\u00eda verificar V2 y todos sus roles, sin fallback por mtime.",
       "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
@@ -7481,6 +7695,7 @@
       "rca": "Labels y campos del adapter no coincid\u00edan con OFF_BASELINE/SHADOW_BASELINE, baseline_limits y slots_by_endpoint. Una recomendaci\u00f3n SHADOW no representa capacidad OPEN factual.",
       "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; APPROVED_DYNAMIC declara config aprobada; OPEN requiere evidencia factual fresca, demanda EXIT cubierta y contrato verificado del productor.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
@@ -7516,6 +7731,7 @@
       "rca": "La UX buscaba rows/families/evaluations/registry y funnel.counts; el productor nativo publica experiments/cohorts/registries, entries y cohortes por moneda/canal. Los datasets presentes aparentaban vac\u00edo y los counts ten\u00edan scopes distintos.",
       "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
@@ -7664,7 +7880,9 @@
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
         "ea_history_close_series_hf2.py",
-        "rc6_audit_evidence/history_probe.py"
+        "rc6_audit_evidence/history_probe.py",
+        "rc6_audit_evidence/sqlite_scratch.py",
+        "rc6_audit_evidence/sqlite_snapshot.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -9860,7 +10078,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Secuencia tomada de CURRENT restaurable; fork/duplicaci\u00f3n tras rollback.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
@@ -9901,9 +10119,10 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Hashes autocontenidos sin anclaje y safety crossrole inconsistente.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
@@ -9914,6 +10133,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -9943,12 +10163,16 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Digest de reports no impon\u00eda significado de audit.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
+        "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -9983,7 +10207,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
       ],
@@ -10021,7 +10245,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Texto arbitrario en errores de source se copiaba downstream.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
       ],
@@ -10057,7 +10281,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
@@ -10094,7 +10318,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Borrar directamente gen completa dejaba retry inv\u00e1lido con member faltante.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume",
         "tests/test_rc6_convergence_persistence.py::test_u19_eio_every_rotation_boundary_is_reentrant_after_restart",
@@ -10104,6 +10328,7 @@
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/live.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/serialization.py",
@@ -10133,9 +10358,12 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart"
+        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
+        "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -10169,7 +10397,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACKs durables se acumulaban dentro de livequota.",
-      "remaining_uncertainty": "Integrated exact final tree and fourth-role retention/horizon rerun pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
@@ -10207,6 +10435,16 @@
       "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
       "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
       "test_nodes": [
+        "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+        "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
+        "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_pending_lower_start_rechecks_new_retained_exit_floor_without_using_receipt",
+        "tests/test_rc6_budget_receipt_retention.py::test_physical_retention_preflight_blocks_small_quota_without_bootstrap_and_keeps_baseline",
+        "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
+        "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
+        "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_budget_observation_exposes_committed_sanitized_state_without_writes",
@@ -10288,6 +10526,16 @@
       "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
       "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
       "test_nodes": [
+        "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+        "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
+        "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_pending_lower_start_rechecks_new_retained_exit_floor_without_using_receipt",
+        "tests/test_rc6_budget_receipt_retention.py::test_physical_retention_preflight_blocks_small_quota_without_bootstrap_and_keeps_baseline",
+        "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
+        "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
+        "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
