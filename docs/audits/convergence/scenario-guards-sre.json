@@ -60,6 +60,47 @@
   "original_scenario_ledger": "docs/audits/convergence/ORIGINAL_SCENARIOS_469.json",
   "original_scenario_ledger_sha256": "3a7f0f38f7d4ceb90e196a883b9660421ad1b7bfd2e7c75235f2bacc07ae0059",
   "ppi_watch": "NOT_TOUCHED",
+  "projected_child_health_regression_evidence": {
+    "budget_bound": "COOPERATIVE_DEADLINE; not a host SLO or a hard real-time guarantee",
+    "claim_boundary": "ISOLATED_WIP_DIAGNOSTIC; integrated base plus exact dependency hashes; requires final committed persistence dependency and fresh canonical replay before freeze.",
+    "codec_guard": "Native publisher with explicitly lowered codec threshold, including compressed status; report/checkpoint logical decode forbidden during health read.",
+    "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+    "economic_edge": "NO_DEMOSTRADO",
+    "health_read_budget_seconds": 2.0,
+    "inputs": {
+      "claim": "ISOLATED_WIP_DIAGNOSTIC; NOT_FINAL_SHA_VALIDATION",
+      "files": {
+        "rc6_shadow_runtime/funnel.py": "067575ae04e60862a9dd4d555e8d810689703eb3f2bea40a4ddb7c187578240c",
+        "rc6_shadow_runtime/persistence.py": "e41f1f6b609de506fb81af7a2cfb9613ee721b9735c772c3962400b37d5f38db",
+        "rc6_shadow_runtime/projection.py": "f2efef009a2f61aafd991f8e8aa1ca56b075b42d2d7c0a073812bdd6dfaf7889",
+        "rc6_shadow_runtime/retention.py": "5eff1e3e3e868ec091f8dc0a2184a8111262c2a2b0fc5fc8c6015e3fb1d73faa",
+        "rc6_shadow_runtime/serialization.py": "302066a595ebba7ee5e7f72fc5aee10de9da3384285ae1df225e3b48ba18a2c6",
+        "rc6_shadow_runtime/worker.py": "898662423ea09b8879f34cbb9392f8c2b3fe3bc65e05216585d421fc5f9a82ba",
+        "scripts/rc6_shadow_health_gate.py": "8db227df5a7ac5c0aa6184c21349d853cd67dfb38dedaa895229a16dcc91a8a8",
+        "tests/test_rc6_convergence_sre_health.py": "569a0c1b20e30e44de2d8d7162394bc258d0b792769593b29f2348f0fa39ef88"
+      },
+      "integrated_base": "7175d9565040715551d5a10677b56689b183e26f"
+    },
+    "junit_sha256": "6699ce2c005bb041f30d76a11d8e294207b5b3ce2c3262661571ce24217a913c",
+    "large_native_cut_latency": "PENDING_FINAL_DEPENDENCY_AND_NATIVE_12K_MEASUREMENT",
+    "provider_open_capacity": "NO_VERIFICADO",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "runtime": "NO_VERIFICADO",
+    "testsuites": [
+      {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "52",
+        "time": "9.580",
+        "timestamp": "2026-10-05T05:07:44.128306+00:00"
+      }
+    ],
+    "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
+  },
   "provider_open_capacity": "NO_VERIFICADO",
   "real_orders_sent": 0,
   "rows": [
@@ -536,14 +577,15 @@
         "be_paper_engine.py",
         "rc6_paper_family_lifecycle.py"
       ],
-      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "coverage": "NATIVE_MISSING_CONTRACT_AND_FINANCIAL_MUTATION_DENIAL",
       "economic_edge": "NO_DEMOSTRADO",
       "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
       "expected": "No apertura sin contrato exacto",
-      "fix": "No futures opening authority without exact specialized contract evidence.",
+      "financial_guard_dependency_sha": "845a39ba8b7c5724d949284a0e95715215832de1",
+      "fix": "Missing exact specialized contract rejects native broker opening before financial rows or cash change; valid synthetic DLR control remains openable.",
       "id": "R18",
       "market_execution": "NO_VERIFICADO",
-      "native_caller": "Specialized futures entry contract and family snapshot validation",
+      "native_caller": "PaperBroker._open_future -> exact DLR contract admission; FamilyPaperExecutor.open_future",
       "original_code_path": "BE `_open_future`",
       "original_gap": "Broker series",
       "original_observed": "Guard fail-closed",
@@ -554,7 +596,8 @@
       "remaining_uncertainty": "Live broker contract/series authority unverified.",
       "test_nodes": [
         "tests/test_rc6_future_contract_policy.py::test_identity_dimensions_and_nonmissing_contract_cohorts_stay_blocked",
-        "tests/test_rc6_shadow_entry_signals.py::test_futures_entry_lab_requires_exact_specialized_contract"
+        "tests/test_rc6_shadow_entry_signals.py::test_futures_entry_lab_requires_exact_specialized_contract",
+        "tests/test_rc6_convergence_finance_review.py::test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority"
       ]
     },
     {
@@ -563,14 +606,15 @@
         "rc6_paper_family_lifecycle.py",
         "bs_instrument_contracts.py"
       ],
-      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "coverage": "NATIVE_REHASHED_CONTRACT_AND_FINANCIAL_MUTATION_DENIAL",
       "economic_edge": "NO_DEMOSTRADO",
       "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
       "expected": "Rechazo antes de cash",
-      "fix": "Preserve 1000 multiplier/lot1 and immutable contract snapshot checks before cash mutation.",
+      "financial_guard_dependency_sha": "845a39ba8b7c5724d949284a0e95715215832de1",
+      "fix": "Wrong multiplier rejects before opening authority/cash; coherently rehashed restored snapshot and position multiplier also reject restore/risk/close without financial mutation.",
       "id": "R19",
       "market_execution": "NO_VERIFICADO",
-      "native_caller": "Exact DLR contract policy and restored contract validation",
+      "native_caller": "PaperBroker._open_future -> exact DLR policy; future_position_contract -> future_risk_snapshot and PaperBroker._close_future",
       "original_code_path": "LIFE/contract policy",
       "original_gap": "Contrato externo por serie",
       "original_observed": "DLR 1000 y lote 1 exigidos",
@@ -581,7 +625,8 @@
       "remaining_uncertainty": "External current-series multiplier/fee authority unverified.",
       "test_nodes": [
         "tests/test_rc6_future_contract_policy.py::test_standard_dlr_policy_uses_exact_a3_terms_and_paper_full_notional",
-        "tests/test_rc6_future_programming_complete.py::test_corrupt_contract_snapshot_blocks_restore_risk_mark_and_close"
+        "tests/test_rc6_future_programming_complete.py::test_corrupt_contract_snapshot_blocks_restore_risk_mark_and_close",
+        "tests/test_rc6_convergence_finance_review.py::test_r19_rehashed_wrong_multiplier_cannot_create_or_restore_future_cash_authority"
       ]
     },
     {

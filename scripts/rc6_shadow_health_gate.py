@@ -8,10 +8,18 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import stat
+import time
 
 HEALTH_SCHEMA = "rc6.runtime-child-health.v1"
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
+MAX_HEALTH_BYTES = 64 * 1024
+MAX_HEALTH_READ_SECONDS = 2.0
+PROJECTION_SCHEMA = "rc6.shadow-ui-committed-projection.v1"
+PROJECTION_VERIFICATION = "WIRE_AND_PROJECTION_SEMANTICS"
+EVIDENCE_CUSTODY = "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION"
+GENERATION_ROLES = {"report", "checkpoint", "status", "projection"}
 
 
 class ShadowHealthRejected(ValueError):
@@ -36,6 +44,26 @@ def process_exists(pid):
         return False
 
 
+def read_child_health(path):
+    """Open a bounded regular file without following aliases or blocking on FIFO."""
+    from scripts.porota_artifact_provenance import decode_json
+    if path.parent.resolve() != path.parent:
+        raise ShadowHealthRejected("SHADOW_CHILD_HEALTH_FILE_INVALID")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or not 0 <= before.st_size <= MAX_HEALTH_BYTES):
+            raise ShadowHealthRejected("SHADOW_CHILD_HEALTH_FILE_INVALID")
+        raw = stream.read(MAX_HEALTH_BYTES + 1)
+        after = os.fstat(stream.fileno())
+        if (len(raw) != before.st_size or after.st_nlink != 1
+                or (after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                != (before.st_size, before.st_mtime_ns, before.st_ctime_ns)):
+            raise ShadowHealthRejected("SHADOW_CHILD_HEALTH_FILE_INVALID")
+    return decode_json(raw)
+
+
 def validate_health_cut(health, generation, *, source_sha, tree_sha, now,
                         configuration_fingerprint, max_health_age=20, max_generation_age=90,
                         process_probe=process_exists):
@@ -52,6 +80,23 @@ def validate_health_cut(health, generation, *, source_sha, tree_sha, now,
         raise ShadowHealthRejected("SHADOW_CHILD_NOT_HEALTHY")
     manifest = generation.get("manifest", {})
     report, status = generation.get("report", {}), generation.get("status", {})
+    contract = generation.get("export_contract", {})
+    proofs = contract.get("verified_payloads", {})
+    identity_keys = ("generation_id", "sequence", "as_of", "source_watermark", "configuration_fingerprint")
+    if (contract.get("schema") != PROJECTION_SCHEMA
+            or contract.get("verification_level") != PROJECTION_VERIFICATION
+            or contract.get("custody") != EVIDENCE_CUSTODY
+            or contract.get("generation_schema") != GENERATION_SCHEMA
+            or type(contract.get("sequence")) is not int
+            or any(contract.get(key) != manifest.get(key) for key in identity_keys)
+            or not isinstance(proofs, dict) or set(proofs) != GENERATION_ROLES
+            or set(manifest.get("files", {})) != GENERATION_ROLES
+            or any(not isinstance(proof, dict)
+                   or type(proof.get("payload_digest")) is not str
+                   or re.fullmatch(r"[0-9a-f]{64}", proof["payload_digest"]) is None
+                   or proof.get("payload_digest") != manifest["files"][role].get("payload_digest")
+                   for role, proof in proofs.items())):
+        raise ShadowHealthRejected("SHADOW_GENERATION_PROJECTION_VERIFICATION_MISMATCH")
     if (manifest.get("schema") != GENERATION_SCHEMA
             or type(manifest.get("sequence")) is not int or manifest["sequence"] <= 0
             or manifest.get("configuration_fingerprint") != configuration_fingerprint
@@ -76,6 +121,8 @@ def validate_health_cut(health, generation, *, source_sha, tree_sha, now,
             "child_pid": child["pid"], "child_restarts": child["restarts"],
             "child_spawn_failures": child["spawn_failures"],
             "generation_id": manifest.get("generation_id"), "sequence": manifest["sequence"],
+            "evidence_verification_level": contract["verification_level"],
+            "evidence_custody": contract["custody"], "verified_roles": sorted(proofs),
             "configuration_fingerprint": configuration_fingerprint,
             "generation_as_of": as_of.isoformat(), "generation_phase": report["phase"],
             "readiness": {"OPEN": "SHADOW_OPEN_EVIDENCE", "PREOPEN": "PREOPEN_NON_OPERATIONAL",
@@ -85,21 +132,21 @@ def validate_health_cut(health, generation, *, source_sha, tree_sha, now,
 
 def read_health(database, *, source_sha, tree_sha, now=None, process_probe=process_exists):
     from cg_paper_workspace import artifact_root
-    from rc6_shadow_runtime.persistence import read_committed_generation, shadow_evidence_root
+    from rc6_shadow_runtime.persistence import read_committed_projection, shadow_evidence_root
     from rc6_shadow_runtime.worker import ShadowRuntime
+    deadline = time.monotonic() + MAX_HEALTH_READ_SECONDS
     now = now or datetime.now(timezone.utc)
     path = artifact_root(database) / "runtime-health.json"
-    info = path.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 64 * 1024:
-        raise ShadowHealthRejected("SHADOW_CHILD_HEALTH_FILE_INVALID")
-    from scripts.porota_artifact_provenance import decode_json
-    health = decode_json(path.read_bytes())
+    health = read_child_health(path)
     root = shadow_evidence_root(database)
-    generation = read_committed_generation(root)
+    generation = read_committed_projection(root, limit=1, deadline=deadline)
     worker = ShadowRuntime.from_environment(database)
     fingerprint = worker.configuration_fingerprint(now.isoformat())
-    return validate_health_cut(health, generation, source_sha=source_sha, tree_sha=tree_sha,
-                               now=now, configuration_fingerprint=fingerprint, process_probe=process_probe)
+    result = validate_health_cut(health, generation, source_sha=source_sha, tree_sha=tree_sha,
+                                now=now, configuration_fingerprint=fingerprint, process_probe=process_probe)
+    if time.monotonic() >= deadline:
+        raise ShadowHealthRejected("SHADOW_HEALTH_READ_DEADLINE")
+    return result
 
 
 def main(argv=None):
@@ -113,7 +160,7 @@ def main(argv=None):
         parser.error("source/tree must be exact Git identities")
     try:
         result = read_health(args.database, source_sha=args.source_sha, tree_sha=args.tree_sha)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, sqlite3.Error, RuntimeError):
         # Exceptions may contain source paths or data. Only the bounded taxonomy
         # reaches logs; health failure never claims readiness or provider capacity.
         result = {"schema": "rc6.shadow-post-start-health.v1", "status": "RED",
