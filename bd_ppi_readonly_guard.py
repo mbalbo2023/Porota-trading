@@ -371,6 +371,12 @@ class ProductionMarketReader:
             return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
         return observe(elapsed_seconds=elapsed_seconds, deadline_seconds=deadline_seconds, failures=failures)
 
+    def discard_exit_round_scope(self):
+        """Reset temporal admission evidence without reading source or sidecar."""
+        discard = getattr(self.__guard.budget, "discard_exit_round_scope", None)
+        if callable(discard):
+            discard()
+
     @property
     def last_read_error_code(self):
         """Sanitized current-read diagnosis; no response body or global LKG."""

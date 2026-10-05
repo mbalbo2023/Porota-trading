@@ -354,53 +354,60 @@ def run_reader(store, stop):
                     store.event("EXIT_READER_LOGIN_ERROR", type(exc).__name__)
                     status("ERROR",type(exc).__name__)
                     continue
+            discard_scope = getattr(reader, "discard_exit_round_scope", None)
+            if callable(discard_scope):
+                discard_scope()
             try:
-                round_started=time.monotonic()
-                cadence=exit_reader_cadence(store,now_iso())
-                failures = collect_exit_books(
-                    reader, store, policy, now_iso(), should_stop=stop.is_set,
-                    pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
-                    beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
-            except sqlite3.OperationalError as exc:
-                if not _sqlite_contention(exc):
-                    raise
-                status("DEGRADED", "SQLite contention; reintento acotado, sin fill ni orden")
-                LOG.warning("EXIT_READER_SQLITE_CONTENTION:%s",
-                            getattr(exc, "sqlite_errorname", "SQLITE_LOCKED"))
-                stop.wait(1)
-                continue
-            except Exception as exc:
-                if not session_invalid(exc):
-                    raise
-                _best_effort_runtime_event(store, "EXIT_READER_SESSION_INVALID", type(exc).__name__)
-                status("ERROR", "Sesión PPI expirada; nuevas aperturas bloqueadas hasta reautenticar")
-                reader.close()
-                reader = None
-                next_login = time.monotonic() + 60
-                stop.wait(5)
-                continue
-            elapsed=time.monotonic()-round_started
-            missed=cadence is not None and elapsed>cadence
-            detail=f"{failures} errores de lectura de abiertas; round_seconds={elapsed:.6f}; "
-            detail+=(f"critical_cadence_seconds={cadence}; deadline_missed={missed}"
-                if cadence is not None else "baseline_cadence=NO_VERIFICADO")
-            status("DEGRADED" if failures or missed else "READY",detail)
-            if cadence is not None:
-                # Round debt is shared by all engines. Individually quick HTTP
-                # calls cannot hide a slow or incomplete round from LOWER.
+                try:
+                    round_started=time.monotonic()
+                    cadence=exit_reader_cadence(store,now_iso())
+                    failures = collect_exit_books(
+                        reader, store, policy, now_iso(), should_stop=stop.is_set,
+                        pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
+                        beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+                except sqlite3.OperationalError as exc:
+                    if not _sqlite_contention(exc):
+                        raise
+                    status("DEGRADED", "SQLite contention; reintento acotado, sin fill ni orden")
+                    LOG.warning("EXIT_READER_SQLITE_CONTENTION:%s",
+                                getattr(exc, "sqlite_errorname", "SQLITE_LOCKED"))
+                    stop.wait(1)
+                    continue
+                except Exception as exc:
+                    if not session_invalid(exc):
+                        raise
+                    _best_effort_runtime_event(store, "EXIT_READER_SESSION_INVALID", type(exc).__name__)
+                    status("ERROR", "Sesión PPI expirada; nuevas aperturas bloqueadas hasta reautenticar")
+                    reader.close()
+                    reader = None
+                    next_login = time.monotonic() + 60
+                    stop.wait(5)
+                    continue
                 elapsed=time.monotonic()-round_started
-                round_state=reader.observe_exit_round(elapsed_seconds=elapsed,
-                    deadline_seconds=cadence, failures=failures + int(stop.is_set()))
-                elapsed=time.monotonic()-round_started
-                if elapsed>cadence and round_state.get("status")=="COMPLETE":
+                missed=cadence is not None and elapsed>cadence
+                detail=f"{failures} errores de lectura de abiertas; round_seconds={elapsed:.6f}; "
+                detail+=(f"critical_cadence_seconds={cadence}; deadline_missed={missed}"
+                    if cadence is not None else "baseline_cadence=NO_VERIFICADO")
+                status("DEGRADED" if failures or missed else "READY",detail)
+                if cadence is not None:
+                    # Round debt is shared by all engines. Individually quick HTTP
+                    # calls cannot hide a slow or incomplete round from LOWER.
+                    elapsed=time.monotonic()-round_started
                     round_state=reader.observe_exit_round(elapsed_seconds=elapsed,
-                        deadline_seconds=cadence, failures=failures)
-                if round_state.get("status")!="COMPLETE":
-                    status("DEGRADED", detail+"; exit_round="+str(round_state.get("status", "UNVERIFIED")))
-            # Do not add per-position sleeps and a second five-second pause to
-            # an approved EXIT round. Slow transport remains observable.
-            elapsed=time.monotonic()-round_started
-            stop.wait(max(0.0,cadence-elapsed) if cadence is not None else 5)
+                        deadline_seconds=cadence, failures=failures + int(stop.is_set()))
+                    elapsed=time.monotonic()-round_started
+                    if elapsed>cadence and round_state.get("status")=="COMPLETE":
+                        round_state=reader.observe_exit_round(elapsed_seconds=elapsed,
+                            deadline_seconds=cadence, failures=failures)
+                    if round_state.get("status")!="COMPLETE":
+                        status("DEGRADED", detail+"; exit_round="+str(round_state.get("status", "UNVERIFIED")))
+                # Do not add per-position sleeps and a second five-second pause to
+                # an approved EXIT round. Slow transport remains observable.
+                elapsed=time.monotonic()-round_started
+                stop.wait(max(0.0,cadence-elapsed) if cadence is not None else 5)
+            finally:
+                if callable(discard_scope):
+                    discard_scope()
     finally:
         try:
             status("STOPPED")
