@@ -115,6 +115,7 @@ def fixture_base(tmp_path_factory):
         "scenarios": scenarios,
         "front_variants": front,
         "restored_controls": rows(provenance.RESTORED_CONTROLS),
+        "additional_findings": [{**rows({"RC6_INT_RECEIPT_PARSER"})[0], "linked_requirement_ids": ["U11"]}],
         "path_evolution": {path: {"reason": "Controlled fixture evolution requires a referenced guard.",
             "requirement_ids": ["U01"]} for path in paths}}
     write_json(inputs / provenance.CLOSURE, matrix)
@@ -252,6 +253,27 @@ def test_losing_an_original_git_source_path_is_detected_after_a_clean_commit(can
     assert_rejected(candidate, "SOURCE_DELTA_PATH_LOST")
 
 
+def test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution(candidate):
+    root = candidate[0]
+    manifest = json.loads((root / provenance.INPUT_ROOT / provenance.MANIFEST).read_text())
+    final = provenance.tree(root, "HEAD")
+    originals = [provenance.tree(root, manifest["product"]["sha"])]
+    changed = set()
+    for source in manifest["sources"]:
+        current = provenance.tree(root, source["head_sha"])
+        baseline = provenance.tree(root, source["base_sha"])
+        originals.append(current)
+        changed.update(path for path in current if current[path] != baseline.get(path))
+    filename = next(path for path, value in sorted(final.items()) if value["git_mode"] == "100644"
+                    and path not in changed and any(tree.get(path) == value for tree in originals))
+    source = root / filename; source.chmod(0o755)
+    matrix_path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(matrix_path.read_text()); matrix["path_evolution"].pop(filename)
+    write_json(matrix_path, matrix); commit(root)
+    assert provenance.tree(root, "HEAD")[filename]["blob"] == final[filename]["blob"]
+    assert_rejected(candidate, "UNEXPLAINED_SOURCE_EVOLUTION")
+
+
 @pytest.mark.parametrize("mutation", ["missing_source", "duplicate_source", "edited_original_order"])
 def test_rehashing_original_input_index_cannot_authorize_changed_original_bytes(candidate, mutation):
     root = candidate[0]; inputs = root / provenance.INPUT_ROOT
@@ -304,6 +326,17 @@ def test_missing_or_duplicated_restored_control_cannot_issue_complete_receipts(c
         matrix["restored_controls"].pop()
     write_json(path, matrix); commit(root)
     assert_rejected(candidate, ("CLOSURE_CARDINALITY", "CLOSURE_IDS_MISSING_OR_DUPLICATE"))
+
+
+@pytest.mark.parametrize("mutation", ["unknown_parent", "duplicate", "no_guard"])
+def test_new_integration_findings_require_unique_ids_real_guards_and_original_parent(candidate, mutation):
+    root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_text()); row = matrix["additional_findings"][0]
+    if mutation == "unknown_parent": row["linked_requirement_ids"] = ["INVENTED_REQUIREMENT"]
+    elif mutation == "duplicate": matrix["additional_findings"].append(deepcopy(row))
+    else: row["test_nodes"] = []
+    write_json(path, matrix); commit(root)
+    assert_rejected(candidate, ("ADDITIONAL_FINDINGS_INVALID", "CLOSURE_CARDINALITY", "CLOSURE_GUARDS_MISSING"))
 
 
 @pytest.mark.parametrize("filename", ["tests/test_dashboard_session.py", "tests/test_candle_archive_v17.py", "tests/test_rc4_acceptance.py"])

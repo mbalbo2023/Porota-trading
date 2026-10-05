@@ -1,4 +1,138 @@
 {
+  "additional_findings": [
+    {
+      "code_paths": [
+        "cu_history_store_v2_hf6.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Index the full series/provider/known/id revision selector so unrelated identities do not grow native writer work quadratically.",
+      "id": "NEW_HISTORY_EXACT_REVISION_LOOKUP",
+      "linked_requirement_ids": [
+        "AUD-468-17",
+        "AUD-468-18"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "Full-key previous-revision lookup used a low-selectivity provider index and rescanned unrelated identities for every insert.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Fixture concurrency is not a measurement of real storage or runtime throughput.",
+      "test_nodes": [
+        "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "cu_history_store_v2_hf6.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Hash complete provider semantic metadata, excluding only engine annotations; compare legacy hashes against stored payloads and preserve actual first-known/attempt replay clocks.",
+      "id": "NEW_HISTORY_SEMANTIC_METADATA_REVISION",
+      "linked_requirement_ids": [
+        "AUD-468-08",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-13",
+        "AUD-468-18"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "The revision hash omitted provider metadata other than adjustment factors/actions, so unit, multiplier, turnover/currency/provenance and publication-only corrections incorrectly became identical retries.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Already-lost original availability times cannot be reconstructed from a mutable legacy row.",
+      "test_nodes": [
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Select RAW PPI authority for the same causal series basis; adjusted complementary series cannot replace the profile.",
+      "id": "NEW_PREOPEN_AUD06",
+      "linked_requirement_ids": [
+        "AUD-468-06"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "bool(adjusted)=True preceded source rank, so adjusted Data912 replaced RAW PPI activity/quantity inputs.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Actual corporate-action series, factors and delisted instruments were not supplied.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Stream one causal SQL window and validate Python rows under the same absolute budget, retaining cleanup reserve and never publishing partial history.",
+      "id": "NEW_PREOPEN_PROCESSING_DEADLINE",
+      "linked_requirement_ids": [
+        "U24",
+        "AUD-468-11",
+        "AUD-468-12"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "Python native row validation and selection ran beyond the SQLite progress deadline; materializing every revision consumed the two-second budget.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
+      "test_nodes": [
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "rc6_shadow_runtime/preopen.py",
+        "rc6_audit_evidence/sqlite_snapshot.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Use the validated private main/WAL snapshot before actual preopen.tick; preserve every source metadata field and avoid source SHM creation.",
+      "id": "NEW_PREOPEN_U24",
+      "linked_requirement_ids": [
+        "U24"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "mode=ro directly opened historical main/WAL and created source SHM; filesystem-level source invariance was not guaranteed.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "rc6_audit_evidence/history_probe.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "fix": "Traverse disappearing owned scratch defensively and report a complete sampler only when its real sampling thread completes without errors.",
+      "id": "NEW_PROBE_SCRATCH_SAMPLER_RACE",
+      "linked_requirement_ids": [
+        "U24",
+        "AUD-468-18"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "Path.rglob can lose a scratch directory between enumeration and descent; an unhandled FileNotFoundError killed the periodic sampling thread while the old probe could still print a resource receipt.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
+      "test_nodes": [
+        "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal"
+      ],
+      "workstream": "HISTORY"
+    }
+  ],
   "counting_rule": "55 original requirement IDs,80 original R IDs,90 original F01/F02/F03-F05 clauses and6 restored controls; shared/parametrized native guard executions are not new independent attacks.",
   "front_variants": [
     {
@@ -3169,6 +3303,8 @@
         "AUD-468-09",
         "AUD-468-10",
         "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-13",
         "AUD-468-17",
         "AUD-468-18",
         "AUD-468-21"
@@ -3238,6 +3374,14 @@
       ]
     },
     "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/DEVELOPMENT_HANDOFF.md": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
         "U11",
@@ -3379,6 +3523,54 @@
         "U05",
         "U07",
         "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/restored-controls-provenance-green.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/restored-controls-provenance.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-modes-evolution-green.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-modes-evolution-invalid-harness.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-modes-evolution-red.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-modes-evolution.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
       ]
     },
     "docs/audits/convergence/scenario-guards-sre.json": {
@@ -4170,6 +4362,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/dry_run_semantic_metadata.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -4245,7 +4452,7 @@
         "U24"
       ]
     },
-    "rc6_audit_evidence/history_probe.py": {
+    "rc6_audit_evidence/history_convergence/semantic_metadata_revision.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
         "AUD-468-06",
@@ -4257,6 +4464,13 @@
         "AUD-468-18",
         "AUD-468-20",
         "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_probe.py": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-18",
         "U24"
       ]
     },
@@ -5264,15 +5478,15 @@
     "tests/test_rc6_history_large_preopen.py": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
         "AUD-468-11",
         "AUD-468-12",
+        "U24"
+      ]
+    },
+    "tests/test_rc6_history_probe.py": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
         "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
         "U24"
       ]
     },
@@ -5327,9 +5541,12 @@
       "requirement_ids": [
         "AUD-468-06",
         "AUD-468-07",
+        "AUD-468-08",
         "AUD-468-09",
         "AUD-468-11",
         "AUD-468-12",
+        "AUD-468-13",
+        "AUD-468-18",
         "U24"
       ]
     },
@@ -5570,7 +5787,14 @@
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Already-lost original availability times cannot be reconstructed from a mutable legacy row.",
       "test_nodes": [
         "tests/test_history_close_only_hf2.py::test_identical_retry_dedupes_version_and_preserves_original_observed_at",
-        "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock"
+        "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock",
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
       ],
       "workstream": "HISTORY"
     },
@@ -5653,7 +5877,18 @@
       "test_nodes": [
         "tests/test_rc6_history_convergence.py::test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_connection",
         "tests/test_rc6_history_convergence.py::test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identity",
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_append_only_raw_history_survives_later_mutable_production_revision",
         "tests/test_rc6_shadow_preopen_runtime.py::test_history_versions_reconstruct_causal_source_authority_at_cutoff"
       ],
@@ -5661,6 +5896,7 @@
     },
     {
       "code_paths": [
+        "cu_history_store_v2_hf6.py",
         "historical_candle_shadow_rc6.py",
         "rc6_shadow_runtime/preopen.py"
       ],
@@ -5681,14 +5917,26 @@
       "test_nodes": [
         "tests/test_rc6_history_convergence.py::test_AUD12_fifteen_revisions_count_one_and_conflict_revokes_without_resurrection",
         "tests/test_rc6_history_convergence.py::test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision"
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
       ],
       "workstream": "HISTORY"
     },
     {
       "code_paths": [
         "al_historical_ingest.py",
-        "ba_data912_history.py"
+        "ba_data912_history.py",
+        "cu_history_store_v2_hf6.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -5705,7 +5953,14 @@
       "rca": "IOL montoOperado cash was treated as volume and multiplied by price again.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; Unknown/nominal/contract volume cannot produce cash turnover without actual unit/multiplier evidence.",
       "test_nodes": [
-        "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate"
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
       ],
       "workstream": "HISTORY"
     },
@@ -5840,6 +6095,7 @@
       "test_nodes": [
         "tests/test_rc6_history_convergence.py::test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fourth",
         "tests/test_rc6_history_convergence.py::test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence",
+        "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities",
         "tests/test_rc6_history_convergence.py::test_history_DB_LOCK_RECOVERY_retries_after_lock_without_partial_versions"
       ],
       "workstream": "HISTORY"
@@ -5848,7 +6104,8 @@
       "code_paths": [
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
-        "ea_history_close_series_hf2.py"
+        "ea_history_close_series_hf2.py",
+        "rc6_audit_evidence/history_probe.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -5869,7 +6126,16 @@
         "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
         "tests/test_rc6_history_convergence.py::test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data",
         "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
-        "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers"
+        "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+        "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+        "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+        "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
+        "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+        "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+        "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
       ],
       "workstream": "HISTORY"
     },
@@ -6264,7 +6530,9 @@
       "test_nodes": [
         "tests/test_rc6_convergence_provenance.py::test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard",
         "tests/test_rc6_convergence_provenance.py::test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard",
+        "tests/test_rc6_convergence_provenance.py::test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution",
         "tests/test_rc6_convergence_provenance.py::test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts",
+        "tests/test_rc6_convergence_provenance.py::test_new_integration_findings_require_unique_ids_real_guards_and_original_parent",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
         "tests/test_rc6_convergence_sre_binding.py::test_approved_origin_rejects_adversarial_inputs",
         "tests/test_rc6_convergence_sre_binding.py::test_approved_unique_run_attempt_artifact_origin_is_green",
@@ -6607,6 +6875,7 @@
     },
     {
       "code_paths": [
+        "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_shadow_runtime/preopen.py"
@@ -6626,6 +6895,10 @@
       "rca": "SQLite mode=ro on a main+WAL source without SHM could create source SHM and change filesystem metadata.",
       "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
       "test_nodes": [
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+        "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+        "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget",
@@ -6635,7 +6908,8 @@
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
-        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history"
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve"
       ],
       "workstream": "HISTORY"
     },
@@ -6663,7 +6937,9 @@
       "test_nodes": [
         "tests/test_rc6_convergence_provenance.py::test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard",
         "tests/test_rc6_convergence_provenance.py::test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard",
+        "tests/test_rc6_convergence_provenance.py::test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution",
         "tests/test_rc6_convergence_provenance.py::test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts",
+        "tests/test_rc6_convergence_provenance.py::test_new_integration_findings_require_unique_ids_real_guards_and_original_parent",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
         "tests/test_rc6_convergence_sre_modes.py::test_bundle_complete_mode_changes_reject_even_with_rebound_outer_digest",
         "tests/test_rc6_convergence_sre_modes.py::test_checkout_complete_mode_changes_are_rejected",
@@ -6784,7 +7060,9 @@
       "test_nodes": [
         "tests/test_rc6_convergence_provenance.py::test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard",
         "tests/test_rc6_convergence_provenance.py::test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard",
+        "tests/test_rc6_convergence_provenance.py::test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution",
         "tests/test_rc6_convergence_provenance.py::test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts",
+        "tests/test_rc6_convergence_provenance.py::test_new_integration_findings_require_unique_ids_real_guards_and_original_parent",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_real_checked_in_supply_chain_policy_and_platform_lock_are_green",
@@ -7015,7 +7293,8 @@
       "code_paths": [
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
-        "ea_history_close_series_hf2.py"
+        "ea_history_close_series_hf2.py",
+        "rc6_audit_evidence/history_probe.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",
@@ -7053,7 +7332,8 @@
     {
       "code_paths": [
         "al_historical_ingest.py",
-        "ba_data912_history.py"
+        "ba_data912_history.py",
+        "cu_history_store_v2_hf6.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Use canonical full identity and basis, exact as-of versions, validated sinks and bounded private source snapshots.",

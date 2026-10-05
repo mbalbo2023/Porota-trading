@@ -257,7 +257,14 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
         require(row.get("original_columns") == original_front.get(row.get("id")), "ORIGINAL_FRONT_CLAUSE_REBOUND")
     declared_guards = set()
     restored_rows = matrix.get("restored_controls", [])
-    guard_files = {node.split("::")[0] for row in matrix["requirements"] + matrix["scenarios"] + front_rows + restored_rows
+    additional_rows = matrix.get("additional_findings", [])
+    require(isinstance(additional_rows, list), "ADDITIONAL_FINDINGS_INVALID")
+    for row in additional_rows:
+        require(isinstance(row, dict) and isinstance(row.get("id"), str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_-]+", row["id"]) is not None
+                and isinstance(row.get("linked_requirement_ids"), list) and bool(row["linked_requirement_ids"])
+                and set(row["linked_requirement_ids"]) <= REQUIREMENTS, "ADDITIONAL_FINDINGS_INVALID")
+    guard_files = {node.split("::")[0] for row in matrix["requirements"] + matrix["scenarios"] + front_rows + restored_rows + additional_rows
                    for node in row.get("test_nodes", []) if isinstance(node, str)}
     for filename in guard_files:
         require(filename in final_tree, "CLOSURE_GUARD_SOURCE_MISSING")
@@ -271,6 +278,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     scenarios = guard_rows(matrix["scenarios"], scenario_ids, final_tree, executed, declared_guards)
     front_variants = guard_rows(front_rows, FRONT_VARIANTS, final_tree, executed, declared_guards)
     restored_controls = guard_rows(restored_rows, RESTORED_CONTROLS, final_tree, executed, declared_guards)
+    additional_findings = guard_rows(additional_rows, {row["id"] for row in additional_rows}, final_tree, executed, declared_guards)
     legacy_tests = preserved_legacy_tests(root, candidate_sha, next(row["head_sha"] for row in sources if row["pr"] == 466), executed)
     source_trees, source_reports, source_deltas = {}, [], set()
     product_sha = manifest["product"]["sha"]
@@ -295,6 +303,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                 source_deltas.add(path)
             delta.append({"path": path, "source_blob": (original or {}).get("blob"),
                           "final_blob": (final or {}).get("blob"),
+                          "source_git_mode": (original or {}).get("git_mode"),
+                          "final_git_mode": (final or {}).get("git_mode"),
                           "comparison": "EXACT_SOURCE_BYTES" if original == final else
                               "EVOLVED_REQUIRES_GUARDED_RECONCILIATION" if original else "SOURCE_REMOVAL_HISTORY"})
         source_reports.append({**row, "tree_sha": git(root, "rev-parse", sha + "^{tree}"),
@@ -313,12 +323,13 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     evolution = matrix.get("path_evolution", {})
     paths = []
     for path, final in sorted(final_tree.items()):
-        blobs = {key: values[path]["blob"] for key, values in source_trees.items() if path in values}
+        originals = {key: values[path] for key, values in source_trees.items() if path in values}
+        blobs = {key: value["blob"] for key, value in originals.items()}
         expected = expected_sources.get(path)
-        changed_expected = bool(expected and expected["blob"] != final["blob"])
+        changed_expected = bool(expected and source_trees[str(expected["source_pr"])][path] != final)
         evolved_delta = path in source_deltas and any(values.get(path) and values[path] != final
                                                       for key, values in source_trees.items() if key != "product")
-        new_or_changed_source = not any(blob == final["blob"] for blob in blobs.values())
+        new_or_changed_source = not any(value == final for value in originals.values())
         guard_ids, reason = [], None
         if changed_expected or evolved_delta or new_or_changed_source:
             proof = evolution.get(path, {})
@@ -327,10 +338,12 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                     and bool(guard_ids) and all(item in by_id for item in guard_ids), "UNEXPLAINED_SOURCE_EVOLUTION:" + path)
         paths.append({"path": path, "final_blob": final["blob"], "git_mode": final["git_mode"],
                       "source_blobs": blobs, "byte_preserved_from": sorted(key for key, blob in blobs.items() if blob == final["blob"]),
+                      "source_git_modes": {key: value["git_mode"] for key, value in originals.items()},
+                      "mode_preserved_from": sorted(key for key, value in originals.items() if value["git_mode"] == final["git_mode"]),
                       "expected_input": expected, "evolution_reason": reason, "requirement_ids": guard_ids,
                       "workstreams": sorted({by_id[item].get("workstream", "CONVERGENCE_INTEGRATION") for item in guard_ids}),
                       "guard_nodes": sorted({node for item in guard_ids for node in by_id[item]["test_nodes"]}),
-                      "preservation": "EVOLVED_WITH_NATIVE_GUARDS" if changed_expected or evolved_delta else
+                      "preservation": "EVOLVED_WITH_NATIVE_GUARDS" if changed_expected or evolved_delta or new_or_changed_source and originals else
                           "ADDITIONAL_WITH_NATIVE_GUARDS" if new_or_changed_source else
                           "EXACT_INPUT_BYTES" if expected else "EXACT_BASELINE_OR_SOURCE_BYTES"})
     return {"schema": "rc6.final-input-provenance.v1", "candidate_sha": candidate_sha,
@@ -340,6 +353,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
             "requirements": requirements, "scenarios": scenarios, "original_scenarios": original_scenarios,
             "front_variants": front_variants,
             "restored_controls": restored_controls, "preserved_test_modules_344": legacy_tests,
+            "additional_findings": additional_findings,
             "test_execution": {"junit_sha256": hashlib.sha256(junit.read_bytes()).hexdigest() if junit else None,
                                "executed_unique_cases": count, "distinct_attack_ids": 80,
                                "distinct_requirement_ids": 55, "overlapping_suite_counts_added": False},
