@@ -389,3 +389,21 @@ pila; la causa producto/instrumentación/entorno permanece sin atribuir. Se
 conservan los RAW externos restore-raw y capture-raw. Un control único sin
 muestreo está preparado para discriminar esa hipótesis con el mismo producto,
 corte,60s y2GiB; no equivale a aceptación BIG90 ni ahorro medido del publisher.
+
+El control NONE terminó por watchdog60.058s después de alcanzar PREPARE,
+sin reproducir SIGSEGV y sin terminar captura. El decode completo del report
+midió26.521s; sus spans internos se solapan y no se suman como costo adicional.
+RSS1,485,451,264B y fuentes/datos/copia privada intactos. Esta única corrida
+discrimina parcialmente el sampler; no identifica la causa del fault ni mide
+el prepare completo del publisher. No se relanzó con plazos mayores.
+
+La fuente integrada eb17/frozen311157 ejecutó cuatro cortes descriptivos
+1200/6000 en59.882s, con310,042,624B de RSS. PREOPEN y tres OPEN publicaron,
+archivaron y restauraron sus cinco miembros exactos; los clocks completos
+por corte fueron14.377/16.261/14.813/13.189s. Los1773 blobs/modos y los once
+campos/hash de SourceDB quedaron intactos, provider0. Execution_complete es
+true; complete/horizon/acceptance sonfalse. El factory inicial y la emisión
+del resultado aún quedan fuera del reloj por corte de a4; los reinicios361/841
+no se ejercitaron. No hay auditoría de imports en este wrapper externo. RAW
+íntegros en evidence/native-normal4-eb17b878-157; no es rueda1201, Gov final,
+navegador, artefacto ni runtime.

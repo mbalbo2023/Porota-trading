@@ -7659,6 +7659,136 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/CUSTODY.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/entry-preflight.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/export-whole-source.py": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/native-normal4-result.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/normal4.log.gz": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/run-wrapper.py": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/source.index.json.gz": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/wrapper-before.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/wrapper-final.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-normal4-eb17b878-157/wrapper-started.json": {
+      "reason": "Preserve the exact whole eb17/frozen311157 descriptive1200/6000 four-cut native execution with all1773 Git blobs/modes unchanged and original live128MiB/512entry, archive512MiB and scratch512MiB limits. PREOPEN plus three OPEN native cuts, four exact five-member archive restores, source database11stats/SHA unchanged and provider calls0 completed in59.882s/peakRSS310,042,624B; measured cut clocks14.377/16.261/14.813/13.189s are within original30s. execution_complete is true while complete/horizon/acceptance stay false. The a4 initial factory and result emission are outside per-cut clocks;361/841 restart recovery was not exercised. Strengthened wrappers/counters,1201 postPRE ticks, full import audit, final Gov/browser/image and runtime remain separate gates. RAW wrappers/preflight/index/log/results are byteexact or losslessly gzip, with no independent prelaunch wrapper-body-hash claim.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/native-normal4-original-107a.json": {
       "reason": "Preserve actual normal1200/6000 four-cut diagnostic runtime/archive/resource measurements, original8192 live quota and failed source-custody/acceptance flags. Four cuts are never projected into the full nine-hour plus recovery acceptance.",
       "requirement_ids": [
