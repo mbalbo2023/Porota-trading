@@ -287,3 +287,24 @@ pasaron3/3 sobre whole OWN7e66/frozen157. La corrida anterior22/23 y la anterior
 El inventario de esta integración explica638/638 paths evolucionados y conserva
 55 requisitos,80 escenarios,90 variantes y6 controles. Estos números son
 inventario documental; la ejecución final del SHA integrado sigue pendiente.
+
+Sobre whole d9e7fb7d/frozen157 se midió la publicación/archivo del antecesor
+de66,314,240B con34 publicaciones,33 archivos y33 decodes a profundidad32;
+los cinco miembros originales y la custodia fueron exactos. El pico RSS real
+fue340,795,392B en126.30s, con las cuotas nativas intactas. El intento inicial
+sin timebin no lanzó child y se preserva como infraestructura; la calibración
+que superó64MiB y el rechazo de tres imágenes grandes bajo live128MiB también
+se preservan. Esta medición no ejecuta un fullworker ni el horizonte completo;
+su guard permanente y la ejecución final de la integración siguen pendientes.
+
+El control pequeño del observador GC completó el pipeline y cinco salidas
+PAPER dentro del fsync con190 eventos y cero errores del callback. El BIG
+diagnóstico agotó90s antes de fsync/CURRENT. La captura lab pasó0.071s y el
+observador no registró GC en captura; por tanto no reprodujo ni cerró el fallo
+anterior de0.25s. Nueve stacks periódicos y el último progreso ubican la captura
+del checkpoint en PackedStorage sin completar. Veintinueve pares completos
+de GC generación2 consumieron16.453s; el máximo fue2.216s. Los timers parciales
+del último progreso no son el tiempo total. Memoria1,289,154,560B, bytes y diez
+stats de fuente quedaron dentro de sus límites; la aceptación grande sigue RED.
+La optimización de asignaciones se desarrolla en branch aislada conservando
+capturas/chunks/literales/canonical bytes exactos, plazos, GC y cuotas originales.

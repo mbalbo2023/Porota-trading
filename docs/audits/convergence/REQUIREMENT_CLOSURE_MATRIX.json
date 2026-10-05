@@ -5469,6 +5469,146 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/416e-interop-focal.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/416e-original-budget-suites.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/505a-frozen157-environment.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-harness-diagnostic.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/505a-invalidated-native-focal.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-frozen157-environment.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls-native-receipt.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/7e66-growth-controls.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/af56-initial-guards.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls-native-receipt.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/b8b9-affected-controls.junit.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/current-af56-native-replay.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/frozen157-environment-metadata.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/budget-primary-source-custody/original-b26-native-replay.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
     "docs/audits/convergence/evidence/budget-scratch-projection-cross-layer-green.xml": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -6037,6 +6177,186 @@
         "U24"
       ]
     },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-big-gc.log.gz": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-child-stacks.log.gz": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-entry-preflight.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-native-big-gc-result.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-runner.py": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-wrapper-before.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/big-gc-wrapper-final.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/receipt-custody.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-child-stacks.log.gz": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-entry-preflight.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-native-small-gc-result.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-runner.py": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-small-gc.log.gz": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-wrapper-before.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-gc-diagnostic-d9e7fb7d-157/small-gc-wrapper-final.json": {
+      "reason": "Preserve exact whole d9/frozen157 small native diagnostic control and BIG90 timeout with unchanged all1634 Git blobs/modes and source ten-field custody. Small190GC events/five actual exits inside fsync validate the optional observer; BIG32667events/nine periodic stacks identify unfinished checkpoint PackedStorage capture before fsync/CURRENT, with29 complete gen2 pairs taking16.453s, while lab capture passed0.071s and no source-capture GC events occurred. Partial progress timers are not total CPU/wall, the original0.25-second failure remains unresolved, and instrumented diagnostics are not uninstrumented large or final material acceptance. Full raw logs are losslessly gzip-mtime0 encoded with original bytes/hash.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/native-harness-progress-f8895434.json": {
       "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
       "requirement_ids": [
@@ -6125,6 +6445,227 @@
         "U18",
         "U24",
         "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/DOSSIER.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/MANIFEST.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/README.md": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/child-resource.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/native-probe.py": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/native-receipt.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/native.log": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/prelaunch-error.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/prelaunch-native.log": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/prelaunch-runner.py": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/prelaunch-source-plan.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/prelaunch-wrapper-before.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/receipt-custody.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/source-plan.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/wait4-runner.py": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/wrapper-before.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-maximum-member-d9e7fb7d-157/wrapper-final.json": {
+      "reason": "Preserve exact whole d9/frozen157 publication/archive-memory witness: one original66,314,240-byte projection,34 real publications,33 archives/decodes and actualdepth32 under native128MiB/512live,512MiBarchive and512MiBscratch quotas; realRSS340,795,392 bytes and all five original member bytes/custody preserved. Prelaunch missing timebin is infrastructure-only, second calibration64MiB denial is preserved, and the expected three-large live128 forecast denies admission. No fullworker, horizon, final governed/image or runtime validation is inferred; permanent large-memory guard remains separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
         "U28",
         "U29"
       ]
