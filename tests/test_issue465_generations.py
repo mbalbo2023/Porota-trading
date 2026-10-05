@@ -255,13 +255,14 @@ def test_corrupt_file_and_manifest_hash_each_fail_closed(tmp_path):
         read_committed_generation(root)
 
 
-def test_stale_current_returns_complete_prior_cut_without_borrowing_newer_members(tmp_path):
+def test_stale_current_is_rejected_by_durable_high_water_without_borrowing_newer_members(tmp_path):
     root = tmp_path / "evidence"
     with EvidenceFiles(root) as files:
         old = publish(files, 1)
         publish(files, 2)
     (root / "CURRENT.json").write_text(json.dumps(old["pointer"]))
-    coherent(read_committed_generation(root), 1)
+    with pytest.raises(ValueError, match="CURRENT_ROLLBACK"):
+        read_committed_generation(root)
 
 
 def test_current_pointing_to_missing_generation_fails_closed(tmp_path):
@@ -413,14 +414,17 @@ def test_status_cannot_link_a_report_outside_the_committed_cut(tmp_path):
 
 def test_source_audit_digest_is_bound_to_actual_source_reports_before_commit(tmp_path):
     root = tmp_path / "evidence"
-    sources = [{"source": "PPI_API", "observations": [{"source_at": PRE.isoformat(), "received_at": PRE.isoformat()}]}]
+    from rc6_dynamic_universe.sources import audit_sources
+    sources = [{"source": "PPI_API", "as_of": PRE.isoformat(), "status": "SHADOW_EVIDENCE",
+        "observations": [{"source_at": PRE.isoformat(), "received_at": PRE.isoformat()}],
+        "counts": {"seen": 1, "useful": 0, "rejected": 1}}]
     base = {"as_of": PRE.isoformat(), "source_reports": sources, "source_audit": {"source_reports_digest": "0" * 64}}
     with EvidenceFiles(root) as files:
         with pytest.raises(ValueError, match="SOURCE_AUDIT_DIGEST_MISMATCH"):
             files.commit_generation(base, {"as_of": PRE.isoformat()}, {"as_of": PRE.isoformat()},
                 source_watermark={"as_of": PRE.isoformat()}, configuration_fingerprint="config")
         assert not (root / "CURRENT.json").exists()
-        base["source_audit"]["source_reports_digest"] = digest(sources)
+        base["source_audit"] = audit_sources(reports=sources, as_of=PRE)
         bundle = files.commit_generation(base, {"as_of": PRE.isoformat()}, {"as_of": PRE.isoformat()},
             source_watermark={"as_of": PRE.isoformat()}, configuration_fingerprint="config")
     read = read_committed_generation(root)
@@ -473,7 +477,7 @@ def test_canonical_worker_soft_pressure_is_committed_and_hard_pressure_never_rew
 def test_513_files_and_over_128mib_preserve_committed_evidence(tmp_path):
     from rc6_shadow_runtime.retention import RetentionPressure
     root = tmp_path / "evidence"
-    with EvidenceFiles(root) as files:
+    with EvidenceFiles(root, maximum_files=512) as files:
         old = publish(files, 1)
         for number in range(513):
             (root / f"unarchived-{number}.json").write_text("{}")
@@ -499,7 +503,8 @@ def test_canonical_loop_records_explicit_backpressure_and_does_not_overwrite_sta
     before = read_committed_generation(worker.root)
     tick = worker.tick
     monkeypatch.setattr(worker, "tick", lambda *_: (_ for _ in ()).throw(ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")))
-    monkeypatch.setattr(module, "ShadowRuntime", lambda *args, **kwargs: worker)
+    from types import SimpleNamespace
+    monkeypatch.setattr(module, "ShadowRuntime", SimpleNamespace(from_environment=lambda *args, **kwargs: worker))
     monkeypatch.setattr(module.os, "nice", lambda *_: None)
 
     class Stop:
@@ -583,10 +588,13 @@ def test_durability_order_precedes_current_and_root_fsync_failure_keeps_whole_ne
     with EvidenceFiles(root) as files:
         monkeypatch.setattr(os, "fsync", record)
         publish(files, 2)
-    assert synced[:4] == [*ROLES.values(), "manifest.json"]
-    assert synced[4].startswith(".generation-")
-    assert synced[5] == root.name
-    assert synced[6].startswith(".CURRENT.") and synced[7] == root.name
+    assert any(name.startswith(".HEAD-") for name in synced)  # durable sequence reservation
+    member_syncs = [name for name in synced if name in {*ROLES.values(), "manifest.json"}]
+    assert member_syncs[:4] == [*ROLES.values(), "manifest.json"]
+    publication = synced[synced.index("report.json.gz"):]
+    assert publication[4].startswith(".generation-")
+    assert publication[5] == root.name
+    assert publication[6].startswith(".CURRENT.") and publication[7] == root.name
     with EvidenceFiles(root) as files:
         sync_directory = files._sync_directory
         root_calls = 0

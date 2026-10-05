@@ -17,11 +17,12 @@ from co_market_sessions_hf6 import (TZ, BYMA_PAPER_SPOT_OPEN,
 from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
-from rc6_dynamic_universe.sources import source_observations
-from .persistence import EvidenceFiles, failure_reason
+from rc6_dynamic_universe.sources import source_observations, source_reason_code, sanitize_source_errors
+from .persistence import (EvidenceFiles, failure_reason, shadow_evidence_root,
+                          DEFAULT_MAXIMUM_FILES, GENERATION_SCHEMA)
 
 LOG = logging.getLogger("dynamic_shadow")
-VERSION = "WS-FIX-AUDIT-08-RUNTIME-v3"
+VERSION = "WS-FIX-AUDIT-08-RUNTIME-v4"
 SOURCE_FILES = {"BYMA": "rc6_public_sources_latest.json",
                 "IOL_MCP": "iol_shadow_latest.json",
                 "IOL_FAMILY_REFERENCE": "iol_family_reference_latest.json"}
@@ -69,10 +70,13 @@ def _json_input(path, *, limit=8 * 1024**2):
 class ShadowRuntime:
     def __init__(self, database, *, evidence_root=None, history_database=None,
                  source_roots=None, capacity_path=None, policies=None,
-                 maximum_bytes=128 * 1024**2, row_limit=20000, fault_inject=None):
+                 maximum_bytes=128 * 1024**2, maximum_files=DEFAULT_MAXIMUM_FILES,
+                 row_limit=20000, fault_inject=None, archive_root=None,
+                 archive_maximum_bytes=512 * 1024**2):
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
-        self.root = Path(evidence_root or (str(self.database) + ".shadow"))
+        self.root = Path(evidence_root) if evidence_root is not None else shadow_evidence_root(self.database)
+        archive_root = archive_root or os.getenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "").strip() or None
         data_root = Path(os.getenv("DATA_DIR", str(self.database.parent.parent)))
         self.source_roots = list(dict.fromkeys(Path(p).resolve() for p in (
             source_roots if source_roots is not None else
@@ -106,12 +110,30 @@ class ShadowRuntime:
         protected = ([self.database, self.history_database, self.capacity_path]
                      + self.source_inputs + capacity_protected)
         self.files = EvidenceFiles(self.root, protected=protected, maximum_bytes=maximum_bytes,
-                                   fault_inject=fault_inject)
+            maximum_files=maximum_files, fault_inject=fault_inject,
+            archive_root=archive_root, archive_maximum_bytes=archive_maximum_bytes)
         self.configuration = digest({"version": VERSION, "row_limit": row_limit,
             "provider_additional_requests": 0, "tick_seconds": 30,
             "policies": self.policies, "history": str(self.history_database),
             "sources": {k: list(map(str, v)) for k, v in self.source_paths.items()},
-            "capacity": str(self.capacity_path)})
+            "capacity": str(self.capacity_path), "evidence_schema": GENERATION_SCHEMA,
+            "evidence_root": str(self.root), "retention": {"maximum_bytes": maximum_bytes,
+                "maximum_files": maximum_files, "archive_maximum_bytes": archive_maximum_bytes},
+            "archive_configured": archive_root is not None})
+
+    @classmethod
+    def from_environment(cls, database, **kwargs):
+        """Canonical worker construction reused by read-only predeploy gates."""
+        history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
+        kwargs.setdefault("history_database", history if history.exists() else None)
+        return cls(database, **kwargs)
+
+    def configuration_fingerprint(self, as_of, *, capacity_policy=None):
+        """Read-only configuration identity shared by tick and health gates."""
+        policy = capacity_policy if capacity_policy is not None else self.capacity_controller.state(stamp(as_of))
+        return digest({"runtime": self.configuration, "capacity_policy": policy["fingerprint"],
+            "entry_signal_lab": "rc6.runtime-entry-signals.v1",
+            "operational_funnel": "rc6.prospective-operational-funnel.v1"})
 
     def _metadata(self, at, since):
         c = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=.005)
@@ -145,7 +167,7 @@ class ShadowRuntime:
                         raise ValueError("PPI_ERROR_IDENTITY_INVALID")
                     failures.append({"identity": key, "source_at": r["event_at"],
                         "received_at": r["event_at"], "source": "PPI_INTRADAY_DIAGNOSTIC",
-                        "endpoint": "intraday", "useful": False, "native_reason": code,
+                        "endpoint": "intraday", "useful": False, "native_reason": source_reason_code(code),
                         "source_clock_basis": "native error occurrence; no market quote", "fields": {}})
             return source_id, failures
         finally:
@@ -158,7 +180,7 @@ class ShadowRuntime:
                 try:
                     value = _json_input(path)
                     if value is not None:
-                        reports[source] = value
+                        reports[source] = sanitize_source_errors(value)
                         break
                 except (OSError, ValueError, TypeError):
                     errors.append({"source": source, "reason": "SOURCE_UNAVAILABLE_OR_INVALID"})
@@ -221,11 +243,8 @@ class ShadowRuntime:
         at = stamp(as_of)
         with self.files as files:
             capacity_policy = self.capacity_controller.state(at)
-            configuration = digest({"runtime": self.configuration,
-                "capacity_policy": capacity_policy["fingerprint"],
-                "entry_signal_lab": "rc6.runtime-entry-signals.v1",
-                "operational_funnel": "rc6.prospective-operational-funnel.v1"})
-            committed = files.read_generation(allow_degraded=True)
+            configuration = self.configuration_fingerprint(at, capacity_policy=capacity_policy)
+            committed = files.read_generation(allow_degraded=True, allow_legacy=True)
             previous = committed["checkpoint"] if committed else {}
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
@@ -246,7 +265,7 @@ class ShadowRuntime:
             frozen = files.read(freeze_name)
             if frozen and frozen["source_identity"] != source_id:
                 raise ValueError("SHADOW_PREOPEN_SOURCE_IDENTITY_MISMATCH")
-            if frozen is None and at < context["opening"]:
+            if frozen is None and context["cutoff"] < at < context["opening"]:
                 from .preopen import build_preopen_inputs
                 pre = build_preopen_inputs(self.database, self.history_database, as_of=at,
                     session_open=context["opening"], cutoff=context["cutoff"])
@@ -274,7 +293,8 @@ class ShadowRuntime:
                 "source_identity": source_id}
             checkpoint = {**base, "started_at": started}
             if frozen is None:
-                report = {**base, "status": "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION",
+                report = {**base, "status": ("PREOPEN_SNAPSHOT_PENDING_AFTER_SESSION_CUTOFF"
+                          if at <= context["cutoff"] else "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"),
                           "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
                 # Even a closed preopen gate must account for actual received
                 # sources; it cannot claim an empty audit over nonempty input.
@@ -369,11 +389,7 @@ def run_worker(database, stop, *, clock_fn=None):
     while not stop.is_set():
         try:
             if worker is None:
-                from cg_paper_workspace import artifact_root
-                history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
-                worker = ShadowRuntime(database,
-                    evidence_root=artifact_root(database) / "dynamic-shadow",
-                    history_database=history if history.exists() else None)
+                worker = ShadowRuntime.from_environment(database)
             report = worker.tick(clock_fn())
             LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
                      report["status"], report["phase"])

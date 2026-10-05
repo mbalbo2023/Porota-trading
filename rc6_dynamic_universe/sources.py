@@ -198,6 +198,81 @@ def _entries(snapshot, source):
     return [(row, snapshot, None) for row in rows if isinstance(row, Mapping)]
 
 
+SOURCE_REASON_CODES = frozenset({
+    "SOURCE_UNAVAILABLE", "SOURCE_UNAVAILABLE_OR_INVALID", "SOURCE_ERROR_REDACTED",
+    "SOURCE_AUTHENTICATION_FAILED", "SOURCE_RATE_LIMITED", "SOURCE_TIMEOUT",
+    "SOURCE_TRANSPORT_FAILURE", "SOURCE_RESPONSE_INVALID", "SOURCE_CIRCUIT_OPEN",
+    "IOL_EMPTY_UNEXPECTED", "IOL_SHADOW_CIRCUIT_OPEN", "EMPTY_UNEXPECTED",
+    "CACHE_FRESH", "CACHE_STALE", "NO_VERIFICADO", "INVALID_SOURCE_CONTAINER",
+    "EXACT_IDENTITY_AMBIGUOUS", "PROVIDER_TIMESTAMP_MISSING_OR_AMBIGUOUS",
+    "PROVIDER_TIMESTAMP_IN_FUTURE", "RECEIVED_TIMESTAMP_MISSING_OR_AMBIGUOUS",
+    "NOT_AVAILABLE_AT_CUTOFF", "PROVIDER_TIMESTAMP_AFTER_RECEIPT", "STALE_QUOTES",
+    "NUMERIC_FIELDS_OR_UNITS_UNVERIFIED", "USEFUL_SHADOW_OBSERVATION",
+    "LEGACY_ERROR_IDENTITY_UNVERIFIED", "PPI_INTRADAY_UNAVAILABLE",
+    "PPI_INSTRUMENT_NOT_FOUND", "PPI_SESSION_INVALID", "PPI_BUDGET_BACKPRESSURE",
+    "PPI_EMPTY_OR_NON_JSON_AFTER_RETRY", "PPI_HTTP_401", "PPI_HTTP_403", "PPI_HTTP_408",
+    "PPI_HTTP_429", "PPI_HTTP_500", "PPI_HTTP_502", "PPI_HTTP_503", "PPI_HTTP_504",
+    "STATIC_EVIDENCE_AVAILABILITY_EXPIRED", "SOURCE_RECEIPT_CLOCK_MISMATCH",
+    "DUPLICATE_SOURCE_EVIDENCE_CONFLICT", "SOURCE_FIELD_DISCREPANCY_REVIEW_REQUIRED",
+    "PROSPECTIVE_RECEIPTS_ONLY; excluded rows retained as source evidence",
+    "PLANNER_NATIVE_INPUT_SET; excluded source receipts retained as evidence",
+})
+
+
+def source_reason_code(value):
+    """A closed vocabulary at durable boundaries; arbitrary text is discarded.
+
+    Exception classes are classified independently of their message. No part of
+    a response body, URL, account identifier or credential is retained.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and value in SOURCE_REASON_CODES:
+        return value
+    if isinstance(value, BaseException):
+        if str(value) in SOURCE_REASON_CODES:
+            return str(value)
+        status = getattr(value, "status_code", None)
+        if type(status) is int and status in {401, 403}:
+            return "SOURCE_AUTHENTICATION_FAILED"
+        if status == 429:
+            return "SOURCE_RATE_LIMITED"
+    name = type(value).__name__ if isinstance(value, BaseException) else str(value).split(":", 1)[0]
+    if name in SOURCE_REASON_CODES:
+        return name
+    return {"TimeoutError": "SOURCE_TIMEOUT", "Timeout": "SOURCE_TIMEOUT",
+        "ConnectTimeout": "SOURCE_TIMEOUT", "ReadTimeout": "SOURCE_TIMEOUT",
+        "ConnectionError": "SOURCE_TRANSPORT_FAILURE", "OSError": "SOURCE_TRANSPORT_FAILURE",
+        "PermissionError": "SOURCE_AUTHENTICATION_FAILED", "CircuitOpenError": "SOURCE_CIRCUIT_OPEN",
+        "JSONDecodeError": "SOURCE_RESPONSE_INVALID", "ValueError": "SOURCE_RESPONSE_INVALID",
+        "RuntimeError": "SOURCE_UNAVAILABLE"}.get(name, "SOURCE_ERROR_REDACTED")
+
+
+def sanitize_source_errors(value):
+    """Sanitize newly received and resumed caches before any durable write."""
+    if isinstance(value, Mapping):
+        result = {}
+        for key, item in value.items():
+            if key in {"reason", "native_reason", "error", "last_error"}:
+                result[key] = source_reason_code(item) if item is not None else None
+            elif key == "errors":
+                errors = []
+                for error in (item if isinstance(item, list) else [item]):
+                    if isinstance(error, Mapping) and set(error) == {"kind", "code"} and error.get("kind") in {"errors", "error", "reason", "shape"}:
+                        codes = error["code"] if isinstance(error["code"], list) else [error["code"]]
+                        errors.append({"kind": error["kind"], "code": [code if isinstance(code, str) and code in {
+                            "sources", "records", "symbols", "observations", "routes"} else source_reason_code(code) for code in codes]})
+                    else:
+                        errors.append(source_reason_code(error))
+                result[key] = errors
+            else:
+                result[key] = sanitize_source_errors(item)
+        return result
+    if isinstance(value, list):
+        return [sanitize_source_errors(item) for item in value]
+    return value
+
+
 def _source_errors(snapshot):
     """Retain bounded structural errors; never persist provider response bodies."""
     if not isinstance(snapshot, Mapping):
@@ -207,7 +282,7 @@ def _source_errors(snapshot):
         values = snapshot.get(key)
         for value in values if isinstance(values, list) else ([values] if values else []):
             # Errors are labels only, not raw provider messages or payloads.
-            errors.append({"kind": key, "code": str(value).split(":", 2)[:2]})
+            errors.append({"kind": key, "code": [source_reason_code(value)]})
     for key in ("sources", "records", "symbols", "observations", "routes"):
         if key in snapshot and not isinstance(snapshot[key], list):
             errors.append({"kind": "shape", "code": ["INVALID_SOURCE_CONTAINER", key]})
@@ -309,7 +384,7 @@ def source_observations(snapshot, *, source, as_of, max_age_seconds=120):
         observations.append({"identity": exact, "source": canonical, "source_at": _iso(source_at),
                              "received_at": _iso(received), "useful": reason is None,
                              "fields": fields, "units": units, "reason": reason or "USEFUL_SHADOW_OBSERVATION",
-                             "native_reason": row.get("reason"), "age_seconds": age,
+                             "native_reason": source_reason_code(row.get("reason")), "age_seconds": age,
                              "source_path": row.get("source_path") or envelope.get("source_path"),
                              "provenance": row.get("provenance", envelope.get("provenance")),
                              "conflicts": row.get("conflicts", []),
@@ -340,7 +415,7 @@ def native_source_reports(observations, *, as_of):
         if not isinstance(row, Mapping):
             raise ValueError("NATIVE_SOURCE_OBSERVATION_SHAPE_REQUIRED")
         source = str(row.get("source") or "NO_VERIFICADO")
-        groups.setdefault(source, []).append(dict(row))
+        groups.setdefault(source, []).append(sanitize_source_errors(dict(row)))
         if len(groups) > MAX_SOURCE_AUDIT_REPORTS:
             raise ValueError("SOURCE_AUDIT_REPORT_CAPACITY_REACHED")
     reports = []
@@ -368,20 +443,44 @@ def audit_sources(snapshots=None, *, as_of=None, max_age_seconds=120, reports=No
             raise ValueError("SOURCE_REPORT_LIST_REQUIRED")
         if len(reports) > MAX_SOURCE_AUDIT_REPORTS:
             raise ValueError("SOURCE_AUDIT_REPORT_CAPACITY_REACHED")
+        if sum(len(report.get("observations", [])) for report in reports
+               if isinstance(report, Mapping) and isinstance(report.get("observations"), list)) > MAX_SOURCE_AUDIT_OBSERVATIONS:
+            raise ValueError("SOURCE_AUDIT_OBSERVATION_CAPACITY_REACHED")
         linked = {}
+        seen_digests, report_keys = set(), set()
         observation_count = 0
         for index, report in enumerate(reports):
             if (not isinstance(report, Mapping) or not report.get("source") or
                     not isinstance(report.get("observations"), list)):
                 raise ValueError("SOURCE_REPORT_SHAPE_REQUIRED")
             rows = report["observations"]
+            for key, expected in {"decision_effect": "OBSERVE_ONLY", "live_decision_authority": False,
+                    "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"}.items():
+                if key in report and (report[key] != expected or type(report[key]) is not type(expected)):
+                    raise ValueError("SOURCE_REPORT_SAFETY_MISMATCH")
             observation_count += len(rows)
             if observation_count > MAX_SOURCE_AUDIT_OBSERVATIONS:
                 raise ValueError("SOURCE_AUDIT_OBSERVATION_CAPACITY_REACHED")
             if any(not isinstance(row, Mapping) for row in rows):
                 raise ValueError("SOURCE_OBSERVATION_SHAPE_REQUIRED")
+            if any(row.get("live_decision_authority", False) is not False or
+                   row.get("entry_authority", False) is not False for row in rows):
+                raise ValueError("SOURCE_OBSERVATION_SAFETY_MISMATCH")
+            report_hash = digest(report)
+            report_key = (str(report["source"]), cutoff, report.get("native_input") is True)
+            if report_hash in seen_digests:
+                raise ValueError("SOURCE_REPORT_DUPLICATE")
+            if report_key in report_keys:
+                raise ValueError("SOURCE_REPORT_IDENTITY_CONFLICT")
+            seen_digests.add(report_hash)
+            report_keys.add(report_key)
+            row_digests = [digest(row) for row in rows]
+            if len(row_digests) != len(set(row_digests)):
+                raise ValueError("SOURCE_OBSERVATION_DUPLICATE")
             useful = sum(row.get("useful") is True for row in rows)
-            if report.get("counts") != {"seen": len(rows), "useful": useful, "rejected": len(rows) - useful}:
+            counts = report.get("counts")
+            if (not isinstance(counts, dict) or any(type(value) is not int for value in counts.values())
+                    or counts != {"seen": len(rows), "useful": useful, "rejected": len(rows) - useful}):
                 raise ValueError("SOURCE_REPORT_COUNTS_MISMATCH")
             if stamp(report["as_of"]).isoformat() != cutoff:
                 raise ValueError("SOURCE_REPORT_CUTOFF_MISMATCH")

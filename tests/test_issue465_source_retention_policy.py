@@ -11,7 +11,13 @@ from types import SimpleNamespace
 import pytest
 
 from rc6_dynamic_universe.common import digest
-from rc6_shadow_runtime.retention import EvidenceRetention, RetentionPolicy, RetentionPressure
+from rc6_shadow_runtime.retention import EvidenceRetention as NativeEvidenceRetention, RetentionPolicy, RetentionPressure
+
+
+def EvidenceRetention(root, **kwargs):
+    """Real private archive fixture; V1 assertions no longer authorize deletion."""
+    root = Path(root)
+    return NativeEvidenceRetention(root, archive_root=root.parent / (root.name + "-private-archive"), **kwargs)
 
 
 def generation(root, number=1, size=400):
@@ -34,10 +40,7 @@ def generation(root, number=1, size=400):
 
 def acknowledgement(path, **changes):
     generation_id = path.name.removeprefix("gen-")
-    ack = {"schema": "RC6_SHADOW_ARCHIVE_ACK_V1", "generation_id": generation_id,
-        "manifest_sha256": hashlib.sha256((path / "manifest.json").read_bytes()).hexdigest(),
-        "archive_sha256": "a" * 64, "archive_uri": "private-archive://fixture/verified-export",
-        "archive_verified": True, "durable": True, "acknowledged_at": "2020-01-01T00:00:00+00:00", **changes}
+    ack = {**EvidenceRetention(path.parent).archive_generation(path), **changes}
     target = path.parent / f"archive-ack-{generation_id}.json"
     target.write_text(json.dumps(ack))
     return target
@@ -121,12 +124,14 @@ def test_no_filesystem_space_is_explicit_even_when_logical_quota_allows(tmp_path
     assert error.value.metrics["shadow_degraded"]
 
 
-def test_acknowledged_unpinned_generation_rotates_but_ack_ledger_remains(tmp_path):
+def test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction(tmp_path):
     old, current = generation(tmp_path), generation(tmp_path, number=2)
     ack = acknowledgement(old)
     pointer(current)
     result = EvidenceRetention(tmp_path, maximum_files=14).prepare(additional_files=6)
-    assert not old.exists() and current.exists() and ack.exists()
+    assert not old.exists() and current.exists() and not ack.exists()
+    assert (EvidenceRetention(tmp_path).archive_root / (old.name[4:] + ".receipt.json")).exists()
+    assert (tmp_path / "archive-checkpoint.json").exists()
     assert result["rotated_archived_generations"] == 1
     assert result["projected_files"] <= 14
 
@@ -206,13 +211,13 @@ def test_unknown_member_in_acknowledged_generation_is_never_deleted(tmp_path):
 
 def test_archive_member_path_in_manifest_cannot_escape_generation(tmp_path):
     path = generation(tmp_path)
+    acknowledgement(path)
     protected = tmp_path / "input.db"
     protected.write_bytes(b"untouched")
     manifest_path = path / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["files"]["report"]["name"] = "../input.db"
     manifest_path.write_text(json.dumps(manifest))
-    acknowledgement(path)
     with pytest.raises(RetentionPressure, match="HARD_FILES"):
         EvidenceRetention(tmp_path, maximum_files=8).prepare(additional_files=6)
     assert protected.read_bytes() == b"untouched" and path.exists()
@@ -241,7 +246,8 @@ def test_archived_rotation_is_idempotent_and_ack_ledger_is_not_a_replay_authorit
     second = policy.prepare(additional_files=6)
     assert first["rotated_archived_generations"] == 1
     assert second["rotated_archived_generations"] == 0
-    assert current.exists() and ledger.exists()
+    assert current.exists() and not ledger.exists()
+    assert (EvidenceRetention(tmp_path).archive_root / (old.name[4:] + ".receipt.json")).exists()
 
 
 @pytest.mark.parametrize("pin", ["argument", "registry", "current"])
