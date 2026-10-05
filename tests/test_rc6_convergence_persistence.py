@@ -109,6 +109,39 @@ def test_default_root_real_worker_reader_and_configuration_identity(tmp_path, mo
         shadow_evidence_root(store.path, {"POROTA_DYNAMIC_SHADOW_ROOT": str(alias)})
 
 
+@pytest.mark.parametrize("budget", [False, True, 0, -1, 2.001, float("inf"), float("nan"), "0.5"])
+def test_native_worker_rejects_invalid_read_budgets_before_creating_evidence(tmp_path, budget):
+    store, _ = make_store(tmp_path, count=1)
+    root = tmp_path / "shadow"
+    with pytest.raises(ValueError, match="INVALID_READ_BUDGET"):
+        ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[], query_budget_seconds=budget)
+    assert not root.exists()
+
+
+def test_native_read_budget_matches_canonical_default_and_configuration_invalidates_recovery(tmp_path, monkeypatch):
+    import inspect
+    from rc6_dynamic_universe.runtime import read_runtime
+    import rc6_shadow_runtime.worker as worker_module
+    store, _ = make_store(tmp_path, count=3)
+    root = tmp_path / "shadow"
+    original = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[], query_budget_seconds=.35)
+    first = original.tick(PRE)
+    observed = []
+    def native_read(*args, **kwargs):
+        observed.append(kwargs["query_budget_seconds"])
+        return read_runtime(*args, **kwargs)
+    monkeypatch.setattr(worker_module, "read_runtime", native_read)
+    current = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    assert current.query_budget_seconds == inspect.signature(read_runtime).parameters["query_budget_seconds"].default == .5
+    assert current.configuration_fingerprint(PRE) != first["configuration_fingerprint"]
+    second = current.tick(PRE+timedelta(seconds=30))
+    assert observed == [.5] and not second["checkpoint_reused"]
+    resumed = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    third = resumed.tick(PRE+timedelta(seconds=60))
+    assert third["checkpoint_reused"] and observed == [.5, .5]
+    assert third["configuration_fingerprint"] == second["configuration_fingerprint"]
+
+
 def test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2(tmp_path):
     old_source = subprocess.check_output(["git", "show",
         "c27dfd963c4fe83465c0f2105347e974fbbe6356:rc6_shadow_runtime/persistence.py"], text=True)

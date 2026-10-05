@@ -83,3 +83,31 @@ def test_native_funnel_large_metadata_roundtrip_restarts_with_identical_complete
     assert packed_report == plain_report and packed_state == plain_state
     assert packed_report["denominators"]["stage_identity_reaches"] == 1000
     assert packed_report["denominators"]["events_recorded"] == report["denominators"]["events_recorded"]
+
+
+def test_prepared_storage_is_exact_for_unicode_aliases_and_mutable_root_headers():
+    row = {"identity": ["ÑANDÚ", "ACCIONES", "BYMA", "ARS", "A-24HS"], "typed": {"flag": False, "zero": 0},
+           "literal/~key": "observación"}
+    body = {"schema": "native", "rows": [row]*4000, "as_of": START.isoformat()}
+    prepared = serialization.PreparedStorage(body, mutable={"cross_payload_hashes", "status"},
+        durable_limit=32*1024**2, expansion_limit=64*1024**2)
+    for status in ("OBSERVING", "RETENTION_PRESSURE"):
+        body.update(status=status, cross_payload_hashes={"report": "a"*64})
+        packed, logical_sha = prepared.encode(body)
+        expected = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+        assert logical_sha == hashlib.sha256(expected).hexdigest()
+        assert decode(packed) == body
+        assert serialization.verify_storage_wire(packed, durable_limit=32*1024**2,
+                                                 expansion_limit=64*1024**2)["payload_digest"] == logical_sha
+
+
+def test_shape_memo_counts_logical_alias_expansion_and_rejects_cycles(monkeypatch):
+    repeated = {"fields": list(range(100))}
+    value = [repeated]*100
+    assert serialization._shape(value) == 10201
+    monkeypatch.setattr(serialization, "MAX_NODES", 1000)
+    with pytest.raises(ValueError, match="COMPLEXITY"):
+        serialization._shape(value)
+    cyclic = []; cyclic.append(cyclic)
+    with pytest.raises(ValueError, match="COMPLEXITY"):
+        serialization._shape(cyclic)

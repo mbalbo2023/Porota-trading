@@ -42,14 +42,10 @@ def test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_
     assert result["observations_materialized"] == 60000
     assert result["shadow"]["full_pipeline_exercised"], json.dumps(result["shadow"])
     assert result["shadow"]["cycle_handled"]
-    if result["shadow"]["cycle_completion"]:
-        assert result["shadow"]["observation_read_truncated"]
-    else:
-        # Exhausting an explicit SHADOW bound is degradation, never evidence
-        # of a successful large cycle; the factual engine remains available.
-        assert result["shadow"]["status"] == "SHADOW_FAIL_CLOSED"
-        assert result["shadow"]["reason"] in {
-            "FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED", "SHADOW_PAYLOAD_LIMIT", "SHADOW_EVIDENCE_CAPACITY_REACHED"}
+    assert result["shadow"]["cycle_completion"]
+    assert result["shadow"]["observation_read_truncated"]
+    assert result["shadow"]["committed_sequence"] == 2
+    assert result["shadow"]["catalog_ready_count"] == 12000
     assert result["factual_exits"]["closed"] == 5
     assert result["source_database_unchanged"] and result["real_orders_sent"] == 0
 
@@ -57,17 +53,21 @@ def test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_
 @pytest.mark.parametrize("quota", [128*1024**2, 1024])
 def test_slow_disk_or_shadow_quota_failure_cannot_block_actual_exit_supervisor(tmp_path, quota):
     result = run_stress(tmp_path / "isolation", catalog_count=100,
-                        slow_disk=True, maximum_bytes=quota)
+                        slow_disk=True, maximum_bytes=quota, allow_fail_closed=quota == 1024)
     record(result, "slow-disk-quota-"+str(quota))
     assert result["factual_exits"]["closed"] == result["factual_exits"]["sell_fills"] == 5
     assert result["source_database_unchanged"]
     if quota == 1024:
+        assert not result["completion_required"]
+        assert not result["slow_fsync_exit_isolation_proven"]
         assert not result["shadow"]["cycle_completion"]
         assert result["shadow"]["status"] == "SHADOW_FAIL_CLOSED"
         assert result["shadow"]["reason"] in {
             "SHADOW_EVIDENCE_CAPACITY_REACHED", "RETENTION_HARD_BYTES_CAPACITY_REACHED"}
     else:
         assert result["shadow"]["cycle_completion"], result["shadow"]
+        assert result["shadow"]["fsync"]["fsync_entered"] and result["shadow"]["fsync"]["fsync_completed"]
+        assert result["slow_fsync_exit_isolation_proven"]
 
 
 def test_wal_writer_lock_does_not_turn_shadow_into_writer_or_unbounded_query(tmp_path):

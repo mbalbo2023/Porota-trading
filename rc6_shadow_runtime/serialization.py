@@ -55,21 +55,35 @@ def canonical_metrics(value, *, ensure_ascii=False, limit=None):
     return accumulator.hexdigest(), size
 
 
-def _shape(value):
-    nodes = 0
+def _shape(value, *, memo=None):
+    memo = {} if memo is None else memo
+    active = set()
     def visit(node, depth=0):
-        nonlocal nodes
-        nodes += 1
-        if nodes > MAX_NODES or depth > MAX_DEPTH:
+        if depth > MAX_DEPTH:
             raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
-        if isinstance(node, dict):
-            for key, item in node.items():
-                if not isinstance(key, str): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
-                visit(item, depth+1)
-        elif isinstance(node, (list, tuple)):
-            for item in node: visit(item, depth+1)
-    visit(value)
-    return nodes
+        if not isinstance(node, (dict, list, tuple)): return 1, 0
+        key = id(node)
+        if key in active: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+        if key in memo:
+            count, height = memo[key]
+            if count > MAX_NODES or depth+height > MAX_DEPTH:
+                raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+            return count, height
+        active.add(key); count, height = 1, 0
+        try:
+            if isinstance(node, dict):
+                if any(not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
+                values = node.values()
+            else: values = node
+            for item in values:
+                child_count, child_height = visit(item, depth+1)
+                count += child_count; height = max(height, child_height+1)
+                if count > MAX_NODES: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+        finally:
+            active.remove(key)
+        if count >= 32 and len(memo) < 131072: memo[key] = count, height
+        return count, height
+    return visit(value)[0]
 
 
 def _sha(value):
@@ -89,7 +103,7 @@ def encode_storage(value, *, durable_limit, expansion_limit):
     else:
         if size > durable_limit: raise ValueError("SHADOW_STORAGE_DURABLE_CAPACITY_REACHED")
         return value
-    with gzip.GzipFile(fileobj=compressed, mode="wb", mtime=0) as stream:
+    with gzip.GzipFile(fileobj=compressed, mode="wb", mtime=0, compresslevel=1) as stream:
         for raw in first:
             accumulator.update(raw); stream.write(raw)
         first.clear()
@@ -107,30 +121,126 @@ def encode_storage(value, *, durable_limit, expansion_limit):
     return result
 
 
+class PreparedStorage:
+    """Serialize each immutable root section once within one publication.
+
+    Only named root fields may change during quota/header preparation. Gzip's
+    concatenated members still expand to exactly the same canonical JSON; this
+    is no persistent cache and never changes logical values or their hashes.
+    """
+    def __init__(self, value, *, mutable, durable_limit, expansion_limit, cache=None, shape_memo=None):
+        if not isinstance(value, dict): raise ValueError("SHADOW_STORAGE_ROOT_REQUIRED")
+        _shape(value, memo=shape_memo)
+        self.mutable = frozenset(mutable)
+        self.durable_limit, self.expansion_limit = durable_limit, expansion_limit
+        self.sections = {}
+        cache = {} if cache is None else cache
+        logical_size = 0
+        for key, member in value.items():
+            if key in self.mutable: continue
+            cached = cache.get(id(member)) if isinstance(member, (dict, list)) else None
+            if cached is not None and cached[0] is member:
+                part = cached[1]
+            else:
+                raw = json.dumps(member, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                                 default=str, allow_nan=False).encode()
+                part = gzip.compress(raw, mtime=0, compresslevel=1), len(raw)
+                if isinstance(member, (dict, list)): cache[id(member)] = member, part
+            logical_size += part[1]
+            if logical_size > expansion_limit: raise ValueError("SHADOW_STORAGE_EXPANSION_CAPACITY_REACHED")
+            self.sections[key] = part
+
+    def _members(self, value):
+        if set(value)-self.mutable != set(self.sections):
+            raise ValueError("SHADOW_STORAGE_STATIC_FIELDS_CHANGED")
+        yield gzip.compress(b"{", mtime=0, compresslevel=1), 1
+        for ordinal, key in enumerate(sorted(value)):
+            prefix = (b"," if ordinal else b"")+json.dumps(key, ensure_ascii=True).encode()+b":"
+            yield gzip.compress(prefix, mtime=0, compresslevel=1), len(prefix)
+            if key in self.mutable:
+                _shape(value[key])
+                raw = b"".join(canonical_chunks(value[key], ensure_ascii=True))
+                yield gzip.compress(raw, mtime=0, compresslevel=1), len(raw)
+            else:
+                yield self.sections[key]
+        yield gzip.compress(b"}", mtime=0, compresslevel=1), 1
+
+    def _proof(self, members):
+        accumulator, logical_size = hashlib.sha256(), 0
+        for compressed, size in members:
+            logical_size += size
+            if logical_size > self.expansion_limit:
+                raise ValueError("SHADOW_STORAGE_EXPANSION_CAPACITY_REACHED")
+            with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
+                while raw := stream.read(1024**2): accumulator.update(raw)
+        return accumulator.hexdigest(), logical_size
+
+    def metrics(self, value):
+        return self._proof(self._members(value))
+
+    def encode(self, value):
+        members = list(self._members(value))
+        logical_hash, logical_size = self._proof(members)
+        if logical_size < THRESHOLD:
+            if logical_size > self.durable_limit: raise ValueError("SHADOW_STORAGE_DURABLE_CAPACITY_REACHED")
+            return value, logical_hash
+        compressed = b"".join(member[0] for member in members)
+        result = {"schema": SCHEMA, "codec": CODEC, "payload": base64.b64encode(compressed).decode("ascii"),
+                  "logical_bytes": logical_size, "logical_sha256": logical_hash}
+        result["storage_sha256"] = _sha(result)
+        if canonical_metrics(result)[1] > self.durable_limit:
+            raise ValueError("SHADOW_STORAGE_DURABLE_CAPACITY_REACHED")
+        return result, logical_hash
+
+
 def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=None):
     if (set(value) != {"schema", "codec", "payload", "logical_bytes", "logical_sha256", "storage_sha256"}
             or value["codec"] != CODEC or not isinstance(value["payload"], str)
-            or canonical_metrics(value)[1] > durable_limit
             or type(value["logical_bytes"]) is not int or not 0 <= value["logical_bytes"] <= expansion_limit
-            or value["storage_sha256"] != _sha({key: item for key, item in value.items() if key != "storage_sha256"})):
+            or len(value["payload"]) > durable_limit):
         raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
     try:
-        compressed = base64.b64decode(value["payload"], validate=True)
+        ascii_payload = value["payload"].encode("ascii")
+        compressed = base64.b64decode(ascii_payload, validate=True)
     except (ValueError, TypeError) as error:
         raise ValueError("SHADOW_STORAGE_BASE64_INVALID") from error
+    accumulator, wrapper_size = hashlib.sha256(), 0
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str, allow_nan=False)
+    for ordinal, key in enumerate(sorted(value)):
+        prefix = (b"{" if ordinal == 0 else b",")+encoder.encode(key).encode()+b":"
+        payload_size = len(ascii_payload)+2 if key == "payload" else len(encoder.encode(value[key]).encode())
+        wrapper_size += len(prefix)+payload_size
+    wrapper_size += 1
+    if wrapper_size > durable_limit: raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
+    for ordinal, key in enumerate(sorted(set(value)-{"storage_sha256"})):
+        accumulator.update((b"{" if ordinal == 0 else b",")+encoder.encode(key).encode()+b":")
+        if key == "payload":
+            accumulator.update(b'"'); accumulator.update(ascii_payload); accumulator.update(b'"')
+        else: accumulator.update(encoder.encode(value[key]).encode())
+    accumulator.update(b"}")
+    if accumulator.hexdigest() != value["storage_sha256"]:
+        raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
     accumulator, size, output = hashlib.sha256(), 0, io.BytesIO() if retain else None
     try:
-        with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
-            while True:
-                if deadline is not None and time.monotonic() >= deadline:
-                    raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
-                raw = stream.read(min(1024**2, expansion_limit-size+1))
-                if not raw: break
-                size += len(raw)
-                if size > expansion_limit or size > value["logical_bytes"]:
-                    raise ValueError("SHADOW_STORAGE_EXPANSION_CAPACITY_REACHED")
-                accumulator.update(raw)
-                if output is not None: output.write(raw)
+        cursor, pending = 0, b""
+        stream = zlib.decompressobj(wbits=31)
+        while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
+            if stream.eof:
+                pending = stream.unused_data
+                if not pending and cursor == len(compressed): break
+                stream = zlib.decompressobj(wbits=31)
+            if not pending:
+                if cursor == len(compressed): raise ValueError("SHADOW_STORAGE_GZIP_INVALID")
+                pending = compressed[cursor:cursor+65536]; cursor += len(pending)
+            raw = stream.decompress(pending, min(1024**2, expansion_limit-size+1))
+            pending = stream.unconsumed_tail
+            size += len(raw)
+            if size > expansion_limit or size > value["logical_bytes"]:
+                raise ValueError("SHADOW_STORAGE_EXPANSION_CAPACITY_REACHED")
+            accumulator.update(raw)
+            if output is not None: output.write(raw)
     except (OSError, EOFError, zlib.error) as error:
         raise ValueError("SHADOW_STORAGE_GZIP_INVALID") from error
     if size != value["logical_bytes"] or accumulator.hexdigest() != value["logical_sha256"]:

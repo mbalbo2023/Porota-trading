@@ -44,6 +44,27 @@ logical expansion is explicitly bounded at 512 MiB, 32 million nodes and depth
 These storage contracts preserve every identity, entry, cohort, denominator and
 causal clock. The index's logical encoding is independently versioned.
 
+The producer prepares each immutable root section and derived row once per
+publication, reusing it when quota metadata is added. Concatenated gzip members
+expand to the exact same canonical native JSON. Identical root objects shared
+by report/checkpoint share only temporary encoded bytes. There is no persistent
+cache. The derived `rc6.shadow-ui-projection-merkle.v1` binds complete normalized
+WHERE/ORDER/cohort index columns as well as every native row and its ordinal;
+older line-format cuts recompute each index column from native payloads during
+full verification. A derived, SHA256-bound zlib dictionary of at most 32 KiB
+compresses repeated row metadata. Wrong dictionaries, CRC and length violations
+fail closed. In-memory SQLite temporaries remain in memory.
+
+The worker uses the canonical read bridge's 0.5-second default query budget,
+replacing its private 0.35-second override. The positive finite budget is bounded
+at the existing 2-second API ceiling and participates in the configuration
+fingerprint. Changing it invalidates checkpoint reuse; recovery with the same
+budget preserves the checkpoint. The 90-second stress deadline, 128 MiB live
+quota and 2 GiB RSS guard remain unchanged. The previous native 12000/60000
+diagnostic reached durable PREOPEN and five PAPER exits but failed the second
+source read with SQLite `SQLITE_INTERRUPT` (code 9); it is a RED diagnostic,
+not evidence of complete two-cycle operation.
+
 This checkpoint makes the API and small native positive/negative tests
 reviewable. Large 12000/60000 completion, 1-second UI, 2-second health and resource
 receipts must be rerun on the final committed candidate. Earlier degraded or

@@ -6,6 +6,7 @@ bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -72,7 +73,11 @@ class ShadowRuntime:
                  source_roots=None, capacity_path=None, policies=None,
                  maximum_bytes=128 * 1024**2, maximum_files=DEFAULT_MAXIMUM_FILES,
                  row_limit=20000, fault_inject=None, archive_root=None,
-                 archive_maximum_bytes=512 * 1024**2):
+                 archive_maximum_bytes=512 * 1024**2, query_budget_seconds=0.5):
+        if (isinstance(query_budget_seconds, bool) or not isinstance(query_budget_seconds, (int, float))
+                or not math.isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
+            raise ValueError("INVALID_READ_BUDGET")
+        self.query_budget_seconds = float(query_budget_seconds)
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root) if evidence_root is not None else shadow_evidence_root(self.database)
@@ -113,6 +118,7 @@ class ShadowRuntime:
             maximum_files=maximum_files, fault_inject=fault_inject,
             archive_root=archive_root, archive_maximum_bytes=archive_maximum_bytes)
         self.configuration = digest({"version": VERSION, "row_limit": row_limit,
+            "query_budget_seconds": self.query_budget_seconds,
             "provider_additional_requests": 0, "tick_seconds": 30,
             "policies": self.policies, "history": str(self.history_database),
             "sources": {k: list(map(str, v)) for k, v in self.source_paths.items()},
@@ -249,7 +255,7 @@ class ShadowRuntime:
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
-                                  query_budget_seconds=.35)
+                                  query_budget_seconds=self.query_budget_seconds)
             source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
             reuse = (previous.get("source_identity") == source_id and
                      previous.get("runtime_configuration") == configuration)
@@ -274,7 +280,7 @@ class ShadowRuntime:
                     "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
                     "policies": self.policies, "observations": []}
-                pre_report = run_shadow(bundle)
+                pre_report = run_shadow(bundle, freeze_only=True)
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
                     "intraday_history": pre.get("intraday_history", [])}
@@ -367,7 +373,7 @@ class ShadowRuntime:
                 "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
             status.update(configuration_fingerprint=configuration,
                 preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
-                catalog_ready_count=len(inputs["catalog"]), report_digest=digest(report),
+                catalog_ready_count=len(inputs["catalog"]),
                 provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
                 capacity_policy_status=capacity_policy["status"],
                 entry_signal_lab_status=report["entry_signal_lab"]["status"],
@@ -394,6 +400,7 @@ def run_worker(database, stop, *, clock_fn=None):
             report = worker.tick(clock_fn())
             LOG.info("DYNAMIC_SHADOW_RUNTIME status=%s phase=%s real_orders_sent=0 provider_requests=0",
                      report["status"], report["phase"])
+            del report
         except Exception as exc:
             # A bounded failed SHADOW read/write cannot stop the exit clock or
             # turn a stale prior report into current success. No source event.

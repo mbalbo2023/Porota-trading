@@ -581,4 +581,4 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "late_missed_discovery": measure_discovery_outcomes(planner_report.get("causal_discovery_evidence", []), as_of=at),
         "shadow_to_factual_causality": "NOT_CLAIMED",
         "currencies_added_together": False, "factual_exit_policy_effect": "NONE"}
-    return _json(report), stored_checkpoint if return_encoded_checkpoint else checkpoint
+    return (report if return_encoded_checkpoint else _json(report)), stored_checkpoint if return_encoded_checkpoint else checkpoint

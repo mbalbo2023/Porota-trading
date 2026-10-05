@@ -22,7 +22,7 @@ import zlib
 
 from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.sources import audit_sources, sanitize_source_errors
-from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, SCHEMA as STORAGE_SCHEMA
+from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, PreparedStorage, SCHEMA as STORAGE_SCHEMA
 
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
 LEGACY_GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v1"
@@ -472,9 +472,11 @@ class EvidenceFiles:
                             or manifest.get("source_reports_digest") != digest(value.get("source_reports", []))):
                         raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
                     if "projection" in manifest["files"]:
-                        from .projection import build_projection
+                        from .projection import build_projection, LEGACY_ENCODING, LEGACY_ROW_CODEC
                         _, expected_header, expected_projection = build_projection(value,
-                            {key: manifest["files"][key]["payload_digest"] for key in ROLES})
+                            {key: manifest["files"][key]["payload_digest"] for key in ROLES},
+                            logical_encoding=manifest["files"]["projection"].get("logical_encoding", LEGACY_ENCODING),
+                            row_codec=manifest["files"]["projection"].get("row_codec", LEGACY_ROW_CODEC))
                 if role == "status":
                     status_digests = {key: value.get(key) for key in ("report_digest", "checkpoint_digest")}
                 headers[role] = {key: deepcopy(value.get(key)) for key in
@@ -721,22 +723,26 @@ class EvidenceFiles:
         reports = values["report"].get("source_reports", [])
         _semantic_safety(values, fill=True)
         stamp(values["report"]["as_of"])
+        mutable = {"cross_payload_hashes", "evidence_retention", "status", "observation_status",
+                   "report_digest", "checkpoint_digest"}
+        cache, shape_memo = {}, {}
+        prepared = {role: PreparedStorage(value, mutable=mutable, durable_limit=self.payload_limit-128,
+                                         expansion_limit=EXPANDED_PAYLOAD_LIMIT, cache=cache, shape_memo=shape_memo) for role, value in values.items()}
+        shape_memo.clear()
+        from .projection import PreparedProjection
+        projection_builder = PreparedProjection(values["report"])
         def pack():
             for value in values.values():
                 value.pop("cross_payload_hashes", None)
-            hashes = {role: canonical_metrics(values[role], ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)[0]
+            hashes = {role: prepared[role].metrics(values[role])[0]
                       for role in ("report", "checkpoint")}
             for value in values.values():
                 value["cross_payload_hashes"] = hashes
-            payload_digests = {role: canonical_metrics(values[role], ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)[0]
-                               for role in ("report", "checkpoint")}
-            values["status"].update(report_digest=payload_digests["report"],
-                                   checkpoint_digest=payload_digests["checkpoint"])
-            payload_digests["status"] = digest(values["status"])
-            encoded = {}
+            encoded, payload_digests = {}, {}
             for role, name in ROLES.items():
-                representation = encode_storage(values[role], durable_limit=self.payload_limit - 128,
-                                                expansion_limit=EXPANDED_PAYLOAD_LIMIT)
+                if role == "status":
+                    values[role].update(report_digest=payload_digests["report"], checkpoint_digest=payload_digests["checkpoint"])
+                representation, payload_digests[role] = prepared[role].encode(values[role])
                 wire = _encode({"digest": payload_digests[role], "payload": representation})
                 if len(wire) > self.payload_limit:
                     raise ValueError("SHADOW_PAYLOAD_LIMIT")
@@ -749,8 +755,7 @@ class EvidenceFiles:
                 "source_reports_digest": digest(reports),
                 "files": {role: {"name": name, "sha256": _sha(encoded[role]),
                                  "payload_digest": payload_digests[role]} for role, name in ROLES.items()}}
-            from .projection import build_projection
-            projection_data, projection_header, projection_proof = build_projection(values["report"], payload_digests)
+            projection_data, projection_header, projection_proof = projection_builder.build(values["report"], payload_digests)
             encoded["projection"] = projection_data
             manifest["files"]["projection"] = {"name": GENERATION_ROLES["projection"], "sha256": _sha(projection_data),
                 **projection_proof}
@@ -784,6 +789,9 @@ class EvidenceFiles:
         encoded, manifest, manifest_data, current, current_data = pack()
         if sum(map(len, encoded.values())) + len(manifest_data) + len(current_data) > reserved:
             raise ValueError("SHADOW_RETENTION_RESERVATION_EXCEEDED")
+        projection_builder.close()
+        prepared.clear()
+        cache.clear()
         # Persist reservation before any sequence-bearing generation exists.
         # A killed preparation may leave a gap, never a reused sequence/fork.
         authority.update(allocated_sequence=sequence, prepared=current, phase="PREPARED")

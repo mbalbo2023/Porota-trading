@@ -8,7 +8,7 @@ import pytest
 
 from rc6_shadow_runtime import persistence
 from rc6_shadow_runtime.persistence import read_committed_generation, read_committed_projection
-from rc6_shadow_runtime.projection import cohort_id
+from rc6_shadow_runtime.projection import cohort_id, open_projection, logical_digest, row_dictionary_from_header, decode_row
 from tests.rc6_dashboard_native_fixture import native_fixture
 
 
@@ -96,3 +96,41 @@ def test_projection_deadline_and_boolean_offset_are_rejected(tmp_path):
         read_committed_projection(native.root, deadline=time.monotonic()-1)
     with pytest.raises(ValueError, match="QUERY_INVALID"):
         read_committed_projection(native.root, offset=False)
+
+
+@pytest.mark.parametrize("column,value", [("currency", "USD"), ("state", "FORGED_STATE"), ("cohort", "bad"),
+    ("priority", -1), ("rank", -1), ("event_at", "9999-01-01T00:00:00+00:00")])
+def test_full_logical_projection_hash_binds_every_query_index_column(tmp_path, column, value):
+    native = native_fixture(tmp_path, count=3)
+    generation = native.root / ("gen-"+native.cut["pointer"]["generation_id"])
+    member = generation / persistence.GENERATION_ROLES["projection"]
+    original = member.read_bytes()
+    connection, header = open_projection(original)
+    try:
+        assert logical_digest(connection, header)[0] == native.cut["manifest"]["files"]["projection"]["payload_digest"]
+        connection.execute("PRAGMA query_only=OFF")
+        connection.execute("UPDATE projection_rows SET "+column+"=? WHERE dataset='planner' AND ticker='T000'", (value,))
+        with pytest.raises(ValueError, match="DERIVATION_MISMATCH"):
+            logical_digest(connection, header)
+        assert member.read_bytes() == original
+    finally:
+        connection.close()
+
+
+def test_projection_dictionary_is_bound_and_wrong_dictionary_or_crc_never_decodes(tmp_path):
+    native = native_fixture(tmp_path, count=3)
+    generation = native.root / ("gen-"+native.cut["pointer"]["generation_id"])
+    connection, header = open_projection((generation / persistence.GENERATION_ROLES["projection"]).read_bytes())
+    try:
+        dictionary = row_dictionary_from_header(header)
+        assert dictionary and len(dictionary) <= 32768
+        raw = connection.execute("SELECT payload_json FROM projection_rows WHERE dataset='planner' LIMIT 1").fetchone()[0]
+        assert decode_row(raw, dictionary=dictionary)["identity"]
+        import zlib
+        with pytest.raises(zlib.error): decode_row(raw, dictionary=b"wrong")
+        with pytest.raises(zlib.error): decode_row(raw[:-1]+bytes([raw[-1]^1]), dictionary=dictionary)
+        header["row_codec"]["sha256"] = "0"*64
+        with pytest.raises(ValueError, match="DICTIONARY_INVALID"):
+            row_dictionary_from_header(header)
+    finally:
+        connection.close()

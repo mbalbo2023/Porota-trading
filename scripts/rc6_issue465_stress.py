@@ -17,6 +17,7 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 import resource
+from queue import Empty
 import sqlite3
 import sys
 import time
@@ -30,12 +31,36 @@ PRE = OPEN - timedelta(minutes=10)
 AT = OPEN + timedelta(minutes=5)
 
 
+class StressResourceLimit(AssertionError):
+    def __init__(self, evidence):
+        self.evidence = evidence
+        super().__init__(json.dumps({"resource_gates": evidence["resource_gates"],
+            "shadow_reason": evidence["shadow"].get("reason")}, sort_keys=True))
+
+
 def sha256(path):
     h = hashlib.sha256()
     with Path(path).open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def io_snapshot():
+    """Actual process counters; logical IO is separate from physical IO."""
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    values = {"input_blocks": usage.ru_inblock, "output_blocks": usage.ru_oublock}
+    path = Path("/proc/self/io")
+    if path.is_file():
+        for line in path.read_text().splitlines():
+            key, value = line.split(":", 1)
+            if key in {"rchar", "wchar", "syscr", "syscw", "read_bytes", "write_bytes", "cancelled_write_bytes"}:
+                values[key] = int(value.strip())
+    return values
+
+
+def io_delta(before, after):
+    return {key: after[key] - value for key, value in before.items() if key in after}
 
 
 def fixture_database(path, *, catalog_count, observations_per_identity=5):
@@ -84,8 +109,10 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
 def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes):
     from rc6_shadow_runtime import persistence
     from rc6_shadow_runtime.worker import ShadowRuntime
+    import rc6_shadow_runtime.worker as worker_module
+    import rc6_shadow_runtime.stages as stages_module
     from rc6_dynamic_universe.runtime import read_runtime
-    begin, cpu = time.monotonic(), time.process_time()
+    begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
     phases = []
     handlers = {}
     for module_name, function_name in (
@@ -98,23 +125,93 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})["calls"] += 1
             try:
                 return _original(*args, **kwargs)
+            except Exception as error:
+                if _name == "funnel":
+                    frame = error.__traceback__
+                    while frame is not None:
+                        state = frame.tb_frame.f_locals.get("checkpoint")
+                        if frame.tb_frame.f_code.co_name == "evaluate_runtime_funnel" and isinstance(state, dict):
+                            from rc6_performance.common import canonical
+                            handlers[_name]["guarded_state"] = {
+                                "expanded_bytes": len(canonical(state).encode()),
+                                "sections": {key: {"entries": len(value) if isinstance(value, (dict, list)) else None,
+                                    "bytes": len(canonical(value).encode())} for key, value in state.items()}}
+                            break
+                        frame = frame.tb_next
+                raise
             finally:
                 handlers[_name]["elapsed_seconds"] += time.monotonic()-wall
                 handlers[_name]["cpu_seconds"] += time.process_time()-process
         setattr(module, function_name, measured)
+    for owner, method, name in (
+            (worker_module, "run_shadow", "native_orchestrator"),
+            (stages_module, "enrich_pipeline", "native_stage_enrichment"),
+            (persistence.EvidenceFiles, "read_writer_generation", "checkpoint_restore"),
+            (persistence.EvidenceFiles, "commit_generation", "publication"),
+            (persistence.PreparedStorage, "__init__", "storage_prepare"),
+            (persistence.PreparedStorage, "metrics", "storage_metrics"),
+            (persistence.PreparedStorage, "encode", "storage_encode")):
+        original = getattr(owner, method)
+        def operation(*args, _name=name, _original=original, **kwargs):
+            wall, process = time.monotonic(), time.process_time()
+            metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
+            metrics["calls"] += 1
+            try:
+                value = _original(*args, **kwargs)
+                if _name == "checkpoint_restore" and kwargs.get("checkpoint") and value:
+                    state = value["checkpoint"]
+                    assert all(key in state for key in ("lab", "entry_signals", "funnel"))
+                    metrics.setdefault("restored_sequences", []).append(value["pointer"]["sequence"])
+                return value
+            finally:
+                metrics["elapsed_seconds"] += time.monotonic()-wall
+                metrics["cpu_seconds"] += time.process_time()-process
+                metrics["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
+                queue.put({"_probe_event": "PROGRESS", "handler_resources": handlers.copy(),
+                    "phases": phases.copy(), "elapsed_seconds": time.monotonic()-begin,
+                    "cpu_seconds": time.process_time()-cpu, "peak_rss_bytes": metrics["peak_rss_bytes"]})
+        setattr(owner, method, operation)
+    from rc6_shadow_runtime.projection import PreparedProjection
+    for method, name in (("__init__", "projection_prepare"), ("build", "projection_header")):
+        original = getattr(PreparedProjection, method)
+        def operation(*args, _name=name, _original=original, **kwargs):
+            wall, process = time.monotonic(), time.process_time()
+            metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
+            metrics["calls"] += 1
+            try: return _original(*args, **kwargs)
+            finally:
+                metrics["elapsed_seconds"] += time.monotonic()-wall
+                metrics["cpu_seconds"] += time.process_time()-process
+                queue.put({"_probe_event": "PROGRESS", "handler_resources": handlers.copy(),
+                    "phases": phases.copy(), "elapsed_seconds": time.monotonic()-begin,
+                    "cpu_seconds": time.process_time()-cpu,
+                    "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024})
+        setattr(PreparedProjection, method, operation)
     try:
         os.nice(10)  # Same priority as the canonical isolated SHADOW child.
     except OSError:
         pass
     actual_fsync = persistence.os.fsync
     blocked = False
+    fsync = {"fsync_entered": False, "fsync_completed": False, "blocked_seconds": 0.,
+             "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"}
     def slow_fsync(fd):
         nonlocal blocked
-        if not blocked:
+        descriptor = Path(os.readlink("/proc/self/fd/" + str(fd)))
+        eligible = descriptor.name in persistence.GENERATION_ROLES.values() and descriptor.parent.name.startswith(".generation-")
+        if not blocked and eligible:
             blocked = True
+            fsync.update(fsync_entered=True, entered_at_monotonic=time.monotonic(), member=descriptor.name)
+            queue.put({"_probe_event": "FSYNC", "fsync": fsync.copy()})
             started.set()
+            waited_at = time.monotonic()
             if not release.wait(15):
                 raise TimeoutError("SYNTHETIC_SLOW_DISK_DEADLINE")
+            fsync["blocked_seconds"] = time.monotonic() - waited_at
+            value = actual_fsync(fd)
+            fsync.update(fsync_completed=True, completed_at_monotonic=time.monotonic())
+            queue.put({"_probe_event": "FSYNC", "fsync": fsync.copy()})
+            return value
         return actual_fsync(fd)
     if slow_disk:
         persistence.os.fsync = slow_fsync
@@ -123,10 +220,13 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
     try:
         data = read_runtime(database, as_of=AT, row_limit=20000, query_budget_seconds=2)
         phases.append("BOUNDED_READ")
-        worker = ShadowRuntime(database, evidence_root=output, source_roots=[],
+        worker = ShadowRuntime.from_environment(database, evidence_root=output, source_roots=[],
                                maximum_bytes=maximum_bytes)
         report = worker.tick(PRE)
         phases.append("PREOPEN_COMMITTED")
+        del report
+        import gc
+        gc.collect()
         report = worker.tick(AT)
         phases.append("OPEN_CYCLE_COMPLETED")
         assert report["provider_requests"] == report["real_orders_sent"] == 0
@@ -134,21 +234,45 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
         assert report["source_database_effect"] == "READ_ONLY"
         assert len(data["observations"]) <= 40000
         assert len(data["catalog"]) <= 20000
-        from rc6_shadow_runtime.persistence import EvidenceFiles
-        with EvidenceFiles(output) as files:
-            checkpoint = files.read("checkpoint.json.gz")
-        # Labs/funnel have explicit bounded state and remain prospective.
-        assert checkpoint and "lab" in checkpoint and "entry_signals" in checkpoint and "funnel" in checkpoint
+        committed = persistence.read_committed_projection(output, deadline=time.monotonic()+1)
+        assert committed["report"]["as_of"] == report["as_of"]
+        assert committed["pointer"]["generation_id"] == report["generation_id"]
+        assert 1 in handlers["checkpoint_restore"].get("restored_sequences", [])
+        assert committed["dataset_pages"]["opportunities"]["total"] == 2*len(report["catalog_ready"])
         result = {"status": report["status"], "cycle_completion": True,
                   "full_pipeline_exercised": True,
-                  "family_reports": len(report["family_routing"]["families"]),
+                  "family_reports": len(report["family_routing"] if isinstance(report["family_routing"], list)
+                                        else report["family_routing"]["families"]),
                   "observations_returned": len(data["observations"]),
                   "observation_read_truncated": data["observation_read_truncated"],
-                  "source_database_effect": "READ_ONLY"}
+                  "source_database_effect": "READ_ONLY", "committed_sequence": committed["pointer"]["sequence"],
+                  "generation_schema": committed["manifest"]["schema"],
+                  "configuration_fingerprint": committed["manifest"]["configuration_fingerprint"],
+                  "verification_level": committed["export_contract"]["verification_level"],
+                  "capacity_policy": report["capacity_policy"],
+                  "catalog_ready_count": len(report["catalog_ready"])}
     except Exception as exc:
         # Resource pressure is an explicit loss of SHADOW evidence, never success.
         result = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False,
-                  "error_class": type(exc).__name__, "reason": str(exc)[:180]}
+                  "error_class": type(exc).__name__, "reason": persistence.failure_reason(exc)}
+        frames = []; cursor = exc.__traceback__
+        while cursor is not None:
+            frames.append({"module": cursor.tb_frame.f_globals.get("__name__"),
+                           "function": cursor.tb_frame.f_code.co_name, "line": cursor.tb_lineno})
+            cursor = cursor.tb_next
+        result["error_context"] = {"frames": frames[-12:], "sqlite_errorname": getattr(exc, "sqlite_errorname", None),
+                                   "sqlite_errorcode": getattr(exc, "sqlite_errorcode", None)}
+        frame = exc.__traceback__
+        while frame is not None:
+            local = frame.tb_frame.f_locals
+            if frame.tb_frame.f_code.co_name == "pack" and isinstance(local.get("wire"), bytes):
+                result["guarded_generation_role"] = {"role": local.get("role"),
+                    "raw_bytes": len(local["wire"]), "payload_limit": worker.files.payload_limit,
+                    "sections": {key: {"entries": len(value) if isinstance(value, (dict, list)) else None,
+                        "bytes": len(persistence._encode(value))}
+                        for key, value in local["values"][local["role"]].items()}}
+                break
+            frame = frame.tb_next
         if hasattr(exc, "metrics"):
             result["retention_pressure"] = {key: value for key, value in exc.metrics.items()
                 if key in {"status", "reason", "files", "bytes", "projected_files", "projected_bytes",
@@ -156,15 +280,17 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
     finally:
         persistence.os.fsync = actual_fsync
     result.update(phases=phases, cycle_handled=True,
-                  full_pipeline_exercised=set(handlers) == {"families", "lab", "entry_signals", "funnel"},
+                  full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
                   elapsed_seconds=time.monotonic()-begin,
                   cpu_seconds=time.process_time()-cpu,
                   peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
                   evidence_bytes=sum(p.stat().st_size for p in Path(output).rglob("*") if p.is_file()),
                   evidence_files=sum(p.is_file() for p in Path(output).rglob("*")),
+                  io=io_delta(initial_io, io_snapshot()), fsync=fsync,
                   real_orders_sent=0, real_routes="NOT_CALLED", provider_requests=0)
-    started.set()  # A pre-fsync quota rejection still releases the parent probe.
+    started.set()  # Completion fallback releases the probe; fsync flags remain factual.
+    result["_probe_event"] = "FINAL"
     queue.put(result)
 
 
@@ -190,7 +316,7 @@ def factual_exit_probe(path):
             if not ok:
                 raise AssertionError(f"SYNTHETIC_PAPER_OPEN_FAILED:{reason}")
             quotes[q.symbol] = q
-        begin = time.monotonic()
+        begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
         at = AT.isoformat()
         clock[0] = at
         supervisor = PositionExitSupervisor(broker, clock_fn=lambda: at, session_policy=PaperSessionPolicy())
@@ -210,6 +336,8 @@ def factual_exit_probe(path):
             state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         assert fills == 5 and tuple(state) == ("PRODUCTION_PAPER", 0)
         return {"closed": 5, "sell_fills": fills, "elapsed_seconds": time.monotonic()-begin,
+                "cpu_seconds": time.process_time()-cpu, "io": io_delta(initial_io, io_snapshot()),
+                "started_at_monotonic": begin, "finished_at_monotonic": time.monotonic(),
                 "stale_current_fresh_book": True, "real_orders_sent": 0}
     finally:
         if old_policy is None:
@@ -219,7 +347,7 @@ def factual_exit_probe(path):
 
 
 def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
-               slow_disk=False, maximum_bytes=128*1024**2):
+               slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()):
@@ -232,19 +360,41 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
     started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
     child = ctx.Process(target=_shadow_child, args=(str(database), str(root/"shadow"),
                         started, release, queue, slow_disk, maximum_bytes))
+    cycle_begin = time.monotonic(); deadline = cycle_begin+90
     child.start()
+    shadow = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False, "cycle_handled": False,
+        "reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE", "handler_resources": {}, "phases": [],
+        "fsync": {"fsync_entered": False, "fsync_completed": False, "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
+        "elapsed_seconds": 90., "cpu_seconds": 0., "peak_rss_bytes": 0}
     try:
-        if not started.wait(20):
-            raise AssertionError("SHADOW_START_DEADLINE")
+        started.wait(max(0., deadline-time.monotonic()))
         # The SHADOW child has separate source/IO ownership; it cannot call exits.
         exits = factual_exit_probe(root/"exit-paper.db")
         release.set()
-        child.join(90)
+        # Consume before joining: the multiprocessing feeder cannot finish a
+        # large resource receipt while the parent is waiting for its exit.
+        completed = False
+        while time.monotonic() < deadline:
+            try: message = queue.get(timeout=max(.01, deadline-time.monotonic()))
+            except Empty: break
+            event = message.pop("_probe_event", None)
+            if event == "FINAL": shadow = message; completed = True; break
+            if event in {"PROGRESS", "FSYNC"}: shadow.update(message)
+        if not completed:
+            shadow.update(status="SHADOW_FAIL_CLOSED", cycle_completion=False,
+                cycle_handled=False, reason="SHADOW_CONSERVATIVE_CYCLE_DEADLINE")
+            proc = Path("/proc") / str(child.pid) / "status"
+            if proc.is_file():
+                for line in proc.read_text().splitlines():
+                    if line.startswith("VmHWM:"):
+                        shadow["peak_rss_bytes"] = max(shadow["peak_rss_bytes"], int(line.split()[1])*1024)
+        child.join(max(0., deadline-time.monotonic()))
         if child.is_alive():
-            raise AssertionError("SHADOW_CONSERVATIVE_CYCLE_DEADLINE")
-        if child.exitcode != 0:
+            shadow.update(child_cleanup_completed=False, child_cleanup_reason="SHADOW_CHILD_CLEANUP_DEADLINE")
+        else:
+            shadow["child_cleanup_completed"] = True
+        if not child.is_alive() and child.exitcode != 0:
             raise AssertionError(f"SHADOW_CHILD_EXIT:{child.exitcode}")
-        shadow = queue.get(timeout=5)
     finally:
         release.set()
         if child.is_alive():
@@ -252,21 +402,41 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             child.join(5)
         queue.close()
         queue.join_thread()
+    shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in (root/"shadow").rglob("*") if p.is_file()))
+    shadow.setdefault("evidence_files", sum(p.is_file() for p in (root/"shadow").rglob("*")))
+    shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
     unchanged = before == sha256(database)
-    assert unchanged, "SHADOW_MODIFIED_SOURCE_DATABASE"
-    assert shadow["evidence_bytes"] <= maximum_bytes
-    assert shadow["peak_rss_bytes"] < 2*1024**3
-    return {"schema": "rc6.issue465.synthetic-stress.v1", "synthetic": True,
+    fsync = shadow["fsync"]
+    slow_proven = bool(slow_disk and fsync["fsync_entered"] and fsync["fsync_completed"]
+        and fsync["entered_at_monotonic"] <= exits["started_at_monotonic"]
+        <= exits["finished_at_monotonic"] <= fsync["completed_at_monotonic"])
+    result = {"schema": "rc6.issue465.synthetic-stress.v2", "synthetic": True,
             "catalog_baseline": 1200, "catalog_count": catalog_count,
             "catalog_multiplier": catalog_count/1200,
             "observation_baseline_per_identity": 1,
             "observation_multiplier": observations_per_identity,
             "observations_materialized": catalog_count*observations_per_identity,
-            "slow_disk_injected": slow_disk, "shadow": shadow,
+            "slow_disk_requested": slow_disk, "slow_disk_injected": fsync["fsync_entered"],
+            "slow_fsync_exit_isolation_proven": slow_proven, "shadow": shadow,
             "factual_exits": exits, "source_database_unchanged": unchanged,
             "source_sha256": before, "real_orders_sent": 0,
             "real_routes": "NOT_CALLED", "runtime_touched": False,
             "provider_requests": 0, "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY"}
+    result["completion_required"] = not allow_fail_closed
+    result["cycle_deadline_seconds"] = 90
+    result["resource_gates"] = {"source_database_unchanged": unchanged,
+        "evidence_within_quota": shadow["evidence_bytes"] <= maximum_bytes,
+        "rss_within_two_gib": shadow["peak_rss_bytes"] < 2 * 1024**3,
+        "child_cleanup_completed": shadow["child_cleanup_completed"],
+        "complete_committed_cycle": allow_fail_closed or shadow["cycle_completion"],
+        "actual_slow_fsync_exit_isolation": not slow_disk or allow_fail_closed or slow_proven,
+        "maximum_rss_bytes": 2 * 1024**3, "actual_rss_bytes": shadow["peak_rss_bytes"],
+        "maximum_evidence_bytes": maximum_bytes, "actual_evidence_bytes": shadow["evidence_bytes"]}
+    if not all(result["resource_gates"][key] for key in
+               ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
+                "complete_committed_cycle", "actual_slow_fsync_exit_isolation")):
+        raise StressResourceLimit(result)
+    return result
 
 
 def main(argv=None):
@@ -277,11 +447,15 @@ def main(argv=None):
     parser.add_argument("--observations-per-identity", type=int, default=5)
     parser.add_argument("--slow-disk", action="store_true")
     args = parser.parse_args(argv)
-    result = run_stress(args.root, catalog_count=args.catalog_count,
-                        observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk)
+    code = 0
+    try:
+        result = run_stress(args.root, catalog_count=args.catalog_count,
+                            observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk)
+    except StressResourceLimit as error:
+        result, code = error.evidence, 1
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")
     print("ISSUE465_STRESS_EVIDENCE="+str(Path(args.out)))
-    return 0
+    return code
 
 
 if __name__ == "__main__":

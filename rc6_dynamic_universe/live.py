@@ -8,7 +8,20 @@ from .sources import audit_sources, native_source_reports, source_observations
 from .tradeability import rank_tradeability, freeze_preopen, anomaly_events
 from cf_intraday_scalping import shadow_sampling_plan
 
-def run_shadow(bundle, *, previous=None):
+
+def _plan_previous(previous):
+    """Pass the complete mutable state consumed by the native plan method.
+
+    Its telemetry/capacity presentation is not read by Universe.plan; global
+    allocation still receives the original complete previous report below.
+    Unknown or malformed contracts keep the original validation path.
+    """
+    if (not isinstance(previous, dict) or previous.get("schema") != "ws-perf-03-orchestrator-v1"
+            or not {"configuration_fingerprint", "planned_at", "instruments"}.issubset(previous)):
+        return previous
+    return {key: previous[key] for key in ("schema", "configuration_fingerprint", "planned_at", "instruments")}
+
+def run_shadow(bundle, *, previous=None, freeze_only=False):
     safety = bundle.get("safety", {})
     if (safety.get("mode") not in {"PRODUCTION_PAPER", "SIMULATION"} or
             safety.get("real_orders_sent") != 0 or safety.get("real_routes") != "NOT_CALLED"):
@@ -83,14 +96,22 @@ def run_shadow(bundle, *, previous=None):
             if at >= opening:
                 raise ValueError("PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION")
         frozen_reports[policy.engine] = frozen
+        if freeze_only:
+            continue
         kwargs = dict(at=at, session_open=opening, frozen=frozen, capacity=capacity,
             observations=observations, events=events["events"], opened=bundle.get("opened", []),
-            previous=(previous or {}).get("engines", previous or {}).get(policy.engine), phase=phase)
+            previous=_plan_previous((previous or {}).get("engines", previous or {}).get(policy.engine)), phase=phase)
         if policy.engine == "SCALPING":
             plan = shadow_sampling_plan(bundle["catalog"], policy=policy, **kwargs)
         else:
             plan = UniverseOrchestrator(bundle["catalog"], policy=policy).plan(**kwargs)
         plans.append((plan, policy))
+    if freeze_only:
+        # The worker's first preopen preparation persists only these immutable
+        # rankings. Its following full pass performs all native planning/audit;
+        # do not build and discard a second complete pair of planner states.
+        return {"mode": "SHADOW", "as_of": at.isoformat(), "frozen": frozen_reports,
+                "real_orders_sent": 0, "real_routes": "NOT_CALLED", "scope": "IMMUTABLE_PREOPEN_ONLY"}
     # Reserve per-endpoint against the minimum jointly verified capacity.
     available = {}
     for plan, policy in plans:
