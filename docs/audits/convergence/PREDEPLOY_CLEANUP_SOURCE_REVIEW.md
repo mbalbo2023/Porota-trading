@@ -61,3 +61,10 @@ identity, source/control substitution, safe output ordering, capacity, deadline
 and workflow producer/upload/cleanup ordering. Their execution is pending the
 Root CPU slot on a fresh whole source checkout with the exact frozen dependency
 closure. They do not constitute an image or runtime validation.
+
+A further source review of checkpoint `edc2b57d` found that a FIFO substituted
+for a control/marker/receipt/source-manifest could block the initial read opener
+before its regular-file check. The forward fix adds O_NONBLOCK without relaxing
+regular-file custody; a FIFO with no writer must be rejected immediately. Its
+controlled guard has a one-second watchdog so a regression fails visibly rather
+than hanging the focal. This finding remains source-inferred, not a Native RED.

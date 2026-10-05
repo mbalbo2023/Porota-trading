@@ -131,7 +131,7 @@ def read_file(path, *, maximum=256 * 1024, mode=None):
     path = safe_absolute(path)
     with directory(path.parent) as parent:
         descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW
-                             | os.O_NOATIME | os.O_CLOEXEC, dir_fd=parent)
+                             | os.O_NOATIME | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
         try:
             before = os.fstat(descriptor)
             require(mount_id(descriptor) == mount_id(parent), "CONTROL_FILE_MOUNT")

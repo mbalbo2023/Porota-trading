@@ -82,8 +82,8 @@
       "sha256": "38ad4642f9e71b6a7493f381058b9e6af28879bbbeb5cd68b071c6c572cc24db"
     },
     "scripts/porota_predeploy_cleanup.py": {
-      "bytes": 36566,
-      "sha256": "85739673a14bc59b4731f077c94d0fce5938a68e545a97a8ba362817bd926455"
+      "bytes": 36582,
+      "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f"
     },
     "tests/test_deploy_v2_frozen_artifact_contract.py": {
       "bytes": 1402,
@@ -94,9 +94,17 @@
       "sha256": "f5636f65c995ec6d4a0d2f6bdb8392c4b1572a707f7a00e58df44450cf520c49"
     },
     "tests/test_rc6_predeploy_scoped_cleanup.py": {
-      "bytes": 19916,
-      "sha256": "62e435236cc880ed06686797168d49904396643e80457b950d1da4a35a7ea22e"
+      "bytes": 21037,
+      "sha256": "9ded940a643507419fee0094cd39d9d01a22f496e0fd794b5a8fd0790e24ec6e"
     }
+  },
+  "source_review_fix_forward": {
+    "classification": "STATIC_FIFO_BLOCKING_OPEN_RISK_NOT_EXECUTED_NATIVE_RED",
+    "execution": "PENDING_ROOT_SLOT",
+    "finding": "read_file must not wait for a FIFO writer before checking the opened object type",
+    "fix": "O_NONBLOCK on the fd-relative NOFOLLOW/NOATIME opener, regular-file custody rejection unchanged",
+    "guard": "tests/test_rc6_predeploy_scoped_cleanup.py::test_fifo_control_is_rejected_before_blocking_for_a_writer",
+    "previous_source_checkpoint": "edc2b57dd46b3844d08554a5ef656b0a795fc79d"
   },
   "validation": {
     "controlled_guards_execution": "PENDING_ROOT_SLOT_AFTER_SOURCE_REVIEW",

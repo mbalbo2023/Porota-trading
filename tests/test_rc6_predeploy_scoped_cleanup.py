@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
+import time
 
 import pytest
 import yaml
@@ -120,6 +122,31 @@ def run_cleanup(owned, **kwargs):
 def assert_no_removals(daemon):
     assert not any(args[:2] in {("container", "rm"), ("image", "rm")}
                    for args, _ in daemon.calls)
+
+
+def test_fifo_control_is_rejected_before_blocking_for_a_writer(tmp_path):
+    fifo = tmp_path / "replaced-control.json"
+    os.mkfifo(fifo, mode=0o600)
+    before = fifo.stat()
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    started = time.monotonic()
+    def stalled(_signum, _frame):
+        raise AssertionError("FIFO control open blocked before type rejection")
+    signal.signal(signal.SIGALRM, stalled)
+    signal.setitimer(signal.ITIMER_REAL, 1.0)
+    try:
+        with pytest.raises(cleanup.CleanupRejected, match="RESOURCE_CUSTODY_INVALID"):
+            cleanup.read_file(fifo)
+        assert time.monotonic() - started < 1.0
+        after = fifo.stat()
+        assert cleanup.identity(before) == cleanup.identity(after)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0]:
+            signal.setitimer(signal.ITIMER_REAL,
+                max(0.001, previous_timer[0] - (time.monotonic() - started)), previous_timer[1])
 
 
 def test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta(owned):
