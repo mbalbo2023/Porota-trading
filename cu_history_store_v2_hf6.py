@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS history_versions_v2(
 CREATE INDEX IF NOT EXISTS idx_history_versions_v2_identity ON history_versions_v2(
  symbol,instrument_type,market,currency,settlement,date,price_basis,adjustment_basis,id DESC);
 CREATE INDEX IF NOT EXISTS idx_history_versions_v2_source ON history_versions_v2(source,version_known_at);
+CREATE INDEX IF NOT EXISTS idx_history_versions_v2_exact_revision ON history_versions_v2(
+ symbol,instrument_type,market,currency,settlement,date,price_basis,adjustment_basis,
+ source,version_known_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS history_canonical_v2(
  symbol TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,currency TEXT NOT NULL,
  settlement TEXT NOT NULL,date TEXT NOT NULL,price_basis TEXT NOT NULL,adjustment_basis TEXT NOT NULL,

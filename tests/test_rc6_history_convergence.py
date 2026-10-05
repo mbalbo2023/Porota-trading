@@ -225,6 +225,29 @@ def test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fo
     assert exact_read(s,cut='2026-10-01T18:30:00Z')[0]['close']==100
 
 
+def test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities(tmp_path):
+    s=Store(tmp_path/'history.sqlite');history.append_candle(s,candle())
+    def query_work():
+        operations=0
+        def counter():
+            nonlocal operations
+            operations+=1
+            return 0
+        with s.connect() as connection:
+            connection.set_progress_handler(counter,1)
+            row=connection.execute('SELECT * FROM history_versions_v2 WHERE '+history._WHERE+
+                ' AND source=? ORDER BY version_known_at DESC,id DESC LIMIT 1',
+                ('MISSING','ACCIONES','BYMA','ARS','A-24HS','2026-09-30','RAW','RAW_NO_ADJUSTMENT','PPI_API')).fetchone()
+            connection.set_progress_handler(None,0)
+            assert row is None
+        return operations
+    small=query_work()
+    history.append_many(s,[candle(symbol='UNRELATED'+str(index)) for index in range(2000)])
+    large=query_work()
+    assert large<=small+128
+    assert len(table(s,'history_versions_v2'))==2001
+
+
 def test_AUD18_batch_validation_and_mid_transaction_abort_leave_no_partial_commit(tmp_path):
     s=Store(tmp_path/'history.sqlite');history.init_schema(s)
     with pytest.raises(ValueError):history.append_many(s,[candle(),candle(close=-1,date='2026-10-01')])

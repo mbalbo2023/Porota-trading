@@ -503,3 +503,26 @@ def test_NEW_preopen_microsecond_known_cut_and_currency_conflict_are_not_backdat
     inputs = _read(source, history)
     assert inputs["history"] == []
     assert inputs["quality"]["rejected_inputs"]["SOURCE_IDENTITY_NO_VERIFICADO"] == 20
+
+
+def test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve(tmp_path, monkeypatch):
+    source = _make_database(tmp_path/"trading.db")
+    history = tmp_path/"history.db"
+    _history(history)
+    clock = [monotonic()]
+    original = preopen._clock_pair
+    visited = []
+    def costly_validation(*args, **kwargs):
+        # Simulate expensive valid native rows with a controlled monotonic
+        # clock; the SQL progress handler has already finished fetching rows.
+        clock[0] += .25
+        visited.append(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(preopen, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(preopen, "_clock_pair", costly_validation)
+    inputs = _read(source, history)
+    assert 1 <= len(visited) < 20
+    assert inputs["history"] == []
+    assert inputs["quality"]["unavailable_sources"] == ["history:TIME_BUDGET_EXHAUSTED"]
+    assert inputs["quality"]["source_snapshot_limits"]["processing_seconds"] == 1.9
+    assert inputs["quality"]["source_snapshot_limits"]["cleanup_reserve_seconds"] == .1

@@ -16,24 +16,25 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate",
-          "seconds": 0.01,
+          "seconds": 0.013,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile",
-          "seconds": 0.099,
+          "seconds": 0.095,
           "status": "PASS"
         },
         {
           "pytest_node": "test_hf6_history_data912_v2.py::test_adjusted_series_is_preserved_separately_without_replacing_raw",
-          "seconds": 0.003,
+          "seconds": 0.002,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-06",
       "rca": "The canonical key excluded price/adjustment bases and adjusted evidence could replace RAW.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -59,7 +60,7 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_currency_identity_is_exact_and_missing_currency_is_rejected",
-          "seconds": 0.005,
+          "seconds": 0.009,
           "status": "PASS"
         },
         {
@@ -69,12 +70,12 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_currency",
-          "seconds": 0.011,
+          "seconds": 0.012,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_currency",
-          "seconds": 0.008,
+          "seconds": 0.01,
           "status": "PASS"
         },
         {
@@ -84,12 +85,12 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed",
-          "seconds": 0.001,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_native_currency_provider_clock_and_unknown_quantity_kind_are_explicit",
-          "seconds": 0.011,
+          "seconds": 0.015,
           "status": "PASS"
         },
         {
@@ -111,7 +112,8 @@
       "id": "AUD-468-07",
       "rca": "Four-field history identities collapsed distinct quote cash currencies; adapters could infer missing currency.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -130,19 +132,20 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock",
-          "seconds": 0.004,
+          "seconds": 0.005,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_history_close_only_hf2.py::test_identical_retry_dedupes_version_and_preserves_original_observed_at",
-          "seconds": 0.003,
+          "seconds": 0.015,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-08",
       "rca": "Identical retries moved observed_at and falsely refreshed availability.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -173,7 +176,8 @@
       "id": "AUD-468-09",
       "rca": "Textual offsets ordered timestamps differently from their actual instants.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -194,12 +198,12 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes0-DATE_IN_FUTURE]",
-          "seconds": 0.004,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes1-DATE_INVALID]",
-          "seconds": 0.003,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
@@ -209,17 +213,17 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes3-SESSION_NOT_OPERATIONAL]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
-          "seconds": 0.003,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
@@ -234,22 +238,22 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes8-OHLC_INCONSISTENT]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes9-OHLC_PARTIAL]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes10-CLOCK_AWARE_REQUIRED]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes11-KNOWN_AT_IN_FUTURE]",
-          "seconds": 0.004,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
@@ -259,7 +263,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes13-ADJUSTMENT_CONFLICT]",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
@@ -269,7 +273,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_indices",
-          "seconds": 0.005,
+          "seconds": 0.007,
           "status": "PASS"
         },
         {
@@ -279,7 +283,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_batch",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         },
         {
@@ -291,7 +295,8 @@
       "id": "AUD-468-10",
       "rca": "Direct writers bypassed numeric/session/aware-clock validation and provider duplicates could be written arbitrarily.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -311,12 +316,12 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identity",
-          "seconds": 0.037,
+          "seconds": 0.036,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_connection",
-          "seconds": 0.038,
+          "seconds": 0.034,
           "status": "PASS"
         },
         {
@@ -331,14 +336,15 @@
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
-          "seconds": 0.003,
+          "seconds": 0.004,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-11",
       "rca": "SHADOW consumed a mutable latest history payload without an exact known-at cut.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -356,24 +362,25 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_fifteen_revisions_count_one_and_conflict_revokes_without_resurrection",
-          "seconds": 0.01,
+          "seconds": 0.011,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready",
-          "seconds": 0.016,
+          "seconds": 0.014,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_latest_oversized_metadata_fails_closed_without_resurrecting_old_revision",
-          "seconds": 0.014,
+          "seconds": 0.018,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-12",
       "rca": "Version counts became bar counts, sources/bases were concatenated and quality filtering could resurrect superseded bars.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -398,7 +405,8 @@
       "id": "AUD-468-13",
       "rca": "IOL montoOperado cash was treated as volume and multiplied by price again.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -416,24 +424,25 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence",
-          "seconds": 0.089,
+          "seconds": 0.072,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fourth",
-          "seconds": 0.009,
+          "seconds": 0.029,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_history_DB_LOCK_RECOVERY_retries_after_lock_without_partial_versions",
-          "seconds": 0.015,
+          "seconds": 0.016,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-17",
       "rca": "Deduplication depended on application checks rather than enforced transactional uniqueness.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -456,34 +465,35 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_batch_validation_and_mid_transaction_abort_leave_no_partial_commit",
-          "seconds": 0.011,
-          "status": "PASS"
-        },
-        {
-          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
-          "seconds": 0.027,
-          "status": "PASS"
-        },
-        {
-          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
-          "seconds": 0.017,
-          "status": "PASS"
-        },
-        {
-          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
           "seconds": 0.006,
           "status": "PASS"
         },
         {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+          "seconds": 0.032,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
+          "seconds": 0.027,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data",
-          "seconds": 0.011,
+          "seconds": 0.013,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-18",
       "rca": "Batches and physically separate stores could commit partially without durable resumable stage evidence.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -506,7 +516,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
-          "seconds": 0.001,
+          "seconds": 0.0,
           "status": "PASS"
         },
         {
@@ -516,7 +526,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
-          "seconds": 0.0,
+          "seconds": 0.001,
           "status": "PASS"
         },
         {
@@ -526,7 +536,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
-          "seconds": 0.001,
+          "seconds": 0.0,
           "status": "PASS"
         },
         {
@@ -541,19 +551,20 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
-          "seconds": 0.001,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]",
-          "seconds": 0.001,
+          "seconds": 0.002,
           "status": "PASS"
         }
       ],
       "id": "AUD-468-20",
       "rca": "Data912 omitted row validation/rejection accounting and could report a partial or ambiguous batch as complete.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -571,12 +582,12 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
-          "seconds": 0.003,
+          "seconds": 0.005,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
-          "seconds": 0.005,
+          "seconds": 0.007,
           "status": "PASS"
         },
         {
@@ -588,7 +599,8 @@
       "id": "AUD-468-21",
       "rca": "Legacy counts and old denominators were reused as current coverage/readiness without exact cohort/cut/consumer/currency.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -614,7 +626,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
-          "seconds": 0.003,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
@@ -624,7 +636,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
-          "seconds": 0.001,
+          "seconds": 0.002,
           "status": "PASS"
         },
         {
@@ -634,12 +646,12 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
-          "seconds": 0.002,
+          "seconds": 0.004,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
-          "seconds": 0.003,
+          "seconds": 0.004,
           "status": "PASS"
         },
         {
@@ -649,7 +661,7 @@
         },
         {
           "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
-          "seconds": 0.002,
+          "seconds": 0.001,
           "status": "PASS"
         },
         {
@@ -659,19 +671,20 @@
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
-          "seconds": 0.248,
+          "seconds": 0.212,
           "status": "PASS"
         },
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
-          "seconds": 0.003,
+          "seconds": 0.004,
           "status": "PASS"
         }
       ],
       "id": "U24",
       "rca": "SQLite mode=ro on a main+WAL source without SHM could create source SHM and change filesystem metadata.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "GREEN_SYNTHETIC_NATIVE"
     },
@@ -689,7 +702,7 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
-          "seconds": 0.248,
+          "seconds": 0.212,
           "status": "PASS"
         }
       ],
@@ -697,7 +710,8 @@
       "parent_finding": "U24",
       "rca": "mode=ro directly opened historical main/WAL and created source SHM; filesystem-level source invariance was not guaranteed.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "RED_THEN_GREEN_NATIVE_TICK"
     },
@@ -714,7 +728,7 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_AUD06_preopen_tick_adjusted_Data912_cannot_replace_RAW_PPI_profile",
-          "seconds": 0.099,
+          "seconds": 0.095,
           "status": "PASS"
         }
       ],
@@ -722,9 +736,88 @@
       "parent_finding": "AUD-468-06",
       "rca": "bool(adjusted)=True preceded source rank, so adjusted Data912 replaced RAW PPI activity/quantity inputs.",
       "receipts": [
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "RED_THEN_GREEN_NATIVE_TICK"
+    },
+    {
+      "external_limits": [
+        "No production/current full historical dataset was authorized. Current coverage/cadence/runtime/capacity NO_VERIFICADO.",
+        "The fixture has one real session per identity, not five sessions and not a fabricated 72-bar history.",
+        "Positive preopen input quality remains NO_VERIFICADO because the fixture contains no book observations; it grants no readiness/execution authority.",
+        "All timings are measurements of this offline fixture and environment, not guarantees for other source sizes, active writer snapshots or host contention."
+      ],
+      "extra": {
+        "migration_receipt": "rc6_audit_evidence/history_convergence/dry_run_exact_index.json"
+      },
+      "fix_paths": [
+        "cu_history_store_v2_hf6.py"
+      ],
+      "guards": [
+        {
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities",
+          "seconds": 0.469,
+          "status": "PASS"
+        }
+      ],
+      "id": "NEW_HISTORY_EXACT_REVISION_LOOKUP",
+      "parent_findings": [
+        "AUD-468-17",
+        "AUD-468-18"
+      ],
+      "rca": "Full-key previous-revision lookup used a low-selectivity provider index and rescanned unrelated identities for every insert.",
+      "receipts": [
+        "rc6_audit_evidence/history_convergence/scale_deadline.json"
+      ],
+      "status": "GREEN_SYNTHETIC_NATIVE"
+    },
+    {
+      "external_limits": [
+        "No production/current full historical dataset was authorized. Current coverage/cadence/runtime/capacity NO_VERIFICADO.",
+        "The fixture has one real session per identity, not five sessions and not a fabricated 72-bar history.",
+        "Positive preopen input quality remains NO_VERIFICADO because the fixture contains no book observations; it grants no readiness/execution authority.",
+        "All timings are measurements of this offline fixture and environment, not guarantees for other source sizes, active writer snapshots or host contention."
+      ],
+      "extra": {
+        "migration_receipt": "rc6_audit_evidence/history_convergence/dry_run_exact_index.json"
+      },
+      "fix_paths": [
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "guards": [
+        {
+          "pytest_node": "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+          "seconds": 16.299,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+          "seconds": 1.476,
+          "status": "PASS"
+        },
+        {
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+          "seconds": 2.228,
+          "status": "PASS"
+        }
+      ],
+      "id": "NEW_PREOPEN_PROCESSING_DEADLINE",
+      "parent_findings": [
+        "U24",
+        "AUD-468-11",
+        "AUD-468-12"
+      ],
+      "rca": "Python native row validation and selection ran beyond the SQLite progress deadline; materializing every revision consumed the two-second budget.",
+      "receipts": [
+        "rc6_audit_evidence/history_convergence/scale_deadline.json"
+      ],
+      "status": "GREEN_SYNTHETIC_NATIVE"
     }
   ],
   "independent_core_phase_review": {
@@ -740,10 +833,12 @@
   "native_guard_receipt": {
     "errors": 0,
     "failures": 0,
-    "seconds": 8.63,
-    "sha256": "9245896c21f2d88cfa6d1da88fc32e5ed955cf3e92a8d12240a8bafeb0143e35",
+    "path": "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE",
+    "seconds": 30.923,
+    "sha256": "d582274b628abb5de92fec57e2b8e5b6ebffac2002bab1d9054f638cd40ff697",
     "skipped": 0,
-    "tests": 249
+    "tests": 254,
+    "timestamp_utc": "2026-10-05T05:04:21.909872+00:00"
   },
   "original_removed_scenarios_other_owners": {
     "M_FIXED_INCOME_ANNUAL_LABEL": "UX",
@@ -771,7 +866,7 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original",
-          "seconds": 0.002,
+          "seconds": 0.003,
           "status": "PASS"
         }
       ],
@@ -779,7 +874,8 @@
       "rca": "Four-field history identities collapsed distinct quote cash currencies; adapters could infer missing currency.",
       "receipts": [
         "rc6_audit_evidence/history_convergence/restored_controls.json",
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "RESTORED_NATIVE_PASS"
     },
@@ -805,7 +901,8 @@
       "rca": "IOL montoOperado cash was treated as volume and multiplied by price again.",
       "receipts": [
         "rc6_audit_evidence/history_convergence/restored_controls.json",
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "RESTORED_NATIVE_PASS"
     },
@@ -825,7 +922,7 @@
       "guards": [
         {
           "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
-          "seconds": 0.027,
+          "seconds": 0.032,
           "status": "PASS"
         }
       ],
@@ -833,7 +930,8 @@
       "rca": "Batches and physically separate stores could commit partially without durable resumable stage evidence.",
       "receipts": [
         "rc6_audit_evidence/history_convergence/restored_controls.json",
-        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS"
+        "rc6_audit_evidence/history_convergence/preopen_autocorrection.json#receipts.GREEN_HISTORY_CALLERS",
+        "rc6_audit_evidence/history_convergence/scale_deadline.json#receipts.GREEN_HISTORY_NATIVE"
       ],
       "status": "RESTORED_NATIVE_PASS"
     }
@@ -935,13 +1033,13 @@
     "verified_against_integration_head": "6e50048abe016e3b6c1116c09ec8e8bd1b304aef"
   },
   "runtime_verified": false,
-  "schema": "rc6.history-owned-exact-node-matrix.v1",
+  "schema": "rc6.history-owned-exact-node-matrix.v2",
   "source_file_sha256": {
     "al_historical_ingest.py": "700f133c74a59a88d47cbb7a7d93e7a52ca0143e5bd3a03adc70f41dfee9c141",
     "ba_data912_history.py": "648c65ff2ab95f5f30414a7062236840896ee182357ab647548b36617e53b1d6",
     "cr_data912_reconcile_hf6.py": "1dcfa8dcda40408318b1d9216393e8242773a6887b6543e15be73995f58c61b1",
     "ct_ppi_history_salvage_hf6.py": "300af22ad46cc8d19289cadce71aa4d6f808bd00cea3019ab88b7511f6d42e4b",
-    "cu_history_store_v2_hf6.py": "d8b30abdca106847a3e2561bd8c595ae210fc44fb1ae0f43566fc9ff2c7a80e3",
+    "cu_history_store_v2_hf6.py": "e0944270875a6ddf8f332081c0e277d659816b465606aa6388194e183f70a41c",
     "cw_data912_history_v2_sink.py": "978558134cd90b90be9581924a1e8ef190354618408025a63082b5db49e3aab5",
     "db_a3_cem_normalizer_hf6.py": "d7cc78f457e2abb59bed14d7132c3ac5351b234ff3674075bf103314dc56f171",
     "ea_history_close_series_hf2.py": "bd2a0788dfe0e3e92853581b00ec25eb4b0989f3caa2eedaad42a5b04f25ef68",
@@ -949,7 +1047,10 @@
     "historical_candle_shadow_rc6.py": "5ee61594d568064379cf3d655a95ceb836e38985266d73e2dc7cbb3986d4c5f5",
     "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
     "rc6_audit_evidence/sqlite_snapshot.py": "4760683ab9821e020b63d106734d010870eae32909b445d3744ed034493c0df1",
-    "rc6_shadow_runtime/preopen.py": "d437502d30963cb3eb7ce65cf0ba1a194a66364846cb581f3e49b90b42f48735"
+    "rc6_shadow_runtime/preopen.py": "cc53d69a2caab28c1b12124da3787903ad58a4786ee453b18360a16d31ad4c96",
+    "tests/test_rc6_history_convergence.py": "66ac598ebe6ed02aab100df72868c0ff1be0b117055829b994941b45a4839064",
+    "tests/test_rc6_history_large_preopen.py": "1fa207321a90fc0732f2b87538d6073078b39f2d1eb00b7000f0cd283b5e3064",
+    "tests/test_rc6_shadow_preopen_runtime.py": "e59b38a202ff7e2497ec358ddc85081b067b6b7fdc818f99c19ff7e1e258b2fa"
   },
-  "source_revision": "42cffcdee98e7c59b06fe7b9c2a0b3144cc09009"
+  "source_revision": "83bc1a6adf7ba82e9fde9f88136b30887b195ad0 + exact source_file_sha256 index/stream/deadline update (commit containing this receipt)"
 }

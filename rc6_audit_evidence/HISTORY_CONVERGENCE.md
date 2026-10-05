@@ -85,9 +85,9 @@ below refer to `tests/test_rc6_history_convergence.py` except U24.
 `history_convergence/owned_exact_node_matrix.json` gives each owned finding's
 RCA, final fix paths, exact collected pytest node IDs (including each parameter
 case), PASS receipts and external limits. It contains thirteen assigned
-findings, two separately declared preopen autocorrections and the three
-restored owned scenario IDs. Its 75 distinct native guard nodes are verified
-against the 249-test receipt; they are not interchangeable with scenario or
+findings, four separately declared autocorrections and the three
+restored owned scenario IDs. Its 80 distinct native guard nodes are verified
+against the 254-test receipt; they are not interchangeable with scenario or
 finding counts. The matrix includes verified seed/current hashes for all
 twelve #344 paths from the independent UX preservation receipt. The core
 phase review's exact integration HEAD at test start was not recorded, so its
@@ -178,6 +178,54 @@ historical/export/preopen copies; active trading SQLite readers have their own
 SQL read_only/query_only and WAL locking contract. This change does not claim
 all-stat invariance for every active runtime reader or copy gigabytes on an
 unmeasured runtime cadence.
+
+## Native large-reader and revision-lookup correction
+
+`history_convergence/scale_deadline.json` retains the exact native RED/GREEN
+receipts and final source/test hashes. The previous-revision lookup inspected
+10,263 SQLite operations after 2,000 unrelated same-provider identities,
+compared with 263 operations before them. The full series/source/known/id index
+removes that scan; the native regression checks query work rather than a
+hardware-specific writer speed threshold. A completed 60,000-version fixture
+now writes six actual 10,000-row transactions in 15.001 seconds in the final
+run. An exploratory earlier generator reached 222 seconds at 30,000 rows and
+was interrupted only on its own temporary source.
+
+SQLite progress callbacks did not bound Python row validation or final
+selection. Native row loops now check the same monotonic processing deadline
+and retain 100 ms of the two-second total target for scratch/object cleanup.
+Revision/authority selection uses one window over immutable IDs and exact
+series fields at the UTC known cut; wide values and bounded metadata are
+fetched only for its winners. A later bad winner cannot resurrect an older
+acceptable version. Source authority still compares only the same five-field
+identity, date and RAW/adjustment basis.
+
+The final broad receipt is 254 PASS, with no skips. It includes 12,000 native
+identities, 60,000 versions and exactly 12,000 real September 30 bars, with five
+revisions per bar. A cold latest-cut read returned all 12,000 latest bars in
+0.988 seconds; an earlier microsecond PIT cut returned all 12,000 prior
+revisions in 1.343 seconds. Both have no source truncation/unavailability.
+Their one-session-per-identity coverage is not five sessions or a fabricated
+72-bar history. A native negative with bounded CPU work on each real row
+exhausted the actual clock in 1.982 seconds, after 1,834 validations. It returned
+no partial history and explicitly reported TIME_BUDGET_EXHAUSTED and
+NO_VERIFICADO. All three nodes compared the full source member inventory,
+hash, mode, size, inode and atime/mtime/ctime before and after; SQLite never
+opened the source. This fixture contains MAIN only; WAL-with/without-SHM
+invariance remains covered by the separate native snapshot/tick controls.
+
+The artifact also preserves the intermediate two-window implementation's
+isolated PASS and broad-run failures. Its insufficient timing margin was
+corrected before the final one-window receipt. Exploratory earlier timings
+without recorded exact source hashes are explicitly marked as such and are
+not exact-candidate CI. Measurements describe this offline environment;
+production size, contention, cadence and capacity remain NO_VERIFICADO.
+
+`history_convergence/dry_run_exact_index.json` reruns all three copy migrations
+and eight actual physical crash/resume stages with the indexed writer. Its
+full source inventories remain unchanged and its quarantine/count/semantic
+digest results reproduce the prior committed dry run. The original receipt is
+retained. No production snapshot, provider request or runtime switch occurred.
 
 ## Copy-only migration and physical recovery
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 import json
 from math import isfinite
 from pathlib import Path
@@ -33,6 +34,13 @@ MAX_TOTAL_PAYLOAD_BYTES = 16 * 1024 * 1024
 MAX_NATIVE_JSON_BYTES = 32 * 1024
 DAILY_SESSIONS = 20
 INTRADAY_SESSIONS = 5
+
+
+@lru_cache(maxsize=2048)
+def _stamp(value):
+    # Parsing is pure; repeated clocks share an immutable aware UTC value.
+    # Bounded caching never guesses an event or changes an availability time.
+    return stamp(value)
 
 
 @contextmanager
@@ -77,7 +85,7 @@ def _object(value):
 
 def _clock_pair(event, available, cutoff, rejected):
     try:
-        observed, published = stamp(event), stamp(available)
+        observed, published = _stamp(event), _stamp(available)
     except (ValueError, TypeError, OverflowError):
         rejected["SOURCE_TIMESTAMP_NO_VERIFICADO"] += 1
         return None
@@ -92,11 +100,11 @@ def _clock_pair(event, available, cutoff, rejected):
 
 def _availability(stored_at, *records):
     """Keep actual engine receipt and any later explicit publication clock."""
-    clocks = [stamp(stored_at)]
+    clocks = [_stamp(stored_at)]
     for record in records:
         for name in ("published_at", "provider_published_at", "available_to_engine_at"):
             if name in record:
-                clocks.append(stamp(record[name]))
+                clocks.append(_stamp(record[name]))
     return max(clocks).isoformat()
 
 
@@ -179,36 +187,41 @@ def _daily_metrics(row, metadata, key, rejected):
     return result
 
 
-def _fetch(connection, query, parameters, limit, quality, source, *, payload_field=None,
-           byte_budget=None, deadline=None):
-    rows, byte_count, count = [], 0, 0
-    for row in connection.execute(query, (*parameters, limit + 1)):
-        if deadline is not None and monotonic() >= deadline:
-            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
-        if count == limit:
-            quality["truncated_sources"].append(source)
-            break
-        count += 1
-        if payload_field is not None:
-            body = row[payload_field]
-            # The SQL CASE supplies NULL for oversized payloads, preventing
-            # even one unbounded blob from entering the Python process.
-            if body is None:
-                quality["truncated_sources"].append(source+"_oversized_payload")
-                continue
-            size = len(body.encode("utf-8"))
-            if byte_count+size > byte_budget or monotonic() >= deadline:
-                quality["truncated_sources"].append(source+"_payload_budget")
+def _stream_fetch(connection, query, parameters, limit, quality, source, *, payload_field=None,
+                  byte_budget=None, deadline=None):
+    byte_count, count = 0, 0
+    try:
+        for row in connection.execute(query, (*parameters, limit + 1)):
+            if deadline is not None and monotonic() >= deadline:
+                raise SnapshotError("TIME_BUDGET_EXHAUSTED")
+            if count == limit:
+                quality["truncated_sources"].append(source)
                 break
-            byte_count += size
-        rows.append(row)
-    quality["source_rows_read"][source] = quality["source_rows_read"].get(source, 0) + count
-    if payload_field is not None:
-        quality["payload_bytes_read"] = quality.get("payload_bytes_read", 0) + byte_count
-    return rows
+            count += 1
+            if payload_field is not None:
+                body = row[payload_field]
+                # The SQL CASE supplies NULL before oversized JSON can enter
+                # Python. Native history streams only its causal authority row.
+                if body is None:
+                    quality["truncated_sources"].append(source+"_oversized_payload")
+                    continue
+                size = len(body.encode("utf-8"))
+                if byte_count+size > byte_budget:
+                    quality["truncated_sources"].append(source+"_payload_budget")
+                    break
+                byte_count += size
+            yield row
+    finally:
+        quality["source_rows_read"][source] = quality["source_rows_read"].get(source, 0) + count
+        if payload_field is not None:
+            quality["payload_bytes_read"] = quality.get("payload_bytes_read", 0) + byte_count
 
 
-def _raw_daily(payload, metadata, *, available_at, source, indexes, sessions, cutoff, rejected):
+def _fetch(connection, query, parameters, limit, quality, source, **kwargs):
+    return list(_stream_fetch(connection, query, parameters, limit, quality, source, **kwargs))
+
+
+def _raw_daily(payload, metadata, *, available_at, source, indexes, sessions, cutoff, rejected, deadline):
     if not isinstance(payload, list):
         rejected["HISTORY_PAYLOAD_NO_VERIFICADO"] += 1
         return []
@@ -219,6 +232,8 @@ def _raw_daily(payload, metadata, *, available_at, source, indexes, sessions, cu
         return []
     result = []
     for raw in payload:
+        if monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         if not isinstance(raw, dict):
             rejected["HISTORY_ROW_NO_VERIFICADO"] += 1
             continue
@@ -286,7 +301,7 @@ def _read_daily(connection, tables, indexes, sessions, cutoff, quality, rejected
                 rejected["HISTORY_PAYLOAD_NO_VERIFICADO"] += 1
                 continue
             records.extend(_raw_daily(payload, metadata, available_at=row["recorded_at"],
-                source="PPI_PRODUCTION_HISTORY", indexes=indexes, sessions=sessions, cutoff=cutoff, rejected=rejected))
+                source="PPI_PRODUCTION_HISTORY", indexes=indexes, sessions=sessions, cutoff=cutoff, rejected=rejected, deadline=deadline))
             if len(records) > limit:
                 quality["truncated_sources"].append("daily_output_budget")
                 records = records[:limit]
@@ -312,7 +327,7 @@ def _read_daily(connection, tables, indexes, sessions, cutoff, quality, rejected
                 rejected["HISTORY_PAYLOAD_NO_VERIFICADO"] += 1
                 continue
             records.extend(_raw_daily(payload, dict(row), available_at=row["downloaded_at"],
-                source="PPI_PRODUCTION_HISTORY", indexes=indexes, sessions=sessions, cutoff=cutoff, rejected=rejected))
+                source="PPI_PRODUCTION_HISTORY", indexes=indexes, sessions=sessions, cutoff=cutoff, rejected=rejected, deadline=deadline))
             if len(records) > limit:
                 quality["truncated_sources"].append("daily_output_budget")
                 records = records[:limit]
@@ -333,27 +348,35 @@ def _read_history_versions(connection, tables, indexes, sessions, cutoff, qualit
         rejected["HISTORY_SCHEMA_IDENTITY_NO_VERIFICADO"] += 1
         return []
     slots = ",".join("?" for _ in sessions)
-    named = ",".join(name for name in fields if name != "metadata_json")
+    named = ",".join("v."+name for name in fields if name != "metadata_json")
     # Revision selection precedes metadata/unit quality. A later bad revision
     # cannot resurrect an earlier acceptable value of the same source/series.
-    rows = _fetch(connection, f"""WITH latest AS (
-        SELECT {named},CASE WHEN length(CAST(metadata_json AS BLOB))<={MAX_NATIVE_JSON_BYTES}
-          THEN metadata_json END AS metadata_json,ROW_NUMBER() OVER (
-            PARTITION BY symbol,instrument_type,market,currency,settlement,date,
-              price_basis,adjustment_basis,source
-            ORDER BY version_known_at DESC,id DESC) revision_order
+    connection.create_function("rc6_preopen_source_rank", 1, lru_cache(maxsize=128)(source_rank), deterministic=True)
+    # Rank only immutable IDs and the series/order fields. Fetch wide OHLC
+    # and metadata columns once, after selecting one causal authority row.
+    # Within a provider the newest known version wins; across providers the
+    # same authority/time/lexical ordering applies, so one window suffices.
+    rows = _stream_fetch(connection, f"""WITH authority AS (
+        SELECT id,ROW_NUMBER() OVER (
+        PARTITION BY symbol,instrument_type,market,currency,settlement,date,price_basis,adjustment_basis
+        ORDER BY rc6_preopen_source_rank(source),version_known_at DESC,source,id DESC) authority_order
         FROM history_versions_v2 WHERE date IN ({slots}) AND version_known_at<=?)
-      SELECT {named},metadata_json FROM latest WHERE revision_order=1
-      ORDER BY date DESC,version_known_at DESC,id DESC LIMIT ?""",
+      SELECT {named},CASE WHEN length(CAST(v.metadata_json AS BLOB))<={MAX_NATIVE_JSON_BYTES}
+        THEN v.metadata_json END AS metadata_json
+      FROM authority a JOIN history_versions_v2 v ON v.id=a.id WHERE a.authority_order=1
+      ORDER BY v.date DESC,v.version_known_at DESC,v.id DESC LIMIT ?""",
       (*sessions, utc(cutoff)), limit, quality, "history_versions_v2",
       payload_field="metadata_json", byte_budget=MAX_TOTAL_PAYLOAD_BYTES-quality.get("payload_bytes_read", 0), deadline=deadline)
-    records = []
+    records, native_identities = [], {}
+    parse_metadata = lru_cache(maxsize=128)(_object)
     for sqlite_row in rows:
+        if monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         row = dict(sqlite_row)
         if bool(row["adjusted"]) or (row["price_basis"], row["adjustment_basis"]) != ("RAW", "RAW_NO_ADJUSTMENT"):
             rejected["HISTORY_PRICE_BASIS_INCOMPARABLE"] += 1
             continue
-        metadata = _object(row.get("metadata_json"))
+        metadata = parse_metadata(row["metadata_json"])
         event = row["provider_at"] or metadata.get("source_at") or metadata.get("event_at") or metadata.get("provider_observed_at")
         if not event:
             rejected["HISTORY_SOURCE_EVENT_TIME_NO_VERIFICADO"] += 1
@@ -368,17 +391,23 @@ def _read_history_versions(connection, tables, indexes, sessions, cutoff, qualit
         clocks = _clock_pair(event, availability, cutoff, rejected)
         if clocks is None:
             continue
-        if stamp(clocks[0]).astimezone(TZ).date().isoformat() != row["date"]:
+        if _stamp(clocks[0]).astimezone(TZ).date().isoformat() != row["date"]:
             rejected["SESSION_SOURCE_CLOCK_MISMATCH"] += 1
             continue
-        if stamp(clocks[1]) < datetime.combine(date.fromisoformat(row["date"]), BYMA_PAPER_SPOT_CLOSE, TZ):
+        if _stamp(clocks[1]) < datetime.combine(date.fromisoformat(row["date"]), BYMA_PAPER_SPOT_CLOSE, TZ):
             rejected["DAILY_SESSION_NOT_CLOSED_AT_AVAILABILITY"] += 1
             continue
-        if metadata.get("currency") and str(metadata["currency"]).upper() != row["currency"]:
+        if ((metadata.get("currency") and str(metadata["currency"]).upper() != row["currency"])
+                or (metadata.get("market") and str(metadata["market"]).upper() != row["market"])):
             rejected["SOURCE_IDENTITY_NO_VERIFICADO"] += 1
             continue
-        key = _resolve_identity(row["symbol"], row["instrument_type"], row["settlement"], {**metadata, "currency": row["currency"]},
-                                indexes, rejected, market=row["market"])
+        exact = tuple(row[name] for name in ("symbol", "instrument_type", "market", "currency", "settlement"))
+        if exact not in indexes[0]:
+            rejected["SOURCE_IDENTITY_NO_VERIFICADO"] += 1
+            continue
+        if exact not in native_identities:
+            native_identities[exact] = dict(zip(IDENTITY_FIELDS, exact))
+        key = native_identities[exact]
         if key is not None:
             records.append({**key, "session": row["date"], "observed_at": clocks[0], "published_at": clocks[1],
                             "source": row["source"], "adjusted": bool(row["adjusted"]),
@@ -410,6 +439,8 @@ def _read_books(connection, tables, indexes, sessions, cutoff, quality, rejected
       byte_budget=MAX_TOTAL_PAYLOAD_BYTES-quality.get("payload_bytes_read", 0), deadline=deadline)
     records = []
     for sqlite_row in rows:
+        if monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         row = dict(sqlite_row)
         clocks = _clock_pair(row["book_at"], row["observed_at"], cutoff, rejected)
         if clocks is None:
@@ -455,6 +486,8 @@ def _read_intraday(connection, tables, indexes, sessions, cutoff, quality, rejec
       limit, quality, "ppi_intraday_points", deadline=deadline)
     records = []
     for sqlite_row in rows:
+        if monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         row = dict(sqlite_row)
         clocks = _clock_pair(row["event_at"], row["last_verified_at"], cutoff, rejected)
         if clocks is None:
@@ -496,20 +529,25 @@ def _read_intraday(connection, tables, indexes, sessions, cutoff, quality, rejec
     return records
 
 
-def _chosen_daily(records):
+def _chosen_daily(records, deadline):
     # Reconstruct History Store authority at the cut; eventual canonical rows
     # or a later, lower-authority fallback cannot overwrite a prior PPI version.
     chosen = {}
     for row in records:
+        if monotonic() >= deadline:
+            raise SnapshotError("TIME_BUDGET_EXHAUSTED")
         basis = (row.get("price_basis"), row.get("adjustment_basis"))
         if bool(row.get("adjusted")) or basis != ("RAW", "RAW_NO_ADJUSTMENT"):
             continue
-        key = (identity(row), row["session"], *basis)
-        ordering = (-source_rank(row["source"]), stamp(row["version_known_at"]))
+        key = (tuple(row[name] for name in IDENTITY_FIELDS), row["session"], *basis)
+        ordering = (-source_rank(row["source"]), _stamp(row["version_known_at"]))
         old = chosen.get(key)
         if old is None or ordering > old[0] or (ordering == old[0] and row["source"] < old[1]["source"]):
             chosen[key] = ordering, row
-    return [chosen[key][1] for key in sorted(chosen)]
+    result = [chosen[key][1] for key in sorted(chosen)]
+    if records and monotonic() >= deadline:
+        raise SnapshotError("TIME_BUDGET_EXHAUSTED")
+    return result
 
 
 def build_preopen_inputs(database, history_database=None, *, as_of, session_open, cutoff,
@@ -526,6 +564,7 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
         raise ValueError("PREOPEN_CUT_READ_OPEN_ORDER_REQUIRED")
     if not 1 <= row_limit <= 100000 or not 0 < query_budget_seconds <= 2:
         raise ValueError("INVALID_PREOPEN_READ_BUDGET")
+    cleanup_reserve = min(.1, query_budget_seconds*.1)
     sessions, calendar_status = _audited_sessions(cut, opening, at)
     quality = {"status": "NO_VERIFICADO", "calendar_status": calendar_status,
                "calendar_source": calendar.FUENTE_OFICIAL,
@@ -535,6 +574,8 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
                "source_snapshot_method": "VERIFIED_MAIN_WAL_PRIVATE_COPY_SOURCE_SQLITE_NEVER_OPENED",
                "source_snapshot_limits": {"maximum_source_bytes": 512*1024*1024,
                                           "total_seconds": query_budget_seconds,
+                                          "processing_seconds": query_budget_seconds-cleanup_reserve,
+                                          "cleanup_reserve_seconds": cleanup_reserve,
                                           "native_json_row_bytes": MAX_NATIVE_JSON_BYTES,
                                           "total_json_bytes": MAX_TOTAL_PAYLOAD_BYTES},
                "source_rows_read": {}, "truncated_sources": [], "unavailable_sources": [],
@@ -545,7 +586,9 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
                "real_orders_sent": 0}
     rejected = Counter()
     records, books, intraday = [], [], []
-    deadline = monotonic()+query_budget_seconds
+    # Releasing tens of thousands of Row objects and private scratch consumes
+    # measurable time too. Do not spend the whole declared wall target on work.
+    deadline = monotonic()+query_budget_seconds-cleanup_reserve
     # Safety failures and catalogue truncation are contract violations, not
     # ordinary unavailable optional evidence, and must propagate to the worker.
     try:
@@ -592,7 +635,11 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
             quality["unavailable_sources"].append("history:"+str(exc))
         except (sqlite3.Error, OSError) as exc:
             quality["unavailable_sources"].append(f"history:{type(exc).__name__}")
-    history = _chosen_daily(records)
+    try:
+        history = _chosen_daily(records, deadline)
+    except SnapshotError as exc:
+        history = []
+        quality["unavailable_sources"].append("historical_selection:"+str(exc))
     if any(source.startswith(("history_versions_v2", "historical_raw_archive", "production_history", "daily_output"))
            for source in quality["truncated_sources"]):
         # A partial historical source cannot reconstruct source authority.
