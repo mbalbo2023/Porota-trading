@@ -70,8 +70,10 @@ def shadow_archive_root(database, environ=None):
         raise ValueError("SHADOW_DIRECTORY_ALIAS_FORBIDDEN")
     resolved, database_path = root.resolve(), Path(database).resolve()
     evidence = shadow_evidence_root(database, env).resolve()
+    authority = evidence.parent / (evidence.name + ".authority")
     if (resolved == database_path or database_path.is_relative_to(resolved)
-            or resolved == evidence or resolved.is_relative_to(evidence) or evidence.is_relative_to(resolved)):
+            or resolved == evidence or resolved.is_relative_to(evidence) or evidence.is_relative_to(resolved)
+            or resolved == authority or resolved.is_relative_to(authority) or authority.is_relative_to(resolved)):
         raise ValueError("SHADOW_ARCHIVE_MUST_BE_SEPARATE")
     if root.exists() and not root.is_dir():
         raise ValueError("SHADOW_ARCHIVE_DIRECTORY_REQUIRED")
@@ -172,7 +174,8 @@ def _sha(raw):
 class EvidenceFiles:
     def __init__(self, root, *, protected=(), maximum_bytes=128 * 1024**2,
                  maximum_files=DEFAULT_MAXIMUM_FILES, payload_limit=64 * 1024**2,
-                 fault_inject=None, archive_root=None, archive_maximum_bytes=512 * 1024**2):
+                 fault_inject=None, archive_root=None, archive_maximum_bytes=512 * 1024**2,
+                 archive_format="TAR_V2"):
         raw = Path(root).absolute()
         if any(p.is_symlink() for p in (raw, *raw.parents)):
             raise ValueError("SHADOW_DIRECTORY_ALIAS_FORBIDDEN")
@@ -194,7 +197,13 @@ class EvidenceFiles:
             if any(p == archive_resolved or p.is_relative_to(archive_resolved) for p in self.protected):
                 raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         self.archive_maximum_bytes = archive_maximum_bytes
+        if not isinstance(archive_format, str) or archive_format not in {"TAR_V2", "COMPONENT_V3"}:
+            raise ValueError("INVALID_RETENTION_ARCHIVE_FORMAT")
+        self.archive_format = archive_format
         self.authority_root = self.root.parent / (self.root.name + ".authority")
+        if self.archive_root is not None and (archive_resolved == self.authority_root
+                or archive_resolved.is_relative_to(self.authority_root) or self.authority_root.is_relative_to(archive_resolved)):
+            raise ValueError("SHADOW_ARCHIVE_MUST_BE_SEPARATE")
         if any(p == self.authority_root or p.is_relative_to(self.authority_root) for p in self.protected):
             raise ValueError("SHADOW_OUTPUT_MUST_BE_SEPARATE")
         if any(path.is_symlink() for path in (self.authority_root, *self.authority_root.parents)):
@@ -759,6 +768,7 @@ class EvidenceFiles:
         self._validate_authority(self._pointer(), allow_legacy=True)
         return EvidenceRetention(self.root, maximum_bytes=self.maximum_bytes, maximum_files=self.maximum_files,
             archive_root=self.archive_root, archive_maximum_bytes=self.archive_maximum_bytes,
+            archive_format=self.archive_format,
             auto_archive=self.archive_root is not None,
             fault_inject=self.fault_inject).prepare(
             additional_bytes=additional_bytes, additional_files=additional_files, pinned=pinned,

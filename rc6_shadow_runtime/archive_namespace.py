@@ -16,8 +16,17 @@ SCHEMA = "rc6.shadow-archive-namespace-admission.v1"
 LEVEL = "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA"
 DEFAULT_MAXIMUM_BYTES = 512 * 1024**2
 DEFAULT_MAXIMUM_FILES = 32768
-_MEMBER = re.compile(r"(?:[0-9a-f]{32}\.(?:tar\.gz|receipt\.json)|CHECKPOINT\.json|archive\.lock)\Z")
-_TEMPORARY = re.compile(r"\.(?:archive|control)-[0-9a-f]{32}\.tmp\Z")
+_MEMBER = re.compile(r"(?:[0-9a-f]{32}\.(?:tar\.gz|recipe\.gz|receipt\.json)|"
+    r"[0-9a-f]{64}\.cas\.pack|CHECKPOINT\.json|GC\.json|BUILD\.json|archive\.lock)\Z")
+_TEMPORARY = re.compile(r"\.(?:archive|control|cas|recipe|gc)-[0-9a-f]{32}\.tmp\Z")
+
+
+def is_archive_member(name):
+    return isinstance(name, str) and _MEMBER.fullmatch(name) is not None
+
+
+def is_archive_temporary(name):
+    return isinstance(name, str) and _TEMPORARY.fullmatch(name) is not None
 
 
 def _custody(info, *, owner_uid, directory=False):
@@ -87,8 +96,8 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
                 for entry in iterator:
                     if len(members) >= maximum_files:
                         raise ValueError("ARCHIVE_FILES_CAPACITY_REACHED")
-                    is_temporary = _TEMPORARY.fullmatch(entry.name) is not None
-                    if not is_temporary and _MEMBER.fullmatch(entry.name) is None:
+                    is_temporary = is_archive_temporary(entry.name)
+                    if not is_temporary and not is_archive_member(entry.name):
                         raise ValueError("ARCHIVE_NAMESPACE_UNKNOWN")
                     proof = _custody(entry.stat(follow_symlinks=False), owner_uid=owner_uid)
                     members[entry.name] = proof
@@ -97,6 +106,8 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
                     temporary += int(is_temporary)
                     if occupied >= max_bytes:
                         raise ValueError("ARCHIVE_BYTES_CAPACITY_REACHED")
+                    if allocated + before[9]*512 >= max_bytes:
+                        raise ValueError("ARCHIVE_ALLOCATED_BYTES_CAPACITY_REACHED")
             if members and lock is None:
                 raise ValueError("ARCHIVE_LOCK_REQUIRED")
             if len(members) >= maximum_files:
@@ -109,7 +120,7 @@ def inspect_archive(root, *, max_bytes=DEFAULT_MAXIMUM_BYTES, owner_uid=1000,
                 raise ValueError("ARCHIVE_NAMESPACE_CHANGED")
             available = os.fstatvfs(descriptor)
             return {"schema": SCHEMA, "verification_level": LEVEL,
-                "state": "RECOVERY_REQUIRED" if temporary else "WITHIN_QUOTA",
+                "state": "RECOVERY_REQUIRED" if temporary or "BUILD.json" in members or "GC.json" in members else "WITHIN_QUOTA",
                 "occupied_bytes": occupied, "files": len(members), "inodes": len(members) + 1,
                 "allocated_bytes": allocated, "allocated_directory_bytes": before[9] * 512,
                 "growth_remaining_bytes": max_bytes - occupied, "max_bytes": max_bytes,

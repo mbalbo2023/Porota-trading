@@ -74,7 +74,8 @@ class ShadowRuntime:
                  source_roots=None, capacity_path=None, policies=None,
                  maximum_bytes=128 * 1024**2, maximum_files=DEFAULT_MAXIMUM_FILES,
                  row_limit=20000, fault_inject=None, archive_root=None,
-                 archive_maximum_bytes=512 * 1024**2, query_budget_seconds=0.5):
+                 archive_maximum_bytes=512 * 1024**2, query_budget_seconds=0.5,
+                 archive_format="TAR_V2"):
         if (isinstance(query_budget_seconds, bool) or not isinstance(query_budget_seconds, (int, float))
                 or not math.isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
             raise ValueError("INVALID_READ_BUDGET")
@@ -119,7 +120,8 @@ class ShadowRuntime:
                      + self.source_inputs + capacity_protected)
         self.files = EvidenceFiles(self.root, protected=protected, maximum_bytes=maximum_bytes,
             maximum_files=maximum_files, fault_inject=fault_inject,
-            archive_root=archive_root, archive_maximum_bytes=archive_maximum_bytes)
+            archive_root=archive_root, archive_maximum_bytes=archive_maximum_bytes,
+            archive_format=archive_format)
         self.configuration = digest({"version": VERSION, "row_limit": row_limit,
             "query_budget_seconds": self.query_budget_seconds,
             "provider_additional_requests": 0, "tick_seconds": 30,
@@ -129,7 +131,8 @@ class ShadowRuntime:
             "evidence_root": str(self.root), "retention": {"maximum_bytes": maximum_bytes,
                 "maximum_files": maximum_files, "archive_maximum_bytes": archive_maximum_bytes},
             "archive_configured": archive_root is not None,
-            "archive_root": str(archive_root) if archive_root is not None else None})
+            "archive_root": str(archive_root) if archive_root is not None else None,
+            "archive_format": archive_format})
 
     @classmethod
     def from_environment(cls, database, **kwargs):
@@ -138,6 +141,7 @@ class ShadowRuntime:
         kwargs.setdefault("history_database", history if history.exists() else None)
         kwargs.setdefault("archive_root", shadow_archive_root(database))
         kwargs.setdefault("archive_maximum_bytes", shadow_archive_maximum_bytes())
+        kwargs.setdefault("archive_format", "COMPONENT_V3")
         return cls(database, **kwargs)
 
     def configuration_fingerprint(self, as_of, *, capacity_policy=None):

@@ -1,0 +1,8 @@
+{
+  "rc6_shadow_runtime/archive_components.py": "230ac322835bcc1eb076b9ed8da7270df14b68b213f8ce3455859492ba933219",
+  "rc6_shadow_runtime/archive_namespace.py": "38dfc2b991135a098acf5c56fbe35ec9b93634f1f5056c3b1ca1d9b3eae62595",
+  "rc6_shadow_runtime/persistence.py": "e544b6a5035ba8d9f7bb48ce455f84e4bf8b5edabf19dda350e7ba526c248d90",
+  "rc6_shadow_runtime/retention.py": "9fbfa5ab07cb552802ba688fc4a714ae0083ddf2f2384aee2f9085e51ebf1ed1",
+  "rc6_shadow_runtime/worker.py": "2d15f9faffdd26ce73ba5f2b581b3f0e49714270dcf952cfd20721d4483c5059",
+  "tests/test_rc6_component_archive.py": "a148f9167ec6b785eaa54b534b4b5cb8f90edb0ecab0b004e7d431448dd57f3e"
+}

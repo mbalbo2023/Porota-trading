@@ -1,0 +1,88 @@
+{
+  "predecessor_sha": "32da316afd94ad9016e2cb5c3e6ef3e94c49e2fd",
+  "results": [
+    {
+      "errors": "0",
+      "failures": "9",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_first_native.junit.xml",
+      "sha256": "95f897886cf53aa5e2489c200620eec28238b8bc0de5d08d6a2808fc24f82d94",
+      "skipped": "0",
+      "tests": "36",
+      "time": "113.688",
+      "timestamp": "2026-10-05T11:33:25.870301+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_gc_fixed.junit.xml",
+      "sha256": "81a07038db08c78f7556224fc795ff167de6401b093edb91afdd22df6842cce3",
+      "skipped": "0",
+      "tests": "37",
+      "time": "9.030",
+      "timestamp": "2026-10-05T11:43:58.996394+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_legacy_native.junit.xml",
+      "sha256": "5ba2bbf7919a644b32b87d0d9cc2a0325dfd79b558626bd6f446c56055521d5e",
+      "skipped": "0",
+      "tests": "215",
+      "time": "16.088",
+      "timestamp": "2026-10-05T11:45:44.155945+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_final_native.junit.xml",
+      "sha256": "7ca979b551c55882314135afb927a2e47a0b552eb5a14894fce7921ceead8a93",
+      "skipped": "0",
+      "tests": "38",
+      "time": "8.914",
+      "timestamp": "2026-10-05T11:48:59.965175+00:00"
+    }
+  ],
+  "schema": "rc6.native-component-archive-checkpoint.v1",
+  "scope": "OWNED_SOURCE_NATIVE_FOCALS_ONLY; PRIVATE_SYNTHETIC_FIXTURES; NO_PROVIDER_OR_RUNTIME",
+  "source_custody_guards": [
+    "five_original_members_byteexact",
+    "source_and_archive_atime_bytes_and_metadata_unchanged_on_read",
+    "current_and_external_authority_unchanged",
+    "native_safety_zero_routes",
+    "no_recovery_encoder",
+    "fresh_verifier_and_legacy_fresh_sha",
+    "gc_actual_sigkill_all_seven_stages",
+    "build_durable_intent_all_six_stages"
+  ],
+  "source_files_sha256": {
+    "rc6_shadow_runtime/archive_components.py": "230ac322835bcc1eb076b9ed8da7270df14b68b213f8ce3455859492ba933219",
+    "rc6_shadow_runtime/archive_namespace.py": "38dfc2b991135a098acf5c56fbe35ec9b93634f1f5056c3b1ca1d9b3eae62595",
+    "rc6_shadow_runtime/persistence.py": "e544b6a5035ba8d9f7bb48ce455f84e4bf8b5edabf19dda350e7ba526c248d90",
+    "rc6_shadow_runtime/retention.py": "328dfcb8e8a6beaca5df39319d3b18437b535b7f4bf9ae832f1018ae41c6bb39",
+    "rc6_shadow_runtime/worker.py": "2d15f9faffdd26ce73ba5f2b581b3f0e49714270dcf952cfd20721d4483c5059",
+    "tests/test_rc6_component_archive.py": "c8cb3e0d76f003df8934e875582f996dd921d92a2d7c41a3ef14e01acacbf23a"
+  },
+  "trust_limits": [
+    "LOCAL_PRIVATE_FSYNC_NOT_WORM",
+    "local_privileged_rewriter_of_all_anchors_outside_authenticity_guarantee",
+    "metadata_inspector_does_not_verify_crc_or_financial_semantics",
+    "full_archive_role_wire_level_does_not_claim_full_report_logical_redecode",
+    "no_extrapolated_horizon_claim"
+  ],
+  "unclosed": [
+    "physical_1201tick_10h_normal_and_factual_profiles",
+    "2000generation_current_archive_format",
+    "12000catalog_60000input_canonicalfactory_two_ticks_90seconds_2GiB_complete",
+    "1second_4MiB_all_identity_cohort_ui",
+    "2second_matchingfactory_health",
+    "partial_pack_physical_sustainability_if_measured_residency_requires_compaction"
+  ]
+}
