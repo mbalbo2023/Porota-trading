@@ -396,6 +396,12 @@ midió26.521s; sus spans internos se solapan y no se suman como costo adicional.
 RSS1,485,451,264B y fuentes/datos/copia privada intactos. Esta única corrida
 discrimina parcialmente el sampler; no identifica la causa del fault ni mide
 el prepare completo del publisher. No se relanzó con plazos mayores.
+El driver final OWN8d exige recibo completo del mismo PID/phase/cut/manifest,
+imports y cero attempts antes de declarar diagnostic_completed. Default NONE
+deja el muestreo TIMED como opt-in; esto no atribuye ni repara el SIGSEGV.
+Pasaron34 guards de driver; los18/21 anteriores son epochs solapados. Los
+56 RAW originales y los tres drivers/índices se conservan lossless en
+capture_restore_real_cut, con DriverOWN y Product400 separados explícitamente.
 
 La fuente integrada eb17/frozen311157 ejecutó cuatro cortes descriptivos
 1200/6000 en59.882s, con310,042,624B de RSS. PREOPEN y tres OPEN publicaron,

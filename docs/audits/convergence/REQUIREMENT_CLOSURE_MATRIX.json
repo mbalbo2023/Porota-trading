@@ -171,6 +171,7 @@
         "scripts/porota_published_artifact_evidence.py",
         "scripts/rc6_archive_maximum_member_probe.py",
         "scripts/rc6_archive_v3_image_smoke.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "tests/ci_rc6_browser_product.py",
         "tests/ci_trader_terminal_browser.py",
         "tests/rc6_browser_ipc.py"
@@ -185,7 +186,7 @@
       "native_caller": "importlib.metadata.distributions -> installed_distribution_audit -> supply-chain closure approval.",
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "The native metadata auditor collapsed duplicate or normalized-equivalent distributions into a dictionary, approving157 unique names despite158 installed metadata records.",
-      "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure"
       ],
@@ -241,6 +242,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_issue465_stress.py",
         "tests/test_issue465_historical_package.py"
       ],
@@ -255,7 +257,7 @@
       "native_caller": "bf_production_paper_observer._history_cutoff_repair_complete -> readonly_copy; historical marker is advisory only.",
       "owner_mapping": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
       "rca": "A native dated read-only marker query used the writer adapter and changed source metadata or created a missing dataset.",
-      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
@@ -8676,6 +8678,20 @@
         "U26"
       ]
     },
+    "docs/audits/rc6-convergence-persistence-evidence/CAPTURE_RESTORE_DIAGNOSTIC_PLAN.md": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "docs/audits/rc6-convergence-persistence-evidence/HORIZON_WRAPPER_CORRECTION.json": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -8982,6 +8998,528 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/DOSSIER.json": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/README.md": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/child.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/native-progress.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/private-copy-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/rc6-capture-restore-400-nosample-launch.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/samples.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/source-data-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/source-data-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/wrapper-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/wrapper-final.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-none/wrapper-started.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/child.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/native-progress.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/private-copy-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/rc6-capture-restore-400-capture-launch.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/samples.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/source-data-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/source-data-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/wrapper-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/wrapper-final.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/capture-sigsegv/wrapper-started.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/driver-code/driver-15b36374.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/driver-code/driver-8d57319c.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/driver-code/driver-dc817b73.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-15b36374/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-15b36374/guard.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-15b36374/guards.xml.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-15b36374/receipt.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-15b36374/run.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-8d57319c/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-8d57319c/guard.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-8d57319c/guards.xml.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-8d57319c/receipt.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-8d57319c/run.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-dc817b73/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-dc817b73/guard.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-dc817b73/guards.xml.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-dc817b73/receipt.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/guards-dc817b73/run.py.source.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/child.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/entry-preflight.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/native-progress.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/native-result.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/private-copy-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/rc6-capture-restore-400-restore-launch.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/samples.log.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/source-data-after.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/source-data-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/wrapper-before.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/wrapper-final.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/restore/wrapper-started.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/source-indices/driver-15b36374-source.index.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/source-indices/driver-8d57319c-source.index.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/source-indices/driver-dc817b73-source.index.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/capture_restore_real_cut/source-indices/product400-source.index.json.gz": {
+      "reason": "Preserve56 original driver/provenance/JUnit/RAW bytes losslessly with separate OWN15b/dc/8d and Product400 authorities:18/21/34 overlapping controlled guard epochs, checkpoint restore8.192s PASS, timed report capture SIGSEGV10.237s before PREPARE, and the sole NONE control watchdog60.058s after entering PREPARE with no completed capture timer/result. Original protectedDATA and Product400 bytes/modes/blobs stay unchanged; crash function/cause are unknown. Final diagnostic default NONE and exact complete-receipt guards mitigate auxiliary harness gaps, without claiming repaired product fault, publisher CPU savings, BIG90, horizon, browser, finalGov/image or runtime. No large DATA was committed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
       ]
     },
     "docs/audits/rc6-convergence-persistence-evidence/checkpoint_native_evidence.json": {
@@ -12667,6 +13205,15 @@
         "U29"
       ]
     },
+    "scripts/rc6_capture_restore_diagnostic.py": {
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
     "scripts/rc6_convergence_provenance.py": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -13235,6 +13782,15 @@
       "requirement_ids": [
         "U02",
         "U05"
+      ]
+    },
+    "tests/test_rc6_capture_restore_diagnostic.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
       ]
     },
     "tests/test_rc6_committed_projection.py": {
@@ -14646,6 +15202,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_live_namespace.py",
@@ -14664,7 +15221,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
-      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -14685,6 +15242,23 @@
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -15187,6 +15761,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_health_gate.py",
@@ -15210,7 +15785,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -15250,6 +15825,23 @@
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -16118,6 +16710,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_issue465_stress.py",
         "tests/ci_rc6_browser_product.py",
         "tests/ci_trader_terminal_browser.py",
@@ -16137,7 +16730,7 @@
       },
       "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
       "rca": "SQLite mode=ro on a main+WAL source without SHM could create source SHM and change filesystem metadata.",
-      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_historical_package.py::test_dirty_source_transaction_does_not_publish",
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
@@ -16178,6 +16771,23 @@
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
@@ -16564,6 +17174,7 @@
         "scripts/porota_published_artifact_evidence.py",
         "scripts/rc6_archive_maximum_member_probe.py",
         "scripts/rc6_archive_v3_image_smoke.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_convergence_provenance.py",
         "tests/ci_rc6_browser_product.py",
         "tests/ci_trader_terminal_browser.py",
@@ -16582,7 +17193,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Endurecer reproducibilidad de supply chain y explicitar l\u00edmites.",
-      "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
@@ -16612,6 +17223,23 @@
         "tests/test_rc6_browser_product_ipc.py::test_transport_contract_rejects_invalid_frames_without_truncation",
         "tests/test_rc6_browser_product_ipc.py::test_whole_raw_source_pin_binds_actual_git_blobs_modes_and_tree_before_native_imports",
         "tests/test_rc6_browser_product_ipc.py::test_wrong_interpreter_flag_rejects_before_fixture_or_native_import",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_convergence_provenance.py::test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard",
         "tests/test_rc6_convergence_provenance.py::test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard",
         "tests/test_rc6_convergence_provenance.py::test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution",
@@ -17167,6 +17795,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_health_gate.py",
@@ -17184,7 +17813,7 @@
       "original_control_origin": "Six absent controls named in pinned unique order, section10; original guarantee restored through the declared actual native successor caller.",
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
@@ -19267,6 +19896,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_live_namespace.py",
@@ -19296,7 +19926,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
-      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -19317,6 +19947,23 @@
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -19418,6 +20065,7 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/worker.py",
         "scripts/rc6_archive_maximum_member_probe.py",
+        "scripts/rc6_capture_restore_diagnostic.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_health_gate.py",
@@ -19452,7 +20100,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -19492,6 +20140,23 @@
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_all_outbound_socket_entrypoints_are_blocked_and_restored",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_auxiliary_profiler_defaults_to_none_without_claiming_sigsegv_repaired",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_complete_native_receipt_is_required_even_after_zero_exit_status",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_failure_keeps_actual_reason_and_compares_original_custody",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_preserves_all_source_bytes_and_eleven_stats_without_control_rewrite",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_quota_rejects_before_target_generation_is_created",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_copy_rejects_source_replacement_after_initial_hash_inventory",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_dns_and_both_sqlite_connect_aliases_block_original_source_and_restore",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_incomplete_or_different_native_receipt_never_authorizes_completion",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_inventory_rejects_real_alias_or_fifo_without_reading_it",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_preflight_rejects_wrong_interpreter_before_private_fixture_creation",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_product_inventory_binds_git_bytes_modes_and_namespace",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_stat_open_fifo_replacement_is_nonblocking_and_rejected_before_read",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_timed_sampling_arms_once_and_cancels_before_stream_close",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_unknown_sampling_mode_is_rejected_before_arming_watcher",
+        "tests/test_rc6_capture_restore_diagnostic.py::test_watchdog_kills_and_reaps_stalled_diagnostic_child",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
