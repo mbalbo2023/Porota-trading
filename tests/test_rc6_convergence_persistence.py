@@ -176,6 +176,41 @@ def test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence(
     assert len(sequences) == len(set(sequences))
 
 
+def pause_publication(root, point, pipe):
+    def fault(stage):
+        if stage == point:
+            pipe.send(stage); signal.pause()
+    with EvidenceFiles(root, fault_inject=fault) as files:
+        publish(files, 2)
+
+
+@pytest.mark.parametrize("point", ["after_publication_intent", "after_current_replace", "before_lineage_seal"])
+def test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore(tmp_path, point):
+    root = tmp_path / "evidence"
+    with EvidenceFiles(root) as files:
+        first = publish(files, 1)
+    context = multiprocessing.get_context("fork"); parent, child = context.Pipe(duplex=False)
+    process = context.Process(target=pause_publication, args=(root, point, child)); process.start()
+    try:
+        assert parent.poll(15); assert parent.recv() == point
+        os.kill(process.pid, signal.SIGKILL); process.join(10)
+        assert process.exitcode == -signal.SIGKILL
+    finally:
+        if process.is_alive(): process.kill(); process.join(10)
+        parent.close(); child.close()
+    with pytest.raises(ValueError, match="PUBLICATION_RECOVERY_REQUIRED"):
+        read_committed_generation(root)
+    (root / "CURRENT.json").write_text(json.dumps(first["pointer"]))
+    with pytest.raises(ValueError, match="PUBLICATION_RECOVERY_REQUIRED"):
+        read_committed_generation(root)
+    with EvidenceFiles(root) as files:
+        recovered = files.read_generation()
+        assert recovered["report"]["number"] == 2 and recovered["pointer"]["sequence"] == 2
+        third = publish(files, 3)
+    assert third["pointer"]["sequence"] == 3
+    assert third["manifest"]["previous_generation_id"] == recovered["pointer"]["generation_id"]
+
+
 @pytest.mark.parametrize("field,value", [("schema", "UNTRUSTED"), ("source_report_count", 0),
     ("source_report_count", True),
     ("status", "NO_SOURCE_REPORTS"), ("as_of", "2026-10-05T13:19:59+00:00"),

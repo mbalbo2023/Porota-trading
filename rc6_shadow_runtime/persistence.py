@@ -173,6 +173,7 @@ class EvidenceFiles:
             if os.fstat(fd).st_nlink != 1 or not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("SHADOW_FILE_ALIAS_FORBIDDEN")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._recover_publication()
         except BaseException:
             self.lock.close()
             self.lock = None
@@ -290,9 +291,18 @@ class EvidenceFiles:
             head = value.get(key)
             if head is not None and (not isinstance(head, dict) or type(head.get("sequence")) is not int
                     or not 0 < head["sequence"] <= value["allocated_sequence"]
+                    or head.get("schema") not in {GENERATION_SCHEMA, LEGACY_GENERATION_SCHEMA}
                     or not ID_PATTERN.fullmatch(str(head.get("generation_id", "")))
+                    or not re.fullmatch(r"[0-9a-f]{64}", str(head.get("manifest_sha256", "")))
                     or head.get("digest") != digest({k: v for k, v in head.items() if k != "digest"})):
                 raise ValueError("SHADOW_LINEAGE_AUTHORITY_INVALID")
+        phase = value.get("phase", "PREPARED" if value.get("prepared") else "COMMITTED")
+        if phase not in {"PREPARED", "PUBLISHING", "COMMITTED"} or (phase == "COMMITTED") != (value.get("prepared") is None):
+            raise ValueError("SHADOW_LINEAGE_AUTHORITY_INVALID")
+        if value.get("prepared") is not None and (value["prepared"]["sequence"] != value["allocated_sequence"]
+                or value["prepared"]["sequence"] <= (value.get("committed") or {}).get("sequence", 0)):
+            raise ValueError("SHADOW_LINEAGE_AUTHORITY_INVALID")
+        value["phase"] = phase
         return value
 
     def _write_authority(self, value):
@@ -308,6 +318,7 @@ class EvidenceFiles:
                 path.unlink()
         value = {**value, "schema": LINEAGE_SCHEMA,
                  "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION"}
+        value.setdefault("phase", "PREPARED" if value.get("prepared") else "COMMITTED")
         value["digest"] = digest({k: v for k, v in value.items() if k != "digest"})
         target = self.authority_root / "HEAD.json"
         if target.is_symlink() or (target.exists() and target.stat().st_nlink != 1):
@@ -323,29 +334,64 @@ class EvidenceFiles:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def _validate_authority(self, pointer, *, allow_legacy=False):
+    def _validate_authority(self, pointer, *, allow_legacy=False, recovering=False):
         authority = self._authority()
         if authority is None:
             if pointer is None or (allow_legacy and pointer["schema"] == LEGACY_GENERATION_SCHEMA):
                 return None
             raise ValueError("SHADOW_LINEAGE_ANCHOR_MISSING")
+        if authority["phase"] == "PUBLISHING":
+            if recovering and pointer == authority.get("prepared"):
+                return authority
+            raise ValueError("SHADOW_PUBLICATION_RECOVERY_REQUIRED")
         if pointer is None and authority.get("committed") is None:
             return authority
-        if pointer is not None and (pointer == authority.get("committed") or pointer == authority.get("prepared")):
+        if pointer is not None and pointer == authority.get("committed"):
             return authority
         committed = authority.get("committed") or {}
         if pointer is None or pointer.get("sequence", 0) < committed.get("sequence", 0):
             raise ValueError("SHADOW_CURRENT_ROLLBACK")
         raise ValueError("SHADOW_LINEAGE_FORK_OR_REHASH")
 
-    def read_generation(self, *, allow_degraded=False, allow_legacy=False):
+    def _recover_publication(self):
+        """Only the writer seals an interrupted publication, always forward.
+
+        A reader cannot publish/repair or accept an unsealed CURRENT. Before
+        changing its mirror, recovery validates the exact prepared immutable
+        cut against the separate authority and every semantic/member guard.
+        """
+        authority = self._authority()
+        if not authority or authority["phase"] != "PUBLISHING":
+            return
+        pointer = self._pointer()
+        if pointer not in (authority.get("committed"), authority.get("prepared")):
+            raise ValueError("SHADOW_LINEAGE_FORK_OR_REHASH")
+        prepared = authority["prepared"]
+        self.read_generation(allow_degraded=True, _pointer_override=prepared, _recovering=True)
+        previous_temp = self.root / (".CURRENT." + prepared["generation_id"] + ".tmp")
+        if previous_temp.exists() or previous_temp.is_symlink():
+            info = previous_temp.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError("SHADOW_FILE_ALIAS_FORBIDDEN")
+            previous_temp.unlink(); self._sync_directory(self.root)
+        temporary = self.root / (".CURRENT." + uuid.uuid4().hex + ".tmp")
+        try:
+            self._durable_member(temporary, _encode(prepared))
+            temporary.replace(self.path("CURRENT.json")); self._sync_directory(self.root)
+            authority.update(committed=prepared, prepared=None, phase="COMMITTED")
+            self._write_authority(authority)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def read_generation(self, *, allow_degraded=False, allow_legacy=False,
+                        _pointer_override=None, _recovering=False):
         """Read one committed cut and verify every member, even for one role.
 
         A coherent older CURRENT remains a coherent older cut, never a new cut.
         Consumers enforce source/as_of freshness; mtime is never authoritative.
         """
         with self._reader():
-            pointer = self._pointer()
+            pointer = _pointer_override if _pointer_override is not None else self._pointer()
             if pointer is None:
                 self._validate_authority(pointer, allow_legacy=allow_legacy)
                 return None
@@ -401,7 +447,7 @@ class EvidenceFiles:
             _semantic_safety(payloads, fill=legacy)
             if not legacy and (manifest.get("safety") != SAFETY or manifest.get("as_of") != report["as_of"]):
                 raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
-            self._validate_authority(pointer, allow_legacy=allow_legacy)
+            self._validate_authority(pointer, allow_legacy=allow_legacy, recovering=_recovering)
             failure = self._independent("failure.json") if not allow_degraded else None
             if failure and (not isinstance(failure, dict) or type(failure.get("observed_sequence")) is not int):
                 raise ValueError("SHADOW_FAILURE_DIAGNOSTIC_INVALID")
@@ -462,7 +508,7 @@ class EvidenceFiles:
         authority = self._authority() or {"allocated_sequence": pointer.get("sequence", 0),
                                          "committed": pointer or None, "prepared": None}
         if pointer and pointer == authority.get("prepared"):
-            authority.update(committed=pointer, prepared=None)
+            authority.update(committed=pointer, prepared=None, phase="COMMITTED")
             self._write_authority(authority)
         sequence = authority["allocated_sequence"] + 1
         ident = uuid.uuid4().hex
@@ -534,7 +580,7 @@ class EvidenceFiles:
             raise ValueError("SHADOW_RETENTION_RESERVATION_EXCEEDED")
         # Persist reservation before any sequence-bearing generation exists.
         # A killed preparation may leave a gap, never a reused sequence/fork.
-        authority.update(allocated_sequence=sequence, prepared=current)
+        authority.update(allocated_sequence=sequence, prepared=current, phase="PREPARED")
         self._write_authority(authority)
         staging = self.root / (".generation-" + ident + ".tmp")
         final = self.root / ("gen-" + ident)
@@ -554,11 +600,16 @@ class EvidenceFiles:
             self._sync_directory(self.root)
             self._durable_member(pointer_tmp, current_data)
             self._fault("before_commit_pointer")
-            pointer_tmp.replace(self.path("CURRENT.json"))
-            self._sync_directory(self.root)
-            self._fault("after_commit_pointer")
-            authority.update(committed=current, prepared=None)
+            authority["phase"] = "PUBLISHING"
             self._write_authority(authority)
+            self._fault("after_publication_intent")
+            pointer_tmp.replace(self.path("CURRENT.json"))
+            self._fault("after_current_replace")
+            self._sync_directory(self.root)
+            self._fault("before_lineage_seal")
+            authority.update(committed=current, prepared=None, phase="COMMITTED")
+            self._write_authority(authority)
+            self._fault("after_commit_pointer")
         finally:
             # Only our exact newly allocated temporary names may be removed.
             # Final dirs are preserved, including an orphan before CURRENT.

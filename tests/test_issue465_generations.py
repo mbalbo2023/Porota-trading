@@ -591,7 +591,9 @@ def test_durability_order_precedes_current_and_root_fsync_failure_keeps_whole_ne
     assert any(name.startswith(".HEAD-") for name in synced)  # durable sequence reservation
     member_syncs = [name for name in synced if name in {*ROLES.values(), "manifest.json"}]
     assert member_syncs[:4] == [*ROLES.values(), "manifest.json"]
-    publication = synced[synced.index("report.json.gz"):]
+    publication = [name for name in synced[synced.index("report.json.gz"):]
+        if name in {*ROLES.values(), "manifest.json", root.name}
+        or name.startswith((".generation-", ".CURRENT."))]
     assert publication[4].startswith(".generation-")
     assert publication[5] == root.name
     assert publication[6].startswith(".CURRENT.") and publication[7] == root.name
@@ -608,6 +610,10 @@ def test_durability_order_precedes_current_and_root_fsync_failure_keeps_whole_ne
         monkeypatch.setattr(files, "_sync_directory", fail_after_rename)
         with pytest.raises(OSError, match="commit directory"):
             publish(files, 3)
-    # After rename, the OS may expose the new pointer even if final durability
-    # cannot be acknowledged. Every referenced member was already durable.
+    # Every member is durable, but publication is not sealed after root EIO.
+    # Consumers fail closed until the exclusive writer seals that exact cut.
+    with pytest.raises(ValueError, match="PUBLICATION_RECOVERY_REQUIRED"):
+        read_committed_generation(root)
+    with EvidenceFiles(root) as files:
+        coherent(files.read_generation(), 3)
     coherent(read_committed_generation(root), 3)
