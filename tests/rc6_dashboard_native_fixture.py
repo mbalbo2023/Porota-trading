@@ -47,7 +47,12 @@ class LiveHealthFixture:
         self.publish = publish_child_health
         database = self.temporary / "data/paper_v17/observer_v17.db"
         root = artifact_root(database) / "dynamic-shadow"
-        self.guards.enter_context(patch.dict(os.environ, {"DATA_DIR": str(self.temporary / "data"),
+        # The current capacity API admits every CAPACITY_*_PATH into its
+        # protected input inventory, not just the five selectors it reads.
+        # Remove inherited path bindings before assigning the two fixture roles.
+        environment = {key: "" for key in os.environ
+                       if key.startswith("POROTA_CAPACITY_") and key.endswith("_PATH")}
+        environment.update({"DATA_DIR": str(self.temporary / "data"),
             "PAPER_V17_DB_PATH": str(database),
             "HIST_DB_PATH": str(self.temporary / "absent-history.db"),
             "POROTA_DYNAMIC_SHADOW_ROOT": str(root), "POROTA_SHADOW_RUNTIME_ROOT": str(root),
@@ -58,7 +63,8 @@ class LiveHealthFixture:
             "POROTA_DYNAMIC_CAPACITY_MODE": "SHADOW",
             "POROTA_CAPACITY_POLICY_PATH": str(self.source_root / "ops/policy/rc6-dynamic-capacity-v1.json"),
             "POROTA_CAPACITY_REPORT_PATH": "", "POROTA_CAPACITY_RECOMMENDATION_PATH": "",
-            "POROTA_CAPACITY_APPROVAL_PATH": "", "POROTA_CAPACITY_SHADOW_PATH": str(root / "CURRENT.json")}))
+            "POROTA_CAPACITY_APPROVAL_PATH": "", "POROTA_CAPACITY_SHADOW_PATH": str(root / "CURRENT.json")})
+        self.guards.enter_context(patch.dict(os.environ, environment))
         try:
             # Only seed the canonical schema/catalog/quote writers here. The
             # first SHADOW cut is produced by the real child after its actual
@@ -108,6 +114,11 @@ class LiveHealthFixture:
             self.ready = ready["result"]
             require(self.ready["pid"] == self.process.pid and self.ready["source_proof_pass"] is True
                     and self.ready["environment"]["installed_count"] == 157, "NATIVE_HEALTH_CHILD_PROOF_MISMATCH")
+            require(self.ready["configured_capacity_paths"] == {
+                "POROTA_CAPACITY_POLICY_PATH": str(self.source_root / "ops/policy/rc6-dynamic-capacity-v1.json"),
+                "POROTA_CAPACITY_SHADOW_PATH": str(self.root / "CURRENT.json")}
+                and all(Path(path).is_relative_to(self.temporary / "data") for path in self.ready["local_source_roots"])
+                and self.ready["canonical_evidence_root"] == str(self.root), "NATIVE_HEALTH_INHERITED_SOURCE_PATH_REJECTED")
             self.published = self.publish(self.store, self.children, recorded_at=datetime.now(timezone.utc).isoformat())
             self.started_at = self.published["children"]["dynamic_shadow"]["started_at"]
             require(datetime.fromisoformat(self.ready["as_of"]) >= datetime.fromisoformat(self.started_at),

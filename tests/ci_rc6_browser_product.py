@@ -291,6 +291,10 @@ def serve_health_worker(args):
                 proof = proof and all(row["matches_archived_blob"] for row in closure)
                 result = {"environment": environment, "pid": os.getpid(), "as_of": at.isoformat(),
                     "producer_mode": "ONE_REAL_NATIVE_TICK_THEN_SUPERVISED_ALIVE_UNTIL_EOF",
+                    "configured_capacity_paths": {key: value for key, value in os.environ.items()
+                        if key.startswith("POROTA_CAPACITY_") and key.endswith("_PATH") and value},
+                    "local_source_roots": list(map(str, worker.source_roots)),
+                    "canonical_evidence_root": str(worker.root),
                     "generation_id": report["generation_id"], "configuration_fingerprint": report["configuration_fingerprint"],
                     "source_proof_pass": proof, "network_attempts": len(network),
                     "source_sqlite_attempts": source_calls.count("SOURCE_BLOCKED")}

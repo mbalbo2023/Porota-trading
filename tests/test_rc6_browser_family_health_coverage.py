@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from bs4 import BeautifulSoup
 import pytest
 
-from tests.rc6_browser_ipc import GateFailure, ProductClient, parse_frame, source_inventory
+from tests.rc6_browser_ipc import GateFailure, ProductClient, parse_frame, protected_bytes, source_inventory
 from tests.rc6_browser_coverage import observe_health, verified_scope
 from tests.test_rc6_browser_product_ipc import complete_archive
 
@@ -87,8 +87,15 @@ def test_completed_native_producer_health_is_conservative_without_invented_pid_o
     assert product.finish_receipt["source_proof_pass"] and product.finish_receipt["native_custody_unchanged"]
 
 
-def test_live_health_uses_actual_native_child_canonical_publisher_and_reaps_it(complete_archive):
+def test_live_health_uses_actual_native_child_canonical_publisher_and_reaps_it(complete_archive, tmp_path, monkeypatch):
     root, index, _ = complete_archive
+    outsider = tmp_path / "inherited-capacity-input.json"
+    outsider.write_text('{"scope":"MUST_NOT_BE_A_HEALTH_INPUT"}\n')
+    before = outsider.stat(), protected_bytes(outsider)
+    monkeypatch.setenv("POROTA_CAPACITY_REPORT_PATH", str(outsider))
+    # The real input_paths API admits every matching key; this additional
+    # binding is a configuration fault, not a fabricated financial payload.
+    monkeypatch.setenv("POROTA_CAPACITY_EXTERNAL_PATH", str(outsider))
     with ProductClient(sys.executable, root=root, index=index, require_complete_index=True) as product:
         source = product.request("initialize", mode="HEALTH_LIVE")
         observed = observe_health(product, require_live=True)
@@ -101,6 +108,9 @@ def test_live_health_uses_actual_native_child_canonical_publisher_and_reaps_it(c
     assert fixture["health_observation"]["before"] == fixture["health_observation"]["after"]
     assert fixture["producer_ready"]["pid"] == fixture["producer_pid"]
     assert fixture["producer_ready"]["environment"]["installed_count"] == 157
+    assert set(fixture["producer_ready"]["configured_capacity_paths"]) == {
+        "POROTA_CAPACITY_POLICY_PATH", "POROTA_CAPACITY_SHADOW_PATH"}
+    assert before == (outsider.stat(), protected_bytes(outsider))
     running = fixture["health_published_running"]["children"]["dynamic_shadow"]
     assert running["pid"] == fixture["producer_pid"] and running["state"] == "RUNNING"
     assert datetime.fromisoformat(fixture["producer_ready"]["as_of"]) >= datetime.fromisoformat(running["started_at"])
