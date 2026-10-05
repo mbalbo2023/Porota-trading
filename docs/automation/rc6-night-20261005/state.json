@@ -16,8 +16,29 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T11:38:07.064Z-rwaksw3g3u9",
+    "owner": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-05T11:38:07.064Z",
+    "expires_at": "2026-10-05T11:58:07.064Z",
+    "base_commit": "6f748cfee7cb62d72c6e42754d9be0c8d5eeed13",
+    "purpose": "FINALIZE_EXPIRED_WINDOW"
+  },
+  "pending_action": {
+    "type": "FINALIZE_EXPIRED_WINDOW",
+    "candidate_sha": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
+    "candidate_tree": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1",
+    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "candidate_prs_found": 0,
+    "candidate_actions_runs_found": 0,
+    "queued_actions_runs_found": 0,
+    "in_progress_actions_runs_found": 0,
+    "exact_release_observed": false,
+    "deadline_utc": "2026-10-05T11:30:00Z",
+    "planned_receipt_marker": "NIGHT_SUPERVISOR_WINDOW_RESULT=WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "planned_automation_disable_id": "6ac30186bc40819199bfbfd32244aca5",
+    "started_at": "2026-10-05T11:38:07.064Z"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
