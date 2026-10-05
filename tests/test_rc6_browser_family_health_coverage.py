@@ -24,7 +24,7 @@ def prepared_multifamily(complete_archive, tmp_path_factory):
         source_root=root, index=index, variant="MULTIFAMILY", python_version=f"{sys.version_info.major}.{sys.version_info.minor}")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def multifamily_product(complete_archive, prepared_multifamily):
     root, index, _ = complete_archive
     prepared = prepared_multifamily
