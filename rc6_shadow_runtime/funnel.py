@@ -11,10 +11,11 @@ import json
 from collections import Counter, defaultdict
 from decimal import Decimal
 
-from rc6_performance.common import canonical, digest, identity, number, stamp
+from rc6_performance.common import canonical, digest, identity, number, stamp, decision_snapshot_phase
 from rc6_performance.costs import realized_round_trip_cost
 from rc6_performance.metrics import distribution
 from .entry_signals import ART, _fingerprint, _json, _native_payload, _read_rows, _signal_input_fingerprint
+from .serialization import encode_storage, decode_storage, SCHEMA as STORAGE_SCHEMA
 
 SCHEMA = "rc6.prospective-operational-funnel.v1"
 DISCOVERY_EVIDENCE_SCHEMA = "rc6.causal-discovery-evidence.v1"
@@ -26,7 +27,22 @@ MAX_IDENTITIES = 30000
 MAX_EVENTS = 120000
 MAX_POSITIONS = 4096
 MAX_CHECKPOINT_BYTES = 32 * 1024**2
+MAX_EXPANDED_CHECKPOINT_BYTES = 64 * 1024**2
 TABLES = ("decision_evidence_snapshots", "paper_fills", "paper_family_lifecycle_events")
+
+
+def encode_funnel_checkpoint(value):
+    try:
+        return encode_storage(value, durable_limit=MAX_CHECKPOINT_BYTES,
+                              expansion_limit=MAX_EXPANDED_CHECKPOINT_BYTES)
+    except ValueError as error:
+        if "CAPACITY" in str(error): raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED") from error
+        raise
+
+
+def decode_funnel_checkpoint(value):
+    return decode_storage(value, durable_limit=MAX_CHECKPOINT_BYTES,
+                          expansion_limit=MAX_EXPANDED_CHECKPOINT_BYTES)
 
 
 def planner_identity(parts):
@@ -242,6 +258,8 @@ def measure_discovery_outcomes(evidence, *, as_of):
 
 def _decision_stages(checkpoint, row, at):
     payload = _native_payload(row, at, require_signal=False)
+    if decision_snapshot_phase(payload) == "ATOMIC_PAPER_ADMISSION":
+        return
     decision = payload["decision"]
     runtime, inputs = payload["runtime"], payload.get("inputs_used") or {}
     ident = identity(payload["quote_used"])
@@ -459,9 +477,11 @@ def _shadow_entries(checkpoint, report, at):
 
 
 def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_report=None,
-                            exit_lab_report=None, previous=None, row_limit=500):
+                            exit_lab_report=None, previous=None, row_limit=500, return_encoded_checkpoint=False):
     """Return report/state; caller owns the existing atomic evidence writer."""
     at = stamp(as_of)
+    stored_previous = isinstance(previous, dict) and previous.get("schema") == STORAGE_SCHEMA
+    previous = decode_funnel_checkpoint(previous)
     if not isinstance(planner_report, dict) or (planner_report.get("real_orders_sent", 0) != 0 or
             planner_report.get("real_routes", "NOT_CALLED") != "NOT_CALLED"):
         raise ValueError("FUNNEL_SHADOW_PAPER_REPORT_REQUIRED")
@@ -471,7 +491,9 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "distinct_input_contract": "PROVIDER_CLOCK_VALUES; receipt and decision clock churn excluded"})
     invalidation = None
     if previous:
-        if (len(canonical(previous).encode()) > MAX_CHECKPOINT_BYTES or previous.get("schema") != SCHEMA or
+        if not stored_previous:
+            encode_funnel_checkpoint(previous)
+        if (previous.get("schema") != SCHEMA or
                 previous.get("checkpoint_sha256") != _fingerprint(previous)):
             invalidation = "FUNNEL_CHECKPOINT_INVALID"
         elif previous.get("configuration_fingerprint") != fingerprint:
@@ -519,8 +541,7 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
             stamp(v["completed_at"]).astimezone(ART).date().isoformat() in retained}
     checkpoint["details"] = [r for r in checkpoint["details"] if r["session"] in retained]
     checkpoint["checkpoint_sha256"] = _fingerprint(checkpoint)
-    if len(canonical(checkpoint).encode()) > MAX_CHECKPOINT_BYTES:
-        raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")
+    stored_checkpoint = encode_funnel_checkpoint(checkpoint)
     cohorts = list(checkpoint["cohorts"].values())
     totals = defaultdict(lambda: {"stages": Counter(), "net_pnl": Decimal(0), "gross_pnl": Decimal(0), "costs": Decimal(0)})
     for group in cohorts:
@@ -560,4 +581,4 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
         "late_missed_discovery": measure_discovery_outcomes(planner_report.get("causal_discovery_evidence", []), as_of=at),
         "shadow_to_factual_causality": "NOT_CLAIMED",
         "currencies_added_together": False, "factual_exit_policy_effect": "NONE"}
-    return _json(report), checkpoint
+    return _json(report), stored_checkpoint if return_encoded_checkpoint else checkpoint

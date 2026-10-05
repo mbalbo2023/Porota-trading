@@ -317,7 +317,7 @@ def archive_fixture(tmp_path):
     with EvidenceFiles(root) as files:
         first = publish(files, 1); publish(files, 2)
     path = root / ("gen-" + first["pointer"]["generation_id"])
-    retention = EvidenceRetention(root, maximum_files=14, archive_root=archive)
+    retention = EvidenceRetention(root, maximum_files=16, archive_root=archive)
     receipt = retention.archive_generation(path)
     return root, archive, path, receipt
 
@@ -338,12 +338,12 @@ def test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion(
     elif attack == "corrupt_object": obj.write_bytes(b"corrupt")
     ack.write_text(json.dumps(receipt))
     with pytest.raises(RetentionPressure, match="HARD_FILES"):
-        EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
-    assert path.is_dir() and set(item.name for item in path.iterdir()) == {*ROLES.values(), "manifest.json"}
+        EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
+    assert path.is_dir() and set(item.name for item in path.iterdir()) == {*persistence.GENERATION_ROLES.values(), "manifest.json"}
 
 
 ROTATION_BOUNDARIES = ("rotation_before_rename", "rotation_after_rename", "rotation_after_rename_fsync",
-    *("rotation_" + side + "_unlink_" + name for name in sorted({*ROLES.values(), "manifest.json"}) for side in ("before", "after")),
+    *("rotation_" + side + "_unlink_" + name for name in sorted({*persistence.GENERATION_ROLES.values(), "manifest.json"}) for side in ("before", "after")),
     "rotation_before_directory_fsync", "rotation_after_directory_fsync", "rotation_after_remove_directory",
     "rotation_before_compact_ack", "rotation_after_compact_ack")
 
@@ -352,7 +352,7 @@ def pause_rotation(root, archive, point, pipe):
     def fault(stage):
         if stage == point:
             pipe.send(stage); signal.pause()
-    EvidenceRetention(root, maximum_files=14, archive_root=archive, fault_inject=fault).prepare(additional_files=6)
+    EvidenceRetention(root, maximum_files=16, archive_root=archive, fault_inject=fault).prepare(additional_files=7)
 
 
 @pytest.mark.parametrize("point", ROTATION_BOUNDARIES)
@@ -367,7 +367,7 @@ def test_u19_real_sigkill_every_rotation_boundary_recovers_without_losing_archiv
     finally:
         if process.is_alive(): process.kill(); process.join(10)
         parent.close(); child.close()
-    EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+    EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
     assert not path.exists() and not list(root.glob(".deleting-*")) and not list(root.glob("delete-intent-*"))
     assert not list(root.glob("archive-ack-*"))
     assert (archive / (receipt["generation_id"] + ".receipt.json")).is_file()
@@ -381,8 +381,8 @@ def test_u19_eio_every_rotation_boundary_is_reentrant_after_restart(tmp_path, po
     def fault(stage):
         if stage == point: raise OSError(errno.EIO, "synthetic")
     with pytest.raises(RetentionPressure):
-        EvidenceRetention(root, maximum_files=14, archive_root=archive, fault_inject=fault).prepare(additional_files=6)
-    EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+        EvidenceRetention(root, maximum_files=16, archive_root=archive, fault_inject=fault).prepare(additional_files=7)
+    EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
     assert not path.exists() and not list(root.glob(".deleting-*")) and not list(root.glob("delete-intent-*"))
     EvidenceRetention(root, archive_root=archive)._verify_archive(receipt)
 
@@ -411,7 +411,7 @@ def pause_rotation_syscall(root, archive, primitive, occurrence, pipe):
     def pause():
         pipe.send((primitive, occurrence)); signal.pause()
     with fault_rotation_syscall(primitive, occurrence, pause):
-        EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+        EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
 
 
 @pytest.mark.parametrize("primitive,occurrence", ROTATION_SYSCALL_BOUNDARIES)
@@ -421,7 +421,7 @@ def test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume(tmp_pa
     if failure == "EIO":
         def fail(): raise OSError(errno.EIO, "synthetic syscall failure")
         with fault_rotation_syscall(primitive, occurrence, fail), pytest.raises(RetentionPressure):
-            EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+            EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
     else:
         context = multiprocessing.get_context("fork"); parent, child = context.Pipe(duplex=False)
         process = context.Process(target=pause_rotation_syscall, args=(root, archive, primitive, occurrence, child)); process.start()
@@ -432,7 +432,7 @@ def test_u19_actual_fsync_replace_rmdir_and_intent_unlink_syscalls_resume(tmp_pa
         finally:
             if process.is_alive(): process.kill(); process.join(10)
             parent.close(); child.close()
-    EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
+    EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
     assert not path.exists() and not list(root.glob(".deleting-*")) and not list(root.glob("delete-intent-*"))
     assert not list(root.glob(".control-*")) and not list(root.glob("archive-ack-*"))
     EvidenceRetention(root, archive_root=archive)._verify_archive(receipt)
@@ -476,7 +476,7 @@ def test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rew
     assert (archive / "CHECKPOINT.json").read_bytes() == head2
     ack1 = root / ("archive-ack-" + receipt1["generation_id"] + ".json")
     assert json.loads(ack1.read_text()) == receipt1
-    EvidenceRetention(root, maximum_files=20, archive_root=archive).prepare(additional_files=6)
+    EvidenceRetention(root, maximum_files=20, archive_root=archive).prepare(additional_files=7)
     assert not paths[0].exists() and not paths[1].exists() and paths[2].exists()
     assert (archive / "CHECKPOINT.json").read_bytes() == head2
     assert read_committed_generation(root)["report"]["number"] == 3
@@ -498,8 +498,8 @@ def test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rot
     with pytest.raises(ValueError, match="LINEAGE_CONFLICT"):
         retention.archive_generation(paths[0])
     with pytest.raises(RetentionPressure):
-        EvidenceRetention(root, maximum_files=14, archive_root=archive).prepare(additional_files=6)
-    assert paths[0].is_dir() and set(item.name for item in paths[0].iterdir()) == {*ROLES.values(), "manifest.json"}
+        EvidenceRetention(root, maximum_files=16, archive_root=archive).prepare(additional_files=7)
+    assert paths[0].is_dir() and set(item.name for item in paths[0].iterdir()) == {*persistence.GENERATION_ROLES.values(), "manifest.json"}
     assert (archive / "CHECKPOINT.json").read_bytes() == head2
     assert read_committed_generation(root)["report"]["number"] == 3
 

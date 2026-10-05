@@ -28,7 +28,8 @@ DELETING = re.compile(r"\.deleting-([0-9a-f]{32})\Z")
 OWN_TEMP = re.compile(r"\.(?:CURRENT\.json|latest\.json\.gz|checkpoint\.json\.gz|status\.json|"
     r"preopen-\d{4}-\d{2}-\d{2}\.json\.gz)\.[a-z0-9_]{8}\.tmp\Z|"
     r"\.CURRENT\.[0-9a-f]{32}\.tmp\Z|\.independent-[0-9a-f]{32}\.tmp\Z|\.control-[0-9a-f]{32}\.tmp\Z")
-MEMBERS = frozenset({"report.json.gz", "checkpoint.json.gz", "status.json", "manifest.json"})
+BASE_MEMBERS = frozenset({"report.json.gz", "checkpoint.json.gz", "status.json", "manifest.json"})
+MEMBERS = BASE_MEMBERS | {"projection.sqlite"}
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 CONTROL_LIMIT = 256 * 1024
 ARCHIVE_SCHEMA = "RC6_SHADOW_ARCHIVE_ACK_V2"
@@ -317,13 +318,14 @@ class EvidenceRetention:
                     break
                 if any(padding):
                     raise ValueError("RETENTION_ARCHIVE_OBJECT_TRAILING_DATA")
-        if set(hashes) != MEMBERS or hashes["manifest.json"] != receipt["manifest_sha256"]:
+        if set(hashes) not in (BASE_MEMBERS, MEMBERS) or hashes["manifest.json"] != receipt["manifest_sha256"]:
             raise ValueError("RETENTION_ARCHIVE_MANIFEST_MISMATCH")
         manifest = json.loads(manifest_raw, object_pairs_hook=_unique_object)
         if not isinstance(manifest, dict) or manifest.get("generation_id") != ident or manifest.get("schema") not in {
                 "rc6.shadow-evidence-generation.v1", "rc6.shadow-evidence-generation.v2"}:
             raise ValueError("RETENTION_ARCHIVE_MANIFEST_MISMATCH")
         expected = {"report": "report.json.gz", "checkpoint": "checkpoint.json.gz", "status": "status.json"}
+        if "projection.sqlite" in hashes: expected["projection"] = "projection.sqlite"
         if not isinstance(manifest.get("files"), dict) or set(manifest["files"]) != set(expected):
             raise ValueError("RETENTION_ARCHIVE_MANIFEST_MISMATCH")
         for role, name in expected.items():
@@ -341,11 +343,12 @@ class EvidenceRetention:
             self._advance_archive_checkpoint(receipt)
             self._durable_control(self.root / ("archive-ack-" + ident + ".json"), receipt)
             return receipt
-        if set(os.listdir(path)) != MEMBERS:
+        members = set(os.listdir(path))
+        if members not in (BASE_MEMBERS, MEMBERS):
             raise ValueError("RETENTION_UNOWNED_TEMP_CONTENT")
         manifest, manifest_hash = self._read_control(path / "manifest.json")
         # Reserve uncompressed tar, receipt and simultaneous control temporaries.
-        logical_size = sum((path / name).lstat().st_size for name in MEMBERS)
+        logical_size = sum((path / name).lstat().st_size for name in members)
         self._archive_inventory(additional_bytes=logical_size + logical_size // 1000 + 65536, additional_files=4)
         target = self.archive_root / (ident + ".tar.gz")
         temporary = self.archive_root / (".archive-" + ident + ".tmp")
@@ -354,7 +357,7 @@ class EvidenceRetention:
             with os.fdopen(fd, "wb") as destination:
                 with gzip.GzipFile(fileobj=destination, mode="wb", mtime=0) as compressed:
                     with tarfile.open(fileobj=compressed, mode="w|") as archive:
-                        for name in sorted(MEMBERS):
+                        for name in sorted(members):
                             source_fd = os.open(path / name, os.O_RDONLY | os.O_NOFOLLOW)
                             with os.fdopen(source_fd, "rb") as source:
                                 info = os.fstat(source.fileno())
@@ -492,7 +495,7 @@ class EvidenceRetention:
         fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             names = set(os.listdir(fd))
-            if not names <= MEMBERS or (complete and names != MEMBERS):
+            if not names <= MEMBERS or (complete and names not in (BASE_MEMBERS, MEMBERS)):
                 raise ValueError("RETENTION_UNOWNED_TEMP_CONTENT")
             for name in names:
                 info = os.stat(name, dir_fd=fd, follow_symlinks=False)
@@ -530,9 +533,10 @@ class EvidenceRetention:
             if not accepted or manifest.get("schema") not in {"rc6.shadow-evidence-generation.v1", "rc6.shadow-evidence-generation.v2"}:
                 return False
             files = manifest.get("files")
-            if not isinstance(files, dict) or set(files) != {"report", "checkpoint", "status"}:
+            if not isinstance(files, dict) or set(files) not in ({"report", "checkpoint", "status"}, {"report", "checkpoint", "status", "projection"}):
                 return False
             expected_names = {"report": "report.json.gz", "checkpoint": "checkpoint.json.gz", "status": "status.json"}
+            if "projection" in files: expected_names["projection"] = "projection.sqlite"
             for role, expected_name in expected_names.items():
                 member = files[role]
                 if (not isinstance(member, dict) or member.get("name") != expected_name or
@@ -580,9 +584,10 @@ class EvidenceRetention:
 
     def _rotate(self, path):
         ident = _generation_id(path.name)
-        if set(os.listdir(path)) != MEMBERS:
+        members = set(os.listdir(path))
+        if members not in (BASE_MEMBERS, MEMBERS):
             raise ValueError("RETENTION_UNOWNED_TEMP_CONTENT")
-        for name in MEMBERS:
+        for name in members:
             info = (path / name).lstat()
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise ValueError("RETENTION_FILE_ALIAS_FORBIDDEN")

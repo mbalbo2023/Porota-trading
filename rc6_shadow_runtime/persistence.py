@@ -16,21 +16,25 @@ import os
 from pathlib import Path
 import re
 import stat
+import time
 import uuid
 import zlib
 
 from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.sources import audit_sources, sanitize_source_errors
+from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, SCHEMA as STORAGE_SCHEMA
 
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
 LEGACY_GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v1"
 EXPORT_SCHEMA = "rc6.shadow-committed-cut.v2"
 LINEAGE_SCHEMA = "rc6.shadow-lineage-authority.v2"
 DEFAULT_MAXIMUM_FILES = 8192
+EXPANDED_PAYLOAD_LIMIT = 512 * 1024**2
 SAFETY = {"mode": "SHADOW", "real_orders_sent": 0, "real_routes": "NOT_CALLED",
           "provider_requests": 0, "source_database_effect": "READ_ONLY",
           "factual_execution": "NOT_CALLED", "ppi_watch": "UNTOUCHED"}
 ROLES = {"report": "report.json.gz", "checkpoint": "checkpoint.json.gz", "status": "status.json"}
+GENERATION_ROLES = {**ROLES, "projection": "projection.sqlite"}
 LOGICAL_ROLES = {"latest.json.gz": "report", "checkpoint.json.gz": "checkpoint", "status.json": "status"}
 ID_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -212,7 +216,7 @@ class EvidenceFiles:
         if self.lock is not None:
             yield
             return
-        fd = os.open(self.path("writer.lock"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(self.path("writer.lock"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_NOATIME", 0))
         try:
             if os.fstat(fd).st_nlink != 1 or not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("SHADOW_FILE_ALIAS_FORBIDDEN")
@@ -232,7 +236,7 @@ class EvidenceFiles:
                 child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
                 os.close(directory)
                 directory = child
-            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NOATIME", 0), dir_fd=directory)
         finally:
             os.close(directory)
         with os.fdopen(fd, "rb") as stream:
@@ -246,7 +250,7 @@ class EvidenceFiles:
             raise ValueError("SHADOW_PAYLOAD_LIMIT")
         return raw
 
-    def _payload(self, name, raw):
+    def _payload(self, name, raw, *, details=False):
         if name.endswith(".gz"):
             try:
                 with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
@@ -256,9 +260,18 @@ class EvidenceFiles:
             if len(raw) > self.payload_limit:
                 raise ValueError("SHADOW_PAYLOAD_LIMIT")
         envelope = _json(raw)
-        if not isinstance(envelope, dict) or envelope.get("digest") != digest(envelope.get("payload")):
+        if not isinstance(envelope, dict):
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
-        return envelope["payload"]
+        payload = decode_storage(envelope.get("payload"), durable_limit=self.payload_limit,
+                                 expansion_limit=EXPANDED_PAYLOAD_LIMIT, share_subtrees=name == ROLES["report"])
+        if payload is not envelope["payload"]:
+            actual, logical_size = envelope["payload"]["logical_sha256"], envelope["payload"]["logical_bytes"]
+        else:
+            actual, logical_size = canonical_metrics(payload, ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)
+        if envelope.get("digest") != actual:
+            raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
+        return (payload, {"payload_digest": actual, "logical_bytes": logical_size,
+            "storage_schema": STORAGE_SCHEMA if payload is not envelope["payload"] else "PLAIN_JSON"}) if details else payload
 
     def _independent(self, name):
         path = self.path(name)
@@ -393,13 +406,16 @@ class EvidenceFiles:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def read_generation(self, *, allow_degraded=False, allow_legacy=False,
+    def read_generation(self, *, allow_degraded=False, allow_legacy=False, roles=None,
                         _pointer_override=None, _recovering=False):
         """Read one committed cut and verify every member, even for one role.
 
         A coherent older CURRENT remains a coherent older cut, never a new cut.
         Consumers enforce source/as_of freshness; mtime is never authoritative.
         """
+        requested = tuple(GENERATION_ROLES) if roles is None else tuple(roles)
+        if len(set(requested)) != len(requested) or any(role not in GENERATION_ROLES for role in requested):
+            raise ValueError("SHADOW_EXPORT_ROLE_INVALID")
         with self._reader():
             pointer = _pointer_override if _pointer_override is not None else self._pointer()
             if pointer is None:
@@ -422,9 +438,11 @@ class EvidenceFiles:
                     or not isinstance(manifest.get("configuration_fingerprint"), str)
                     or not manifest["configuration_fingerprint"]
                     or not isinstance(manifest.get("files"), dict)
-                    or set(manifest.get("files", {})) != set(ROLES)):
+                    or set(manifest.get("files", {})) not in (set(ROLES), set(GENERATION_ROLES))):
                 raise ValueError("SHADOW_GENERATION_MANIFEST_MISMATCH")
-            payloads = {}
+            payloads, headers, verified, cross_hashes, declared_cross, declared_limits = {}, {}, {}, {}, {}, []
+            status_digests = {}
+            expected_projection = None
             for role, name in ROLES.items():
                 record = manifest["files"][role]
                 if not isinstance(record, dict) or record.get("name") != name:
@@ -432,30 +450,75 @@ class EvidenceFiles:
                 member = self._bytes(generation / name)
                 if _sha(member) != record.get("sha256"):
                     raise ValueError("SHADOW_GENERATION_FILE_HASH_MISMATCH")
-                value = self._payload(name, member)
-                if (not isinstance(value, dict) or digest(value) != record.get("payload_digest")
+                value, proof = self._payload(name, member, details=True)
+                if (not isinstance(value, dict) or proof["payload_digest"] != record.get("payload_digest")
                         or value.get("generation_id") != pointer["generation_id"]
                         or value.get("source_watermark") != manifest.get("source_watermark")
                         or value.get("configuration_fingerprint") != manifest.get("configuration_fingerprint")):
                     raise ValueError("SHADOW_GENERATION_MEMBER_MISMATCH")
-                payloads[role] = value
                 if not legacy and (value.get("generation_schema") != GENERATION_SCHEMA
                         or type(value.get("sequence")) is not int or value.get("sequence") != pointer["sequence"]):
                     raise ValueError("SHADOW_GENERATION_MEMBER_MISMATCH")
-            hashes = {role: digest({k: v for k, v in payloads[role].items() if k != "cross_payload_hashes"})
-                      for role in ("report", "checkpoint")}
-            if any(value.get("cross_payload_hashes") != hashes for value in payloads.values()):
+                if role in ("report", "checkpoint"):
+                    cross_hashes[role] = canonical_metrics({key: item for key, item in value.items()
+                        if key != "cross_payload_hashes"}, ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)[0]
+                declared_cross[role] = value.get("cross_payload_hashes")
+                _semantic_safety({role: value}, fill=legacy)
+                if "production_limits_modified" in value:
+                    declared_limits.append(value["production_limits_modified"])
+                if role == "report":
+                    _semantic_sources(value, legacy=legacy)
+                    if (manifest.get("source_audit_digest") != digest(value.get("source_audit", {}))
+                            or manifest.get("source_reports_digest") != digest(value.get("source_reports", []))):
+                        raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
+                    if "projection" in manifest["files"]:
+                        from .projection import build_projection
+                        _, expected_header, expected_projection = build_projection(value,
+                            {key: manifest["files"][key]["payload_digest"] for key in ROLES})
+                if role == "status":
+                    status_digests = {key: value.get(key) for key in ("report_digest", "checkpoint_digest")}
+                headers[role] = {key: deepcopy(value.get(key)) for key in
+                    ("generation_id", "generation_schema", "sequence", "source_watermark", "configuration_fingerprint", "as_of", "safety")}
+                verified[role] = proof
+                if role in requested:
+                    payloads[role] = value
+                del value, member
+            if any(value != cross_hashes for value in declared_cross.values()):
                 raise ValueError("SHADOW_GENERATION_CROSS_HASH_MISMATCH")
-            status, report, checkpoint = payloads["status"], payloads["report"], payloads["checkpoint"]
-            if (status.get("report_digest") != digest(report) or status.get("checkpoint_digest") != digest(checkpoint)
-                    or any(value.get("as_of") != report.get("as_of") for value in payloads.values())
-                    or manifest.get("source_watermark", {}).get("as_of") != report.get("as_of")
-                    or manifest.get("source_audit_digest") != digest(report.get("source_audit", {}))
-                    or manifest.get("source_reports_digest") != digest(report.get("source_reports", []))):
+            if (status_digests.get("report_digest") != verified["report"]["payload_digest"]
+                    or status_digests.get("checkpoint_digest") != verified["checkpoint"]["payload_digest"]):
                 raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
-            _semantic_sources(report, legacy=legacy)
-            _semantic_safety(payloads, fill=legacy)
-            if not legacy and (digest(manifest.get("safety")) != digest(SAFETY) or manifest.get("as_of") != report["as_of"]):
+            if "projection" in manifest["files"]:
+                from .projection import open_projection, logical_digest
+                member = self._bytes(generation / GENERATION_ROLES["projection"])
+                if _sha(member) != manifest["files"]["projection"]["sha256"]:
+                    raise ValueError("SHADOW_GENERATION_FILE_HASH_MISMATCH")
+                connection, header = open_projection(member)
+                try:
+                    actual_hash, actual_size = logical_digest(connection, header)
+                    if (header != expected_header or actual_hash != expected_projection["payload_digest"]
+                            or actual_hash != manifest["files"]["projection"]["payload_digest"]):
+                        raise ValueError("SHADOW_PROJECTION_DERIVATION_MISMATCH")
+                finally:
+                    connection.close()
+                _semantic_safety({"projection": header})
+                verified["projection"] = {"payload_digest": actual_hash, "logical_bytes": actual_size,
+                    "storage_schema": header["schema"]}
+                headers["projection"] = {key: deepcopy(header[key]) for key in
+                    ("generation_id", "generation_schema", "sequence", "source_watermark", "configuration_fingerprint", "as_of", "safety")}
+                if "projection" in requested: payloads["projection"] = header
+            if any(value != cross_hashes for value in declared_cross.values()):
+                raise ValueError("SHADOW_GENERATION_CROSS_HASH_MISMATCH")
+            if (status_digests.get("report_digest") != verified["report"]["payload_digest"]
+                    or status_digests.get("checkpoint_digest") != verified["checkpoint"]["payload_digest"]):
+                raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
+            report_as_of = headers["report"]["as_of"]
+            if (any(value["as_of"] != report_as_of for value in headers.values())
+                    or manifest.get("source_watermark", {}).get("as_of") != report_as_of):
+                raise ValueError("SHADOW_GENERATION_LOGICAL_MISMATCH")
+            if len({digest(value) for value in declared_limits}) > 1:
+                raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
+            if not legacy and (digest(manifest.get("safety")) != digest(SAFETY) or manifest.get("as_of") != report_as_of):
                 raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
             self._validate_authority(pointer, allow_legacy=allow_legacy, recovering=_recovering)
             failure = self._independent("failure.json") if not allow_degraded else None
@@ -466,9 +529,11 @@ class EvidenceFiles:
             return {**payloads, "manifest": manifest, "pointer": pointer,
                 "export_contract": {"schema": EXPORT_SCHEMA, "generation_schema": pointer["schema"],
                     "generation_id": pointer["generation_id"], "sequence": pointer["sequence"],
-                    "as_of": report["as_of"], "source_watermark": manifest["source_watermark"],
+                    "as_of": report_as_of, "source_watermark": manifest["source_watermark"],
                     "configuration_fingerprint": manifest["configuration_fingerprint"],
                     "safety": deepcopy(SAFETY), "legacy_bootstrap": legacy,
+                    "verified_payloads": verified, "role_headers": headers, "returned_roles": list(requested),
+                    "verification_level": "FULL_LOGICAL_SEMANTICS",
                     "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION"}}
 
     def read(self, name):
@@ -476,6 +541,117 @@ class EvidenceFiles:
             bundle = self.read_generation()
             return bundle[LOGICAL_ROLES[name]] if bundle else None
         return self._independent(name)
+
+    def _wire_generation(self, *, deadline=None, checkpoint=False, allow_degraded=False):
+        """Verify sealed bytes/CRC/codec plus typed producer headers.
+
+        This explicitly does not claim to recompute the large native report's
+        source semantics. The publisher checks those before sealing custody.
+        """
+        def guard():
+            if deadline is not None and time.monotonic() >= deadline:
+                raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
+        guard()
+        pointer = self._pointer()
+        if not pointer: raise ValueError("SHADOW_GENERATION_NOT_COMMITTED")
+        self._validate_authority(pointer)
+        if pointer["schema"] != GENERATION_SCHEMA: raise ValueError("SHADOW_GENERATION_LEGACY_REQUIRES_FORWARD_BOOTSTRAP")
+        generation = self.root / ("gen-"+pointer["generation_id"])
+        raw = self._bytes(generation / "manifest.json", limit=64*1024)
+        if _sha(raw) != pointer["manifest_sha256"]: raise ValueError("SHADOW_GENERATION_MANIFEST_HASH_MISMATCH")
+        manifest = _json(raw)
+        if (manifest.get("schema") != GENERATION_SCHEMA or manifest.get("generation_id") != pointer["generation_id"]
+                or type(manifest.get("sequence")) is not int or manifest["sequence"] != pointer["sequence"]
+                or set(manifest.get("files", {})) != set(GENERATION_ROLES)
+                or set(manifest.get("role_headers", {})) != set(GENERATION_ROLES)):
+            raise ValueError("SHADOW_GENERATION_MANIFEST_MISMATCH")
+        headers = manifest["role_headers"]
+        _semantic_safety(headers)
+        for header in headers.values():
+            if (header.get("generation_id") != pointer["generation_id"] or header.get("generation_schema") != GENERATION_SCHEMA
+                    or type(header.get("sequence")) is not int or header["sequence"] != pointer["sequence"]
+                    or header.get("as_of") != manifest.get("as_of")
+                    or header.get("source_watermark") != manifest.get("source_watermark")
+                    or header.get("configuration_fingerprint") != manifest.get("configuration_fingerprint")):
+                raise ValueError("SHADOW_GENERATION_MEMBER_MISMATCH")
+        if (manifest.get("source_watermark", {}).get("as_of") != manifest.get("as_of")
+                or digest(manifest.get("safety")) != digest(SAFETY)):
+            raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
+        verified, result = {}, {"manifest": manifest, "pointer": pointer}
+        for role, name in GENERATION_ROLES.items():
+            guard()
+            record = manifest["files"][role]
+            if record.get("name") != name: raise ValueError("SHADOW_GENERATION_PATH_MISMATCH")
+            member = self._bytes(generation / name)
+            if _sha(member) != record.get("sha256"): raise ValueError("SHADOW_GENERATION_FILE_HASH_MISMATCH")
+            if role == "projection":
+                result["projection_bytes"] = member
+                verified[role] = {key: record[key] for key in ("payload_digest", "logical_bytes", "storage_schema")}
+                continue
+            wire = member
+            if name.endswith(".gz"):
+                try:
+                    with gzip.GzipFile(fileobj=io.BytesIO(member)) as stream: wire = stream.read(self.payload_limit+1)
+                except (OSError, EOFError, zlib.error) as error:
+                    raise ValueError("SHADOW_GENERATION_GZIP_INVALID") from error
+                if len(wire) > self.payload_limit: raise ValueError("SHADOW_PAYLOAD_LIMIT")
+            envelope = _json(wire)
+            stored = envelope.get("payload") if isinstance(envelope, dict) else None
+            if isinstance(stored, dict) and stored.get("schema") == STORAGE_SCHEMA:
+                proof = verify_storage_wire(stored, durable_limit=self.payload_limit, expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
+                value = self._payload(name, member) if role == "status" or role == "checkpoint" and checkpoint else None
+            else:
+                value, proof = self._payload(name, member, details=True)
+            if value is not None:
+                _semantic_safety({role: value})
+                if role == "report": _semantic_sources(value)
+                if any(value.get(key) != header_value for key, header_value in headers[role].items()):
+                    raise ValueError("SHADOW_GENERATION_MEMBER_MISMATCH")
+            if envelope.get("digest") != proof["payload_digest"] or record.get("payload_digest") != proof["payload_digest"]:
+                raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
+            verified[role] = {**proof, "durable_bytes": len(member), "wire_bytes": len(wire)}
+            if role == "status" or (role == "checkpoint" and checkpoint): result[role] = value
+        status = result["status"]
+        if (status.get("report_digest") != verified["report"]["payload_digest"]
+                or status.get("checkpoint_digest") != verified["checkpoint"]["payload_digest"]
+                or any(headers[role].get("cross_payload_hashes") != status.get("cross_payload_hashes") for role in ROLES)):
+            raise ValueError("SHADOW_GENERATION_CROSS_HASH_MISMATCH")
+        if not allow_degraded:
+            failure = self._independent("failure.json")
+            if failure and (type(failure.get("observed_sequence")) is not int or failure["observed_sequence"] >= pointer["sequence"]):
+                raise ValueError("SHADOW_GENERATION_DEGRADED")
+        guard()
+        result["export_contract"] = {"generation_id": pointer["generation_id"], "generation_schema": GENERATION_SCHEMA,
+            "sequence": pointer["sequence"], "as_of": manifest["as_of"], "source_watermark": manifest["source_watermark"],
+            "configuration_fingerprint": manifest["configuration_fingerprint"], "safety": deepcopy(SAFETY),
+            "verified_payloads": verified, "role_headers": headers,
+            "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION"}
+        return result
+
+    def read_writer_generation(self, *, checkpoint):
+        """Reuse sealed producer validation, decode only checkpoint for restart.
+
+        Old three-role cuts use the strict full reader until their next forward
+        publication. This internal writer route never advertises FULL_LOGICAL.
+        """
+        pointer = self._pointer()
+        if not pointer:
+            self._validate_authority(pointer, allow_legacy=True); return None
+        raw = _json(self._bytes(self.root / ("gen-"+pointer["generation_id"]) / "manifest.json", limit=64*1024))
+        if "projection" not in raw.get("files", {}):
+            return self.read_generation(allow_degraded=True, allow_legacy=True, roles=("checkpoint",) if checkpoint else ())
+        with self._reader():
+            bundle = self._wire_generation(checkpoint=checkpoint, allow_degraded=True)
+            from .projection import open_projection
+            connection, header = open_projection(bundle.pop("projection_bytes"))
+            connection.close()
+            if (header.get("derivation") != {role: bundle["manifest"]["files"][role]["payload_digest"] for role in ROLES}
+                    or any(header.get(key) != bundle["export_contract"].get(key) for key in
+                           ("generation_id", "generation_schema", "sequence", "as_of", "source_watermark", "configuration_fingerprint", "safety"))):
+                raise ValueError("SHADOW_PROJECTION_DERIVATION_MISMATCH")
+            _semantic_safety({"projection": header})
+            bundle["export_contract"]["verification_level"] = "WIRE_AND_CHECKPOINT_SEMANTICS" if checkpoint else "SEALED_WIRE_CUSTODY"
+            return bundle
 
     def _fault(self, stage):
         if self.fault_inject is not None:
@@ -510,10 +686,10 @@ class EvidenceFiles:
             writer_fd=self.lock.fileno())
 
     def commit_generation(self, report, checkpoint, status, *, source_watermark,
-                          configuration_fingerprint):
+                          configuration_fingerprint, _take_payloads=False):
         if self.lock is None:
             raise ValueError("SHADOW_WRITER_LOCK_REQUIRED")
-        before = self.read_generation(allow_degraded=True, allow_legacy=True)
+        before = self.read_writer_generation(checkpoint=False)
         pointer = before["pointer"] if before else {}
         authority = self._authority() or {"allocated_sequence": pointer.get("sequence", 0),
                                          "committed": pointer or None, "prepared": None}
@@ -524,7 +700,10 @@ class EvidenceFiles:
         ident = uuid.uuid4().hex
         metadata = dict(generation_id=ident, generation_schema=GENERATION_SCHEMA, sequence=sequence,
                         source_watermark=deepcopy(source_watermark), configuration_fingerprint=configuration_fingerprint)
-        values = {"report": deepcopy(report), "checkpoint": deepcopy(checkpoint), "status": deepcopy(status)}
+        # The single worker transfers freshly produced nested values. Public
+        # callers retain the defensive copy; only top-level metadata is edited.
+        copier = dict if _take_payloads else deepcopy
+        values = {"report": copier(report), "checkpoint": copier(checkpoint), "status": copier(status)}
         for value in values.values():
             # Existing generation metadata is never copied from a prior cut.
             value.pop("cross_payload_hashes", None)
@@ -545,14 +724,20 @@ class EvidenceFiles:
         def pack():
             for value in values.values():
                 value.pop("cross_payload_hashes", None)
-            hashes = {role: digest(values[role]) for role in ("report", "checkpoint")}
+            hashes = {role: canonical_metrics(values[role], ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)[0]
+                      for role in ("report", "checkpoint")}
             for value in values.values():
                 value["cross_payload_hashes"] = hashes
-            values["status"].update(report_digest=digest(values["report"]),
-                                   checkpoint_digest=digest(values["checkpoint"]))
+            payload_digests = {role: canonical_metrics(values[role], ensure_ascii=True, limit=EXPANDED_PAYLOAD_LIMIT)[0]
+                               for role in ("report", "checkpoint")}
+            values["status"].update(report_digest=payload_digests["report"],
+                                   checkpoint_digest=payload_digests["checkpoint"])
+            payload_digests["status"] = digest(values["status"])
             encoded = {}
             for role, name in ROLES.items():
-                wire = _encode({"digest": digest(values[role]), "payload": values[role]})
+                representation = encode_storage(values[role], durable_limit=self.payload_limit - 128,
+                                                expansion_limit=EXPANDED_PAYLOAD_LIMIT)
+                wire = _encode({"digest": payload_digests[role], "payload": representation})
                 if len(wire) > self.payload_limit:
                     raise ValueError("SHADOW_PAYLOAD_LIMIT")
                 encoded[role] = gzip.compress(wire, mtime=0) if name.endswith(".gz") else wire
@@ -563,7 +748,18 @@ class EvidenceFiles:
                 "source_audit_digest": digest(values["report"].get("source_audit", {})),
                 "source_reports_digest": digest(reports),
                 "files": {role: {"name": name, "sha256": _sha(encoded[role]),
-                                 "payload_digest": digest(values[role])} for role, name in ROLES.items()}}
+                                 "payload_digest": payload_digests[role]} for role, name in ROLES.items()}}
+            from .projection import build_projection
+            projection_data, projection_header, projection_proof = build_projection(values["report"], payload_digests)
+            encoded["projection"] = projection_data
+            manifest["files"]["projection"] = {"name": GENERATION_ROLES["projection"], "sha256": _sha(projection_data),
+                **projection_proof}
+            manifest["role_headers"] = {role: {key: deepcopy(value.get(key)) for key in (*SAFETY,
+                "safety", "generation_id", "generation_schema", "sequence", "as_of", "source_watermark",
+                "configuration_fingerprint", "cross_payload_hashes", "production_limits_modified") if key in value}
+                for role, value in values.items()}
+            manifest["role_headers"]["projection"] = {key: deepcopy(projection_header.get(key)) for key in (*SAFETY,
+                "safety", "generation_id", "generation_schema", "sequence", "as_of", "source_watermark", "configuration_fingerprint")}
             manifest_data = _encode(manifest)
             current = {"schema": GENERATION_SCHEMA, "generation_id": ident,
                        "sequence": manifest["sequence"], "manifest_sha256": _sha(manifest_data)}
@@ -576,7 +772,7 @@ class EvidenceFiles:
         pinned = [pointer.get("generation_id"), (before or {}).get("manifest", {}).get("previous_generation_id")]
         reserved = sum(map(len, encoded.values())) + len(manifest_data) + len(current_data) + 8192 + 4096
         metrics = self._retention(additional_bytes=reserved,
-                                  additional_files=6, pinned=[p for p in pinned if p])
+                                  additional_files=7, pinned=[p for p in pinned if p])
         # Persist the alert in this same logical cut. Reserve a bounded amount
         # for its telemetry before writing anything; no quota surprise at commit.
         values["report"]["evidence_retention"] = metrics
@@ -599,7 +795,7 @@ class EvidenceFiles:
         staging.mkdir(mode=0o700)
         pointer_tmp = self.root / (".CURRENT." + ident + ".tmp")
         try:
-            for role, name in ROLES.items():
+            for role, name in GENERATION_ROLES.items():
                 self._durable_member(staging / name, encoded[role])
                 self._fault("after_" + role)
             self._durable_member(staging / "manifest.json", manifest_data)
@@ -625,7 +821,7 @@ class EvidenceFiles:
             # Final dirs are preserved, including an orphan before CURRENT.
             pointer_tmp.unlink(missing_ok=True)
             if staging.exists() and not staging.is_symlink():
-                for name in (*ROLES.values(), "manifest.json"):
+                for name in (*GENERATION_ROLES.values(), "manifest.json"):
                     (staging / name).unlink(missing_ok=True)
                 staging.rmdir()
         self.last_retention_metrics = metrics
@@ -669,9 +865,39 @@ class EvidenceFiles:
             tmp.unlink(missing_ok=True)
 
 
-def read_committed_generation(root, *, payload_limit=64 * 1024**2):
+def read_committed_generation(root, *, payload_limit=64 * 1024**2, roles=None):
     """Read-only, bounded, nonblocking external consumer of the whole cut."""
-    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation()
+    value = EvidenceFiles(root, payload_limit=payload_limit).read_generation(roles=roles)
     if value is None:
         raise ValueError("SHADOW_GENERATION_NOT_COMMITTED")
     return value
+
+
+def read_committed_projection(root, *, filters=None, offset=0, limit=10, deadline=None):
+    """Bounded read-only pages from all rows of the same sealed generation.
+
+    Wire/CRC/custody verification is explicit; full logical decode remains
+    available through read_committed_generation for offline reaudits.
+    """
+    if (type(offset) is not int or not 0 <= offset <= 100000 or type(limit) is not int or not 1 <= limit <= 10
+            or filters is not None and not isinstance(filters, dict)):
+        raise ValueError("SHADOW_PROJECTION_QUERY_INVALID")
+    from .projection import open_projection, query_projection, EXPORT_SCHEMA as PROJECTION_EXPORT, LEVEL
+    files = EvidenceFiles(root)
+    with files._reader():
+        bundle = files._wire_generation(deadline=deadline)
+        connection, header = open_projection(bundle.pop("projection_bytes"))
+        try:
+            expected = {role: bundle["manifest"]["files"][role]["payload_digest"] for role in ROLES}
+            if (header.get("derivation") != expected or any(header.get(key) != bundle["export_contract"].get(key) for key in
+                    ("generation_id", "generation_schema", "sequence", "as_of", "source_watermark", "configuration_fingerprint", "safety"))):
+                raise ValueError("SHADOW_PROJECTION_DERIVATION_MISMATCH")
+            _semantic_safety({"projection": header})
+            pages, funnel = query_projection(connection, header, filters=filters or {}, offset=offset, limit=limit, deadline=deadline)
+            bundle.update(report=header["report"], dataset_pages=pages, funnel_scope=funnel)
+            bundle["export_contract"].update(schema=PROJECTION_EXPORT, verification_level=LEVEL, derivation=expected)
+            if len(_encode(bundle)) > 4*1024**2: raise ValueError("SHADOW_PROJECTION_QUERY_BYTE_LIMIT")
+            if deadline is not None and time.monotonic() >= deadline: raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
+            return bundle
+        finally:
+            connection.close()

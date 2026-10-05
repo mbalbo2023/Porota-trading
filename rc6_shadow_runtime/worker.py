@@ -244,7 +244,7 @@ class ShadowRuntime:
         with self.files as files:
             capacity_policy = self.capacity_controller.state(at)
             configuration = self.configuration_fingerprint(at, capacity_policy=capacity_policy)
-            committed = files.read_generation(allow_degraded=True, allow_legacy=True)
+            committed = files.read_writer_generation(checkpoint=True)
             previous = committed["checkpoint"] if committed else {}
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
@@ -359,7 +359,8 @@ class ShadowRuntime:
             report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
                 self.database, as_of=at, planner_report=report,
                 entry_signal_report=report["entry_signal_lab"],
-                exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"))
+                exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
+                return_encoded_checkpoint=True)
             # Never call a signal, economics or risk result as an execution
             # callback. These reports cannot reach the factual broker.
             status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
@@ -374,7 +375,7 @@ class ShadowRuntime:
             generation = files.commit_generation(report, checkpoint, status,
                 source_watermark={"source_identity": source_id, "as_of": at.isoformat(),
                     "previous_as_of": previous.get("as_of"), "started_at": started},
-                configuration_fingerprint=configuration)
+                configuration_fingerprint=configuration, _take_payloads=True)
             return generation["report"]
 
 
