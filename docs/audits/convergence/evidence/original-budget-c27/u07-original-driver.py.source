@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Synthetic PAPER-only futures accounting probes for Issue #469."""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import tempfile
+from dataclasses import replace
+from datetime import datetime
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+from pathlib import Path
+
+from be_paper_engine import PaperBroker, PaperStore, Quote
+from bq_exit_policy import PaperSessionPolicy
+from bs_instrument_contracts import InstrumentContract
+from rc6_paper_family_lifecycle import (
+    FamilyPaperExecutor,
+    future_cash_effect,
+    future_positions,
+    future_risk_snapshot,
+)
+from rc6_ppi_future_contract_policy import admission_error, exit_due, standard_dlr_terms
+from rc6_ppi_global_budget import GlobalPPIBudget, RuntimePPIBudget, budget_policy
+
+
+D = Decimal
+
+
+def contract(symbol: str = "DLR/OCT26") -> InstrumentContract:
+    terms = standard_dlr_terms(symbol)
+    assert terms is not None
+    return InstrumentContract(
+        symbol,
+        "FUTUROS",
+        "ARS",
+        "A3",
+        "INMEDIATA",
+        D("1000"),
+        D("1"),
+        "PPI_PRIMARY+A3_OFFICIAL:SYNTHETIC_469",
+        expires_at=terms["expires_at"],
+        minimum_quantity=D("1"),
+        paper_margin_policy="CONSERVATIVE_NOTIONAL_RATE",
+        paper_margin_rate=D("1"),
+        underlying=terms["underlying"],
+    )
+
+
+def snapshot_view(snapshot: dict) -> dict:
+    return {
+        key: str(value) if isinstance(value, Decimal) else value
+        for key, value in snapshot.items()
+    }
+
+
+def open_one(executor: FamilyPaperExecutor, identity: str, *, at: str) -> None:
+    executor.open_future(
+        contract(), lifecycle_id=identity, event_id=identity + ":OPEN",
+        entry_price="1500", quantity="1", entry_cost="100",
+        occurred_at=at, book_at=at,
+    )
+
+
+def main() -> None:
+    result: dict[str, object] = {
+        "scope": "SYNTHETIC_ONLY_PAPER_SHADOW",
+        "real_orders_sent": 0,
+        "real_routes_used": [],
+        "network_calls": 0,
+    }
+    with tempfile.TemporaryDirectory(prefix="issue469-futures-") as directory:
+        root = Path(directory)
+
+        # SQLite's julianday() cannot distinguish the inclusive cut from an
+        # event one microsecond later. Production readers use this predicate.
+        with sqlite3.connect(":memory:") as connection:
+            point = "2026-10-05T13:00:00.000000-03:00"
+            deltas = {}
+            for suffix in ("000001", "000100", "000499", "000500", "001000"):
+                later = f"2026-10-05T13:00:00.{suffix}-03:00"
+                equal, delta_ms = connection.execute(
+                    "SELECT julianday(?)=julianday(?),(julianday(?)-julianday(?))*86400000",
+                    (point, later, later, point),
+                ).fetchone()
+                deltas[suffix] = {"julianday_equal": bool(equal), "represented_delta_ms": delta_ms}
+        result["sqlite_timestamp_resolution"] = deltas
+
+        store = PaperStore(str(root / "variation.sqlite"))
+        executor = FamilyPaperExecutor(store)
+        open_one(executor, "FUT-VAR", at="2026-10-05T12:59:00-03:00")
+        point = "2026-10-05T13:00:00.000000-03:00"
+        future_event = "2026-10-05T13:00:00.000001-03:00"
+        before = snapshot_view(future_risk_snapshot(store, "ARS", point))
+        before_cash = str(future_cash_effect(store, "ARS", point))
+        executor.mark_future(
+            contract(), lifecycle_id="FUT-VAR", event_id="FUT-VAR:SETTLE",
+            mark_price="1510", book_at=future_event, occurred_at=future_event,
+            settlement=True, detail={"source": "SYNTHETIC_469"},
+        )
+        after = snapshot_view(future_risk_snapshot(store, "ARS", point))
+        after_cash = str(future_cash_effect(store, "ARS", point))
+        exact_later = snapshot_view(
+            future_risk_snapshot(store, "ARS", "2026-10-05T13:00:00.000500-03:00")
+        )
+        result["future_variation_lookahead"] = {
+            "as_of": point,
+            "event_at": future_event,
+            "expected_after_future_write_same_as_before": before,
+            "observed_before_future_write": before,
+            "observed_after_future_write": after,
+            "cash_before_future_write": before_cash,
+            "cash_after_future_write_at_earlier_cut": after_cash,
+            "snapshot_at_500us_after_cut": exact_later,
+            "lookahead_present": after != before or after_cash != before_cash,
+        }
+
+        close_store = PaperStore(str(root / "close.sqlite"))
+        close_executor = FamilyPaperExecutor(close_store)
+        open_one(close_executor, "FUT-CLOSE", at="2026-10-05T12:59:00-03:00")
+        before_close = snapshot_view(future_risk_snapshot(close_store, "ARS", point))
+        cash_before_close = str(future_cash_effect(close_store, "ARS", point))
+        close_executor.close_future(
+            contract(), lifecycle_id="FUT-CLOSE", event_id="FUT-CLOSE:CLOSE",
+            exit_price="1520", exit_cost="100", reason="EOD",
+            book_at=future_event, occurred_at=future_event,
+        )
+        after_close = snapshot_view(future_risk_snapshot(close_store, "ARS", point))
+        cash_after_close = str(future_cash_effect(close_store, "ARS", point))
+        result["future_close_lookahead"] = {
+            "as_of": point,
+            "close_at": future_event,
+            "expected_after_future_close_same_as_before": before_close,
+            "observed_before_future_close": before_close,
+            "observed_after_future_close_at_earlier_cut": after_close,
+            "cash_before_future_close": cash_before_close,
+            "cash_after_future_close_at_earlier_cut": cash_after_close,
+            "lookahead_present": after_close != before_close or cash_after_close != cash_before_close,
+        }
+
+        # Restart/idempotency and exact cash release on a normally separated
+        # timeline remain useful positive controls.
+        normal_store = PaperStore(str(root / "normal.sqlite"))
+        normal = FamilyPaperExecutor(normal_store)
+        open_one(normal, "FUT-NORMAL", at="2026-10-05T12:00:00-03:00")
+        normal.mark_future(
+            contract(), lifecycle_id="FUT-NORMAL", event_id="FUT-NORMAL:SETTLE",
+            mark_price="1510", book_at="2026-10-05T13:00:00-03:00",
+            occurred_at="2026-10-05T13:00:00-03:00", settlement=True,
+        )
+        first_close = normal.close_future(
+            contract(), lifecycle_id="FUT-NORMAL", event_id="FUT-NORMAL:CLOSE",
+            exit_price="1520", exit_cost="100", reason="EOD",
+            book_at="2026-10-05T14:00:00-03:00", occurred_at="2026-10-05T14:00:00-03:00",
+        )
+        restarted = FamilyPaperExecutor(normal_store)
+        repeated_close = restarted.close_future(
+            contract(), lifecycle_id="FUT-NORMAL", event_id="FUT-NORMAL:CLOSE",
+            exit_price="1520", exit_cost="100", reason="EOD",
+            book_at="2026-10-05T14:00:00-03:00", occurred_at="2026-10-05T14:00:00-03:00",
+        )
+        post = snapshot_view(
+            future_risk_snapshot(normal_store, "ARS", "2026-10-05T14:00:01-03:00")
+        )
+        with normal_store.connect() as connection:
+            event_count = connection.execute(
+                "SELECT COUNT(*) FROM paper_family_lifecycle_events WHERE lifecycle_id='FUT-NORMAL'"
+            ).fetchone()[0]
+        result["restart_cash_release_control"] = {
+            "first_close": first_close,
+            "repeated_close": repeated_close,
+            "event_count_after_idempotent_replay": event_count,
+            "post_close_snapshot": post,
+            "positions": future_positions(normal_store, "ARS"),
+        }
+
+        c = contract()
+        result["contract_and_default_capacity"] = {
+            "symbol": c.symbol,
+            "expiry": c.expires_at,
+            "multiplier": str(c.cash_multiplier),
+            "minimum_quantity": str(c.minimum_quantity),
+            "paper_margin_rate": str(c.paper_margin_rate),
+            "reserve_one_contract_at_1500": str(c.cash_required(D("1500"), D("1"))),
+            "default_initial_capital_ars": "1000000",
+            "default_max_position_25pct": "250000",
+            "default_total_exposure_60pct": "600000",
+            "one_contract_fits_default_position_cap": c.cash_required(D("1500"), D("1")) <= D("250000"),
+            "one_contract_fits_default_total_exposure_cap": c.cash_required(D("1500"), D("1")) <= D("600000"),
+            "entry_before_eod_cutoff": admission_error("2026-10-05T14:29:59-03:00", c),
+            "entry_at_eod_cutoff": admission_error("2026-10-05T14:30:00-03:00", c),
+            "exit_due_at_1450": exit_due("2026-10-05T14:50:00-03:00", c),
+        }
+
+        mismatch = replace(c, cash_multiplier=D("500"))
+        mismatch_result = "UNEXPECTED_ACCEPT"
+        mismatch_store = PaperStore(str(root / "mismatch.sqlite"))
+        mismatch_exec = FamilyPaperExecutor(mismatch_store)
+        open_one(mismatch_exec, "FUT-MISMATCH", at="2026-10-05T12:00:00-03:00")
+        try:
+            mismatch_exec.mark_future(
+                mismatch, lifecycle_id="FUT-MISMATCH", event_id="FUT-MISMATCH:MARK",
+                mark_price="1510", book_at="2026-10-05T12:01:00-03:00",
+                occurred_at="2026-10-05T12:01:00-03:00",
+            )
+        except ValueError as error:
+            mismatch_result = str(error)
+        result["contract_mutation_after_restart"] = mismatch_result
+
+        # Global budget discovery reads the spot status literal ('OPEN') from
+        # both ledgers.  Futures use ('ACTIVE','CLOSED'), so an active DLR is
+        # counted as zero and receives no EXIT_CRITICAL reserve.
+        runtime_counter = object.__new__(RuntimePPIBudget)
+        runtime_counter.database = Path(mismatch_store.path)
+        budget_opened = runtime_counter._opened(77)
+        actual_active = len(future_positions(mismatch_store, "ARS", active_only=True))
+        state = {
+            "status": "APPROVED_DYNAMIC",
+            "recommendation_digest": "a" * 64,
+            "configuration_fingerprint": "b" * 64,
+            "expires_at": "2026-10-05T15:00:00+00:00",
+            "global_budget": {
+                "window_seconds": 30,
+                "endpoint_limits": {"current": 3, "book": 3, "intraday": 3},
+                "global_limit": 9,
+                "safety_reserve": "SYNTHETIC_469",
+            },
+            "budget_settings": {
+                "critical_book_seconds": 5,
+                "lease_seconds": 60,
+                "breaker_seconds": 60,
+                "session_breaker_seconds": 900,
+                "server_error_threshold": 2,
+                "maximum_bytes": 8 * 1024**2,
+            },
+        }
+        undercounted_policy = budget_policy(state, opened_count=budget_opened)
+        correct_policy = budget_policy(state, opened_count=actual_active)
+
+        def use(budget: GlobalPPIBudget, *, priority: str) -> dict:
+            admission = budget.acquire("book", consumer="EXIT_READER" if priority == "EXIT_CRITICAL" else "SCANNER",
+                                       priority=priority)
+            if admission["allowed"]:
+                budget.start(admission["lease"])
+                budget.finish(admission["lease"])
+            return {key: admission.get(key) for key in ("allowed", "reason")}
+
+        undercounted_budget = GlobalPPIBudget(root / "undercounted-budget.sqlite", undercounted_policy,
+                                              clock=lambda: datetime.fromisoformat("2026-10-05T14:00:00+00:00"))
+        discovery_results = [use(undercounted_budget, priority="DISCOVERY") for _ in range(3)]
+        exit_after_discovery = use(undercounted_budget, priority="EXIT_CRITICAL")
+        correct_budget = GlobalPPIBudget(root / "correct-budget.sqlite", correct_policy,
+                                         clock=lambda: datetime.fromisoformat("2026-10-05T14:00:00+00:00"))
+        discovery_with_floor = use(correct_budget, priority="DISCOVERY")
+        exits_with_floor = [use(correct_budget, priority="EXIT_CRITICAL") for _ in range(3)]
+        result["future_global_budget_interaction"] = {
+            "actual_active_futures": actual_active,
+            "runtime_budget_opened_count": budget_opened,
+            "undercounted_exit_demand": undercounted_policy["exit_demand"],
+            "undercounted_exit_reserve": undercounted_policy["priority_reserves"]["EXIT_CRITICAL"],
+            "correct_exit_demand": correct_policy["exit_demand"],
+            "correct_exit_reserve": correct_policy["priority_reserves"]["EXIT_CRITICAL"],
+            "three_discovery_book_calls_without_floor": discovery_results,
+            "exit_after_discovery_without_floor": exit_after_discovery,
+            "discovery_with_correct_floor": discovery_with_floor,
+            "three_exits_with_correct_floor": exits_with_floor,
+        }
+
+        # A3's current DLR guide specifies a 0.5 ARS/USD price tick. The
+        # specialized contract has no price-tick field and the broker applies
+        # percentage slippage to four decimals, creating impossible fills.
+        os.environ["PAPER_SECTOR_CONCENTRATION_POLICY"] = "OBSERVATION_ONLY"
+        tick_store = PaperStore(str(root / "tick.sqlite"))
+        tick_clock = ["2026-10-05T10:30:00-03:00"]
+        tick_broker = PaperBroker(
+            tick_store, initial_cash="100000000", risk_pct="0.05",
+            max_positions=10, participation="0.1", max_position_pct="1",
+            max_total_exposure_pct="1", clock_fn=lambda: tick_clock[0],
+            session_policy=PaperSessionPolicy(), require_supervisor=False,
+            ai_mode="OFF", economics_mode="SHADOW", daily_loss_pct="5",
+        )
+        open_quote = Quote(
+            "DLR/OCT26", "FUTUROS", "INMEDIATA", D("1578.5"), D("1578"), D("1579"),
+            D("10"), D("10"), tick_clock[0], contract=contract(), currency="ARS", market="A3",
+            metadata_source="PPI_CATALOG:SYNTHETIC_469", book_at=tick_clock[0],
+            trade_at=tick_clock[0], last_kind="TRADE",
+        )
+        opened, open_reason, _ = tick_broker._open_future(open_quote, D("0.8"), {})
+        active = tick_store.active_future_positions()[0]
+        actual_entry = D(active["entry_price"])
+        raw_entry = open_quote.ask * (D("1") + tick_broker.slippage)
+        adverse_valid_entry = (raw_entry / D("0.5")).to_integral_value(rounding=ROUND_CEILING) * D("0.5")
+        tick_clock[0] = "2026-10-05T10:31:00-03:00"
+        close_quote = Quote(
+            "DLR/OCT26", "FUTUROS", "INMEDIATA", D("1580"), D("1580"), D("1580.5"),
+            D("10"), D("10"), tick_clock[0], contract=contract(), currency="ARS", market="A3",
+            metadata_source="PPI_CATALOG:SYNTHETIC_469", book_at=tick_clock[0],
+            trade_at=tick_clock[0], last_kind="TRADE",
+        )
+        closed_ok = tick_broker._close_future(close_quote, active, "STOP_PAPER")
+        closed_row = future_positions(tick_store, "ARS")[0]
+        actual_exit = D(closed_row["last_mark_price"])
+        raw_exit = close_quote.bid * (D("1") - tick_broker.slippage)
+        adverse_valid_exit = (raw_exit / D("0.5")).to_integral_value(rounding=ROUND_FLOOR) * D("0.5")
+        result["future_price_tick_semantics"] = {
+            "official_dlr_tick_ars_per_usd": "0.5",
+            "open_result": opened,
+            "open_reason": open_reason,
+            "valid_ask": str(open_quote.ask),
+            "raw_buy_slippage_price": str(raw_entry),
+            "persisted_entry_price": str(actual_entry),
+            "persisted_entry_mod_tick": str(actual_entry % D("0.5")),
+            "adverse_valid_entry_price": str(adverse_valid_entry),
+            "entry_notional_error_vs_valid_tick": str((adverse_valid_entry - actual_entry) * D("1000")),
+            "close_result": closed_ok,
+            "valid_bid": str(close_quote.bid),
+            "raw_sell_slippage_price": str(raw_exit),
+            "persisted_exit_price": str(actual_exit),
+            "persisted_exit_mod_tick": str(actual_exit % D("0.5")),
+            "adverse_valid_exit_price": str(adverse_valid_exit),
+            "exit_notional_error_vs_valid_tick": str((actual_exit - adverse_valid_exit) * D("1000")),
+        }
+
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+
+
+if __name__ == "__main__":
+    main()
