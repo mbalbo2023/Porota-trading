@@ -31,5 +31,11 @@
     "INTEGRATION_OWNER_ACTIVE",
     "FINAL_CANDIDATE_NOT_DELIVERED"
   ],
-  "setup_utc": "2026-10-05T01:41:34.798Z"
+  "setup_utc": "2026-10-05T01:41:34.798Z",
+  "setup_mode": "BOOTSTRAP_ONLY",
+  "setup_capability_limits": {
+    "model_selection": "NOT_EXPOSED",
+    "branch_protection_details": "403 Resource not accessible by integration",
+    "large_artifact_transfer": "32 MiB transfer cap; signed URL HTTP403 error code1010; verified runner evidence path not yet implemented"
+  }
 }
