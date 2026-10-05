@@ -195,6 +195,10 @@ class ComponentArchive:
         if match is None:
             raise ValueError("RETENTION_COMPONENT_PACK_PATH_INVALID")
         if name not in self.packs:
+            # A proof context may traverse 33 generations. Retain at most one
+            # original pack, rather than the entire transitive archive in RAM.
+            # Every evicted pack is reopened and authenticated if needed again.
+            self.packs.clear()
             raw, _ = read(self.root / name, maximum=MAX_PACK_BYTES)
             if sha(raw) != match[1]:
                 raise ValueError("RETENTION_COMPONENT_PACK_HASH_MISMATCH")
@@ -323,19 +327,32 @@ class ComponentArchive:
         return source
 
     def _projection(self, receipt, recipe, components, used, seen=()):
-        ident = recipe["generation_id"]
-        if ident in seen or len(seen) > 32:
-            raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
-        if ident in self.projections:
-            return self.projections[ident]
-        record = recipe["members"]["projection.sqlite"]
-        pack = self._member(record, components, used, decode=False)
-        pack_hash = record.get("pack_sha256")
-        metadata = inspect_page_pack(pack, expected_pack_sha256=pack_hash, expected_target_sha256=record["sha256"])
-        if metadata["dependency_depth"] != integer(record.get("dependency_depth"), 32):
-            raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
-        previous, depth = None, None
-        if metadata["dependency_depth"]:
+        # First verify the backwards chain, retaining only small receipts and
+        # typed hash/depth metadata. Holding recursive frames retained as many
+        # as 33 original 64-MiB images plus all encoded packs at once.
+        target = recipe["generation_id"]
+        chain, visited = [], set(seen)
+        current, current_recipe, current_components = receipt, recipe, components
+        while True:
+            ident = current_recipe["generation_id"]
+            if ident in visited or len(visited) > 32:
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
+            visited.add(ident)
+            record = current_recipe["members"]["projection.sqlite"]
+            pack = self._member(record, current_components, used if ident == target else set(), decode=False)
+            metadata = inspect_page_pack(pack, expected_pack_sha256=record.get("pack_sha256"),
+                expected_target_sha256=record["sha256"])
+            if metadata["dependency_depth"] != integer(record.get("dependency_depth"), 32):
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
+            chain.append((current, metadata))
+            # Neither original images nor wire bytes survive a traversal step.
+            del pack
+            self.packs.clear()
+            self.recipes.pop(ident, None)
+            if not metadata["dependency_depth"]:
+                if any(record.get(key) is not None for key in ("base_generation_id", "base_receipt_digest")):
+                    raise ValueError("RETENTION_PAGE_INDEPENDENT_BASE_UNEXPECTED")
+                break
             base = record.get("base_generation_id")
             if not isinstance(base, str) or ID.fullmatch(base) is None:
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_INVALID")
@@ -343,21 +360,42 @@ class ComponentArchive:
             from rc6_dynamic_universe.common import digest
             if (digest(prior) != record.get("base_receipt_digest")
                     or type(prior.get("receipt_sequence")) is not int
-                    or prior["receipt_sequence"] >= receipt["receipt_sequence"]):
+                    or prior["receipt_sequence"] >= current["receipt_sequence"]):
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_LINEAGE_INVALID")
-            prior_recipe = self._recipe(prior)
-            prior_components = self._indices(prior_recipe)
-            previous, depth = self._projection(prior, prior_recipe, prior_components, set(), (*seen, ident))
-            if sha(previous) != metadata["previous_sha256"]:
-                raise ValueError("RETENTION_PAGE_DEPENDENCY_HASH_MISMATCH")
-        elif any(record.get(key) is not None for key in ("base_generation_id", "base_receipt_digest")):
-            raise ValueError("RETENTION_PAGE_INDEPENDENT_BASE_UNEXPECTED")
-        source = decode_page_pack(pack, expected_pack_sha256=pack_hash, expected_target_sha256=record["sha256"],
-            previous_bytes=previous, previous_depth=depth)
-        if len(source) != record["bytes"]:
-            raise ValueError("RETENTION_PAGE_SOURCE_LENGTH_MISMATCH")
-        self.projections[ident] = source, metadata["dependency_depth"]
-        return self.projections[ident]
+            # The declared child depth must agree with every actual predecessor.
+            next_recipe = self._recipe(prior)
+            base_record = next_recipe["members"].get("projection.sqlite")
+            if (not isinstance(base_record, dict)
+                    or base_record.get("sha256") != metadata["previous_sha256"]
+                    or type(base_record.get("dependency_depth")) is not int
+                    or base_record["dependency_depth"] + 1 != metadata["dependency_depth"]):
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
+            current, current_recipe = prior, next_recipe
+            current_components = self._indices(current_recipe)
+
+        # Reopen and verify the exact original pack at each forward step, then
+        # consume only the preceding reconstructed image. No encoder or image
+        # cache is used, even between two restores on the same public verifier.
+        previous, depth = None, None
+        for current, expected in reversed(chain):
+            current_recipe = self._recipe(current)
+            current_components = self._indices(current_recipe)
+            ident = current_recipe["generation_id"]
+            record = current_recipe["members"]["projection.sqlite"]
+            pack = self._member(record, current_components, used if ident == target else set(), decode=False)
+            metadata = inspect_page_pack(pack, expected_pack_sha256=record.get("pack_sha256"),
+                expected_target_sha256=record["sha256"])
+            if metadata != expected:
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_CHANGED")
+            source = decode_page_pack(pack, expected_pack_sha256=record["pack_sha256"],
+                expected_target_sha256=record["sha256"], previous_bytes=previous, previous_depth=depth)
+            if len(source) != record["bytes"]:
+                raise ValueError("RETENTION_PAGE_SOURCE_LENGTH_MISMATCH")
+            previous, depth = source, metadata["dependency_depth"]
+            del pack, source
+            self.packs.clear()
+            self.recipes.pop(ident, None)
+        return previous, depth
 
     def restore(self, receipt):
         # Proof/bytes caches belong to one verification invocation. A repeat
