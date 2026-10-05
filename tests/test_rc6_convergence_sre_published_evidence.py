@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tarfile
 import time
+import subprocess
 import urllib.request
 
 import pytest
@@ -21,6 +22,7 @@ from scripts.porota_predeploy_binding import artifact_name, validate_binding, ve
 from scripts import rc6_archive_v3_image_smoke as codec_smoke
 from scripts.porota_published_artifact_evidence import (
     MAX_EVIDENCE_BYTES, MAX_SECONDARY_ARTIFACT_BYTES, current_primary_binding, main,
+    replay_remaining,
     verify_loaded_image_and_imports, verify_saved_app_rootfs, write_evidence,
 )
 from tests.test_rc6_convergence_sre_binding import NOW, approved_origin, candidate, frozen_payload, saved_source_image
@@ -209,6 +211,162 @@ def test_downloaded_image_load_and_offline_smoke_require_exact_actual_id(frozen_
         assert calls[-1][calls[-1].index("--entrypoint") + 2] == frozen["image_id"]
         assert result["runtime_codec_smoke"]["actual_image_id"] == frozen["image_id"]
     assert not any(argv[1] == "build" for argv in calls)
+
+
+class ReplayClock:
+    """Controlled monotonic time: no sleeping or actual container execution."""
+    def __init__(self): self.now = 100.0
+    def __call__(self): return self.now
+    def advance(self, elapsed): self.now += elapsed
+
+
+def test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds(
+        frozen_payload, tmp_path, github_context):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); deadline = clock() + 600
+    calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:2] == ["docker", "load"]:
+            assert kwargs["timeout"] == 600
+            clock.advance(45); stdout = "Loaded image"
+        elif argv[:3] == ["docker", "image", "inspect"]:
+            assert kwargs["timeout"] == 555
+            clock.advance(2); stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            assert kwargs["timeout"] == codec_smoke.MAX_SECONDS == 30
+            clock.advance(20); stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+        else:
+            assert argv[:2] == ["docker", "run"] and kwargs["timeout"] == 553
+            clock.advance(45); stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    result = verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+        image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=deadline, run=docker, clock=clock)
+    assert result["status"] == "GREEN" and result["loaded_image_id"] == frozen["image_id"]
+    assert len(calls) == 4 and replay_remaining(deadline, clock=clock) == 488
+    assert not any(argv[1] in {"build", "rm"} for argv, _ in calls)
+    # These are the original real HTTP algorithms with an in-memory transport.
+    metadata_opener = MemoryOpener(b'{"id":303}')
+    assert api_get("/actions/artifacts/303", opener=metadata_opener, deadline=deadline, clock=clock) == {"id":303}
+    data = b"controlled immutable ZIP transport bytes"
+    download_opener = MemoryOpener(data)
+    target = tmp_path / "http-control.zip"
+    assert download_artifact(303, target, expected_size=len(data),
+        expected_digest="sha256:"+hashlib.sha256(data).hexdigest(), deadline=deadline,
+        opener=download_opener, clock=clock)["status"] == "GREEN"
+    assert target.read_bytes() == data
+    assert [timeout for _, timeout in metadata_opener.requests+download_opener.requests] == [30,30]
+
+
+@pytest.mark.parametrize("deadline", [99.0, 100.0, float("nan"), float("inf")],
+                         ids=["expired", "exact-boundary", "nan", "infinite"])
+def test_expired_or_nonfinite_replay_budget_forbids_even_docker_load(frozen_payload, deadline):
+    c, output, binding, frozen = frozen_payload
+    calls = []
+    def docker(argv, **kwargs): calls.append(argv); pytest.fail("Expired replay started Docker")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=deadline,
+            run=docker, clock=ReplayClock())
+    assert calls == []
+
+
+def test_completed_load_past_total_deadline_cannot_start_image_or_emit_green(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        assert argv[:2] == ["docker", "load"] and kwargs["timeout"] == 600
+        clock.advance(601)
+        return SimpleNamespace(returncode=0, stdout="Loaded image", stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 1
+
+
+def test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:2] == ["docker", "load"]:
+            assert kwargs["timeout"] == 600; clock.advance(570); stdout = "Loaded image"
+        elif argv[:3] == ["docker", "image", "inspect"]:
+            assert kwargs["timeout"] == 30; clock.advance(1); stdout = frozen["image_id"]
+        elif "scripts.rc6_archive_v3_image_smoke" in argv:
+            assert kwargs["timeout"] == 28 < codec_smoke.MAX_SECONDS
+            clock.advance(28); stdout = (output / "porota-runtime-codec-smoke.json").read_text()
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5; stdout = "Removed own private container"
+        else:
+            assert kwargs["timeout"] == 29; clock.advance(1)
+            stdout = "POROTA_PUBLISHED_EXACT_IMAGE_IMPORT_AND_CLOSURE=GREEN"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_REPLAY_TOTAL_DEADLINE_EXCEEDED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 5
+    created = calls[-2][0][calls[-2][0].index("--name")+1]
+    assert created.startswith("porota-rc6-codec-replay-")
+    assert calls[-1][0] == ["docker", "rm", "--force", created]
+    assert not any(argv[1] == "build" for argv, _ in calls)
+
+
+def test_import_timeout_cleans_only_its_private_container_without_starting_codec(frozen_payload):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append((argv, kwargs["timeout"]))
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif argv[:2] == ["docker", "run"]:
+            assert "scripts.rc6_archive_v3_image_smoke" not in argv
+            assert kwargs["timeout"] == 600
+            clock.advance(600)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5; stdout = "Removed own private container"
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(subprocess.TimeoutExpired):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 4
+    created = calls[-2][0][calls[-2][0].index("--name")+1]
+    assert created.startswith("porota-rc6-import-replay-")
+    assert calls[-1][0] == ["docker", "rm", "--force", created]
+    assert not any("scripts.rc6_archive_v3_image_smoke" in argv or argv[1] == "build" for argv, _ in calls)
+
+
+@pytest.mark.parametrize("cleanup_returncode", [1, False])
+def test_failed_or_boolean_import_cleanup_cannot_claim_container_termination(frozen_payload, cleanup_returncode):
+    c, output, binding, frozen = frozen_payload
+    retag_fixture(output, binding["candidate_sha"])
+    clock = ReplayClock(); calls = []
+    def docker(argv, **kwargs):
+        calls.append(argv)
+        if argv[:3] == ["docker", "image", "inspect"]: stdout = frozen["image_id"]
+        elif argv[:2] == ["docker", "run"]:
+            clock.advance(600)
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        elif argv[:3] == ["docker", "rm", "--force"]:
+            assert kwargs["timeout"] == 5
+            return SimpleNamespace(returncode=cleanup_returncode, stdout="", stderr="")
+        else: stdout = "Loaded image"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+    with pytest.raises(ValueError, match="PUBLISHED_PRIVATE_CONTAINER_CLEANUP_UNCONFIRMED"):
+        verify_loaded_image_and_imports(output, candidate_sha=binding["candidate_sha"],
+            image_ref="porota-predeploy-v2:"+binding["candidate_sha"], deadline=clock()+600,
+            run=docker, clock=clock)
+    assert len(calls) == 4 and calls[-1][-1] == calls[-2][calls[-2].index("--name")+1]
+    assert not any("scripts.rc6_archive_v3_image_smoke" in argv or argv[1] == "build" for argv in calls)
 
 
 @pytest.mark.parametrize("mutation", ["nonzero", "missing_json", "red", "foreign_image", "source_drift", "oversize", "timeout"])

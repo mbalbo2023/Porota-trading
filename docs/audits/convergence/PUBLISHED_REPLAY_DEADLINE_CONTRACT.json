@@ -1,0 +1,32 @@
+{
+  "schema": "rc6.published-primary-replay-deadline-source-contract.v1",
+  "status": "SOURCE_IMPLEMENTED_NATIVE_FOCAL_PENDING",
+  "finding_classification": "INFERRED_FROM_COMMITTED_SOURCE_NOT_NATIVE_DOCKER_RED",
+  "baseline_sha": "d9333065a306dc59bc5a58d7b5604d52daf9ff9f",
+  "baseline_tree": "316ad539f2690842e2fb1df4637811826897d6a0",
+  "baseline_published_helper_git_blob": "43f49f00099952457481ab298ace490cba7c14f0",
+  "unchanged_http_git_blob": "ebc2b470611eef6c7b97daff26fa340677dd9db7",
+  "canonical_replay_total_seconds": 600,
+  "http_request_cap_seconds": 30,
+  "codec_cap_seconds": 30,
+  "codec_output_cap_bytes": 65536,
+  "failure_private_container_teardown_seconds": 5,
+  "failure_teardown_extends_green_deadline": false,
+  "deadline_renewed_by_each_command": false,
+  "installed_packages_modified": false,
+  "docker_or_remote_api_executed": false,
+  "image_id_or_primary_source_binding_changed": false,
+  "workflow_modified": false,
+  "test_execution": null,
+  "guard_declarations": [
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_completed_load_past_total_deadline_cannot_start_image_or_emit_green",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_import_timeout_cleans_only_its_private_container_without_starting_codec",
+    "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination"
+  ],
+  "original_independent_requirement_or_market_attack_count_added": 0,
+  "fixture_scope": "CONTROLLED_CLOCK_AND_SUBPROCESS_ON_EXPLICIT_SYNTHETIC_METADATA_NO_IMAGE_EXECUTION",
+  "assertion_scope": "SOURCE_ONLY_DEADLINE_SEPARATION_AND_PERMANENT_GUARD_DECLARATIONS"
+}
