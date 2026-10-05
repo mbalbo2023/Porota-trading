@@ -37,9 +37,9 @@
     "maintenance": "Observe original native methods without requesting extra GC/rotation/pins. Complete entered/completed/failed counters, bounded first-four/last state samples, real ACK/external receipt bytes, native validated HEAD, ACK removal/live checkpoint, rotated-generation/control absence, actual GC target removal and native pin sets are corroborated. Zero expired-prefix deletion may be the correct cutoff/transitive-base/pin outcome; it is stated explicitly.",
     "members": "Exactly five byte members, with current v2 manifest/four role names/SHA256, actual CURRENT manifest digest/generation/sequence/as_of and public restored receipt binding. Equal legacy4 dictionaries, changed payload/rebound manifest or wrong CURRENT/clock are rejected.",
     "native_wheel": "Only catalog_count1200 with1201 actual postPRE calls plus one real PRE seed qualifies this normal-horizon wrapper.1202 distinct actual generations, all public restores, real factory reconstruction/checkpoint reuse at361/841,10h of30s as_of cuts and all unchanged-source/fixed-policy checks are required. This is accelerated as_of execution without wallclock sleeping; no ten-hour wallclock or continuous OPEN/PPI-session claim.",
-    "private_execution": "A fresh one-process audit hook rejects Python socket transport/DNS and SQLite connections outside the private fixture, including direct PRIMARY SQL after initial native fixture creation/checkpoint. Primary MAIN/WAL/SHM/journal bytes and ten native custody stats are checked after each actual cut and at finalization. No network namespace/kernel attestation is inferred.",
+    "private_execution": "Before any product import, Python socket connect/connect_ex/send/sendall/sendto/sendmsg and DNS/create_connection methods are interposed; audited native connect/sendto/sendmsg/resolver references remain blocked. AF_UNIX local IPC is allowed and the original public methods are restored at cleanup. An audit hook rejects SQLite connections outside the private fixture, including direct PRIMARY SQL after initial native fixture creation/checkpoint. PRIMARY MAIN/WAL/SHM/journal bytes and ten native custody stats are checked after each actual cut and at finalization. This is a fresh-process Python harness barrier, not OS isolation or authentication of retained native send references outside the hook.",
     "quotas": "Preserve native live128MiB/512 recursive entries, archive512MiB/native32768 namespace limit, scratch512MiB and shared-filesystem2GiB/free-inode10% reserve. Observe pre/post real fsync temporary/staging peaks, native scratch lease measurement and separate bounded lineage authority HEAD residence; do not enlarge caps or reinterpret lineage as external authentication.",
-    "source": "A required local --source-repo supplies raw commit/tree objects with SHA1 recomputation and no lazy fetch/replacement refs; all Git file blobs, SHA256, physical644/755 modes and complete path/directory closure are verified independently of source.index.json before fixtures and after execution. The executing wrapper is the pinned source-root member. The raw source index and adjacent tar are rechecked unchanged at finalization; the Git repository may acquire later commits but the pinned raw objects may never be replaced."
+    "source": "A required local --source-repo supplies raw commit/tree objects with SHA1 recomputation and no lazy fetch/replacement refs; all Git file blobs, SHA256, physical644/755 modes and complete path/directory closure are verified independently of source.index.json before fixtures and after execution. The executing wrapper is the pinned source-root member. The first regular single-link raw index bytes supply both parsed policy and SHA256 before qualification/fixture writes; that original digest and the adjacent tar are rechecked at finalization. RO|NOFOLLOW|NOATIME|NONBLOCK plus fstat/path identity reject FIFO/aliases/races. These are before/after checks, not continuous mutation monitoring. The Git repository may acquire later commits but the pinned raw objects may never be replaced."
   },
   "current_stable_source_comparison": {
     "not_copied_or_rewritten": true,
@@ -68,9 +68,9 @@
     "tests/test_rc6_native_archive_horizon_wrapper.py"
   ],
   "guard_catalogue": {
-    "base_nodes": 12,
-    "count_scope": "AST-declared miniature controls/negatives only, not original R/55 counts or native1201 scope.",
-    "declared_cases": 24,
+    "base_nodes": 15,
+    "count_scope": "AST-declared miniature Git/metadata, controlled-clock, private FIFO and socket controls/negatives only; not original R/55 counts or native1201 scope.",
+    "declared_cases": 28,
     "executed_cases": 0
   },
   "guard_nodes": [
@@ -80,6 +80,9 @@
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_a_fifo_index_is_rejected_without_opening_a_blocking_reader",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_internet_socket_send_methods_are_blocked_before_transport_without_connecting",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_complete_source_qualification_uses_real_git_objects_and_exact_modes",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
@@ -87,7 +90,7 @@
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings"
   ],
-  "guard_scope": "Controlled wrapper clocks/metadata, miniature native Git object controls/adversaries and miniature manifest bindings only. None is a full worker/native1201-wheel/storage-capacity/provider/image/FIP/runtime PASS.",
+  "guard_scope": "Controlled wrapper clocks/metadata, miniature native Git object controls/adversaries, miniature manifest bindings, private FIFO and local/unconnected socket barriers only. None is a full worker/native1201-wheel/storage-capacity/provider/image/FIP/runtime PASS.",
   "native_execution": null,
   "native_gate_boundary": {
     "actual_factory_restarts_required": [
@@ -121,8 +124,12 @@
   "source_only_final_review": {
     "changes": [
       "An observation-preinspection error is counted as a failed observed wrapper invocation; no incomplete counter is silently accepted.",
-      "Final PRIMARY custody evidence is stored independently before later index/code/import checks, preserving factual DB-unchanged evidence when another proof fails."
+      "Final PRIMARY custody evidence is stored independently before later index/code/import checks, preserving factual DB-unchanged evidence when another proof fails.",
+      "Source-only independent Finance review identified send/sendall absent from the audit event coverage. Public socket methods are now interposed before product imports with AF_UNIX control/restoration; no pre-fix native RED or network bypass is claimed.",
+      "Source-only independent Finance review identified a FIFO source.index could block before fixture qualification. Raw reads now require a regular single-link unchanged inode, NOFOLLOW/NOATIME/NONBLOCK and matching descriptor/path metadata; no pre-fix native RED is claimed.",
+      "Source-only independent Finance review identified source_index_sha256 was captured after fixture writes. One initial raw index read now supplies both parsed pin and original digest before qualification/fixture writes; the final raw digest compares against that same original authority. No pre-fix native RED is claimed."
     ],
+    "independent_review_scope": "FINANCE_STATIC_SOURCE_ONLY_NOT_NATIVE_RED; corrected source/guards remain unexecuted pending coordinated CPU slot.",
     "status": "SOURCE_REVIEW_ONLY_NOT_EXECUTED"
   },
   "source_only_validation": {
@@ -130,8 +137,8 @@
     "native_pytest_cases_executed": 0,
     "native_worker_calls_executed": 0,
     "source_paths_sha256": {
-      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "81882df4f08801e37e1615c1b06a36e5ae8eeccc134b53c0f16392fa98d09a7a",
-      "tests/test_rc6_native_archive_horizon_wrapper.py": "7d055198244d15c0980b5bbe695d5c5a2bd4f818201bf0269117df9c603f4914"
+      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "4a0ec1ef33b6dbdd5c8edc0119441b0b576e39fe5bfd548f1b6e2bc91ceb6ec6",
+      "tests/test_rc6_native_archive_horizon_wrapper.py": "999e6e5ba1cf1edd483a9a9279430785bdcc2b9cc309ae3d9144a61666d6a6d7"
     }
   },
   "source_strengthening_execution_pending": [

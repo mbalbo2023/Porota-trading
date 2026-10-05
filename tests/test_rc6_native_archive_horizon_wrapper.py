@@ -6,7 +6,9 @@ their PASS can never replace the separate native wheel/GC/storage execution.
 from pathlib import Path
 import hashlib
 import json
+import os
 import runpy
+import socket
 import subprocess
 
 import pytest
@@ -71,6 +73,44 @@ def test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract(pro
     flags = probe["completion_flags"]({"cuts":[{}]*1202,"ticks_requested":1201,
         "execution_complete":True,"source_database_unchanged":True,"code_source_unchanged":True,"provider_requests":0})
     assert flags["horizon_complete"] is flags["complete"] is flags["acceptance_complete"] is False
+
+
+def test_a_fifo_index_is_rejected_without_opening_a_blocking_reader(probe, tmp_path, record_property):
+    record_property("evidence_scope", "NATIVE_PRIVATE_FIFO_REJECTION_NOT_NATIVE_HORIZON")
+    index = tmp_path/"source.index.json"
+    os.mkfifo(index,0o600)
+    with pytest.raises(ValueError,match="SOURCE_ALIAS_INVALID"):
+        probe["raw"](index)
+
+
+@pytest.mark.parametrize("method", ("send","sendall"))
+def test_internet_socket_send_methods_are_blocked_before_transport_without_connecting(probe, tmp_path, method, record_property):
+    record_property("evidence_scope", "REAL_UNCONNECTED_INET_SOCKET_INTERPOSITION_NO_NETWORK_OR_NATIVE_HORIZON")
+    original = getattr(socket.socket,method)
+    guard = probe["PrivateExecutionGuard"](tmp_path,tmp_path/"fixture.sqlite")
+    try:
+        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+            with pytest.raises(AssertionError,match="NATIVE_PROFILE_NETWORK_FORBIDDEN"):
+                getattr(sock,method)(b"blocked")
+        assert guard.network_attempt_count == 1
+    finally:
+        guard.close()
+    assert getattr(socket.socket,method) is original
+
+
+def test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored(probe, tmp_path, record_property):
+    record_property("evidence_scope", "NATIVE_LOCAL_UNIX_SOCKET_CONTROL_NOT_PROVIDER_TRANSPORT_OR_HORIZON")
+    original = socket.socket.sendall
+    guard = probe["PrivateExecutionGuard"](tmp_path,tmp_path/"fixture.sqlite")
+    try:
+        left,right = socket.socketpair()
+        with left,right:
+            left.sendall(b"local")
+            assert right.recv(5) == b"local"
+        assert guard.network_attempt_count == 0
+    finally:
+        guard.close()
+    assert socket.socket.sendall is original
 
 
 @pytest.fixture

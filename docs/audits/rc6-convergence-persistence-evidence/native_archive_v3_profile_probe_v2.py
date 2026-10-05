@@ -28,12 +28,25 @@ from urllib.parse import unquote, urlsplit
 
 
 def raw(path):
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    path = Path(path)
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        raise ValueError("NATIVE_PROFILE_SOURCE_ALIAS_INVALID")
+    identity = tuple(getattr(before, key) for key in FIELDS)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
     try:
+        if identity != tuple(getattr(os.fstat(descriptor), key) for key in FIELDS):
+            raise ValueError("NATIVE_PROFILE_SOURCE_CHANGED_DURING_INVENTORY")
         chunks = []
         while data := os.read(descriptor, 65536):
             chunks.append(data)
-        return b"".join(chunks)
+        if (identity != tuple(getattr(os.fstat(descriptor), key) for key in FIELDS)
+                or identity != tuple(getattr(path.lstat(), key) for key in FIELDS)):
+            raise ValueError("NATIVE_PROFILE_SOURCE_CHANGED_DURING_INVENTORY")
+        value = b"".join(chunks)
+        if len(value) != before.st_size:
+            raise ValueError("NATIVE_PROFILE_SOURCE_CHANGED_DURING_INVENTORY")
+        return value
     finally:
         os.close(descriptor)
 
@@ -235,7 +248,24 @@ class PrivateExecutionGuard:
         self.network_attempts, self.sqlite_rejected = [], []
         self.network_attempt_count = self.sqlite_rejected_count = 0
         self.sqlite_allowed = self.sqlite_memory = self.sqlite_primary_setup = 0
-        # The audit hook also covers retained references to the native methods.
+        self.socket_originals, self.socket_module_originals = {}, {}
+        for name in ("connect", "connect_ex", "send", "sendall", "sendto", "sendmsg"):
+            if not hasattr(socket.socket, name):
+                continue
+            self.socket_originals[name] = getattr(socket.socket, name)
+            def transport(sock, *arguments, _method=name, **keywords):
+                if sock.family == socket.AF_UNIX:
+                    return self.socket_originals[_method](sock, *arguments, **keywords)
+                self.reject_network("socket."+_method)
+            setattr(socket.socket, name, transport)
+        for name in ("create_connection", "getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
+            self.socket_module_originals[name] = getattr(socket, name)
+            def resolver(*arguments, _method=name, **keywords):
+                self.reject_network("socket."+_method)
+            setattr(socket, name, resolver)
+        # The audit hook also covers retained native connect/sendto/sendmsg and
+        # resolver references. Public send/sendall are interposed before any
+        # product import; this is a Python harness barrier, not OS isolation.
         # This runner is one fresh process; the hook becomes inert on cleanup.
         sys.addaudithook(self.audit)
 
@@ -248,10 +278,7 @@ class PrivateExecutionGuard:
             if event in {"socket.connect", "socket.sendto", "socket.sendmsg"}:
                 if getattr(arguments[0], "family", None) == socket.AF_UNIX:
                     return
-            if len(self.network_attempts) < 64:
-                self.network_attempts.append(event)
-            self.network_attempt_count += 1
-            raise AssertionError("NATIVE_PROFILE_NETWORK_FORBIDDEN")
+            self.reject_network(event)
         if event != "sqlite3.connect":
             return
         requested = os.fsdecode(arguments[0])
@@ -276,6 +303,19 @@ class PrivateExecutionGuard:
         if len(self.sqlite_rejected) < 64:
             self.sqlite_rejected.append(requested)
         raise AssertionError("NATIVE_PROFILE_SQLITE_OUTSIDE_PRIVATE_FIXTURES_OR_SEALED_PRIMARY")
+
+    def reject_network(self, event):
+        if len(self.network_attempts) < 64:
+            self.network_attempts.append(event)
+        self.network_attempt_count += 1
+        raise AssertionError("NATIVE_PROFILE_NETWORK_FORBIDDEN")
+
+    def close(self):
+        self.active = False
+        for name, original in self.socket_originals.items():
+            setattr(socket.socket, name, original)
+        for name, original in self.socket_module_originals.items():
+            setattr(socket, name, original)
 
     def summary(self):
         return {"scope": "AUDITED_PRIVATE_SQLITE_AND_NO_NETWORK_NOT_PROVIDER_AUTHORITY",
@@ -468,7 +508,7 @@ def file_hashes(path):
     if not stat.S_ISREG(value.st_mode) or value.st_nlink != 1:
         raise ValueError("NATIVE_PROFILE_SOURCE_ALIAS_INVALID")
     identity = tuple(getattr(value, key) for key in FIELDS)
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
     try:
         if identity != tuple(getattr(os.fstat(descriptor), key) for key in FIELDS):
             raise ValueError("NATIVE_PROFILE_SOURCE_CHANGED_DURING_INVENTORY")
@@ -570,7 +610,11 @@ def main():
     index_path = Path(args.source_index).absolute()
     if index_path.resolve(strict=True) != index_path:
         raise ValueError("NATIVE_PROFILE_SOURCE_INDEX_ALIAS_INVALID")
-    pin = read_json(index_path)
+    index_original = raw(index_path)
+    index_original_sha256 = hashlib.sha256(index_original).hexdigest()
+    pin = json.loads(index_original, object_pairs_hook=unique_object,
+        parse_constant=lambda _: (_ for _ in ()).throw(ValueError("NATIVE_PROFILE_NONFINITE_JSON")))
+    del index_original
     code_before, source_authority = verify_source(repository, source_root, args.source_sha, args.source_tree, pin)
     if Path(__file__).absolute().resolve(strict=True) != source_root / PROFILE_PATH:
         raise ValueError("NATIVE_PROFILE_RUNNER_MUST_BE_THE_PINNED_COMPLETE_SOURCE_FILE")
@@ -644,7 +688,7 @@ def main():
             "first_to_last_operational_asof_seconds": 36000, "restart_indices": [361, 841],
             "restart_kind": "SAME_PROCESS_CANONICAL_FACTORY_RECONSTRUCTION_WITH_REAL_CHECKPOINT_REUSE_NOT_SIGKILL",
             "full_cycle_deadline_seconds": 30},
-        "source_index_sha256": hashlib.sha256(raw(index_path)).hexdigest(),
+        "source_index_sha256": index_original_sha256,
         "source_tar_sha256": pin["tar_sha256"],
         "source_file_count": len(code_before["files"]), "overlay_count": 0,
         "source_database_before": before, "source_database_changes": [],
@@ -901,7 +945,7 @@ def main():
             peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
             provider_requests=guard.network_attempt_count, private_execution_guard=guard.summary(),
             native_retention_observations=native_retention.summary())
-        guard.active = False
+        guard.close()
         if result["peak_rss_bytes"] > 2*1024**3:
             result["execution_complete"] = False
             result.setdefault("error", {"class": "AssertionError", "reason": "NATIVE_PROFILE_RSS_EXCEEDED"})
