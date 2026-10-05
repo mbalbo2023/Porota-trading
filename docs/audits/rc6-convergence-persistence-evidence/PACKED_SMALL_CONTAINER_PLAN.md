@@ -48,9 +48,31 @@ Controls compare exact remaining capacity, one-byte overflow, prior literal
 slots, all complete captures and encoded envelopes, aliases/named fields,
 subclasses/default=str, typed signed zero/bool/int, Unicode/NUL, clocks,
 MAX_BINDINGS, nonfinite rejection and static/mutable root behavior. Dispatch
-count comparisons describe structure only. Native testing awaits a coordinated
-slot on a whole Git archive, literal frozen Python 3.11 with all 157 locked
-versions, original source hashes/modes/blob IDs, offline guard and raw JUnit.
-A later fresh uninstrumented integrated BIG90 caller determines measured
-performance; the complete retention horizon, UX/browser and immutable
+count comparisons describe structure only.
+
+Before any Native test, source review corrected the fresh-short regression:
+the original root-level capture did not enter `_named`. The test-only commit
+`d17135861bb9da33b3e8fca55d91631c7e70257c` now captures a parent containing a
+`stages` child and explicitly verifies one `_named(child)` call, one child
+canonicalization and the fresh capture, against the independent append oracle.
+Production bytes remain those of `c0f83bd2`.
+
+The coordinated Native focal then passed 197/197 cases on the exact whole Git
+archive of `d17135861bb9da33b3e8fca55d91631c7e70257c`: 84 small-container,
+43 allocation, 48 packed-storage and 22 funnel-storage-codec cases, with no
+failures, errors, skips or duplicate testcase keys. It used the literal frozen
+Python 3.11.16 interpreter and all 157 locked versions, 1,847 unchanged source
+SHA256/mode/blob bindings, 96 imports from the archive, zero alien imports and
+zero network/source-SQLite attempts. Its 11.925-second pytest wrapper duration
+is not a publisher performance measurement. The initial source export was
+rejected before imports because Git's default TAR mask yielded 0664; the
+corrected export explicitly uses `tar.umask=0022` and checks every Git mode.
+This preparation failure is preserved separately from Native results.
+
+Eleven originals, including raw JUnit, receipt, driver, preflight, complete
+source index and tested producer/oracle files, are preserved losslessly in
+`packed_small_container/DOSSIER.json`. Large DATA and source TARs are not
+embedded. This Native result belongs to `d1713586`, not this later evidence
+commit. A later fresh uninstrumented integrated BIG90 caller determines
+measured performance; the complete retention horizon, UX/browser and immutable
 artifact/runtime gates remain separate pending obligations.
