@@ -250,7 +250,8 @@ def test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headr
             required_pretransfer_free(100, 1000, 10, changed)
 
 
-def test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy(disk_path, monkeypatch):
+def test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy(
+        disk_path, monkeypatch, record_testsuite_property):
     source_fixture(disk_path, monkeypatch)
     prepare_launcher(disk_path, monkeypatch, {})
     primary = make_database(manager.DATA / "paper_v17/observer_v17.db", large=True)
@@ -307,10 +308,24 @@ def test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_pr
         location = Path(connection.execute("PRAGMA database_list").fetchone()[2])
         assert root in location.parents and location.stat().st_size > 32 * 1024**2
         assert not str(location).startswith("/tmp/")
-    assert time.monotonic() - started < 5
+        peak = sum(max(path.stat().st_size, path.stat().st_blocks * 512)
+                   for path in (root, *root.rglob("*")))
+    elapsed = time.monotonic() - started
+    assert elapsed < 5
     assert identity(primary) == before
     assert inspect_scratch(root)["residual_sessions"] == 0
     assert set(path.name for path in root.iterdir()) == {".rc6-sqlite-scratch.lock"}
+    record_testsuite_property("rc6_native_sre_disk_copy", json.dumps({
+        "corpus": "EXPLICIT_SYNTHETIC_DATA_LAYOUT_REAL_SQLITE_FILESYSTEM",
+        "copied_rows": 10000, "source_bytes": before[4], "source_sha256": before[-1],
+        "actual_peak_scratch_bytes": peak, "estimated_peak_bytes": snapshot_peak_bytes(before[4]),
+        "max_bytes": MAX_BYTES, "reserve_bytes": RESERVE_BYTES, "owner_uid": root_info.st_uid,
+        "owner_gid": root_info.st_gid, "production_owner_uid": 1000,
+        "explicit_fixture_owner_adapter": os.geteuid() != 1000 or os.getegid() != 1000,
+        "source_unchanged": True, "private_session_cleaned": True,
+        "tmpfs_limit_bytes": 32 * 1024**2, "elapsed_seconds": elapsed,
+        "docker_executed": False, "provider_called": False, "market_execution": "NO_VERIFICADO",
+        "economic_edge": "NO_DEMOSTRADO"}, sort_keys=True))
 
 
 def test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history():
