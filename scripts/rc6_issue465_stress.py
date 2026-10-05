@@ -142,7 +142,8 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
     return store
 
 
-def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes, canonical_runtime=False):
+def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes,
+                  canonical_runtime=False, diagnostic_stacks=None):
     from rc6_shadow_runtime import persistence
     from rc6_shadow_runtime.worker import ShadowRuntime
     import rc6_shadow_runtime.worker as worker_module
@@ -168,6 +169,14 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
         fixture_environment.update(runtime_settings(scratch))
         os.environ.update(fixture_environment)
     begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
+    stack_stream = None
+    if diagnostic_stacks is not None:
+        import faulthandler
+        descriptor = os.open(diagnostic_stacks, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        stack_stream = os.fdopen(descriptor, "w")
+        # A native stack witness survives termination at the unchanged deadline.
+        # This optional instrument always marks its result diagnostic-only.
+        faulthandler.dump_traceback_later(10, repeat=True, file=stack_stream)
     phases = []
     handlers = {}
     for module_name, function_name in (
@@ -178,6 +187,8 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
         def measured(*args, _name=module_name, _original=original, **kwargs):
             wall, process = time.monotonic(), time.process_time()
             handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})["calls"] += 1
+            queue.put({"_probe_event": "ENTER", "handler_name": _name,
+                "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             try:
                 return _original(*args, **kwargs)
             except Exception as error:
@@ -211,6 +222,8 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             wall, process = time.monotonic(), time.process_time()
             metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
             metrics["calls"] += 1
+            queue.put({"_probe_event": "ENTER", "handler_name": _name,
+                "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             try:
                 value = _original(*args, **kwargs)
                 if _name == "checkpoint_restore" and kwargs.get("checkpoint") and value:
@@ -233,6 +246,8 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             wall, process = time.monotonic(), time.process_time()
             metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
             metrics["calls"] += 1
+            queue.put({"_probe_event": "ENTER", "handler_name": _name,
+                "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             try: return _original(*args, **kwargs)
             finally:
                 metrics["elapsed_seconds"] += time.monotonic()-wall
@@ -343,6 +358,9 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
                            "maximum_files", "maximum_bytes", "soft_ratio", "free_bytes"}}
     finally:
         persistence.os.fsync = actual_fsync
+        if stack_stream is not None:
+            faulthandler.cancel_dump_traceback_later()
+            stack_stream.close()
     result.update(phases=phases, cycle_handled=True,
                   full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
@@ -411,13 +429,20 @@ def factual_exit_probe(path):
 
 
 def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
-               slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False, canonical_runtime=False):
+               slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False,
+               canonical_runtime=False, diagnostic_stacks=None):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()):
         raise ValueError("EMPTY_SYNTHETIC_WORKSPACE_REQUIRED")
     if type(canonical_runtime) is not bool:
         raise ValueError("CANONICAL_RUNTIME_FLAG_INVALID")
+    if diagnostic_stacks is not None:
+        diagnostic_stacks = Path(diagnostic_stacks).absolute()
+        if (diagnostic_stacks.exists() or diagnostic_stacks.is_symlink()
+                or diagnostic_stacks.parent.resolve(strict=True) != diagnostic_stacks.parent):
+            raise ValueError("NEW_PRIVATE_DIAGNOSTIC_STACK_FILE_REQUIRED")
+        diagnostic_stacks = str(diagnostic_stacks)
     database = root / "data" / "paper_v17" / "observer_v17.db" if canonical_runtime else root / "source.db"
     database.parent.mkdir(parents=True, exist_ok=True)
     if canonical_runtime:
@@ -432,28 +457,61 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
     ctx = mp.get_context("spawn")
     started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
     child = ctx.Process(target=_shadow_child, args=(str(database), str(output),
-                        started, release, queue, slow_disk, maximum_bytes, canonical_runtime))
+                        started, release, queue, slow_disk, maximum_bytes, canonical_runtime, diagnostic_stacks))
     cycle_begin = time.monotonic(); deadline = cycle_begin+90
     child.start()
     shadow = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False, "cycle_handled": False,
         "reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE", "handler_resources": {}, "phases": [],
         "fsync": {"fsync_entered": False, "fsync_completed": False, "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"},
         "elapsed_seconds": 90., "cpu_seconds": 0., "peak_rss_bytes": 0}
+    completed = False
+    progress_receipts = []
+
+    def receive(message):
+        nonlocal completed, shadow
+        event = message.pop("_probe_event", None)
+        progress_receipts.append({"event": event,
+            "received_at_monotonic": time.monotonic(),
+            "handler_name": message.get("handler_name"),
+            "entered_at_monotonic": message.get("entered_at_monotonic"),
+            "child_cpu_seconds": message.get("child_cpu_seconds"),
+            "child_elapsed_seconds": message.get("elapsed_seconds"),
+            "phases": list(message.get("phases", [])),
+            "handler_names": sorted(message.get("handler_resources", {}))})
+        if event == "FINAL":
+            shadow = message
+            completed = True
+        elif event in {"PROGRESS", "FSYNC"}:
+            shadow.update(message)
+
     try:
-        started.wait(max(0., deadline-time.monotonic()))
+        # Drain native progress before fsync as well as afterwards. Waiting only
+        # on the fsync event loses the actual completed stages when the original
+        # ninety-second deadline expires first, and can stall a queue feeder.
+        while not started.is_set() and not completed and time.monotonic() < deadline:
+            try:
+                message = queue.get(timeout=min(.05, max(.001, deadline-time.monotonic())))
+            except Empty:
+                continue
+            receive(message)
         # The SHADOW child has separate source/IO ownership; it cannot call exits.
         exits = factual_exit_probe(root/"exit-paper.db")
         release.set()
         # Consume before joining: the multiprocessing feeder cannot finish a
         # large resource receipt while the parent is waiting for its exit.
-        completed = False
-        while time.monotonic() < deadline:
+        while not completed and time.monotonic() < deadline:
             try: message = queue.get(timeout=max(.01, deadline-time.monotonic()))
             except Empty: break
-            event = message.pop("_probe_event", None)
-            if event == "FINAL": shadow = message; completed = True; break
-            if event in {"PROGRESS", "FSYNC"}: shadow.update(message)
+            receive(message)
         if not completed:
+            # Read only already available messages, without extending the cycle
+            # deadline or claiming that a missing fsync was entered.
+            while not completed:
+                try:
+                    message = queue.get_nowait()
+                except Empty:
+                    break
+                receive(message)
             shadow.update(status="SHADOW_FAIL_CLOSED", cycle_completion=False,
                 cycle_handled=False, reason="SHADOW_CONSERVATIVE_CYCLE_DEADLINE")
             proc = Path("/proc") / str(child.pid) / "status"
@@ -478,6 +536,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
     shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
     shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
+    shadow["probe_event_receipts"] = progress_receipts
+    shadow["cycle_started_at_monotonic"] = cycle_begin
     source_after = source_custody_snapshot(database)
     unchanged = source_before == source_after
     fsync = shadow["fsync"]
@@ -497,6 +557,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             "source_custody_before": source_before, "source_custody_after": source_after,
             "source_custody_scope": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
             "canonical_runtime_requested": canonical_runtime, "database": str(database), "evidence_root": str(output),
+            "diagnostic_only": diagnostic_stacks is not None,
+            "diagnostic_stack_file": diagnostic_stacks,
             "real_routes": "NOT_CALLED", "runtime_touched": False,
             "provider_requests": 0, "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY"}
     result["completion_required"] = not allow_fail_closed
@@ -524,12 +586,13 @@ def main(argv=None):
     parser.add_argument("--observations-per-identity", type=int, default=5)
     parser.add_argument("--slow-disk", action="store_true")
     parser.add_argument("--canonical-runtime", action="store_true")
+    parser.add_argument("--diagnostic-stacks", help="New private raw stack file; result is diagnostic-only")
     args = parser.parse_args(argv)
     code = 0
     try:
         result = run_stress(args.root, catalog_count=args.catalog_count,
                             observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
-                            canonical_runtime=args.canonical_runtime)
+                            canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks)
     except StressResourceLimit as error:
         result, code = error.evidence, 1
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")

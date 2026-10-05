@@ -86,6 +86,9 @@ def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerp
         assert result["source_database_unchanged"] and result["slow_fsync_exit_isolation_proven"]
         assert result["source_custody_before"] == result["source_custody_after"]
         assert result["source_custody_scope"] == "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME"
+        progress = [node for node in shadow["probe_event_receipts"] if node["event"] == "PROGRESS"]
+        assert progress and any(node["handler_names"] for node in progress)
+        assert progress[0]["received_at_monotonic"] < shadow["fsync"]["entered_at_monotonic"]
         assert result["factual_exits"]["sell_fills"] == 5
         env = shadow["fixture_environment"]
         scratch = artifact_root(result["database"]) / "sqlite-read-scratch"

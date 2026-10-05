@@ -177,6 +177,21 @@ binding y replay SRE, el enlace prebuild FIP/Gov/JUnit y el caller canónico
 pequeño de stress. Es ejecución focal de fuente: no sustituye la suite completa,
 la imagen, el horizonte físico ni las pruebas grandes de navegador.
 
+La medición posterior normal de cuatro cortes sobre b26 recuperó exactamente
+sus cinco miembros por corte y conservó los diez campos de custodia capturados
+de main y sidecars, sus SHA y los1553 archivos/modos del archive. El entorno
+usado tenía158 distribuciones, no las157 requeridas: el resultado se conserva
+como diagnóstico y no como aceptación final. La carga canónica12.000/60.000
+del mismo entorno agotó90 segundos antes de fsync y CURRENT; sus cinco salidas
+PAPER se completaron después del plazo y no demuestran aislamiento durante
+fsync. La capacidad grande sigue bloqueada.
+
+El harness corregido recoge progresos antes de fsync y conserva entradas a
+los métodos reales sin extender el plazo ni aumentar cuotas. Una opción
+explícita de stacks periódicos declara `diagnostic_only=true`. Estos cambios
+de instrumento y sus controles requieren ejecución posterior; registrar una
+etapa activa no acredita que terminara ni que una carga bloqueada haya pasado.
+
 ## Artefacto y despliegue posterior
 
 Sólo después de cerrar integración se publica un PR DRAFT único y se ejecuta
