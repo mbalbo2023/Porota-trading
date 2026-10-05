@@ -1,45 +1,137 @@
 {
-  "schema": "rc6.native-horizon-wrapper-correction.v1",
-  "status": "SOURCE_ONLY_NOT_EXECUTED",
+  "artifact_validated": false,
   "base_sha": "14099f9341054dffe9e93a8f7ab20be4eccb9166",
   "base_tree": "6b44f15bf7a92d500d616b8f97a1dedcccdb3e28",
-  "original_probe_sha256": "3faf770c2bc62454ec86cd8a3711517ef2c6cc4a13a22e4fa7db48b603a92785",
+  "cli": {
+    "adjacent_source_tar": "source.tar with actual SHA256 equal to index tar_sha256",
+    "controlled_smaller_or_large_profiles": "catalog_count5/12000 are descriptive four-cut scope only",
+    "descriptive": [
+      "--catalog-count",
+      "1200",
+      "--ticks",
+      "4"
+    ],
+    "environment_example": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -B <pinned-source-root>/docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+    "full_normal_horizon": [
+      "--catalog-count",
+      "1200",
+      "--ticks",
+      "1201"
+    ],
+    "required": [
+      "--source-repo",
+      "--source-root",
+      "--source-sha",
+      "--source-tree",
+      "--source-index",
+      "--root"
+    ],
+    "source_index_schema": "rc6.complete-archive-source-pin.v1"
+  },
+  "contracts": {
+    "business_clocks": "Immutable synthetic SourceDB remains fixed. Every actual worker cut records its actual returned phase and native input freshness/volume verification. After fixture contract time+120s intraday confirmation cannot remain true; conservative UNKNOWN/NO_VERIFICADO is legitimate. No source rewrite, injected mark, manufactured edge/OPEN phase or PPI session authority.",
+    "descriptive_four_cuts": "execution_complete may be true after four actual successful cuts and source checks, while horizon_complete/complete/acceptance_complete stay false.",
+    "environment": "Before any fixture mkdir/writes: installed total and unique157 exact approved versions, no duplicates/missing/unexpected/version gaps, source-pinned runtime/build hash locks and supported Linux/glibc/x86_64 Python3.11/3.12 actual virtualenv. This does not authenticate wheel bytes or a container image.",
+    "full_cycle": "The existing30s postPRE cadence gate includes constructor/recovery, worker.tick, CURRENT, archive/public restore, custody/import checks, member cleanup and result publication. The PRE seed has its full cycle measured separately. No clock reset or limit increase; native phases remain unchanged.",
+    "imports": "Actual loaded project modules belong to the complete source index; other modules must come from stdlib or this actual virtualenv. Union/last graphs and whole code closure are checked. No outside checkout or overlay is imported.",
+    "maintenance": "Observe original native methods without requesting extra GC/rotation/pins. Complete entered/completed/failed counters, bounded first-four/last state samples, real ACK/external receipt bytes, native validated HEAD, ACK removal/live checkpoint, rotated-generation/control absence, actual GC target removal and native pin sets are corroborated. Zero expired-prefix deletion may be the correct cutoff/transitive-base/pin outcome; it is stated explicitly.",
+    "members": "Exactly five byte members, with current v2 manifest/four role names/SHA256, actual CURRENT manifest digest/generation/sequence/as_of and public restored receipt binding. Equal legacy4 dictionaries, changed payload/rebound manifest or wrong CURRENT/clock are rejected.",
+    "native_wheel": "Only catalog_count1200 with1201 actual postPRE calls plus one real PRE seed qualifies this normal-horizon wrapper.1202 distinct actual generations, all public restores, real factory reconstruction/checkpoint reuse at361/841,10h of30s as_of cuts and all unchanged-source/fixed-policy checks are required. This is accelerated as_of execution without wallclock sleeping; no ten-hour wallclock or continuous OPEN/PPI-session claim.",
+    "private_execution": "A fresh one-process audit hook rejects Python socket transport/DNS and SQLite connections outside the private fixture, including direct PRIMARY SQL after initial native fixture creation/checkpoint. Primary MAIN/WAL/SHM/journal bytes and ten native custody stats are checked after each actual cut and at finalization. No network namespace/kernel attestation is inferred.",
+    "quotas": "Preserve native live128MiB/512 recursive entries, archive512MiB/native32768 namespace limit, scratch512MiB and shared-filesystem2GiB/free-inode10% reserve. Observe pre/post real fsync temporary/staging peaks, native scratch lease measurement and separate bounded lineage authority HEAD residence; do not enlarge caps or reinterpret lineage as external authentication.",
+    "source": "A required local --source-repo supplies raw commit/tree objects with SHA1 recomputation and no lazy fetch/replacement refs; all Git file blobs, SHA256, physical644/755 modes and complete path/directory closure are verified independently of source.index.json before fixtures and after execution. The executing wrapper is the pinned source-root member. The raw source index and adjacent tar are rechecked unchanged at finalization; the Git repository may acquire later commits but the pinned raw objects may never be replaced."
+  },
+  "current_stable_source_comparison": {
+    "not_copied_or_rewritten": true,
+    "raw_external_path": "/tmp/rc6-canonical-eb17b878-normal4-157-raw/native-normal4-result.json",
+    "scope": "ROOT descriptive1200/6000 fourcuts on prior a4 source. Source unchanged/five members; no strengthened-source or1201 claim.",
+    "source_sha": "eb17b8787b6789f38fea22da4a0e8f8aa4963a2b",
+    "status": "READ_ONLY_PREVIOUS_RECEIPT_NOT_A_NEW_EXECUTION"
+  },
+  "deployed": false,
   "error": [
     "The former complete=True field described a successful four-cut execution while acceptance_complete=False. It could be mistaken for the separately required1201-tick wheel.",
     "Native factory/checkpoint reconstruction at361/841 preceded cycle_start and was omitted from the existing30s full-cycle budget.",
     "Equality of original/restored dictionaries did not explicitly require the current five-member shape and could accept a legacy four-member pair."
   ],
-  "rca": "Scope and timing were underspecified in the measurement wrapper; no product/runtime/policy failure or native horizon result is inferred from this source review.",
+  "external_limits": [
+    "No Docker/image/runtime/deploy/FIP/final-candidate claim.",
+    "No provider/PPI contract/account source, real-order authority, or PPI Watch execution.",
+    "No financial entry authority: synthetic fixtures exercise native worker/persistence paths.",
+    "Same-process factory reconstruction is not a process SIGKILL/restart.",
+    "Python audit hooks and local Git/source records are local harness controls, not OS network isolation or external authentication.",
+    "Native scope pending; no extrapolation from four cuts or unit guards."
+  ],
+  "final_input_provenance": null,
   "fix_paths": [
     "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
     "tests/test_rc6_native_archive_horizon_wrapper.py"
   ],
-  "contracts": {
-    "descriptive_four_cuts": "execution_complete may be true after four actual successful cuts and source checks, while horizon_complete/complete/acceptance_complete stay false.",
-    "native_wheel": "A full wheel still requires1201 actual postPRE ticks plus one actual PRE seed,1202 worker calls,10h between first and last operational as_of clocks, unchanged source, original-byte recovery and all fixed quotas. No unit test creates a1201-tick horizon PASS.",
-    "full_cycle": "The existing30s bound includes restart constructor/recovery, worker.tick, CURRENT verification, archive, public restore, source custody checks and per-cycle member cleanup. No limit is raised.",
-    "members": "Require report.json.gz, checkpoint.json.gz, status.json, manifest.json and projection.sqlite at native publication, each restore and retained first-cut recovery.",
-    "business_clocks": "Keep actual native phases and source timestamps. The fixed synthetic source becomes stale conservatively; do not force OPEN, refresh source rows, manufacture economic edge or claim PPI session authority."
+  "guard_catalogue": {
+    "base_nodes": 12,
+    "count_scope": "AST-declared miniature controls/negatives only, not original R/55 counts or native1201 scope.",
+    "declared_cases": 24,
+    "executed_cases": 0
   },
   "guard_nodes": [
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
-    "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control"
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_complete_source_qualification_uses_real_git_objects_and_exact_modes",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_replace_refs_cannot_change_the_git_qualification_authority",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
+    "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings"
   ],
-  "guard_scope": "Controlled wrapper clocks and metadata only; no native full worker/1201wheel/archive capacity/provider/image/FIP/runtime claim.",
-  "original_receipts_preserved": "Earlier native profiles and their complete=True fields are not rewritten or reinterpreted as new executions.",
-  "source_strengthening_pending": [
-    "Explicit complete Git blobs/modes, current script and imported-module binding",
-    "Exact157 dependency versions before any fixture writes with311/312 runtime labels",
-    "Actual native archive/ACK compaction/rotation/pins counters and state corroboration"
-  ],
+  "guard_scope": "Controlled wrapper clocks/metadata, miniature native Git object controls/adversaries and miniature manifest bindings only. None is a full worker/native1201-wheel/storage-capacity/provider/image/FIP/runtime PASS.",
   "native_execution": null,
+  "native_gate_boundary": {
+    "actual_factory_restarts_required": [
+      361,
+      841
+    ],
+    "clock_and_cleanup_30s_postpre": "Includes constructor/recovery and result publication; no reset. PRE measured separately.",
+    "fourcuts_complete_horizon_and_acceptance_always_false": true,
+    "fourcuts_execution_complete_may_be_true": true,
+    "full_postpre_calls_required": 1201,
+    "no_frozen_candidate_or_actual_horizon_test_yet": true,
+    "pre_seed_calls_required": 1,
+    "quotas_unchanged": true,
+    "source_fixed_no_business_rewrite": true
+  },
   "native_horizon_complete": false,
-  "artifact_validated": false,
+  "original_probe_sha256": "3faf770c2bc62454ec86cd8a3711517ef2c6cc4a13a22e4fa7db48b603a92785",
+  "original_receipts_preserved": "Earlier raw native profiles, failed timing/fixture scopes and complete=True fields are preserved byte-for-byte. ROOT descriptive eb17b878 proof does not attest this new source or the1201-wheel. No separate counts are added.",
+  "ownership": {
+    "base_sha": "14099f9341054dffe9e93a8f7ab20be4eccb9166",
+    "base_tree": "6b44f15bf7a92d500d616b8f97a1dedcccdb3e28",
+    "branch": "work/rc6-native-horizon-wrapper-20261005",
+    "scope": "Only profile_v2, permanent wrapper guards and this correction record; ROOT is sole integrator.",
+    "status": "WRITE_OWNER_DELEGATED_SOURCE_ONLY",
+    "workstream_id": "RC6_NATIVE_HORIZON_WRAPPER_SOURCE"
+  },
+  "rca": "Scope and timing were underspecified in the measurement wrapper; no product/runtime/policy failure or native horizon result is inferred from this source review.",
   "runtime_validated": false,
-  "deployed": false,
-  "final_input_provenance": null,
-  "self_commit_sha": null
+  "schema": "rc6.native-horizon-wrapper-correction.v1",
+  "self_commit_sha": null,
+  "source_only_validation": {
+    "AST_and_compile_without_import_or_execution": "PASS",
+    "native_pytest_cases_executed": 0,
+    "native_worker_calls_executed": 0,
+    "source_paths_sha256": {
+      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "d507a05be9275c3c166543adf9c88401db661f4265cb1b1a21af8d95d986e3d5",
+      "tests/test_rc6_native_archive_horizon_wrapper.py": "7d055198244d15c0980b5bbe695d5c5a2bd4f818201bf0269117df9c603f4914"
+    }
+  },
+  "source_strengthening_execution_pending": [
+    "Whole-source frozen157 native wrapper guards",
+    "ROOT normal1200/6000 four-cut native run on integrated strengthened source",
+    "All1201 postPRE native calls plus PRE with actual recovery/GC/rotation/pin/temp/deadline verification"
+  ],
+  "source_strengthening_pending": [],
+  "status": "SOURCE_ONLY_NOT_EXECUTED"
 }
