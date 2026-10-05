@@ -78,7 +78,7 @@ def main():
                 raise AssertionError("SQLITE_OUTSIDE_PRIVATE_FIXTURE_FORBIDDEN")
             sqlite_opens.append(str(path.relative_to(fixture)))
     sys.addaudithook(audit)
-    command = [*args.nodes, "-q", "--junitxml="+str(args.junit.absolute()), "--basetemp="+str(fixture/"pytest")]
+    command = [*args.nodes, "-q", "-p", "no:cacheprovider", "--junitxml="+str(args.junit.absolute()), "--basetemp="+str(fixture/"pytest")]
     exit_code = pytest.main(command)
     after = helpers["verify_archive"](source, args.source_repo, args.source_sha)
     imports, alien = [], []

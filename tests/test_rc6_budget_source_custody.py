@@ -6,7 +6,6 @@ evidence, never host/PPI latency measurements or an OPEN capacity approval.
 from contextlib import closing, contextmanager
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 import gc
 import os
 from pathlib import Path
@@ -346,23 +345,29 @@ def test_late_native_round_keeps_only_its_verified_first_admission_count(native_
         reader.close()
 
 
-def add_native_synthetic_future(store):
-    """One more native fixture series; no provider or historical entry claim."""
-    from rc6_paper_family_lifecycle import FamilyPaperExecutor, future_position_contract
-    from rc6_ppi_future_contract_policy import standard_dlr_terms
-    original = future_position_contract(store.active_future_positions()[-1])
-    terms = standard_dlr_terms("DLR/ENE27")
-    contract = replace(original, symbol="DLR/ENE27", expires_at=terms["expires_at"])
-    FamilyPaperExecutor(store).open_future(contract, lifecycle_id="FUT-FIRST-ADMISSION-CHANGE",
-        event_id="OPEN-FUT-FIRST-ADMISSION-CHANGE", entry_price="1500", quantity="1", entry_cost="100",
-        occurred_at="2026-08-24T14:00:00+00:00", detail={
-            "provider_entry_history_status": "NO_VERIFICADO", "real_orders_sent": 0,
-            "historical_grid_effectivity": "OFFLINE_SYNTHETIC", "entry_authority": False})
-
-
-def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(native_ledger):
+def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(wire, tmp_path, monkeypatch):
     from bd_ppi_readonly_guard import ProductionMarketReader
-    clock, store, controller = native_ledger
+    import bf_production_paper_observer as observer
+    from be_paper_engine import D, PaperBroker, PaperStore
+    from tests.test_production_paper_v1634 import quote
+    from tests.test_rc6_convergence_budget_liveness import seed_offline_pending_futures
+    clock = wire[0]
+    policy, recommendation, report, approval = reviewed_native_capacity(wire)
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
+    store = PaperStore(str(tmp_path/"paper.sqlite"))
+    observer._support_schema(store)
+    # Explicit synthetic capital covers the whole worst-case FUT reserve.
+    # Every economic/risk/fee/calendar guard remains active on the real API;
+    # this is not a current account balance or six admissible DLR contracts.
+    broker = PaperBroker(store, initial_cash="1000000000", clock_fn=lambda: clock.now().isoformat())
+    for symbol in ("GGAL", "EXIT1", "EXIT2", "EXIT3", "EXIT4"):
+        q = quote(symbol=symbol, at=clock.now().isoformat())
+        store.add_quote(q)
+        opened = broker._open(q, D(".8"), {})
+        assert opened[0], opened
+    seed_offline_pending_futures(store, monkeypatch)
+    controller = RuntimeCapacityController(store.path, environ={}, policy=policy,
+        recommendation=recommendation, report=report, approval=approval)
     runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
     reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
     # Use the actual durable five-key contracts, including their settlement;
@@ -375,7 +380,11 @@ def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_s
         reader.login_once()
         for identity in identities:
             assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
-        add_native_synthetic_future(store)
+        q = quote(symbol="EXIT_FIRST_ADMISSION_CHANGE", at=clock.now().isoformat())
+        store.add_quote(q)
+        opened = broker._open(q, D(".8"), {})
+        assert opened[0], opened
+        assert len(store.open_positions()) == 6 and len(store.active_future_positions()) == 5
         assert budgets.supervisable_position_count(store.path) == 11
         observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
         assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
