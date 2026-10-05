@@ -61,6 +61,13 @@ while recursing only into containers; node/depth/cycle guards retain their
 original bounds. Inner and outer generation gzip explicitly use compression
 level 1, with unchanged logical hashes and CRC verification.
 
+Writer recovery decodes a requested native checkpoint once while verifying all
+four sealed members. It validates codec/hash/CRC, logical JSON, typed headers and
+safety before use; the resulting verified decode replaces a redundant wire-only
+pass. A decoded funnel checkpoint owns a fresh JSON graph, so its next update
+reuses only that graph. Plain legacy checkpoint inputs keep their defensive
+canonical copy, and encoded/plain caller inputs remain unchanged.
+
 The fourth role changes the 512-entry geometry to soft pressure at 33.5 minutes
 and hard pressure at 42 minutes (84 complete cuts at 30-second cadence). The
 historical exact three-role replay at 40.5/50.5 minutes remains separately tied

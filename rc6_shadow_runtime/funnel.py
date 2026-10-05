@@ -512,7 +512,10 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
             "spot_positions": {}, "future_positions": {}, "gaps": {}, "evaluations": 0, "distinct_inputs": {}}
         status = "START_AT_CURRENT_TAIL"
     else:
-        checkpoint = _json(prior)
+        # A verified codec decode owns a fresh JSON graph. Reusing that graph
+        # cannot mutate the caller's encoded checkpoint; plain legacy state
+        # keeps its original defensive/canonical copy contract.
+        checkpoint = prior if stored_previous else _json(prior)
         status = "PROSPECTIVE_OPERATIONAL_FUNNEL_EVALUATED"
         for row in source["rows"].get("decision_evidence_snapshots", []):
             try:

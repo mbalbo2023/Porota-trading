@@ -83,6 +83,8 @@ def test_native_funnel_large_metadata_roundtrip_restarts_with_identical_complete
     assert packed_report == plain_report and packed_state == plain_state
     assert packed_report["denominators"]["stage_identity_reaches"] == 1000
     assert packed_report["denominators"]["events_recorded"] == report["denominators"]["events_recorded"]
+    assert funnel.decode_funnel_checkpoint(packed) == state
+    assert state["last_as_of"] == START.isoformat()
 
 
 def test_prepared_storage_is_exact_for_unicode_aliases_and_mutable_root_headers():

@@ -600,8 +600,15 @@ class EvidenceFiles:
             envelope = _json(wire)
             stored = envelope.get("payload") if isinstance(envelope, dict) else None
             if isinstance(stored, dict) and stored.get("schema") == STORAGE_SCHEMA:
-                proof = verify_storage_wire(stored, durable_limit=self.payload_limit, expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
-                value = self._payload(name, member) if role == "status" or role == "checkpoint" and checkpoint else None
+                if role == "status" or role == "checkpoint" and checkpoint:
+                    value = decode_storage(stored, durable_limit=self.payload_limit,
+                                           expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
+                    proof = {"payload_digest": stored["logical_sha256"], "logical_bytes": stored["logical_bytes"],
+                             "storage_schema": stored["schema"]}
+                else:
+                    proof = verify_storage_wire(stored, durable_limit=self.payload_limit,
+                                                expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
+                    value = None
             else:
                 value, proof = self._payload(name, member, details=True)
             if value is not None:
@@ -862,7 +869,7 @@ class EvidenceFiles:
         encoded = _encode({"digest": digest(payload), "payload": payload})
         if len(encoded) > self.payload_limit:
             raise ValueError("SHADOW_PAYLOAD_LIMIT")
-        data = gzip.compress(encoded, mtime=0) if name.endswith(".gz") else encoded
+        data = gzip.compress(encoded, mtime=0, compresslevel=1) if name.endswith(".gz") else encoded
         self._retention(additional_bytes=len(data), additional_files=1)
         tmp = self.root / (".independent-" + uuid.uuid4().hex + ".tmp")
         try:

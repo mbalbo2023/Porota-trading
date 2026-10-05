@@ -134,3 +134,20 @@ def test_projection_dictionary_is_bound_and_wrong_dictionary_or_crc_never_decode
             row_dictionary_from_header(header)
     finally:
         connection.close()
+
+
+def test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once(tmp_path, monkeypatch):
+    from rc6_shadow_runtime import serialization
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    native = native_fixture(tmp_path, count=3)
+    calls = []
+    original = serialization._storage_bytes
+    def checked_storage(value, **kwargs):
+        calls.append(value["logical_sha256"])
+        return original(value, **kwargs)
+    monkeypatch.setattr(serialization, "_storage_bytes", checked_storage)
+    result = native.worker.files.read_writer_generation(checkpoint=True)
+    expected = [native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES]
+    assert sorted(calls) == sorted(expected)
+    assert result["checkpoint"] == native.cut["checkpoint"]
+    assert result["export_contract"]["verification_level"] == "WIRE_AND_CHECKPOINT_SEMANTICS"

@@ -311,13 +311,13 @@ def _loads(raw, *, share_subtrees):
         objects.clear(); strings.clear()
 
 
-def decode_storage(value, *, durable_limit, expansion_limit, share_subtrees=False):
+def decode_storage(value, *, durable_limit, expansion_limit, share_subtrees=False, deadline=None):
     if (isinstance(value, dict) and isinstance(value.get("schema"), str)
             and value["schema"].startswith("rc6.lossless-json-storage.") and value["schema"] != SCHEMA):
         raise ValueError("SHADOW_STORAGE_SCHEMA_UNSUPPORTED")
     if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         return value
-    raw = _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=True)
+    raw = _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=True, deadline=deadline)
     result = _loads(raw, share_subtrees=share_subtrees)
     del raw
     _shape(result)
