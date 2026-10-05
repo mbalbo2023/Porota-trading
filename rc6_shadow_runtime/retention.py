@@ -20,6 +20,7 @@ import tarfile
 import uuid
 
 from rc6_dynamic_universe.common import digest, stamp
+from .archive_namespace import inspect_archive
 
 
 GENERATION = re.compile(r"gen-([0-9a-f]{32})\Z")
