@@ -150,6 +150,7 @@ def test_watchdog_kills_and_reaps_stalled_diagnostic_child(tmp_path, monkeypatch
                                  tmp_path, tmp_path, metadata)
     assert result["watchdog_reason"] == "DIAGNOSTIC_WATCHDOG_EXHAUSTED"
     assert result["native_returncode"] < 0
+    assert result["native_fatal_signal"] == "SIGKILL"
     with pytest.raises(ProcessLookupError):
         os.kill(metadata["native_pid"], 0)
 
@@ -213,3 +214,40 @@ def test_preflight_rejects_wrong_interpreter_before_private_fixture_creation(tmp
         diagnostic.main(["--phase","restore", "--source",str(source), "--data",str(data),
                          "--source-index",str(index), "--raw",str(raw)])
     assert not raw.exists()
+
+
+def test_no_sample_control_never_arms_cancels_or_enables_a_native_watcher(tmp_path, monkeypatch):
+    def forbidden(*items, **kwargs):
+        pytest.fail("NONE variant touched native faulthandler")
+    for name in ("dump_traceback_later", "cancel_dump_traceback_later", "enable", "disable", "register", "unregister"):
+        monkeypatch.setattr(diagnostic.faulthandler, name, forbidden)
+    with (tmp_path/"empty-samples.log").open("wb") as stream:
+        stop = diagnostic._start_sampling(stream, "none")
+        stop()
+    assert (tmp_path/"empty-samples.log").stat().st_size == 0
+
+
+def test_timed_sampling_arms_once_and_cancels_before_stream_close(tmp_path, monkeypatch):
+    calls = []
+    def arm(seconds, *, repeat, file):
+        assert seconds == 10 and repeat is True and not file.closed
+        calls.append("armed")
+    with (tmp_path/"samples.log").open("wb") as stream:
+        def cancel():
+            assert not stream.closed
+            calls.append("cancelled")
+        monkeypatch.setattr(diagnostic.faulthandler, "dump_traceback_later", arm)
+        monkeypatch.setattr(diagnostic.faulthandler, "cancel_dump_traceback_later", cancel)
+        stop = diagnostic._start_sampling(stream, "timed")
+        assert calls == ["armed"]
+        stop()
+        assert calls == ["armed", "cancelled"]
+
+
+def test_unknown_sampling_mode_is_rejected_before_arming_watcher(tmp_path, monkeypatch):
+    def forbidden(*items, **kwargs):
+        pytest.fail("Unknown mode armed watcher")
+    monkeypatch.setattr(diagnostic.faulthandler, "dump_traceback_later", forbidden)
+    with (tmp_path/"samples.log").open("wb") as stream:
+        with pytest.raises(ValueError, match="DIAGNOSTIC_SAMPLING_MODE_REJECTED"):
+            diagnostic._start_sampling(stream, "unknown")

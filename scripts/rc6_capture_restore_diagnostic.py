@@ -17,6 +17,7 @@ from pathlib import Path
 import platform
 import re
 import resource
+import signal
 import socket
 import sqlite3
 import stat
@@ -325,6 +326,16 @@ def _offline(data):
             setattr(owner, name, value)
 
 
+def _start_sampling(stream, mode):
+    """Explicit diagnostic variant; NONE does not install a native watcher."""
+    if mode == "none":
+        return lambda: None
+    if mode != "timed":
+        raise ValueError("DIAGNOSTIC_SAMPLING_MODE_REJECTED")
+    faulthandler.dump_traceback_later(10, repeat=True, file=stream)
+    return faulthandler.cancel_dump_traceback_later
+
+
 def _child(args, source, attempts):
     raw, data = Path(args.raw), _absolute(args.data)
     sys.path.insert(0, str(source))
@@ -335,7 +346,11 @@ def _child(args, source, attempts):
         "publisher_alias_layout_recreated": False, "gc_thresholds_before": gc.get_threshold(),
         "original_cycle_budget_seconds": 90, "diagnostic_watchdog_seconds": WATCHDOG_SECONDS,
         "original_lab_source_capture_budget_seconds": 0.25,
-        "checkpoint_mutable_alias_sharing_enabled": False}
+        "checkpoint_mutable_alias_sharing_enabled": False,
+        "stack_sampling":args.stack_sampling, "faulthandler_enabled_before":faulthandler.is_enabled(),
+        "uid":os.getuid(), "gid":os.getgid(), "interpreter":sys.executable,
+        "resource_limits_before":{name:list(resource.getrlimit(getattr(resource,name))) for name in
+            ("RLIMIT_CORE", "RLIMIT_STACK", "RLIMIT_AS")}}
     def progress():
         state["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
         _write(raw/"native-progress.json", state)
@@ -365,7 +380,7 @@ def _child(args, source, attempts):
     timer(packed._CaptureBuilder,"capture",labels=True)
     started, cpu = time.monotonic(), time.process_time()
     stack = (raw/"samples.log").open("wb")
-    faulthandler.dump_traceback_later(10, repeat=True, file=stack)
+    stop_sampling = _start_sampling(stack, args.stack_sampling)
     try:
         files = persistence.EvidenceFiles(Path(args.private))
         state["current_stage"] = "SEALED_RESTART_READER" if args.phase == "restore" else "SEALED_WIRE_READER"
@@ -410,7 +425,10 @@ def _child(args, source, attempts):
             exception_frames=[{"file": frame.filename, "line": frame.lineno, "function": frame.name}
                               for frame in traceback.extract_tb(error.__traceback__)[-64:]])
     finally:
-        faulthandler.cancel_dump_traceback_later(); stack.close()
+        try:
+            stop_sampling()
+        finally:
+            stack.close()
         state.update(wall_seconds=time.monotonic()-started,cpu_seconds=time.process_time()-cpu,
             gc_thresholds_after=gc.get_threshold(),attempts=attempts)
         imports,alien = [],[]
@@ -461,6 +479,7 @@ def _monitor(command, source, raw, metadata):
                     break
                 time.sleep(0.05)
         return {"native_returncode": process.returncode, "watchdog_reason": reason,
+                "native_fatal_signal":signal.Signals(-process.returncode).name if process.returncode < 0 else None,
                 "native_child_elapsed_seconds": time.monotonic()-started,
                 "native_sampled_peak_rss_bytes": peak}
     finally:
@@ -482,6 +501,7 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
         "host":socket.gethostname(), "platform":platform.platform(), "pid":os.getpid(), "native_pid":None,
         "uid":os.getuid(), "gid":os.getgid(), "source_data":str(data), "private_copy":str(private),
         "raw":str(raw), "parent_argv":sys.argv, "phase":args.phase,
+        "stack_sampling":getattr(args, "stack_sampling", "timed"),
         "original_cycle_budget_seconds":90, "original_lab_source_capture_budget_seconds":0.25,
         "diagnostic_watchdog_seconds":WATCHDOG_SECONDS, "maximum_rss_bytes":MAX_RSS,
         "copy_limit_bytes":COPY_LIMIT, "space_reserve_bytes":RESERVE, "minimum_free_inode_percent":10,
@@ -502,7 +522,8 @@ def _run_parent(args, source, data, raw, pin, checks, attempts):
         private_before = snapshot(private)
         command = [INTERPRETER, "-B", "-u", str(Path(__file__).absolute()), "--phase", args.phase,
             "--source-index", str(args.source_index.absolute()), "--source", str(source),
-            "--data", str(data), "--raw", str(raw), "--private", str(evidence)]
+            "--data", str(data), "--raw", str(raw), "--private", str(evidence),
+            "--stack-sampling", args.stack_sampling]
         metadata.update(copy=copied, command=command,
             source_component_sha256={name: pin["files"][name] for name in
                 ("rc6_shadow_runtime/packed_storage.py", "rc6_shadow_runtime/serialization.py",
@@ -552,6 +573,8 @@ def main(argv=None):
     parser.add_argument("--source",required=True,type=Path)
     parser.add_argument("--data",required=True,type=Path)
     parser.add_argument("--raw",required=True,type=Path)
+    parser.add_argument("--stack-sampling",choices=("timed", "none"),default="timed",
+                        help="Diagnostic variant; timed is the original ten-second watcher.")
     parser.add_argument("--private",type=Path,help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
     os.umask(0o077)

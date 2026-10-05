@@ -1,7 +1,11 @@
 # Real-cut capture and restart diagnostic
 
-State: DESARROLLADO, execution pending. This diagnostic does not modify product
-code and does not establish acceptance of the 90-second runtime pipeline.
+State: DESARROLLADO. Original driver `15b36374` has 18/18 native custody/failure
+guards on frozen311157. Its restore diagnostic completed; its report decode
+terminated with SIGSEGV before preparation. The new explicit sampling selector
+and its additional guards are execution-pending. This diagnostic does not
+modify product code and does not establish acceptance of the 90-second runtime
+pipeline.
 
 WRITE_OWNER: `/root/persistence_review`; workstream
 `rc6-capture-restore-diagnostic-20261005`; branch
@@ -73,6 +77,25 @@ timers are inclusive and must not be summed as independent CPU demand. GC
 thresholds are recorded without callbacks or changing policy. The original
 source-capture 0.25-second budget and runtime 90-second deadline remain intact;
 the independent 60-second watchdog is labelled diagnostic-only.
+
+The original capture-report diagnostic died at 10.237 seconds with signal 11,
+while its first timed stack sample stopped at the serialization filename. The
+last recorded stage is report logical decoding. Native report preparation
+was not reached and no final native receipt was written. This is an unknown
+classification: neither a product defect nor a sampling cause has been proved.
+The original driver does not register GC callbacks, trace each token, arm
+multiple watchers or close its stack stream before cancellation. Its restore
+diagnostic completed before the first sample.
+
+`--stack-sampling timed` preserves the original ten-second periodic watcher.
+The explicit `--stack-sampling none` diagnostic control installs no timed,
+registered or fatal faulthandler callback. It retains the same native reader,
+timers, private-copy custody, 60-second watchdog and 2-GiB bound. Native PID,
+UID, interpreter, actual core/stack/address-space resource limits, initial
+faulthandler state and fatal return signal are recorded. A single coordinated
+NONE control is authorized after its guards pass; even a favorable result is
+only a discriminator for the sampling hypothesis, not acceptance or permission
+to repeat controls or change product `_loads`.
 
 After the SOURCE checkpoint and coordinated CPU authorization, run the two
 commands sequentially, each using a new RAW directory:
