@@ -324,6 +324,7 @@ def _loads(raw, *, share_subtrees):
     def atom(value):
         if isinstance(value, dict): return ("dict", id(value))
         if isinstance(value, list): return ("list", tuple(atom(item) for item in value))
+        if isinstance(value, float): return ("float", value.hex())
         return (type(value).__name__, value)
     def intern(value):
         if isinstance(value, str) and len(value) >= 12:

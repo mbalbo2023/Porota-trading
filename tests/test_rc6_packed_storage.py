@@ -87,6 +87,57 @@ def test_dual_reader_reports_the_actual_storage_schema(schema):
     assert serialization.decode_storage(wire, **LIMITS) == value
 
 
+def signed_zero_values(reverse):
+    first, second = ((0.0, -0.0) if reverse else (-0.0, 0.0))
+    return {"rows": [{"delta": first}, {"delta": second}, {"delta": first}],
+        "nested": [[first], [second], [first]],
+        "types": [{"value": False}, {"value": 0}, {"value": first}, {"value": second}],
+        "padding": "observación" * 30000}
+
+
+@pytest.mark.parametrize("schema", [serialization.SCHEMA, serialization.PACKED_SCHEMA])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("share_subtrees", [False, True])
+def test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types(schema, reverse, share_subtrees):
+    value = signed_zero_values(reverse)
+    encoded = (serialization.encode_storage(value, **LIMITS) if schema == serialization.SCHEMA
+               else packed.encode_packed_storage(value, **LIMITS))
+    assert encoded["schema"] == schema
+    restored = serialization.decode_storage(encoded, **LIMITS, share_subtrees=share_subtrees)
+    expected = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    assert json.dumps(restored, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode() == expected
+    assert encoded["logical_sha256"] == hashlib.sha256(expected).hexdigest()
+    assert restored["rows"][0] is not restored["rows"][1]
+    assert [type(row["value"]) for row in restored["types"]] == [bool, int, float, float]
+
+
+@pytest.mark.parametrize("schema", [serialization.SCHEMA, serialization.PACKED_SCHEMA])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests(tmp_path, monkeypatch, schema, reverse):
+    from rc6_shadow_runtime import persistence
+    from rc6_shadow_runtime.persistence import EvidenceFiles, read_committed_generation
+    from tests.test_rc6_shadow_runtime_wiring import PRE
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    if schema == serialization.SCHEMA:
+        monkeypatch.setattr(persistence, "PreparedStorage", serialization.PreparedStorage)
+    native = signed_zero_values(reverse)
+    base = {"as_of": PRE.isoformat(), "mode": "SHADOW", "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
+    report = {**base, **native, "source_reports": [], "source_audit": {}}
+    with EvidenceFiles(tmp_path / "shadow") as files:
+        cut = files.commit_generation(report, {**base, **native}, {**base, "status": "SHADOW_OBSERVING"},
+            source_watermark={"as_of": PRE.isoformat(), "source_identity": "synthetic-signed-zero"},
+            configuration_fingerprint="synthetic-signed-zero-config")
+    restored = read_committed_generation(files.root)
+    assert restored["pointer"] == cut["pointer"]
+    for role in ("report", "checkpoint"):
+        actual = {key: restored[role][key] for key in native}
+        assert serialization.canonical_metrics(actual, ensure_ascii=True) == serialization.canonical_metrics(native, ensure_ascii=True)
+        proof = restored["export_contract"]["verified_payloads"][role]
+        assert proof["storage_schema"] == schema
+        assert proof["payload_digest"] == restored["manifest"]["files"][role]["payload_digest"]
+        assert serialization.canonical_metrics(restored[role], ensure_ascii=True) == (proof["payload_digest"], proof["logical_bytes"])
+
+
 @pytest.mark.parametrize("attack", ["digest", "boolean_size", "small_size", "template_count_bool", "bindings_none",
     "bindings_list", "packet_crc", "packet_base64", "packet_cid", "array_crc", "array_count_bool",
     "ref_oob", "ref_reorder", "binding_oob", "directory_overlap", "directory_extra", "instance_duplicate",
