@@ -38,7 +38,7 @@ def test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size() -> 
     image_unpacked = 1_650_000_000
     bundle = 1_118_828
     required = required_pretransfer_free(image_tar, image_unpacked, bundle, p)
-    assert required == image_tar + image_unpacked + 2 * bundle + 2 * 1024**3
+    assert required == image_tar + image_unpacked + 2 * bundle + 512 * 1024**2 + 2 * 1024**3
 
 
 def test_backup_plan_keeps_three_newest(tmp_path: Path) -> None:

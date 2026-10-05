@@ -4,6 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def load_policy(path: str | Path) -> dict:
@@ -18,14 +22,20 @@ def required_pretransfer_free(
     image_unpacked_bytes: int,
     bundle_bytes: int,
     policy: dict,
+    scratch_occupied_bytes: int = 0,
 ) -> int:
+    from scripts.rc6_sqlite_scratch_guard import validate_policy
+    scratch = validate_policy(policy)
+    if type(scratch_occupied_bytes) is not int or not 0 <= scratch_occupied_bytes < scratch["max_bytes"]:
+        raise ValueError("RC6_SCRATCH_RESIDUE_BYTE_LIMIT")
     deploy = policy["deploy"]["pretransfer_formula"]
     disk = policy["disk"]
     calculated = (
         int(image_tar_bytes) * int(deploy["image_tar_multiplier"])
         + int(image_unpacked_bytes) * int(deploy["image_unpacked_multiplier"])
         + int(bundle_bytes) * int(deploy["bundle_multiplier"])
-        + int(deploy["fixed_headroom_bytes"])
+        + scratch["max_bytes"] - scratch_occupied_bytes
+        + max(int(deploy["fixed_headroom_bytes"]), scratch["reserve_bytes"])
     )
     return max(int(disk["deploy_pretransfer_min_free_bytes"]), calculated)
 
@@ -57,6 +67,7 @@ def main() -> int:
     ap.add_argument("--image-tar-bytes", type=int, required=True)
     ap.add_argument("--image-unpacked-bytes", type=int, required=True)
     ap.add_argument("--bundle-bytes", type=int, required=True)
+    ap.add_argument("--scratch-occupied-bytes", type=int, default=0)
     ap.add_argument("--available-bytes", type=int)
     ap.add_argument("--inode-free-percent", type=float)
     ap.add_argument("--json", action="store_true")
@@ -64,7 +75,8 @@ def main() -> int:
 
     policy = load_policy(args.policy)
     required = required_pretransfer_free(
-        args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy
+        args.image_tar_bytes, args.image_unpacked_bytes, args.bundle_bytes, policy,
+        args.scratch_occupied_bytes,
     )
 
     if args.available_bytes is None or args.inode_free_percent is None:

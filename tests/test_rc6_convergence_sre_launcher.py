@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import stat
 import subprocess
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -28,6 +29,15 @@ def prepare_launcher(tmp_path, monkeypatch, inputs):
 
 def read_env(path):
     return dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
+
+
+@pytest.fixture
+def disk_path():
+    # /tmp may be tmpfs even when its size exceeds the runtime's 32 MiB. Use
+    # the repository's actual disk mount, with an isolated disposable layout.
+    with tempfile.TemporaryDirectory(prefix="rc6-native-disk-",
+                                     dir=Path(__file__).resolve().parents[2]) as directory:
+        yield Path(directory)
 
 
 @pytest.mark.parametrize("mode,status", [("OFF", "OFF_BASELINE"), ("SHADOW", "SHADOW_BASELINE"), ("APPROVED", "APPROVED_DYNAMIC")])
@@ -155,7 +165,8 @@ def test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked
     assert not any("rm" in call or "run" in call for call in calls)
 
 
-def test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children(tmp_path, monkeypatch):
+def test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children(disk_path, monkeypatch):
+    tmp_path = disk_path
     source_fixture(tmp_path, monkeypatch)
     report = tmp_path / "data/rc6-capacity/report.json"; report.parent.mkdir(parents=True); report.write_text("{}")
     prepare_launcher(tmp_path, monkeypatch, {"POROTA_CAPACITY_REPORT_PATH": "/app/data/rc6-capacity/report.json"})

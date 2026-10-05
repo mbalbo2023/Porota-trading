@@ -103,14 +103,22 @@ jobs:
           IMAGE_TAR_BYTES="$(stat -c '%s' /tmp/porota-predeploy-image.tar.gz)"
           BUNDLE_BYTES="$(stat -c '%s' /tmp/porota-deploy-bundle-v2.tgz)"
           IMAGE_UNPACKED_BYTES="$(python -c 'import json; print(int(json.load(open("/tmp/porota-frozen-candidate.json"))["image_size_bytes"]))')"
-          REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
-            --policy ops/policy/rc6-disk-housekeeping-v1.json \
-            --image-tar-bytes "$IMAGE_TAR_BYTES" \
-            --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
-            --bundle-bytes "$BUNDLE_BYTES")"
-          echo "$REQUIRED_LINE"
-          REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
-          [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          SCRATCH_OCCUPIED_BYTES=0
+          python scripts/rc6_sqlite_scratch_guard.py --emit-probe --repo-root . \
+            > /tmp/porota-candidate-sqlite-scratch-probe.py
+          compute_required() {
+            REQUIRED_LINE="$(python scripts/rc6_disk_space_guard.py \
+              --policy ops/policy/rc6-disk-housekeeping-v1.json \
+              --image-tar-bytes "$IMAGE_TAR_BYTES" \
+              --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
+              --bundle-bytes "$BUNDLE_BYTES" \
+              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES")"
+            echo "$REQUIRED_LINE"
+            REQUIRED_PRETRANSFER_FREE="${REQUIRED_LINE#RC6_DISK_REQUIRED_PRETRANSFER_FREE=}"
+            [[ "$REQUIRED_PRETRANSFER_FREE" =~ ^[0-9]+$ ]]
+          }
+
+          compute_required
 
           SSH=(ssh -i "$HOME/.ssh/porota_rc6_deploy" \
             -o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=2 \
@@ -123,6 +131,19 @@ jobs:
               "python3 -c 'import os,shutil; d=shutil.disk_usage(\"/\"); v=os.statvfs(\"/\"); print(d.free); print(f\"{100.0*v.f_ffree/v.f_files:.6f}\")'"
           }
 
+          probe_sqlite_scratch() {
+            set +e
+            SCRATCH_OUTPUT="$("${SSH[@]}" "$DO_USER@$DO_HOST" \
+              'sudo -n timeout 20 python3 -' < /tmp/porota-candidate-sqlite-scratch-probe.py)"
+            SCRATCH_RC=$?
+            set -e
+            echo "$SCRATCH_OUTPUT"
+            SCRATCH_OCCUPIED_BYTES="$(python -c 'import json,sys; p=json.load(sys.stdin); n=p["occupied_bytes"]; assert p["schema"]=="rc6.sqlite-scratch-admission.v1" and p["status"] in ("GREEN","RED") and type(n) is int and 0<=n<536870912; print(n)' <<< "$SCRATCH_OUTPUT")"
+            SCRATCH_HISTORY_PATH="$(python -c 'import json,re,sys; p=json.load(sys.stdin); v=p["history_container"]; assert re.fullmatch(r"/app/data/[A-Za-z0-9_./-]+",v) and ".." not in v.split("/"); print(v)' <<< "$SCRATCH_OUTPUT")"
+            [[ "$SCRATCH_RC" == 0 || "$SCRATCH_RC" == 42 ]]
+            compute_required
+          }
+
           evaluate_gate() {
             local available="$1" inode_free="$2"
             python scripts/rc6_disk_space_guard.py \
@@ -130,11 +151,13 @@ jobs:
               --image-tar-bytes "$IMAGE_TAR_BYTES" \
               --image-unpacked-bytes "$IMAGE_UNPACKED_BYTES" \
               --bundle-bytes "$BUNDLE_BYTES" \
+              --scratch-occupied-bytes "$SCRATCH_OCCUPIED_BYTES" \
               --available-bytes "$available" \
               --inode-free-percent "$inode_free" \
               --json
           }
 
+          probe_sqlite_scratch
           mapfile -t METRICS < <(probe_disk)
           test "${#METRICS[@]}" -eq 2
           AVAILABLE_BYTES="${METRICS[0]}"
@@ -148,7 +171,7 @@ jobs:
           echo "$GATE_OUTPUT"
 
           RC6_DISK_PRECLEAN_TRIGGERED=0
-          if [ "$GATE_RC" -ne 0 ]; then
+          if [ "$GATE_RC" -ne 0 ] || [ "$SCRATCH_RC" -ne 0 ]; then
             RC6_DISK_PRECLEAN_TRIGGERED=1
             echo "RC6_DISK_PRECLEAN=START|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE"
             "${SSH[@]}" "$DO_USER@$DO_HOST" 'sudo -n timeout 90 python3 -' < scripts/rc6_deploy_scoped_cleanup.py
@@ -182,6 +205,7 @@ jobs:
           echo "RC6_DISK_PRECLEAN_REMOTE=GREEN"
           PRECLEAN_REMOTE
 
+            probe_sqlite_scratch
             mapfile -t METRICS < <(probe_disk)
             test "${#METRICS[@]}" -eq 2
             AVAILABLE_BYTES="${METRICS[0]}"
@@ -194,6 +218,8 @@ jobs:
           fi
 
           test "$GATE_RC" -eq 0
+          test "$SCRATCH_RC" -eq 0
+          echo "RC6_SQLITE_SCRATCH_PRETRANSFER_GATE=GREEN"
           SAFE_PREFLIGHT_RECLAIM=$((AVAILABLE_BYTES-AVAILABLE_BEFORE_PRECLEAN))
           echo "SAFE_PREFLIGHT_RECLAIM=$SAFE_PREFLIGHT_RECLAIM"
           {
@@ -203,6 +229,9 @@ jobs:
             echo "RC6_DISK_IMAGE_TAR_BYTES=$IMAGE_TAR_BYTES"
             echo "RC6_DISK_IMAGE_UNPACKED_BYTES=$IMAGE_UNPACKED_BYTES"
             echo "RC6_DISK_BUNDLE_BYTES=$BUNDLE_BYTES"
+            echo "RC6_SQLITE_SCRATCH_OCCUPIED_BYTES=$SCRATCH_OCCUPIED_BYTES"
+            echo "RC6_SQLITE_SCRATCH_PREFLIGHT_GREEN=1"
+            echo "RC6_SQLITE_SCRATCH_HISTORY_PATH=$SCRATCH_HISTORY_PATH"
             echo "RC6_DISK_PRECLEAN_TRIGGERED=$RC6_DISK_PRECLEAN_TRIGGERED"
           } >> "$GITHUB_ENV"
           echo "RC6_DISK_PRETRANSFER_GATE=GREEN|available=$AVAILABLE_BYTES|required=$REQUIRED_PRETRANSFER_FREE|image_tar=$IMAGE_TAR_BYTES|image_unpacked=$IMAGE_UNPACKED_BYTES|bundle=$BUNDLE_BYTES|preclean=$RC6_DISK_PRECLEAN_TRIGGERED"
@@ -213,6 +242,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_DISK_PREFLIGHT_GREEN:-0}" = "1"
+          test "${RC6_SQLITE_SCRATCH_PREFLIGHT_GREEN:-0}" = "1"
           python scripts/porota_predeploy_binding.py locate \
             --candidate-sha "$CANDIDATE_SHA" --binding /tmp/porota-approved-predeploy.json
           python - <<'PY_TRANSFER'
@@ -238,7 +268,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=120 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' bash -s" <<'REMOTE'
+            "$DO_USER@$DO_HOST" "CANDIDATE_SHA='$CANDIDATE_SHA' CANDIDATE_TREE='$CANDIDATE_TREE' DEPLOY_SHA='$DEPLOY_SHA' RC6_DISK_REQUIRED_PRETRANSFER_FREE='$RC6_DISK_REQUIRED_PRETRANSFER_FREE' POROTA_PRETRANSFER_HIST_DB_PATH='$RC6_SQLITE_SCRATCH_HISTORY_PATH' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           REPO=/opt/porota-trading
           # A failed SSH channel may leave the remote promoter running. Keep
@@ -408,7 +438,7 @@ jobs:
           test "$MARKET_DIR_IDENTITY" = "1000:1000|750"
           echo "RC6_BYMA_SHARED_PATH_WRITABLE_GUARD=GREEN"
 
-          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
+          MODE_OUTPUT="$(sudo -n env POROTA_COPY_OUTPUT=0 "POROTA_PRETRANSFER_HIST_DB_PATH=$POROTA_PRETRANSFER_HIST_DB_PATH" python3 "$REPO/porota_mode_manager.py" simulation 2>&1)"
           echo "$MODE_OUTPUT"
           grep -q 'POROTA_MODE=OK' <<< "$MODE_OUTPUT"
 

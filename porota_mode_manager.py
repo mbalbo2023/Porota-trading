@@ -27,6 +27,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 from cg_paper_workspace import DB_ENV, CONTAINER_DB, IMAGE
+from scripts.rc6_sqlite_scratch_guard import (
+    ENV_KEYS as SQLITE_SCRATCH_ENV_KEYS, OWNER_UID as SQLITE_SCRATCH_UID,
+    OWNER_GID as SQLITE_SCRATCH_GID, runtime_settings as sqlite_scratch_runtime_settings,
+    disk_backed_type as sqlite_scratch_disk_backed_type,
+    history_container_path, history_host_path,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -199,6 +205,79 @@ def dynamic_capacity_settings(env=None):
     return values
 
 
+def sqlite_scratch_settings(env=None):
+    """One immutable disk root for both consumers, independent of /tmp."""
+    from cg_paper_workspace import artifact_root
+    root = artifact_root(CONTAINER_DB) / "sqlite-read-scratch"
+    return sqlite_scratch_runtime_settings(root, env_file() if env is None else env)
+
+
+def history_settings(env=None):
+    source = env_file() if env is None else env
+    selected = history_container_path(source)
+    expected = os.environ.get("POROTA_PRETRANSFER_HIST_DB_PATH")
+    if expected is not None and selected != expected:
+        raise ValueError("RC6_HISTORY_PRETRANSFER_CONFIG_DRIFT")
+    history_host_path(DATA, selected)
+    return {"HIST_DB_PATH": selected}
+
+
+def prepare_sqlite_scratch_root(env=None):
+    """Create only the dataset's derived scratch; reject existing foreign roots.
+
+    Do not chmod/chown an existing directory or delete any residue. The native
+    admission runs under bot1000 before stopping either existing container.
+    """
+    source = env_file() if env is None else env
+    settings = sqlite_scratch_settings(source)
+    history = history_settings(source)["HIST_DB_PATH"]
+    relative = Path(settings["POROTA_SQLITE_SCRATCH_ROOT"]).relative_to("/app/data")
+    if DATA.resolve() != DATA or DATA.is_symlink():
+        raise ValueError("RC6_SCRATCH_PATH_ALIAS")
+    sqlite_scratch_disk_backed_type(DATA)
+    descriptors = []
+    try:
+        descriptor = os.open(DATA, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptors.append(descriptor)
+        for index, part in enumerate(relative.parts):
+            final = index == len(relative.parts) - 1
+            mode = 0o700 if final else 0o755
+            created = False
+            try:
+                os.mkdir(part, mode, dir_fd=descriptor)
+                created = True
+            except FileExistsError:
+                pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            descriptors.append(child)
+            if created:
+                os.fchown(child, SQLITE_SCRATCH_UID, SQLITE_SCRATCH_GID)
+                os.fchmod(child, mode)
+                os.fsync(child)
+                os.fsync(descriptor)
+            info = os.fstat(child)
+            if (stat.S_IMODE(info.st_mode) & 0o002 or info.st_uid not in {0, SQLITE_SCRATCH_UID}
+                    or (final and (info.st_uid != SQLITE_SCRATCH_UID
+                        or info.st_gid != SQLITE_SCRATCH_GID
+                        or stat.S_IMODE(info.st_mode) != 0o700))):
+                raise ValueError("RC6_SCRATCH_ROOT_CUSTODY_REQUIRED")
+            descriptor = child
+    except OSError:
+        raise ValueError("RC6_SCRATCH_ROOT_CUSTODY_REQUIRED") from None
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+    host_database = DATA / Path(CONTAINER_DB).relative_to("/app/data")
+    guard = Path(__file__).resolve().parent / "scripts/rc6_sqlite_scratch_guard.py"
+    result = subprocess.run([sys.executable, str(guard), "--database", str(host_database),
+        "--data-root", str(DATA), "--allow-empty-primary", "--history-container", history],
+        capture_output=True, text=True,
+        timeout=20, check=False)
+    if result.returncode != 0:
+        raise ValueError("RC6_SCRATCH_NATIVE_ADMISSION_FAILED")
+    return DATA / relative
+
+
 def _write_private_env(target, values):
     """Never expose a newly written credential file with an inherited umask."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -215,9 +294,9 @@ def _write_private_env(target, values):
     return target
 
 
-def capacity_input_mounts():
+def capacity_input_mounts(env=None):
     """The same validated host JSON inputs reach both containers read-only."""
-    values = dynamic_capacity_settings()
+    values = dynamic_capacity_settings(env)
     roots = {"/app/ops/policy": ROOT / "ops/policy"}
     if any(values[key].startswith("/app/data/rc6-capacity/") for key in CAPACITY_ENV_KEYS[1:5]):
         roots["/app/data/rc6-capacity"] = DATA / "rc6-capacity"
@@ -343,7 +422,8 @@ def stop_engines(include_dashboard=True):
         check=False, capture=True)
 
 
-def dashboard_env(mode):
+def dashboard_env(mode, environ=None):
+    settings = env_file() if environ is None else environ
     source = DATA / "diagnosticos" / "dashboard_preview_v1633.env"
     if not source.exists():
         raise RuntimeError("Falta el archivo persistente de acceso al dashboard.")
@@ -357,21 +437,24 @@ def dashboard_env(mode):
         if (not key.startswith(forbidden) and key not in {
                 "DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS,
                 *CAPACITY_ENV_KEYS, "POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT",
-                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA"}):
+                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA", *SQLITE_SCRATCH_ENV_KEYS,
+                "HIST_DB_PATH", "POROTA_PRETRANSFER_HIST_DB_PATH"}):
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              f"{DB_ENV}={CONTAINER_DB}",
              "DASHBOARD_REFRESH_SECONDS=30",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
-    safe += [f"{key}={value}" for key, value in paper_settings(env_file()).items()]
-    safe += [f"{key}={value}" for key, value in dynamic_capacity_settings().items()]
+    safe += [f"{key}={value}" for key, value in paper_settings(settings).items()]
+    safe += [f"{key}={value}" for key, value in dynamic_capacity_settings(settings).items()]
+    safe += [f"{key}={value}" for key, value in sqlite_scratch_settings(settings).items()]
+    safe += [f"{key}={value}" for key, value in history_settings(settings).items()]
     safe += [f"{key}={value}" for key, value in _runtime_build_identity().items()]
     return _write_private_env(target, safe)
 
 
-def observer_runtime_env():
+def observer_runtime_env(environ=None):
     """Archivo 0600 del observador sin IA intradiaria."""
-    env = env_file()
+    env = env_file() if environ is None else environ
     target = DATA / "diagnosticos" / "observer_runtime_v17.env"
     values = {
         "TELEGRAM_BOT_TOKEN": env.get("TELEGRAM_BOT_TOKEN", "").strip(),
@@ -379,6 +462,8 @@ def observer_runtime_env():
     }
     values.update(paper_settings(env))
     values.update(dynamic_capacity_settings(env))
+    values.update(sqlite_scratch_settings(env))
+    values.update(history_settings(env))
     values.update(_runtime_build_identity())
     # Contract Evidence recolecta PPI read-only para todas las familias auditables.\n    # Nunca habilita decisiones ni órdenes; las familias fuera de alcance siguen fail-closed.\n    values["POROTA_CONTRACT_EVIDENCE_MODE"] = env.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").strip().upper() or "ENABLED"\n    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
     # El módulo de settlement permanece fail-closed fuera de este runtime.
@@ -448,9 +533,11 @@ DASHBOARD_RUNTIME_SOURCES = (
     "rc6_trader_dashboard",
 )
 
-def start_dashboard(mode):
-    env_path = dashboard_env(mode)
-    input_mounts = capacity_input_mounts()
+def start_dashboard(mode, environ=None):
+    settings = env_file() if environ is None else environ
+    env_path = dashboard_env(mode, settings)
+    input_mounts = capacity_input_mounts(settings)
+    prepare_sqlite_scratch_root(settings)
     # The dashboard image is immutable, but the deployment host is the canonical
     # source staged by the transactional workflow. Mount only the RC6 dashboard
     # modules read-only so a stale /app copy can never mask the exact candidate.
@@ -478,10 +565,12 @@ def start_dashboard(mode):
 
 
 def simulation():
-    runtime_env = observer_runtime_env()
-    dashboard_env("PRODUCTION_PAPER")
-    input_mounts = capacity_input_mounts()
+    settings = env_file()
+    runtime_env = observer_runtime_env(settings)
+    dashboard_env("PRODUCTION_PAPER", settings)
+    input_mounts = capacity_input_mounts(settings)
     verify_dashboard_source_identity(DASHBOARD_RUNTIME_SOURCES)
+    prepare_sqlite_scratch_root(settings)
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
@@ -489,7 +578,7 @@ def simulation():
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, detail="Iniciando")
-    start_dashboard("PRODUCTION_PAPER")
+    start_dashboard("PRODUCTION_PAPER", settings)
     # RC6 worker provenance: the candidate image is verified by the deploy
     # workflow before this manager is invoked. Remove any previous observer and
     # run only that immutable image; then fail closed if PID 1 exits immediately.

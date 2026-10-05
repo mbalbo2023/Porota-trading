@@ -19,7 +19,7 @@
       "bundle_multiplier": 2,
       "fixed_headroom_bytes": 2147483648
     },
-    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + bundle/staging + residual reserve; on RED, safe cleanup runs before frozen-artifact transfer and the gate is re-evaluated."
+    "operator_authorized_floor_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + two bundles + private SQLite scratch growth (512 MiB minus verified resident scratch) + one shared 2 GiB residual reserve. DATA storage independently admits source MAIN/WAL/reconstructed SHM, the total scratch quota and free inodes. On space RED, safe cleanup runs before frozen-artifact transfer and both gates are re-evaluated."
   },
   "tmp": {
     "root": "/tmp",
@@ -65,7 +65,18 @@
   },
   "sqlite": {
     "automatic_vacuum_allowed": false,
-    "automatic_wal_delete_allowed": false
+    "automatic_wal_delete_allowed": false,
+    "private_read_scratch": {
+      "root_suffix": "sqlite-read-scratch",
+      "max_bytes": 536870912,
+      "reserve_bytes": 2147483648,
+      "min_free_inode_percent": 10,
+      "owner_uid": 1000,
+      "owner_gid": 1000,
+      "mode": "0700",
+      "lease": "NONBLOCKING_SINGLE_READER",
+      "crash_residue": "PRESERVE_IDENTIFIED_COUNT_TOWARD_QUOTA"
+    }
   },
   "safety": {
     "required_runtime_mode": "PRODUCTION_PAPER",
