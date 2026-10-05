@@ -16,8 +16,18 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T01:54:08.143Z-arm-18f6890fe0f918",
+    "holder": "SUPERVISOR_SETUP",
+    "purpose": "ARM_AFTER_VERIFIED_BOOTSTRAP",
+    "acquired_at": "2026-10-05T01:54:08.143Z",
+    "expires_at": "2026-10-05T02:14:08.143Z"
+  },
+  "pending_action": {
+    "kind": "ARMING_RECEIPT",
+    "issue": 473,
+    "marker": "NIGHT_SUPERVISOR_ARMED=WS-RC6-NIGHT-CONVERGENCE-20261005"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -41,10 +51,11 @@
   ],
   "blockers": [
     "INTEGRATION_OWNER_ACTIVE",
-    "FINAL_CANDIDATE_NOT_DELIVERED"
+    "FINAL_CANDIDATE_NOT_DELIVERED",
+    "FINAL_ARTIFACT_VERIFICATION_PATH_PENDING"
   ],
   "setup_utc": "2026-10-05T01:41:34.798Z",
-  "setup_mode": "BOOTSTRAP_ONLY",
+  "setup_mode": "ARMED",
   "setup_capability_limits": {
     "model_selection": "NOT_EXPOSED",
     "branch_protection_details": "403 Resource not accessible by integration",
@@ -81,5 +92,8 @@
     "permissions_note": "GitHub app metadata observed; not an independent execution test of merge/deploy/workflow mutation"
   },
   "bootstrap_completed_at": "2026-10-05T01:50:20.170Z",
-  "bootstrap_result": "VALIDATED_GITHUB_READ_CONTROL_COMMIT_COMMENT"
+  "bootstrap_result": "VALIDATED_GITHUB_READ_CONTROL_COMMIT_COMMENT",
+  "armed_at": "2026-10-05T01:54:08.143Z",
+  "armed_after_receipt_id": 5986740552,
+  "arming_authorization": "Autorización vigente del usuario en esta conversación para vincular al candidato y dejar la supervisión lista, incluidos los deploys al cumplir los gates; no requiere una confirmación adicional."
 }
