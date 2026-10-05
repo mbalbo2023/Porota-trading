@@ -29,6 +29,7 @@
     "source_and_code_unchanged": true,
     "source_bytes": 23162880
   },
+  "native_fix_guards_validated_offline": true,
   "original_code_sha256": {
     "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
     "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
@@ -47,6 +48,8 @@
     "failures": 7,
     "fifo_parent_watchdog_seconds": 1.5,
     "guard_evolution": "Permanent guard strengthens protected-original byte/10-stat comparisons and uses a valid real descriptor for missing-O_NONBLOCK. Initial external driver remains byte-exact.",
+    "initial_interceptor_failures": 1,
+    "native_product_failures": 6,
     "network_attempts": 0,
     "product_imports": 12,
     "results": [
@@ -57,6 +60,22 @@
       "consumer failure preserved and four unknown TIME strings withheld"
     ],
     "skipped": 0,
+    "supplement_real_descriptor": {
+      "alien_imports": 0,
+      "distribution_count": 157,
+      "errors": 0,
+      "failures": 1,
+      "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+      "network_attempts": 0,
+      "product_imports": 12,
+      "receipt_sha256": "2119e1d09d1a777e0495dd6bd33748ca7dec43f97fe10453802cf3cc14a7fce6",
+      "result": "native _read succeeds without O_NONBLOCK support; DID NOT RAISE SnapshotError; no fabricated descriptor",
+      "skipped": 0,
+      "source_files": 1557,
+      "source_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd",
+      "source_unchanged": true,
+      "tests": 1
+    },
     "tests": 12
   },
   "original_preflight_scope": "INSTALLED_NAMES_AND_VERSIONS_EXACT_LOCK_SET_NOT_DISTRIBUTION_BYTE_PROOF",
@@ -66,6 +85,45 @@
   "original_whole_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9",
   "own_parent_sha": "2a04cf611c40766f5966fdab308c578b0b982ce9",
   "raw_refs": {
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_entry-preflight.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/entry-preflight.json",
+      "sha256": "53fefe4dd3ecd9444d6e3b0307d629b90904f7f8a7b0885be6fa7a9e16dee5fa"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-focal.log.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/fix-focal.log",
+      "original_uncompressed_sha256": "658e60de2daa1802fd8dcb551126567c9497a575bda77bda367902bd85f3dbb8",
+      "sha256": "9edf5f6de205f9abcf61b935befe1679e83a42e290f1363ea496852cb9693b2d"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-guard-receipt.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/fix-guard-receipt.json",
+      "sha256": "b3136a509652ceb3b929181e84b0010e0356d9c3affbbefe99484718eacb0a64"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-native-focal.xml.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/fix-native-focal.xml",
+      "original_uncompressed_sha256": "b6bae097afe7ea8520a661aa72dd66a2dba77b4b4be69947e713a344c4bc1f51",
+      "sha256": "114752d1441162e12e97da5061e332e14b2f956534e0b53f3e137524ee69a2c9"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_run_fix_guards.py": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/run_fix_guards.py",
+      "sha256": "07ccf10b535627fbdcc845b1b1cfe22bfbeb754978c078dfc4fc38ceb6450535"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_source.index.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/source.index.json",
+      "sha256": "958c4eecd8f9b2ef469ef0cf0dd99db9ec62e4234819864b4be181068c20ae93"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_wrapper-before.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-fix-825d43d7-157-raw/wrapper-before.json",
+      "sha256": "005468205c0d42129cedb9ae817c61682a02b3f08c61c48897308feca6e79893"
+    },
     "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture.log.gz": {
       "decompressed_copy_byte_exact": true,
       "encoding": "gzip-mtime0",
@@ -117,6 +175,40 @@
       "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/run_original_guards.py",
       "sha256": "02a4e15b8f0bceb2a86df14657430b0a73d995c7721a9a8deee6f7dd79c0f826"
     },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_entry-preflight.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/entry-preflight.json",
+      "sha256": "ca5ce570c563e5428f528e9bd22caa148e5cc3b2cd0d76027d2156e345d39e1f"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original-guard-receipt.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/original-guard-receipt.json",
+      "sha256": "2119e1d09d1a777e0495dd6bd33748ca7dec43f97fe10453802cf3cc14a7fce6"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original-native-guards.xml.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/original-native-guards.xml",
+      "original_uncompressed_sha256": "edd7b02b19073bdc3d69eda7f6478751b118516530f1304e7e3fed01f6936f68",
+      "sha256": "52eba8f820e212a55593b56de99f13e54e1b591f793df9137b48fa9364ab045b"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original.log.gz": {
+      "decompressed_copy_byte_exact": true,
+      "encoding": "gzip-mtime0",
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/original.log",
+      "original_uncompressed_sha256": "f06c1dc940417d24b303be9323edc69628a3898a9e38023e4cb64f6bb520798b",
+      "sha256": "fb0de69259d4ca7d396af87e6c667072d222e5fdf827b39174202ebeadfad56f"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_run_original_flag_guard.py": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/run_original_flag_guard.py",
+      "sha256": "d90c3d307f3c3a436a07df4795f649f4047401482795ebbb74761173188aa4c7"
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_wrapper-before.json": {
+      "copy_byte_exact": true,
+      "original_path": "/tmp/rc6-source-capture-original-flag-f8895434-157-raw/wrapper-before.json",
+      "sha256": "94c59eeb3e997db2b15ebd642254bd145dcbdb0036118f875ddd605b21c7dd18"
+    },
     "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_wrapper_before.json": {
       "copy_byte_exact": true,
       "original_path": "/tmp/rc6-source-capture-original-f8895434-157-guards-raw/wrapper-before.json",
@@ -132,11 +224,813 @@
   "runtime_validated": false,
   "schema": "rc6.source-capture-boundary-fix-checkpoint.v1",
   "scope": "OFFLINE_SYNTHETIC_PAPER_ONLY_NO_PROVIDER_NO_RUNTIME",
-  "state": "DESARROLLADO",
+  "state": "COMMITTEADO",
   "validation": {
-    "fix_native_tests": "NOT_EXECUTED_YET",
+    "alien_product_imports": 0,
+    "distribution_count": 157,
+    "errors": 0,
+    "exact_native_cases": [
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_capture_rejects_success_after_complete_close_and_cleanup[connection_close]",
+        "seconds": "0.283",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_capture_rejects_success_after_complete_close_and_cleanup[disk_cleanup]",
+        "seconds": "0.280",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_capture_rejects_success_after_complete_close_and_cleanup[offline_cleanup]",
+        "seconds": "0.280",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "seconds": "0.283",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[]",
+        "seconds": "0.171",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_source_open_race_to_fifo_is_bounded_and_rejected_before_read[-wal]",
+        "seconds": "0.129",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "seconds": "0.016",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_capture_timeout_reason_is_the_exact_nonsecret_contract[TIME_BUDGET_EXHAUSTED]",
+        "seconds": "0.002",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_unknown_time_message_never_extends_the_safe_taxonomy[TIME_PROVIDER_SECRET_SYNTHETIC]",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_unknown_time_message_never_extends_the_safe_taxonomy[TIME_BUDGET_EXHAUSTED_EXTRA]",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_unknown_time_message_never_extends_the_safe_taxonomy[TIME_BUDGET_EXHAUSTED\\nsynthetic-secret]",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_source_capture_deadlines",
+        "name": "test_unknown_time_message_never_extends_the_safe_taxonomy[TIME_BUDGET_EXHAUSTED ]",
+        "seconds": "0.000",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[runtime]",
+        "seconds": "2.698",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[entry_signals]",
+        "seconds": "0.014",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[lab]",
+        "seconds": "0.014",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[families]",
+        "seconds": "0.006",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[stages]",
+        "seconds": "0.010",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[metadata]",
+        "seconds": "0.010",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[symlink]",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[parent_symlink]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[hardlink]",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "seconds": "0.102",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
+        "seconds": "0.019",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
+        "seconds": "0.287",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_completed_scopes_after_transport_change",
+        "seconds": "2.928",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_native_source_reads",
+        "name": "test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
+        "seconds": "0.015",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_component_archive",
+        "name": "test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
+        "seconds": "1.618",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_starts_at_tail_and_never_reconstructs_existing_positions",
+        "seconds": "0.012",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_prospective_runtime_preregisters_all_six_variants_with_exact_factual_inputs",
+        "seconds": "0.034",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_restart_duplicate_native_timestamp_and_same_input_costs_are_deterministic",
+        "seconds": "0.063",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_future_quotes_and_late_preentry_observations_never_become_features",
+        "seconds": "0.011",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate0-ENTRY_NATIVE_CLOCKS_UNAVAILABLE]",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate1-ENTRY_FUTURE_OR_REVERSED_CLOCKS]",
+        "seconds": "0.035",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate2-FACTUAL_ENTRY_COST_AUTHORITY_MISMATCH]",
+        "seconds": "0.030",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate3-EXECUTED_ENTRY_COST_ANCHOR_MISMATCH]",
+        "seconds": "0.027",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate4-FACTUAL_EOD_POLICY_UNAVAILABLE]",
+        "seconds": "0.031",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_tampered_immutable_evidence_is_not_registered",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_configuration_and_checkpoint_digest_changes_invalidate_without_backfill",
+        "seconds": "0.038",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_eod_labels_mfe_mae_net_and_cohorts_require_actual_endpoint",
+        "seconds": "0.063",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_maxhold_and_eod_detect_without_executable_book_and_never_fill_overnight",
+        "seconds": "0.058",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_real_orders_and_reversed_runtime_clock_fail_closed",
+        "seconds": "0.075",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_read_only_runtime_survives_live_wal_writer_and_never_initializes_paperstore",
+        "seconds": "0.040",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_future_position_timestamp_does_not_register_when_clock_later_catches_up",
+        "seconds": "0.038",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_bounded_snapshot_read_censors_labels_and_empirical_touch_denominators",
+        "seconds": "0.052",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_source_oversize_json_is_not_materialized_into_checkpoint",
+        "seconds": "0.029",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_lab_runtime",
+        "name": "test_economics_model_consumes_only_new_completed_prospective_labels",
+        "seconds": "5.025",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_same_snapshot_registry_native_baseline_and_causal_candidates",
+        "seconds": "0.044",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved",
+        "seconds": "0.041",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_future_outcomes_are_isolated_and_mature_oos_with_truthful_anchor_and_costs",
+        "seconds": "0.086",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_currency_and_strategy_cohorts_do_not_mix_futures_cost_model",
+        "seconds": "0.105",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_versions_and_configurations_never_share_oos_cohort",
+        "seconds": "0.064",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[native_clock-NATIVE_SIGNAL_CLOCKS_REQUIRED]",
+        "seconds": "0.035",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[signal_future-NATIVE_SIGNAL_CLOCK_ORDER_INVALID]",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[provider_future-NATIVE_PROVIDER_RECEIPT_CLOCK_INVALID]",
+        "seconds": "0.041",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[old_signal-ENTRY_NOT_AFTER_PREREGISTRATION]",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[future_feature-FUTURE_ENTRY_FEATURE]",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[price_receipt-NATIVE_PRICE_VECTOR_CLOCK_INVALID]",
+        "seconds": "0.035",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[price_identity-NATIVE_PRICE_VECTOR_IDENTITY_MISMATCH]",
+        "seconds": "0.034",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[unregistered-STRATEGY_NOT_VALIDATED]",
+        "seconds": "0.036",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[wrong_schema-NATIVE_ENTRY_INPUT_SCHEMA_INVALID]",
+        "seconds": "0.032",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_native_integrity_and_no_lookahead_guards[crossed-CROSSED_BOOK]",
+        "seconds": "0.054",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_missing_native_features_remain_unverified_without_fake_rvol",
+        "seconds": "0.059",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_explicit_missing_exact_vector_does_not_reconstruct_or_drop_native_baseline",
+        "seconds": "0.038",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_futures_entry_lab_requires_exact_specialized_contract",
+        "seconds": "0.044",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_futures_cost_uncertainty_cannot_certify_modeled_net_edge[multiplier]",
+        "seconds": "0.055",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_futures_cost_uncertainty_cannot_certify_modeled_net_edge[fee_provenance]",
+        "seconds": "0.063",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_missing_native_depth_censors_only_microstructure_hypothesis",
+        "seconds": "0.068",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_hash_source_safety_restart_and_budgets_are_fail_closed",
+        "seconds": "0.063",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_backlog_bounds_and_trading_writer_do_not_create_false_complete_labels",
+        "seconds": "0.055",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_registry_digest_and_input_outcome_rejection",
+        "seconds": "0.002",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_oos_auc_uses_two_matured_classes_without_posthoc_score_inversion",
+        "seconds": "0.112",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_entry_signals",
+        "name": "test_pure_snapshot_variants_are_isolated_even_with_input_mutation",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of0]",
+        "seconds": "0.035",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of1]",
+        "seconds": "0.036",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of2]",
+        "seconds": "0.033",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_dispatches_all_ten_families_with_specialized_evidence_and_no_database_mutation",
+        "seconds": "0.013",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_missing_or_stale_specialized_evidence_never_falls_back_to_equity",
+        "seconds": "0.005",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_source_capture_is_not_provider_freshness_and_future_revision_is_unavailable",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_options_are_selected_by_underlying_expiry_moneyness_and_own_ancillary_clocks",
+        "seconds": "0.006",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_new_invalid_book_invalidates_previous_receipt_and_non_equity_has_no_scanner",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_paper_guard_and_invalid_identity_are_explicit",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_observation_read_is_bounded_and_reports_partial_coverage",
+        "seconds": "0.970",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_existing_iol_family_reference_is_bound_by_contract_and_capture_cannot_validate_nav_or_rates",
+        "seconds": "0.009",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_real_catalog_standard_option_contract_proves_strike_dimension_without_ticker_parsing",
+        "seconds": "0.007",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_newer_complement_publication_does_not_reuse_older_ppi_catalog_clock",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_family_runtime",
+        "name": "test_independent_feature_clocks_cannot_borrow_fresh_parent_quote_clocks",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes",
+        "seconds": "0.983",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens",
+        "seconds": "3.107",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_closed_worker_never_claims_open_capacity_or_calls_provider",
+        "seconds": "0.500",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_missing_inwheel_preopen_fail_closed_never_backdated",
+        "seconds": "0.126",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_readonly_worker_does_not_wait_for_trading_write_lock",
+        "seconds": "0.355",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_source_or_configuration_invalidates_checkpoint_and_future_rejected",
+        "seconds": "1.014",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input",
+        "seconds": "0.005",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_canonical_child_entry_never_constructs_trading_store",
+        "seconds": "0.015",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_canonical_supervisor_installs_shadow_child_with_existing_restart_control",
+        "seconds": "0.022",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_audited_session_uses_next_operational_day_and_previous_close",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_loss",
+        "seconds": "0.217",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_existing_byma_scraper_cache_is_observe_only_and_cannot_backfill_on_config_restart",
+        "seconds": "0.392",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file",
+        "seconds": "0.005",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_shadow_runtime_wiring",
+        "name": "test_configured_iol_cache_is_reused_and_protected_as_an_input",
+        "seconds": "0.192",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_source_directory_and_files_with_no_write_permissions",
+        "seconds": "0.005",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_source_copy_honors_deadline_and_byte_budget",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
+        "seconds": "0.002",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_nonfinite_deadline_cannot_disable_the_time_budget[nan]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_source_change_during_stream_capture_is_not_certified",
+        "seconds": "0.002",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_platform_without_atime_preservation_fails_closed",
+        "seconds": "0.002",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_history_snapshot_copy",
+        "name": "test_U24_sidecar_alias_is_rejected_before_sqlite[hardlink]",
+        "seconds": "0.001",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "seconds": "0.006",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[bytes]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[inodes]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "seconds": "0.007",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[symlink]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[public_root]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[unknown_residue]",
+        "seconds": "0.004",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[aliased_lease]",
+        "seconds": "0.003",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "seconds": "0.107",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[hardlink]",
+        "seconds": "0.006",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[marker_replacement]",
+        "seconds": "0.005",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_rc6_sqlite_disk_scratch",
+        "name": "test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "seconds": "0.092",
+        "state": "PASS"
+      },
+      {
+        "class": "tests.test_issue465_generations",
+        "name": "test_failure_diagnostics_never_persist_exception_message_secrets",
+        "seconds": "0.021",
+        "state": "PASS"
+      }
+    ],
+    "exact_selection": [
+      "tests/test_rc6_source_capture_deadlines.py",
+      "tests/test_rc6_native_source_reads.py",
+      "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
+      "tests/test_rc6_shadow_lab_runtime.py",
+      "tests/test_rc6_shadow_entry_signals.py",
+      "tests/test_rc6_shadow_family_runtime.py",
+      "tests/test_rc6_shadow_runtime_wiring.py",
+      "tests/test_rc6_history_snapshot_copy.py",
+      "tests/test_rc6_sqlite_disk_scratch.py",
+      "tests/test_issue465_generations.py::test_failure_diagnostics_never_persist_exception_message_secrets",
+      "-q",
+      "-o",
+      "addopts=",
+      "-p",
+      "no:cacheprovider",
+      "--junitxml=/tmp/rc6-source-capture-fix-825d43d7-157-raw/fix-native-focal.xml"
+    ],
+    "execution_scope": "OWN825_WHOLE_SOURCE_NOT_ROOT6737_OR_FINAL_RELEASE_ARTIFACT_OR_RUNTIME",
+    "failures": 0,
+    "fix_native_tests": 127,
+    "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+    "junit_seconds": 26.176,
+    "junit_sha256": "b6bae097afe7ea8520a661aa72dd66a2dba77b4b4be69947e713a344c4bc1f51",
+    "network_attempts": 0,
     "permanent_guards": 12,
-    "whole_fix_source_pin": "PENDING"
+    "preflight_exact_names_versions_and_locks": true,
+    "preflight_scope": "INSTALLED_NAMES_AND_VERSIONS_EXACT_LOCK_SET_NOT_DISTRIBUTION_BYTE_PROOF",
+    "product_imports": 48,
+    "product_overlay_count": 0,
+    "receipt_sha256": "b3136a509652ceb3b929181e84b0010e0356d9c3affbbefe99484718eacb0a64",
+    "skipped": 0,
+    "source_custody_scope": "SOURCE_DB_MAIN_WAL_SHM_JOURNAL_SHA256_DEV_INODE_UID_GID_MODE_NLINK_SIZE_ATIME_MTIME_CTIME_AS_NATIVE_GUARDS",
+    "whole_fix_source_files": 1545,
+    "whole_fix_source_sha": "825d43d7b3a74c071b6a3372f6e320a95f03171b",
+    "whole_fix_source_tree": "1fb77d7def256222a14b9f4aadcfe54607cb1c19",
+    "whole_source_sha_modes_git_blobs_unchanged": true,
+    "wrapper_seconds": 26.48179104999872
   },
   "workstream_id": "RC6_CONVERGENCE_PERSISTENCE"
 }
