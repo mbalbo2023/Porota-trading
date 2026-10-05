@@ -24,6 +24,7 @@ from rc6_ppi_global_budget import RuntimePPIBudget
 from tests.test_rc6_capacity_promotion import approved, controller, shadow_selection
 from tests.test_rc6_dynamic_orchestrator import OPEN, frozen
 from tests.test_rc6_ppi_capacity_benchmark import wire
+from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
 
 def native_store(tmp_path, assets, at):
@@ -33,8 +34,9 @@ def native_store(tmp_path, assets, at):
     scalping.init_schema(store)
     with store.connect() as c:
         for a in assets:
-            row = dict(a, settlement_source="PPI_FIELD", description="isolated fixture",
+            row = with_synthetic_volume_contract(dict(a, settlement_source="PPI_FIELD", description="isolated fixture",
                 last_seen_at=at.isoformat(), run_id="native-test", raw={"_discovery_source": "PPI_PRIMARY"})
+            )
             catalog_module.persist(c, row)
         catalog_module.sync_candidate_universe(c, at.isoformat())
     return store
@@ -51,7 +53,7 @@ def cold_shadow(values, warm_shadow, assets, at):
 
 
 def seed_native_signal(store, a, at):
-    record = dict(a)
+    record = with_synthetic_volume_contract(a)
     initial = [{"date": (at - timedelta(minutes=15 - i)).isoformat(),
         "price": 60 + i * 2, "volume": 20 if i % 2 == 0 else 10} for i in range(15)]
     first_at = at - timedelta(minutes=1)
@@ -198,7 +200,8 @@ def test_native_scalping_snapshot_freezes_exact_decision_and_input_clocks(wire, 
         "received_at": r["last_verified_at"], "first_received_at": r["first_received_at"], "source": r["source"]} for r in exact]
     economics = json.loads(candidate["economics_json"])
     assert inputs["momentum"] == economics["momentum"] and inputs["spread_fraction"] == economics["spread_fraction"]
-    assert inputs["rvol"] is None and inputs["activity"]["volume_unit"] == "NO_VERIFICADO"
+    assert inputs["rvol"] is None and inputs["activity"]["volume_unit"] == "QUANTITY"
+    assert inputs["activity"]["volume_contract"]["evidence_ref"] == "OFFLINE_SYNTHETIC_TEST_ONLY"
     assert payload["quote_used"]["bid"] == str(quote.bid) and payload["quote_used"]["book_at"] == quote.book_at
     from bq_exit_policy import PaperSessionPolicy
     session = PaperSessionPolicy()

@@ -875,7 +875,8 @@ def _record_native_entry_snapshot(connection, record, points, quote, contract, *
         "raw_volume_samples": [str(p["volume"]) for p in points],
         "volume_contract": economics.get("volume_contract"),
         "activity": {"interval_volume_contract": contract.get("state", "NO_VERIFICADO"),
-            "volume_unit": "NO_VERIFICADO", "rvol_status": "NO_VERIFICADO"}}
+            "volume_unit": (economics.get("volume_contract") or {}).get("unit", "NO_VERIFICADO"),
+            "volume_contract": economics.get("volume_contract"), "rvol_status": "NO_VERIFICADO"}}
     exact_quote = {name: quote.get(name) for name in ("symbol", "asset_class", "settlement", "currency", "market",
         "bid", "ask", "bid_size", "ask_size", "last", "book_at", "trade_at", "observed_at")}
     exact_quote["metadata_source"] = quote.get("metadata_source") or quote.get("source")
