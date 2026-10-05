@@ -2051,6 +2051,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2094,6 +2095,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2137,6 +2139,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2180,6 +2183,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2223,6 +2227,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2266,6 +2271,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2309,6 +2315,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2353,6 +2360,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2396,6 +2404,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2439,6 +2448,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2483,6 +2493,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2526,6 +2537,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2592,6 +2604,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2669,6 +2682,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2713,6 +2727,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2757,6 +2772,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2801,6 +2817,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2845,6 +2862,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2889,6 +2907,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2935,6 +2954,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -2979,6 +2999,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3033,7 +3054,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -3052,6 +3081,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3106,7 +3136,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -3125,6 +3163,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3171,6 +3210,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3215,6 +3255,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3318,6 +3359,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3363,6 +3405,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3408,6 +3451,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3454,6 +3498,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3538,6 +3583,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3584,6 +3630,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3632,6 +3679,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3677,6 +3725,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3724,6 +3773,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -3826,6 +3876,7 @@
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/test_issue465_generations.py",
         "tests/test_issue465_source_retention_policy.py"
       ],
@@ -6165,6 +6216,45 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/diagnostico-v2-guards.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/diagnostico-v2-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/diagnostico-v2-small-native-cli.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-gate-wrapper-59481b3e.py": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -6738,6 +6828,19 @@
       ]
     },
     "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-rca.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/notaDiagnosticoV2.md": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -8889,6 +8992,18 @@
         "U25"
       ]
     },
+    "tests/test_rc6_projection_browser_diagnostic.py": {
+      "reason": "Observe native V2 decoding and fresh four-member reads with thread-local role/digest aggregation, unchanged GC, deadlines, native errors, returns and protected source/custody; the small CLI preserves its native large-report rejection and no case certifies large Chrome or final route acceptance.",
+      "requirement_ids": [
+        "U13",
+        "U21",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "tests/test_rc6_projection_large_browser.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -10193,7 +10308,8 @@
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_shadow_live_namespace.py",
-        "scripts/rc6_sqlite_scratch_guard.py"
+        "scripts/rc6_sqlite_scratch_guard.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -10270,7 +10386,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "SRE"
     },
@@ -10693,7 +10817,8 @@
         "rc6_shadow_runtime/packed_storage.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
-        "rc6_shadow_runtime/serialization.py"
+        "rc6_shadow_runtime/serialization.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Recomputa audit can\u00f3nico zero/N con schema/asof/count/status/pointers/perreport digest exactos.",
@@ -10739,7 +10864,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -11163,6 +11296,7 @@
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/projection.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
@@ -11198,6 +11332,14 @@
         "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -11219,6 +11361,7 @@
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/views_universe.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
@@ -11249,6 +11392,14 @@
         "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population",
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -11268,6 +11419,7 @@
         "rc6_trader_dashboard/view_common.py",
         "rc6_trader_dashboard/views_analytics.py",
         "rc6_trader_dashboard/views_home.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
@@ -11305,6 +11457,14 @@
         "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -11320,7 +11480,8 @@
         "rc6_trader_dashboard/projection.py",
         "rc6_trader_dashboard/view_common.py",
         "rc6_trader_dashboard/views_home.py",
-        "rc6_trader_dashboard/views_live.py"
+        "rc6_trader_dashboard/views_live.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
@@ -11339,7 +11500,15 @@
       "test_nodes": [
         "tests/test_rc6_dashboard_convergence.py::test_active_future_with_zero_spot_is_visible_in_every_risk_surface",
         "tests/test_rc6_dashboard_convergence.py::test_future_closed_after_cut_stays_active_at_cut_and_closes_once_with_decimal_pnl",
-        "tests/test_rc6_dashboard_convergence.py::test_native_future_supervision_intent_survives_restart_and_is_visible_without_spot"
+        "tests/test_rc6_dashboard_convergence.py::test_native_future_supervision_intent_survives_restart_and_is_visible_without_spot",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "UX"
     },
@@ -11352,6 +11521,7 @@
         "scripts/rc6_dashboard_route_inventory.py",
         "tests/ci_rc6_exact_archive_gate.py",
         "tests/ci_rc6_original_ux_product_red.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py",
         "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/ci_trader_terminal_browser.py",
@@ -11388,6 +11558,14 @@
         "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
         "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
         "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -11499,7 +11677,8 @@
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_shadow_live_namespace.py",
-        "scripts/rc6_sqlite_scratch_guard.py"
+        "scripts/rc6_sqlite_scratch_guard.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -13673,7 +13852,8 @@
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_shadow_live_namespace.py",
-        "scripts/rc6_sqlite_scratch_guard.py"
+        "scripts/rc6_sqlite_scratch_guard.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -13761,7 +13941,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "SRE"
     },
@@ -13907,7 +14095,8 @@
         "rc6_shadow_runtime/packed_storage.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
-        "rc6_shadow_runtime/serialization.py"
+        "rc6_shadow_runtime/serialization.py",
+        "tests/ci_rc6_projection_browser_diagnostic.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Recomputa audit can\u00f3nico zero/N con schema/asof/count/status/pointers/perreport digest exactos.",
@@ -13964,7 +14153,15 @@
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
-        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference"
+        "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_cli_native_small_v2_cut_retains_rejection_and_never_claims_acceptance",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_rejects_output_into_protected_paths_before_product_import",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_diagnostic_window_never_hides_a_real_failure_or_changes_native_check",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_aggregates_native_unique_expansion_and_preserves_all_occurrence_sha",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
       ],
       "workstream": "PERSISTENCE"
     },
