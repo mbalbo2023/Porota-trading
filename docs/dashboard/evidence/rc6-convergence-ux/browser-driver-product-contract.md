@@ -75,3 +75,14 @@ selección final e identidad final mantienen sus checks nativos. Los filtros
 y denominadores conservan el alcance homogéneo documentado de la fixture
 grande. Este documento describe fuente preparada: no afirma BIG/browser
 aprobados, medición temporal ni final freeze.
+
+En el whole source OWN `b6fd4c21e308c4457e800941e24dc9fbc78a8cbc`
+(`0fd20b4b063b17cc317501ff5436ea4a2c9883fc`) pasaron 55/55 guards
+en Python 3.11.16 y 55/55 en Python 3.12.14, ambos con 157 distribuciones
+exactas, sin skips, errores ni fallos. Los 1.638 archivos mantuvieron hashes
+y modos y no quedaron children huérfanos. Se ejecutaron sólo los tres módulos
+de IPC, navegador grande negativo y diagnóstico; no se inició Chromium ni BIG.
+El [recibo funcional](browser-product-ipc-b6fd4c21-receipt.json) incluye los
+comandos, node IDs, pins, hashes RAW y JUnit de cada versión. Este resultado
+cierra esos guards sobre OWN; final ROOT, salud externa positiva y browser
+grande siguen pendientes.
