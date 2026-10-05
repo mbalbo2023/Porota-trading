@@ -1,0 +1,3916 @@
+{
+  "source_path": "/workspace/scratch/9b0506514f5c/source_prod",
+  "network_disabled": true,
+  "runtime_mutations": 0,
+  "real_orders_sent_by_audit": 0,
+  "tests": [
+    {
+      "id": "H_VALID_future_date",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "7a4425fb24157851b78e4a9f703bef227601ad7ade070127e7aa636254b08e5d"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2099-12-31",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_weekend",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "15c9ca2a7efab2d003215ef0907b1312c3c2e11ede505d40df79c3088b6dea46"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-27",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_holiday_calendar_absent",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "9aae59e912cf151828ec2cc955ab3d7a3561bb9b61ecc1fcdcf7b25fd3e2f089"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-07-09",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_invalid_date",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "49250198614259472a5b2c14d79f59d8b5e9b369481ebb78f45e80203bc25215"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "not-a-date",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_zero",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_CLOSE_NONPOSITIVE"
+      }
+    },
+    {
+      "id": "H_VALID_negative",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_CLOSE_NONPOSITIVE"
+      }
+    },
+    {
+      "id": "H_VALID_nan",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "IntegrityError",
+        "reason": "NOT NULL constraint failed: history_versions_v2.close"
+      }
+    },
+    {
+      "id": "H_VALID_infinite_close_only",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "2ad0f03c4b475b41ad0aeac0ddcc21c03e03bff69d6181e944ec3882a2d25695"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": null,
+            "high": null,
+            "low": null,
+            "close": Infinity,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_partial_ohlc_close_outside",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "510962cb12f07b9a905dc7716f90fa94c6a262aa6e7d3e244814a3aebf947c02"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": null,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 500.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_high_below_low",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_OHLC_INCONSISTENT"
+      }
+    },
+    {
+      "id": "H_VALID_open_outside",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_OHLC_INCONSISTENT"
+      }
+    },
+    {
+      "id": "H_VALID_close_outside",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_OHLC_INCONSISTENT"
+      }
+    },
+    {
+      "id": "H_VALID_jump_x10",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "a683104533c44cb2848fc0db92a354ed8f82566db189dc4f0137ec1517b99f68"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 1000.0,
+            "high": 1020.0,
+            "low": 980.0,
+            "close": 1000.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_jump_div10",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "095497721b3db8c97041ad097ee1cf0bc17b5457619426be27fcfb6ca955758b"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 10.0,
+            "high": 10.2,
+            "low": 9.8,
+            "close": 10.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_negative_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_VOLUME_NEGATIVE"
+      }
+    },
+    {
+      "id": "H_VALID_zero_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "20b84402475a02fddaf4bcd13fcbc7e1ce37d63c885dde6d454a211c7e21ea33"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 0.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_nan_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "aef68dc83645d1ea004ddc25d3f2304be51895798d6173fd07b030da0a6fbbf8"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": null,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_infinite_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "70b84e57666743c1f7e27aab3072da16e81c0252aff70ff28a1bc1c947d3e6d3"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": Infinity,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_wrong_settlement",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "d974c0d7da546442a35ff5300095e149c4c825adfa96fba4ec78b41ab783a04a"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "NOT_A_TERM",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_unknown_family",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "8e3dc6113f6d3009b04aad640b87ee4edccd624a6ea5eb84ddfbe6525a34285a"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "NONSENSE",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_alias",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "68100dbbc5e186920afd2384621e0f045bc52864b5c4032fe9eeb5a772bf5271"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ON",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_VALID_incomplete_identity",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_IDENTITY_INCOMPLETE"
+      }
+    },
+    {
+      "id": "H_VALID_unknown_market",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "HISTORY_IDENTITY_UNVERIFIED"
+      }
+    },
+    {
+      "id": "H_VALID_naive_observed",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": true,
+        "value": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_SOURCE_ADJUSTED_PRECEDENCE",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "symbol": "AUDIT",
+          "instrument_type": "ACCIONES",
+          "market": "BYMA",
+          "settlement": "A-24HS",
+          "date": "2026-09-30",
+          "open": 100.0,
+          "high": 100.0,
+          "low": 100.0,
+          "close": 100.0,
+          "volume": 1000.0,
+          "source": "PPI_API",
+          "adjusted": 0,
+          "source_rank": 10,
+          "observed_at": "2026-10-01T16:00:00Z",
+          "version_id": 1
+        },
+        {
+          "symbol": "AUDIT",
+          "instrument_type": "ACCIONES",
+          "market": "BYMA",
+          "settlement": "A-24HS",
+          "date": "2026-09-30",
+          "open": 50.0,
+          "high": 50.0,
+          "low": 50.0,
+          "close": 50.0,
+          "volume": 1000.0,
+          "source": "YAHOO",
+          "adjusted": 1,
+          "source_rank": 90,
+          "observed_at": "2026-10-01T17:00:00Z",
+          "version_id": 2
+        },
+        {
+          "symbol": "AUDIT",
+          "instrument_type": "ACCIONES",
+          "market": "BYMA",
+          "settlement": "A-24HS",
+          "date": "2026-09-30",
+          "open": 50.0,
+          "high": 50.0,
+          "low": 50.0,
+          "close": 50.0,
+          "volume": 1000.0,
+          "source": "YAHOO",
+          "adjusted": 1,
+          "source_rank": 90,
+          "observed_at": "2026-10-01T17:00:00Z",
+          "version_id": 2
+        }
+      ]
+    },
+    {
+      "id": "H_REINGEST_REFRESH",
+      "execution": "COMPLETED",
+      "result": {
+        "first": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+        },
+        "repeat": {
+          "version_id": 1,
+          "version_appended": false,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+        },
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-02T19:00:00+00:00",
+            "version_id": 1
+          }
+        ],
+        "versions": [
+          {
+            "id": 1,
+            "observed_at": "2026-10-01T16:00:00+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_TIMEZONE_LEXICAL",
+      "execution": "COMPLETED",
+      "result": {
+        "later_absolute_should_be": 101,
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_CURRENCY_COLLISION",
+      "execution": "COMPLETED",
+      "result": {
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "close": 1.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-02T16:00:00Z",
+            "version_id": 2
+          }
+        ],
+        "versions": [
+          {
+            "id": 1,
+            "metadata_json": "{\"currency\":\"ARS\"}"
+          },
+          {
+            "id": 2,
+            "metadata_json": "{\"currency\":\"USD\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "H_SETTLEMENT_ISOLATION_CONTROL",
+      "execution": "COMPLETED",
+      "result": {
+        "canonical_rows": 2
+      }
+    },
+    {
+      "id": "H_DUPLICATE_CONFLICT_ABA",
+      "execution": "COMPLETED",
+      "result": {
+        "calls": [
+          {
+            "version_id": 1,
+            "version_appended": true,
+            "canonical_updated": true,
+            "source_rank": 10,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+          },
+          {
+            "version_id": 1,
+            "version_appended": false,
+            "canonical_updated": true,
+            "source_rank": 10,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+          },
+          {
+            "version_id": 2,
+            "version_appended": true,
+            "canonical_updated": true,
+            "source_rank": 10,
+            "payload_hash": "e18e7f46ffb8366cfcb068536bf76cc0e7ffbc97ab23806693c5b57231dbd346"
+          },
+          {
+            "version_id": 1,
+            "version_appended": false,
+            "canonical_updated": true,
+            "source_rank": 10,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+          }
+        ],
+        "versions": [
+          {
+            "id": 1,
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd",
+            "metadata_json": "{}"
+          },
+          {
+            "id": 2,
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 101.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "payload_hash": "e18e7f46ffb8366cfcb068536bf76cc0e7ffbc97ab23806693c5b57231dbd346",
+            "metadata_json": "{}"
+          }
+        ],
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-03T16:00:00Z",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "S_ATOMIC_CANONICAL_ABORT_CONTROL",
+      "execution": "COMPLETED",
+      "result": {
+        "outcome": {
+          "accepted": false,
+          "exception": "IntegrityError",
+          "reason": "injected crash"
+        },
+        "versions_after_abort": [],
+        "canonical": []
+      }
+    },
+    {
+      "id": "S_PARTIAL_BATCH_BOUNDARY",
+      "execution": "COMPLETED",
+      "result": {
+        "outcome": {
+          "accepted": false,
+          "exception": "ValueError",
+          "reason": "HISTORY_CLOSE_NONPOSITIVE"
+        },
+        "persisted": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "S_DB_LOCK_RECOVERY",
+      "execution": "COMPLETED",
+      "result": {
+        "outcome": {
+          "accepted": false,
+          "exception": "OperationalError",
+          "reason": "database is locked"
+        },
+        "elapsed_seconds": 0.30210428800000955,
+        "retry": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+        },
+        "canonical_count": 1,
+        "timeout_harness_seconds": 0.3
+      }
+    },
+    {
+      "id": "S_CONCURRENT_IDENTICAL_APPEND",
+      "execution": "COMPLETED",
+      "result": {
+        "calls": [
+          {
+            "accepted": true,
+            "value": {
+              "version_id": 2,
+              "version_appended": true,
+              "canonical_updated": true,
+              "source_rank": 10,
+              "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+            }
+          },
+          {
+            "accepted": true,
+            "value": {
+              "version_id": 1,
+              "version_appended": true,
+              "canonical_updated": true,
+              "source_rank": 10,
+              "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+            }
+          }
+        ],
+        "versions": [
+          {
+            "id": 1,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+          },
+          {
+            "id": 2,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+          }
+        ],
+        "canonical": [
+          {
+            "symbol": "AUDIT",
+            "instrument_type": "ACCIONES",
+            "market": "BYMA",
+            "settlement": "A-24HS",
+            "date": "2026-09-30",
+            "open": 100.0,
+            "high": 102.0,
+            "low": 98.0,
+            "close": 100.0,
+            "volume": 1000.0,
+            "source": "PPI_API",
+            "adjusted": 0,
+            "source_rank": 10,
+            "observed_at": "2026-10-01T16:00:00+00:00",
+            "version_id": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "PPI_VALID_duplicate_exact",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [
+          {
+            "index": 1,
+            "reason": "DUPLICATE_DATE"
+          }
+        ],
+        "provider_rows": 2,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_ROWS_WITH_REJECTIONS"
+      }
+    },
+    {
+      "id": "PPI_VALID_duplicate_conflict",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [
+          {
+            "index": 1,
+            "reason": "DUPLICATE_DATE"
+          }
+        ],
+        "provider_rows": 2,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_ROWS_WITH_REJECTIONS"
+      }
+    },
+    {
+      "id": "PPI_VALID_same_instant_offset",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-30T20:00:00+00:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 2,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T20:00:00+00:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_same_day_different_hour",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T16:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 2,
+        "first_date": "2026-09-30T16:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_future",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "DATE_IN_FUTURE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_weekend",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-27",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 1,
+        "first_date": "2026-09-27T00:00:00-03:00",
+        "last_date": "2026-09-27T00:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_holiday_calendar_absent",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-07-09",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 1,
+        "first_date": "2026-07-09T00:00:00-03:00",
+        "last_date": "2026-07-09T00:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_ten_missing_sessions",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-01",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-16",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 2,
+        "first_date": "2026-09-01T00:00:00-03:00",
+        "last_date": "2026-09-16T00:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_reverse_order",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-29",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-30",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 2,
+        "first_date": "2026-09-29T00:00:00-03:00",
+        "last_date": "2026-09-30T00:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_partial",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [
+          {
+            "index": 1,
+            "reason": "CLOSE_NONPOSITIVE"
+          }
+        ],
+        "provider_rows": 2,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_ROWS_WITH_REJECTIONS"
+      }
+    },
+    {
+      "id": "PPI_VALID_ten_bars",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-01T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-02T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-03T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-04T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-05T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-06T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-07T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-08T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-09T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          },
+          {
+            "date": "2026-09-10T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 10,
+        "first_date": "2026-09-01T17:00:00-03:00",
+        "last_date": "2026-09-10T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_empty",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [],
+        "provider_rows": 0,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_wrong_shape",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": -1,
+            "reason": "PAYLOAD_NOT_LIST"
+          }
+        ],
+        "provider_rows": 0,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_naive",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 1,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_zero",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "CLOSE_NONPOSITIVE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_negative",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "CLOSE_NONPOSITIVE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_nan",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "CLOSE_NONFINITE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_infinity",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "CLOSE_NONFINITE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_high_below_low",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "OHLC_INCONSISTENT"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_open_outside",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "OHLC_INCONSISTENT"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_close_outside",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "OHLC_INCONSISTENT"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_negative_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "VOLUME_NEGATIVE"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_zero_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 100,
+            "max": 102,
+            "min": 98,
+            "price": 100,
+            "volume": 0
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 1,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "PPI_VALID_missing_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [],
+        "rejected_rows": [
+          {
+            "index": 0,
+            "reason": "VOLUME_MISSING"
+          }
+        ],
+        "provider_rows": 1,
+        "first_date": null,
+        "last_date": null,
+        "context": "NO_VALID_HISTORY",
+        "quality": "EMPTY_OR_INVALID"
+      }
+    },
+    {
+      "id": "PPI_VALID_x10",
+      "execution": "COMPLETED",
+      "result": {
+        "valid_rows": [
+          {
+            "date": "2026-09-30T17:00:00-03:00",
+            "openingPrice": 1000,
+            "max": 1020,
+            "min": 980,
+            "price": 1000,
+            "volume": 1000
+          }
+        ],
+        "rejected_rows": [],
+        "provider_rows": 1,
+        "first_date": "2026-09-30T17:00:00-03:00",
+        "last_date": "2026-09-30T17:00:00-03:00",
+        "context": "INSUFFICIENT_CONTEXT",
+        "quality": "VALID_PAYLOAD"
+      }
+    },
+    {
+      "id": "L_SHADOW_FUTURE_DOWNLOAD",
+      "execution": "COMPLETED",
+      "result": {
+        "decision_at": "2026-10-02T16:00:00.000000+00:00",
+        "downloaded_at": "2026-10-04T16:00:00.000000+00:00",
+        "feature": {
+          "state": "READY",
+          "observations": 20,
+          "trend_20": "0",
+          "trend_50": null,
+          "avg_range": "0.040816326530612244897959184",
+          "avg_abs_return": "0"
+        }
+      }
+    },
+    {
+      "id": "H_SHADOW_DUPLICATE_DAYS",
+      "execution": "COMPLETED",
+      "result": {
+        "state": "READY",
+        "observations": 20,
+        "trend_20": "0",
+        "trend_50": null,
+        "avg_range": "0.040816326530612244897959184",
+        "avg_abs_return": "0"
+      }
+    },
+    {
+      "id": "C_SHADOW_REVISION_MULTIPLICATION",
+      "execution": "COMPLETED",
+      "result": {
+        "archive_bars": 1,
+        "shadow": {
+          "state": "READY",
+          "observations": 15,
+          "momentum_3v15": "-0.0560747663551401869158878505",
+          "avg_range_5m": "0.01889936382200956748014735507",
+          "last_bar_close": "100"
+        }
+      }
+    },
+    {
+      "id": "C_SHADOW_SUPERSEDED_VALID_VERSION",
+      "execution": "COMPLETED",
+      "result": {
+        "archive_bars": [],
+        "shadow": {
+          "state": "CANDLE_INSUFFICIENT",
+          "observations": 1,
+          "momentum_3v15": null,
+          "avg_range_5m": "0.020202020202020202020202020",
+          "last_bar_close": "100"
+        }
+      }
+    },
+    {
+      "id": "C_CONTROL_future_bar",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "Barra aún abierta: no se publica como cerrada"
+      }
+    },
+    {
+      "id": "C_CONTROL_sample_as_complete",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "Volumen sin unidad: conservar en raw, no interpretar"
+      }
+    },
+    {
+      "id": "C_CONTROL_unknown_volume_unit",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "Volumen sin unidad: conservar en raw, no interpretar"
+      }
+    },
+    {
+      "id": "C_CONTROL_partial_price_nan",
+      "execution": "COMPLETED",
+      "result": {
+        "accepted": false,
+        "exception": "ValueError",
+        "reason": "close: valor fuera de rango"
+      }
+    },
+    {
+      "id": "C_ASOF_AND_CORRECTION_CONTROLS",
+      "execution": "COMPLETED",
+      "result": {
+        "before": [
+          {
+            "close": "100",
+            "end": "2026-10-02T15:05:00.000000+00:00",
+            "high": "101",
+            "low": "99",
+            "open": "100",
+            "quality": "COMPLETE",
+            "samples": 0,
+            "start": "2026-10-02T15:00:00.000000+00:00",
+            "synthetic": false,
+            "trades": null,
+            "volume": "100",
+            "vwap": null,
+            "known_at": "2026-10-02T15:06:00.000000+00:00",
+            "version_id": 1,
+            "series_id": "590f10e69c163aba0f8037a48adfb9c91469a7714e1cd27faf15771f1c9ef4d6"
+          }
+        ],
+        "after": [
+          {
+            "close": "110",
+            "end": "2026-10-02T15:05:00.000000+00:00",
+            "high": "111",
+            "low": "109",
+            "open": "110",
+            "quality": "COMPLETE",
+            "samples": 0,
+            "start": "2026-10-02T15:00:00.000000+00:00",
+            "synthetic": false,
+            "trades": null,
+            "volume": "100",
+            "vwap": null,
+            "known_at": "2026-10-02T15:10:00.000000+00:00",
+            "version_id": 2,
+            "series_id": "590f10e69c163aba0f8037a48adfb9c91469a7714e1cd27faf15771f1c9ef4d6"
+          }
+        ],
+        "backdate": {
+          "accepted": false,
+          "exception": "ValueError",
+          "reason": "Revisión retroactiva: disponibilidad anterior a la última versión"
+        },
+        "same_timestamp": {
+          "accepted": false,
+          "exception": "ValueError",
+          "reason": "Dos versiones distintas con la misma disponibilidad"
+        }
+      }
+    },
+    {
+      "id": "SC_regular",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_same_minute_15_points",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:59:10.000000+00:00",
+        "last_event": "2026-10-02T15:59:38.000000+00:00",
+        "elapsed_minutes": 0.4666666666666667,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_irregular_43_minutes",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:17:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 42.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_stale_tail_20_minutes",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:26:00.000000+00:00",
+        "last_event": "2026-10-02T15:40:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_future_received",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_open_minute",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "BUY_CANDIDATE",
+        "first_event": "2026-10-02T15:45:59.000000+00:00",
+        "last_event": "2026-10-02T15:59:59.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "BUY_CANDIDATE",
+            "score": "1",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "VALIDATED_SCALPING_CANDIDATE",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": true, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_zero_volume",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "HOLD",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "HOLD",
+            "score": "1",
+            "price": "114",
+            "volume": "0",
+            "points": 15,
+            "reason": "NO_RECENT_VOLUME",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"modeled_roundtrip_fraction\": \"0.016216956521739130434782609\", \"momentum\": \"0.056074766355140186915887850\", \"observed_15m_range_fraction\": \"0.14\", \"passed\": false, \"required_move_fraction\": \"0.021216956521739130434782609\", \"spread_fraction\": \"0.000086956521739130434782609\"}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_crossed_book",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "HOLD",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "HOLD",
+            "score": "0",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "CROSSED_BOOK",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"passed\": false}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_stale_book",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "HOLD",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "HOLD",
+            "score": "0",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "STALE_BOOK",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"passed\": false}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_future_book",
+      "execution": "COMPLETED",
+      "result": {
+        "action": "HOLD",
+        "first_event": "2026-10-02T15:45:00.000000+00:00",
+        "last_event": "2026-10-02T15:59:00.000000+00:00",
+        "elapsed_minutes": 14.0,
+        "candidate": [
+          {
+            "id": 1,
+            "evaluated_at": "2026-10-02T16:00:00.000000+00:00",
+            "symbol": "AUDIT",
+            "asset_class": "ACCIONES",
+            "market": "BYMA",
+            "currency": "ARS",
+            "settlement": "A-24HS",
+            "action": "HOLD",
+            "score": "0",
+            "price": "114",
+            "volume": "1",
+            "points": 15,
+            "reason": "STALE_BOOK",
+            "economics_json": "{\"binding\": true, \"execution_enabled\": false, \"passed\": false}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "SC_NORMALIZE_DUPLICATE_MINUTES",
+      "execution": "COMPLETED",
+      "result": {
+        "distinct_minutes": 1,
+        "normalization": {
+          "accepted": true,
+          "value": [
+            [
+              "2026-10-02T15:59:10.000000+00:00",
+              "100",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:12.000000+00:00",
+              "101",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:14.000000+00:00",
+              "102",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:16.000000+00:00",
+              "103",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:18.000000+00:00",
+              "104",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:20.000000+00:00",
+              "105",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:22.000000+00:00",
+              "106",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:24.000000+00:00",
+              "107",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:26.000000+00:00",
+              "108",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:28.000000+00:00",
+              "109",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:30.000000+00:00",
+              "110",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:32.000000+00:00",
+              "111",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:34.000000+00:00",
+              "112",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:36.000000+00:00",
+              "113",
+              "1"
+            ],
+            [
+              "2026-10-02T15:59:38.000000+00:00",
+              "114",
+              "1"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "SC_VOLUME_FALSE_NEGATIVE",
+      "execution": "COMPLETED",
+      "result": {
+        "true_fixture_semantics": "monotone_interval",
+        "first": {
+          "state": "PENDING_LIVE_CONFIRMATION",
+          "inserted": 6,
+          "stable": 0,
+          "changed": 0,
+          "refreshed": 0,
+          "down_steps": 0
+        },
+        "second": {
+          "state": "PENDING_LIVE_CONFIRMATION",
+          "inserted": 1,
+          "stable": 6,
+          "changed": 0,
+          "refreshed": 0,
+          "down_steps": 0
+        }
+      }
+    },
+    {
+      "id": "SC_VOLUME_FALSE_POSITIVE",
+      "execution": "COMPLETED",
+      "result": {
+        "true_fixture_semantics": "cumulative_with_reset",
+        "first": {
+          "state": "PENDING_LIVE_CONFIRMATION",
+          "inserted": 6,
+          "stable": 0,
+          "changed": 0,
+          "refreshed": 0,
+          "down_steps": 1
+        },
+        "second": {
+          "state": "CONFIRMED_INTERVAL_VOLUME",
+          "inserted": 1,
+          "stable": 6,
+          "changed": 0,
+          "refreshed": 0,
+          "down_steps": 1
+        }
+      }
+    },
+    {
+      "id": "L_SC_MUTABLE_NO_VERSION",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "symbol": "AUDIT",
+          "asset_class": "ACCIONES",
+          "market": "BYMA",
+          "currency": "ARS",
+          "settlement": "A-24HS",
+          "event_at": "2026-10-02T15:59:00.000000+00:00",
+          "price": "110",
+          "volume": "2",
+          "first_received_at": "2026-10-02T15:59:30.000000+00:00",
+          "last_verified_at": "2026-10-02T16:00:00.000000+00:00",
+          "source": "PPI_MARKETDATA_INTRADAY"
+        }
+      ]
+    },
+    {
+      "id": "ABLATION_MAIN_A_H",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "pattern": "up",
+          "variant": "A",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "B",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_UNAVAILABLE",
+                "observations": 0
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "C",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "D",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_INSUFFICIENT",
+                "observations": 13,
+                "trend_20": null,
+                "trend_50": null,
+                "avg_range": "0.01810058255605519026383582954",
+                "avg_abs_return": "0.018088209770438631608375514"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "E",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "F",
+          "action": "HOLD",
+          "score": "0",
+          "reason": "Aprendiendo serie: 4/8 muestras",
+          "features": {
+            "samples": 4
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "G",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "CANDLE_INSUFFICIENT",
+                "observations": 0,
+                "momentum_3v15": null,
+                "avg_range_5m": null,
+                "last_bar_close": null
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "up",
+          "variant": "H",
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "reason": "Momentum positivo y friccion admisible",
+          "features": {
+            "sma3": "103.6",
+            "sma8": "103.1",
+            "momentum": "0.004849660523763336566440349",
+            "spread": "0.000096339113680154142581888",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.693023029813731921231795080",
+              "score_threshold": "0.62",
+              "spread_bps": "0.963391136801541425818880000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY",
+            "macro_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "NONE",
+              "source": "NONE"
+            },
+            "gdelt_risk_shadow": {
+              "mode": "RETIRED",
+              "state": "DEPRECATED_EXCLUDED",
+              "reason": "RETIRED_OPERATOR_DECISION_2026-10-02",
+              "decision_effect": "EXCLUDED",
+              "source": "NONE"
+            }
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "A",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "B",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_UNAVAILABLE",
+                "observations": 0
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "C",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "D",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_INSUFFICIENT",
+                "observations": 13,
+                "trend_20": null,
+                "trend_50": null,
+                "avg_range": "0.01810058255605519026383582954",
+                "avg_abs_return": "0.018088209770438631608375514"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "E",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "F",
+          "action": "HOLD",
+          "score": "0",
+          "reason": "Aprendiendo serie: 4/8 muestras",
+          "features": {
+            "samples": 4
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "G",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "CANDLE_INSUFFICIENT",
+                "observations": 0,
+                "momentum_3v15": null,
+                "avg_range_5m": null,
+                "last_bar_close": null
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "flat",
+          "variant": "H",
+          "action": "HOLD",
+          "score": "0.4990",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "100",
+            "sma8": "100",
+            "momentum": "0",
+            "spread": "0.0001",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.4990",
+              "score_threshold": "0.62",
+              "spread_bps": "1.0000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "BUY"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "A",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "B",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_UNAVAILABLE",
+                "observations": 0
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "C",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "D",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "HISTORY_INSUFFICIENT",
+                "observations": 13,
+                "trend_20": null,
+                "trend_50": null,
+                "avg_range": "0.01810058255605519026383582954",
+                "avg_abs_return": "0.018088209770438631608375514"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "E",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "F",
+          "action": "HOLD",
+          "score": "0",
+          "reason": "Aprendiendo serie: 4/8 muestras",
+          "features": {
+            "samples": 4
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "G",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "INSUFFICIENT_DATA",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "CANDLE_INSUFFICIENT",
+                "observations": 0,
+                "momentum_3v15": null,
+                "avg_range_5m": null,
+                "last_bar_close": null
+              },
+              "shadow_score_delta": "0",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        },
+        {
+          "pattern": "down",
+          "variant": "H",
+          "action": "HOLD",
+          "score": "0.2925621501472894661749150920",
+          "reason": "Score paper debajo del umbral versionado",
+          "features": {
+            "sma3": "96.4",
+            "sma8": "96.9",
+            "momentum": "-0.0051599587203302373581011352",
+            "spread": "0.000103950103950103950103950",
+            "samples": 20,
+            "signal_window_minutes": 90,
+            "paper_threshold": "0.62",
+            "candidate": {
+              "action": "BUY",
+              "score": "0.2925621501472894661749150920",
+              "score_threshold": "0.62",
+              "spread_bps": "1.039501039501039501039500000",
+              "max_spread_bps": "200",
+              "confirmation_count": 20,
+              "required_confirmations": 8
+            },
+            "hard_safety": {
+              "operational_scope": true,
+              "quote_identity": true,
+              "market_admission": true,
+              "real_orders_blocked": true
+            },
+            "historical_candle_shadow": {
+              "mode": "SHADOW",
+              "state": "READY",
+              "identity": [
+                "AUDIT",
+                "ACCIONES",
+                "BYMA",
+                "ARS",
+                "A-24HS"
+              ],
+              "as_of": "2026-10-02T16:00:00+00:00",
+              "history": {
+                "state": "READY",
+                "observations": 25,
+                "trend_20": "0.180952380952380952380952381",
+                "trend_50": null,
+                "avg_range": "0.01809464361895924210921487808",
+                "avg_abs_return": "0.009003418130665851056461873542"
+              },
+              "candles_5m": {
+                "state": "READY",
+                "observations": 15,
+                "momentum_3v15": "0.056074766355140186915887850",
+                "avg_range_5m": "0.01889936382200956748014735507",
+                "last_bar_close": "114"
+              },
+              "shadow_score_delta": "0.15",
+              "decision_effect": "OBSERVE_ONLY",
+              "lookahead_protection": "bar_end_and_known_at<=as_of",
+              "feature_version": "rc6-historical-candle-shadow-v2"
+            },
+            "decision_shadow": "HOLD"
+          }
+        }
+      ]
+    },
+    {
+      "id": "M_INDICATOR_IDENTITIES",
+      "execution": "COMPLETED",
+      "result": {
+        "SMA20": 120.5,
+        "expected_SMA20": 120.5,
+        "EMA14": 123.50000000000001,
+        "expected_EMA14": 123.5,
+        "RSI14_monotone": 100.0,
+        "RSI14_flat": 50.0,
+        "ATR14": 4.0,
+        "expected_ATR14": 4,
+        "return20": 0.18181818181818188,
+        "expected_return20": 0.18181818181818188,
+        "drawdown_fixture": -0.25
+      }
+    },
+    {
+      "id": "M_GREEKS_FINITE_DIFFERENCES",
+      "execution": "COMPLETED",
+      "result": {
+        "volatilidad_implicita": 0.4,
+        "delta": 0.5336,
+        "gamma": 0.024512,
+        "theta_diario": -0.0923,
+        "vega": 0.1612,
+        "valor_intrinseco": 0.0,
+        "valor_temporal": 6.487418071362242,
+        "volatilidad_historica": null,
+        "prima_cara_o_barata": "",
+        "ratio_iv_historica": null,
+        "convergio": true,
+        "advertencias": [
+          "Sin volatilidad histórica del subyacente: no se puede decir si la prima está cara o barata, solo cuánta volatilidad implica.",
+          "Griegas orientativas: modelo europeo sin dividendos sobre un mercado poco líquido. Sirven para comparar opciones entre sí y detectar primas absurdas, no para cobertura fina."
+        ],
+        "motivo": "",
+        "independent_finite_difference": {
+          "delta": 0.5336010215977183,
+          "gamma": 0.024511898288892553,
+          "vega_per_percentage_point": 0.16117407338050782,
+          "theta_day": -0.09225035340931106
+        },
+        "put_call_parity_error": 0.0
+      }
+    },
+    {
+      "id": "M_EUROPEAN_PUT_WRAPPER",
+      "execution": "COMPLETED",
+      "result": {
+        "model_price": 6.671575834616235,
+        "intrinsic": 20,
+        "iv_direct": 0.1000000461935997,
+        "wrapper": {
+          "volatilidad_implicita": null,
+          "delta": null,
+          "gamma": null,
+          "theta_diario": null,
+          "vega": null,
+          "valor_intrinseco": 20,
+          "valor_temporal": -13.328424165383765,
+          "volatilidad_historica": null,
+          "prima_cara_o_barata": "",
+          "ratio_iv_historica": null,
+          "convergio": false,
+          "advertencias": [
+            "Prima sin valor temporal."
+          ],
+          "motivo": "La prima no tiene valor temporal: está en o por debajo de su valor intrínseco. No hay volatilidad que despejar. Suele indicar un dato viejo o una punta sin profundidad real."
+        }
+      }
+    },
+    {
+      "id": "M_CAUCION_DAY_COUNT",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "basis": 360,
+          "days": 3,
+          "result": [
+            "250.00",
+            "0.00",
+            "250.00"
+          ],
+          "reference": "250.00"
+        },
+        {
+          "basis": 365,
+          "days": 3,
+          "result": [
+            "246.58",
+            "0.00",
+            "246.58"
+          ],
+          "reference": "246.58"
+        }
+      ]
+    },
+    {
+      "id": "U_IOL_CASH_AS_VOLUME",
+      "execution": "COMPLETED",
+      "result": {
+        "input_price": 100,
+        "input_cash_turnover": 100000,
+        "input_quantity": 1000,
+        "normalized_volume": 100000,
+        "multiply_price_volume": 10000000,
+        "overstatement_factor": 100.0
+      }
+    },
+    {
+      "id": "S_PROVIDER_FAULTS",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "kind": "timeout",
+          "calls": 5,
+          "simulated_sleep_seconds": [
+            3,
+            6,
+            9,
+            12
+          ],
+          "result": {
+            "accepted": false,
+            "exception": "RuntimeError",
+            "reason": "injected provider timeout"
+          }
+        },
+        {
+          "kind": "429",
+          "calls": 5,
+          "simulated_sleep_seconds": [
+            5,
+            10,
+            15,
+            20,
+            25
+          ],
+          "result": {
+            "accepted": false,
+            "exception": "RuntimeError",
+            "reason": "Data912 no respondió para /synthetic"
+          }
+        },
+        {
+          "kind": "empty",
+          "calls": 1,
+          "simulated_sleep_seconds": [],
+          "result": {
+            "accepted": true,
+            "value": []
+          }
+        },
+        {
+          "kind": "partial",
+          "calls": 1,
+          "simulated_sleep_seconds": [],
+          "result": {
+            "accepted": true,
+            "value": [
+              {
+                "date": "2026-09-30",
+                "c": 100
+              },
+              {
+                "date": "2026-09-29",
+                "c": -1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "H_DATA912_VALIDATION",
+      "execution": "COMPLETED",
+      "result": {
+        "future": [
+          [
+            "2099-01-01",
+            100.0,
+            102.0,
+            98.0,
+            100.0,
+            1.0
+          ]
+        ],
+        "nan": [
+          [
+            "2026-09-30",
+            100.0,
+            102.0,
+            98.0,
+            NaN,
+            1.0
+          ]
+        ],
+        "invalid_ohlc": [
+          [
+            "2026-09-30",
+            100.0,
+            90.0,
+            98.0,
+            100.0,
+            1.0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "H_LEGACY_ASSET_CLASS_COLLISION",
+      "execution": "COMPLETED",
+      "result": {
+        "rows_after_two_family_writes": [
+          [
+            "AUDIT",
+            "ACCIONES",
+            "2026-09-30",
+            1.0,
+            "DATA912",
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "id": "U_IOL_ARCHIVED_LIQUIDITY",
+      "execution": "COMPLETED",
+      "result": {
+        "cash_turnover_true_synthetic": 100000,
+        "archived_liquidity_result": 10000000.0,
+        "legacy_record": [
+          "2026-09-30",
+          100,
+          100,
+          100,
+          100,
+          100000
+        ]
+      }
+    },
+    {
+      "id": "M_MAIN_SAMPLE_CADENCE",
+      "execution": "COMPLETED",
+      "result": [
+        {
+          "time_span_minutes": 90,
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "samples": 20
+        },
+        {
+          "time_span_minutes": 1,
+          "action": "BUY",
+          "score": "0.693023029813731921231795080",
+          "samples": 20
+        }
+      ]
+    },
+    {
+      "id": "M_FIXED_INCOME_ANNUAL_LABEL",
+      "execution": "COMPLETED",
+      "result": {
+        "performance_label": true,
+        "coupon_exclusion_near_performance": false,
+        "no_buy_sell_instruction": true,
+        "preview": "<h2>AUDIT — BONOS</h2><p class='paper-muted'>Mercado BYMA · Liquidación A-24HS · Serie 2026-09-01 a 2026-09-20</p><div class='paper-warning'><b>Serie anual parcial: no había cierre previo al 1 de enero.</b></div><div class='analysis-grid'><article class='paper-card'><h2>Performance 2026</h2><p class='analysis-value'>-4,75%</p><p class='paper-muted'>Base: primera barra disponible (serie parcial); último cierre: 2026-09-20</p></article><article class='paper-card'><h2>Máxima caída del año</h2><p class='analysis-value'>-4,75%</p><p class='paper-muted'>Drawdown calculado con cierres diarios desde e"
+      }
+    },
+    {
+      "id": "S_HEARTBEAT_NO_PROGRESS",
+      "execution": "COMPLETED",
+      "result": {
+        "first": {
+          "cursor": 0,
+          "accepted": 0,
+          "rejected": 0,
+          "versions": 0,
+          "state": "RUNNING"
+        },
+        "second": {
+          "cursor": 0,
+          "accepted": 0,
+          "rejected": 0,
+          "versions": 0,
+          "state": "RUNNING"
+        },
+        "worker": [
+          {
+            "id": 1,
+            "cursor": 0,
+            "heartbeat_at": "2026-10-02T16:01:00.000000+00:00",
+            "state": "RUNNING",
+            "detail": "0 lecturas aceptadas; 0 rechazadas; 0 versiones"
+          }
+        ]
+      }
+    },
+    {
+      "id": "S_CRASH_AFTER_VERSION_INSERT",
+      "execution": "COMPLETED",
+      "result": {
+        "child_exitcode": 79,
+        "versions_after_restart": [],
+        "canonical_after_restart": [],
+        "retry": {
+          "version_id": 1,
+          "version_appended": true,
+          "canonical_updated": true,
+          "source_rank": 10,
+          "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd"
+        },
+        "versions_after_retry": 1
+      }
+    }
+  ]
+}

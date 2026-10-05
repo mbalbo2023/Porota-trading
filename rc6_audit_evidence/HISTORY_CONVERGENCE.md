@@ -446,3 +446,22 @@ financial reserves remain NO_VERIFICADO. A future destination must be reviewed
 and shared by observer/dashboard/pretransfer before activation. The old
 September21 cutoff COMPLETE/PK4 gate is advisory and cannot substitute for
 current five-field currency/basis coverage or confer READY_PAPER.
+
+The original AUD-468-20/21 evidence links are recovered in
+`history_convergence/ORIGINAL_AUD20_AUD21_REVIEW.md` and
+`history_convergence/original_prior_evidence_binding.json`. Literal complete
+original receipts preserve the 96 product and 90 candidate counts as received,
+including their explicit nonfinite JSON source bytes. An independent offline
+replay selects the unchanged original Data912 validation function and uses
+the complete c27 archive's native adapter/sink/schema APIs for 15 additional
+invocations and controls. These 16 invocations do not change original scenario
+IDs, 123 finding guards, 217 latest native nodes or the 390-node receipt union.
+
+The Data912 replay confirms prior invalid-input admissions and records
+successful sink rejection and provider retry controls separately. The AUD21
+receipt instead proves the availability of the dated 1/10 observability fact:
+7,728 READY, 1,989 four-field history matches and 5,739 without a match. All family
+sums agree. Its original database was not supplied for a new native JOIN
+replay; the receipt does not establish present coverage, actual 20 sessions,
+or a READY bug. Current exact-identity metric guards remain separate software
+evidence. No runtime/provider call or current dataset activation occurred.
