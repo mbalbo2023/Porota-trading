@@ -203,19 +203,39 @@ class Candle:
         _canonical_json(value.metadata or {})
 
 
-def _init_connection(connection):
+def _validate_existing_schema(connection):
     for name in ("history_versions_v2","history_canonical_v2"):
         cols={r[1] for r in connection.execute("PRAGMA table_info("+name+")")}
         required={"currency","price_basis","adjustment_basis","version_known_at","volume_kind"}
         if name=='history_versions_v2':required.add('previous_version_id')
         if cols and not required<=cols:
             raise ValueError("HISTORY_COPY_MIGRATION_REQUIRED")
+
+
+def _validate_initializer_schema(connection):
+    _validate_existing_schema(connection)
+    for name in ('history_close_versions_v1','history_close_canonical_v1'):
+        cols={r[1] for r in connection.execute('PRAGMA table_info('+name+')')}
+        if cols and ('currency' not in cols or (name=='history_close_versions_v1' and 'previous_version_id' not in cols)):
+            raise ValueError('HISTORY_CLOSE_COPY_MIGRATION_REQUIRED')
+
+
+def _init_connection(connection):
+    _validate_existing_schema(connection)
     for statement in DDL.split(";"):
         if statement.strip(): connection.execute(statement)
 
 
+def initialize_history_schema(store, apply):
+    prepare=getattr(store,'prepare_history_schema',None)
+    if callable(prepare):prepare(_validate_initializer_schema)
+    with store.connect() as connection:apply(connection)
+    finish=getattr(store,'finish_history_schema',None)
+    if callable(finish):finish()
+
+
 def init_schema(store):
-    with store.connect() as connection: _init_connection(connection)
+    initialize_history_schema(store,_init_connection)
 
 
 def source_rank(source):

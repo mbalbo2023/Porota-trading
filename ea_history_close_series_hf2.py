@@ -14,7 +14,7 @@ from hashlib import sha256
 import json
 from typing import Iterable, Mapping
 from zoneinfo import ZoneInfo
-from cu_history_store_v2_hf6 import Candle,instant,utc,resolve_legacy_currency
+from cu_history_store_v2_hf6 import Candle,instant,utc,resolve_legacy_currency,initialize_history_schema
 from bs_instrument_contracts import cash_currency
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -116,13 +116,14 @@ def _positive_close(value) -> float:
 
 
 def init_schema(store) -> None:
-    with store.connect() as c:
+    def apply(c):
         for table in ('history_close_versions_v1','history_close_canonical_v1'):
             columns={r[1] for r in c.execute('PRAGMA table_info('+table+')')}
             if columns and ('currency' not in columns or (table=='history_close_versions_v1' and 'previous_version_id' not in columns)):
                 raise ValueError('HISTORY_CLOSE_COPY_MIGRATION_REQUIRED')
         for statement in DDL.split(';'):
             if statement.strip(): c.execute(statement)
+    initialize_history_schema(store,apply)
 
 
 def extract_rejected_close_evidence(payload, rejected_rows, *, symbol: str,

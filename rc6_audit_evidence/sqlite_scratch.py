@@ -255,6 +255,8 @@ class _Lease:
         marker_fd = os.open(self.session / MARKER, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(marker_fd, "w", encoding="utf-8") as stream:
             json.dump(marker, stream, sort_keys=True, separators=(",", ":"))
+        self.marker_bytes = json.dumps(marker,sort_keys=True,separators=(",", ":")).encode()
+        self.marker_identity = _identity((self.session / MARKER).stat())
         self.check()
         return self.session
 
@@ -274,6 +276,13 @@ class _Lease:
                         raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
                     _private(entry.stat(follow_symlinks=False))
                     names.append(entry.name)
+            if MARKER not in names or not hasattr(self,'marker_identity'):
+                raise SnapshotError('SCRATCH_CUSTODY_UNVERIFIED')
+            marker_fd = os.open(MARKER,os.O_RDONLY | os.O_NOFOLLOW,dir_fd=descriptor)
+            with os.fdopen(marker_fd,'rb') as marker:
+                if (_identity(os.fstat(marker.fileno()))!=self.marker_identity
+                        or marker.read(4097)!=self.marker_bytes):
+                    raise SnapshotError('SCRATCH_CUSTODY_UNVERIFIED')
             # Validate the complete inventory before deleting any own member.
             for name in names:
                 os.unlink(name, dir_fd=descriptor)

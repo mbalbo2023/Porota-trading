@@ -357,3 +357,92 @@ cadence and observed consumer benefit therefore remain NO_VERIFICADO. The
 2026 BYMA calendar does not establish calendars for earlier years. Fixture
 GREEN proves the specified software controls; it does not prove market P&L,
 Sharpe, drawdown, break-even performance or production capacity.
+
+## Runtime scratch and canonical initializer corrections
+
+The canonical observer launcher used a 32MiB `/tmp` tmpfs, while the original
+copy helper selected the default temporary directory. The native 12,000-series
+fixture has a 73,646,080-byte MAIN. Earlier offline scale tests ran against a
+larger tmpfs and did not establish that the runtime copy could fit. Commit
+82c8787a adds private disk scratch, measured total occupation and a conservative
+`snapshot_peak_bytes` estimate. The same root belongs to the primary PAPER
+dataset; separate historical sources use that root, rather than inventing
+another Store or changing the authoritative source path.
+
+The runtime configuration is `POROTA_SQLITE_SCRATCH_ROOT`,
+`POROTA_SQLITE_SCRATCH_MAX_BYTES`, `POROTA_SQLITE_SCRATCH_RESERVE_BYTES` and
+`POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT`. The root is
+`artifact_root(cg_paper_workspace.database_path())/sqlite-read-scratch`, owned
+by the runtime UID with mode0700 and regular single-link mode0600 members.
+Volatile filesystems, aliases, incomplete configuration and unknown custody
+reject capture. One nonblocking lease serializes the current reader/source.
+The 512MiB total includes retained copies and regenerated WAL SHM; the 2GiB
+free-space reserve and10% free-inode floor remain separate. SQLite sorter work
+uses `temp_store=MEMORY` exclusively on the captured connection.
+
+Identified derived residue from a killed reader is preserved and counted. A
+new reader can proceed when residue plus the next conservative image fits the
+quota and actual free-space/inode reserves. Unknown or changed custody blocks
+reads and preserves the affected copy. Successful, failed and timed-out reads
+clean only their own verified session. No global TMPDIR, source SHM deletion,
+volume deletion or source SQLite opening is involved. With no runtime scratch
+configuration, the original temporary offline API remains available.
+
+`disk_scratch_native.json` records28 focal PASS, including disk-backed native
+12k/60k reading,32MiB rejection, strict source inventory and SIGKILL/restart.
+The first measured disk capture took0.903435s, occupied73,658,368 bytes and had
+a74,711,040-byte conservative estimate. The32MiB limit rejected in0.249018s
+without partial history. EXIT-9 retained86,016 bytes; an affordable restart
+completed while preserving both source and residue. These values describe
+fixtures on overlay storage, not current host capacity.
+
+The final scale receipt after the cleanup-custody correction reads12,000 rows
+from configured disk scratch in0.984931s, uses the same73,658,368-byte measured
+peak and preserves the full source inventory. The earlier PIT revision takes
+0.783425s; processing exhaustion returns no partial history in1.917101s;
+32MiB rejection takes0.242101s. The scoped final batches contain217 distinct
+PASS nodes (186 +27 with one overlap +5scale). Together with earlier immutable
+receipts, the exact-node matrix records390 distinct documented PASS nodes,
+21 findings and123 finding-specific guard nodes; no single390-test invocation
+is claimed.
+
+The canonical writer previously negotiated WAL before schema rejection. A
+synthetic DELETE-mode legacy MAIN changed its hash and acquired WAL/SHM before
+`HISTORY_COPY_MIGRATION_REQUIRED`; the archived MAIN+WAL case also mutated.
+An original-adapter reproduction makes all eight native rejection guards RED.
+`canonical_initialization_native.json` records their GREEN counterparts and
+strict before/after source inventories. The writer now inspects a verified
+copy before source SQLite, validates FULL and CLOSE_ONLY together, commits
+native DDL first and negotiates WAL only after success. Its initialized
+dataset inode avoids capturing again for every append/query. Schema checks
+still run on every init; replaced inodes and aliases require new preflight.
+Owned connections close when their context exits.
+
+`dry_run_canonical_initialization.json` repeats the three copy migrations and
+eight physical process exits with the updated dependency hashes. The semantic
+digest remains99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535.
+Each migration retains9 old FULL rows, maps4, quarantines5 and creates3
+canonical series;3 old CLOSE rows map2 and quarantine1. Each new destination
+is151,552 bytes. The fixture run used0.879639s wall,0.799323s parent CPU, a
+sampled2,215,936-byte allocation peak,2,405,425-byte Python allocation peak,
+58,859,520-byte parent RSS and24,678,400-byte child RSS. Two actual synthetic
+bundles were2,177 bytes each. Source hashes, modes, timestamps, inodes and
+member inventories remain equal. The default small offline probe can use
+tmpfs; its sampled occupation is not a real deployment disk-capacity claim.
+
+`future_deploy_history_plan.json` distinguishes native initialization from
+explicit migration and supplies the future operation order, exact destination
+inventories/process exits and capacity arithmetic. Automatic startup does not
+call `migrate_copy` or construct missing20-session histories. The actual source
+schema must be inventoried before proposing a destination: the migration
+fixture covers the original16-column FULL ABI. Extra legacy provider clocks,
+volume kind or basis columns stay in the preserved legacy table but are not
+automatically projected into active FULL rows. Existing native FULL fields
+remain unchanged when only legacy CLOSE tables require copy migration.
+
+Actual master ABI, shared selected HIST_DB_PATH, new copy destination, current
+cohort/cut/coverage, source weights, host bytes/inodes, image/bundle costs and
+financial reserves remain NO_VERIFICADO. A future destination must be reviewed
+and shared by observer/dashboard/pretransfer before activation. The old
+September21 cutoff COMPLETE/PK4 gate is advisory and cannot substitute for
+current five-field currency/basis coverage or confer READY_PAPER.

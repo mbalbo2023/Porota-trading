@@ -1,5 +1,4 @@
 """Native disk scratch, budget/custody failure and killed-reader recovery."""
-from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -188,6 +187,28 @@ def test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_dea
                 pass
     assert sorted(item.name for item in disk_root.iterdir()) == [scratch.LOCK]
     assert inventory(folder) == before
+
+
+@pytest.mark.parametrize('corruption',['hardlink','marker_replacement'])
+def test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read(tmp_path,disk_root,corruption):
+    folder,source=wal_transport(tmp_path)
+    before=inventory(folder)
+    captured=None
+    with pytest.raises(SnapshotError,match='SCRATCH_CUSTODY_UNVERIFIED'):
+        with readonly_copy(source,**options(disk_root)) as copied:
+            captured=Path(copied.execute('PRAGMA database_list').fetchone()[2])
+            if corruption=='hardlink':
+                os.link(captured,disk_root.parent/'retained-copy-alias')
+            else:
+                marker=captured.parent/scratch.MARKER
+                marker.write_bytes(b'unverifiable-custody-evidence')
+    assert captured.exists()
+    assert (captured.parent/scratch.MARKER).exists()
+    if corruption=='marker_replacement':
+        assert (captured.parent/scratch.MARKER).read_bytes()==b'unverifiable-custody-evidence'
+    with pytest.raises(SnapshotError,match='SCRATCH_CUSTODY_UNVERIFIED'):
+        with readonly_copy(source,**options(disk_root)):pass
+    assert inventory(folder)==before
 
 
 def test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart(tmp_path, disk_root, record_property):

@@ -432,6 +432,8 @@ def run_probe():
                     'production_capacity_gate':'NO_VERIFICADO; requires actual image + reserve + measured copy + two bundles'},
                 'source_code_sha256':{**{name:sha256(Path(module.__file__).read_bytes()).hexdigest()
                     for name,module in [('history',history), ('salvage',salvage), ('closes',closes), ('snapshot',snapshots)]},
+                    'sqlite_scratch':sha256(Path(snapshots.__file__).with_name('sqlite_scratch.py').read_bytes()).hexdigest(),
+                    'history_adapter':sha256(Path(history.__file__).with_name('cv_history_store_adapter_hf6.py').read_bytes()).hexdigest(),
                     'probe':sha256(Path(__file__).read_bytes()).hexdigest()}}
             return result
         finally:

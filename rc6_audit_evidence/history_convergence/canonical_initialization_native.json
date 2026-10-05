@@ -1,0 +1,3494 @@
+{
+  "baseline_sha": "0d661a6e0c95f3f43a14c1ae1483b54b18a8e526",
+  "contract": {
+    "cache": "One capture per Store/dataset inode initialization boundary. Each init still validates the live schema. No capture per append/query on the initialized Store.",
+    "cleanup": "Changed active scratch marker or hardlinked member preserves the private copy and blocks further custody-dependent reads.",
+    "connections": "The adapter closes its owned connections on context exit; inode replacement/aliases are rejected before opening.",
+    "native_wal": "Native DDL commits first; WAL negotiation follows success only.",
+    "prepare": "Canonical initializer inspects a verified private copy before source SQLite. It validates FULL and CLOSE_ONLY schemas together.",
+    "scope_limit": "Direct live writer connections are not filesystem-immutable copies. BF diagnostic-gate conversion is owned by root; source histories/export/preopen captured readers retain strict filesystem invariance."
+  },
+  "corpus": "SYNTHETIC_OFFLINE",
+  "external_limits": [
+    "Actual master schema/path/cohort/provider fields and host capacity remain NO_VERIFICADO.",
+    "No migration or source promotion was run on an actual dataset. Automatic init creates/checks native DDL; it never calls migrate_copy or constructs historical bars."
+  ],
+  "finding": "NEW_LEGACY_INIT_PRE_WAL_MUTATION",
+  "latest_scoped_verification": {
+    "distinct_tests": 217,
+    "failures": 0,
+    "note": "186 caller/custody +27snapshot/HF6/sampler with one overlap +5scale =217distinct. Earlier117 is retained as intermediate evidence."
+  },
+  "migration_receipt": "rc6_audit_evidence/history_convergence/dry_run_canonical_initialization.json",
+  "original_adapter_inventory_reproduction": {
+    "adapter_source": "git show baseline cv_history_store_adapter_hf6.py",
+    "baseline_adapter_sha256": "1d8fbabc60dbcf279dc2c78e6dfc1a6160e24af6266fa1fc1ac2583abfc04d4d",
+    "baseline_sha": "0d661a6e0c95f3f43a14c1ae1483b54b18a8e526",
+    "classification": "RED_ORIGINAL_CANONICAL_WRITE_ADAPTER",
+    "current_schema_gate": "cu_history_store_v2_hf6.py _validate_existing_schema",
+    "fixtures": [
+      {
+        "after": {
+          "legacy.sqlite": [
+            "e3a6026585f06559732d03ff717fdd17f3928c34a72b4047c79abae5bf4128dd",
+            33152,
+            16384,
+            539868,
+            1791180834788235701,
+            1791180834784555435,
+            1791180834784555435
+          ],
+          "legacy.sqlite-shm": [
+            "fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb",
+            33152,
+            32768,
+            539870,
+            1791180834788235701,
+            1791180834788235701,
+            1791180834788235701
+          ],
+          "legacy.sqlite-wal": [
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            33152,
+            0,
+            539869,
+            1791180834784555435,
+            1791180834784555435,
+            1791180834784555435
+          ]
+        },
+        "before": {
+          "legacy.sqlite": [
+            "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+            33152,
+            16384,
+            539868,
+            1791180834779948200,
+            1791180834784131750,
+            1791180834784131750
+          ]
+        },
+        "kind": "FULL",
+        "mode": "DELETE",
+        "reason": "HISTORY_COPY_MIGRATION_REQUIRED",
+        "source_unchanged": false
+      },
+      {
+        "after": {
+          "legacy.sqlite": [
+            "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+            33152,
+            4096,
+            539876,
+            1791180834798617371,
+            1791180834797626788,
+            1791180834797626788
+          ],
+          "legacy.sqlite-shm": [
+            "7686ec662ef0a1f6729a2064e148ea3233de1b2d30163d1e054adba83d2cc48e",
+            33152,
+            32768,
+            539873,
+            1791180834801078908,
+            1791180834801078908,
+            1791180834801078908
+          ],
+          "legacy.sqlite-wal": [
+            "09dcef5f62e2f62e9ca2d92fbe55ac2b11fec250276d19b627ef859f32d4098e",
+            33152,
+            24752,
+            539889,
+            1791180834801078908,
+            1791180834797734701,
+            1791180834797734701
+          ]
+        },
+        "before": {
+          "legacy.sqlite": [
+            "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+            33152,
+            4096,
+            539876,
+            1791180834794617395,
+            1791180834797626788,
+            1791180834797626788
+          ],
+          "legacy.sqlite-wal": [
+            "09dcef5f62e2f62e9ca2d92fbe55ac2b11fec250276d19b627ef859f32d4098e",
+            33152,
+            24752,
+            539889,
+            1791180834797626788,
+            1791180834797734701,
+            1791180834797734701
+          ]
+        },
+        "kind": "FULL",
+        "mode": "WAL_WITHOUT_SHM",
+        "reason": "HISTORY_COPY_MIGRATION_REQUIRED",
+        "source_unchanged": false
+      },
+      {
+        "after": {
+          "legacy.sqlite": [
+            "35247d6ddb0476257cb02d7de3def5d27c166db6f761d6095c9940c5d7a8df74",
+            33152,
+            16384,
+            539894,
+            1791180834814617270,
+            1791180834812421291,
+            1791180834812421291
+          ],
+          "legacy.sqlite-shm": [
+            "0086cfcbbe1bd96ff64c6e9d5c1b8e97ccf5501f9ff922f1d8d1e2fc9900e39c",
+            33152,
+            32768,
+            539896,
+            1791180834817960280,
+            1791180834817960280,
+            1791180834817960280
+          ],
+          "legacy.sqlite-wal": [
+            "1540c65cd1d4d71248df811b7fdde9ecac2a43cc583edc0481f2b38643af78c7",
+            33152,
+            119512,
+            539895,
+            1791180834814617270,
+            1791180834817960280,
+            1791180834817960280
+          ]
+        },
+        "before": {
+          "legacy.sqlite": [
+            "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+            33152,
+            16384,
+            539894,
+            1791180834806617320,
+            1791180834812015710,
+            1791180834812015710
+          ]
+        },
+        "kind": "CLOSE_ONLY",
+        "mode": "DELETE",
+        "reason": "NO_REJECTION",
+        "source_unchanged": false
+      },
+      {
+        "after": {
+          "legacy.sqlite": [
+            "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+            33152,
+            4096,
+            539901,
+            1791180834829772695,
+            1791180834829677633,
+            1791180834829677633
+          ],
+          "legacy.sqlite-shm": [
+            "248dc5946061f6f5886f5c1165e3f3ba830359433b1e11a6ee7a80a46554bd86",
+            33152,
+            32768,
+            539899,
+            1791180834831823294,
+            1791180834831823294,
+            1791180834831823294
+          ],
+          "legacy.sqlite-wal": [
+            "005c203c2c24930f90bc92c7a11a633b95e5c7a8a15f1788b034c336360254c6",
+            33152,
+            144232,
+            539902,
+            1791180834831823294,
+            1791180834831823294,
+            1791180834831823294
+          ]
+        },
+        "before": {
+          "legacy.sqlite": [
+            "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+            33152,
+            4096,
+            539901,
+            1791180834826617194,
+            1791180834829677633,
+            1791180834829677633
+          ],
+          "legacy.sqlite-wal": [
+            "d78db7ec1398244964b46144722b4e9fd15cf0d0241eb63774155ce8e8da01f5",
+            33152,
+            24752,
+            539902,
+            1791180834829677633,
+            1791180834829772695,
+            1791180834829772695
+          ]
+        },
+        "kind": "CLOSE_ONLY",
+        "mode": "WAL_WITHOUT_SHM",
+        "reason": "NO_REJECTION",
+        "source_unchanged": false
+      }
+    ]
+  },
+  "rca": "The canonical HistoricalStore opened the source and negotiated WAL before CU/EA schema validation rejected legacy. This changed MAIN/header/atime and created source sidecars; close-only legacy could also receive native FULL DDL before its own rejection.",
+  "receipts": {
+    "GREEN_CURRENT_SNAPSHOT_HF6_AND_SAMPLER": {
+      "failures": 0,
+      "junit_sha256": "6879b2189b00690369af31def45f0e3583eaf9d8339122b59026ef81742ad344",
+      "testcases": [
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[nan]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_platform_without_atime_preservation_fails_closed",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[hardlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_execution_is_permanently_disabled",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_partial_payload_salvages_valid_rows_without_inventing",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_context_thresholds_match_audited_policy",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_collection_does_not_equal_ready_paper",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_fallback_only_supported_families_and_under_90",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconciler_uses_porota_universe_with_full_identity",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconcile_priority_prefers_empty_then_low_context",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_v2_identity_prevents_cross_family_collision",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_cannot_replace_ppi_but_version_is_preserved",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_adjusted_series_is_preserved_separately_without_replacing_raw",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_caucion_rate_is_dynamic_not_static_contract",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_futures_margin_is_dynamic_and_contract_multiplier_is_static",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_complete_static_contract_does_not_expire_only_by_age",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_duplicate_spot_dynamic_flags_do_not_block_contract_candidate",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_contract_missing_stays_fail_closed_before_dynamic_layer",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_unknown_source_class_is_ignored_fail_closed",
+          "seconds": 0.0,
+          "status": "PASS"
+        }
+      ],
+      "tests": 27
+    },
+    "GREEN_FINAL_DISK_SCALE": {
+      "failures": 0,
+      "junit_sha256": "171a07d2661e0d73bc2a37f596be4e7f0a2786f893a8d792bf92faacc5eca0bc",
+      "testcases": [
+        {
+          "failure": null,
+          "properties": {
+            "large_native_measurement": {
+              "accepted_history": 12000,
+              "cpu_seconds": 0.8799181709999999,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "rows_read": 12000,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                14.0
+              ],
+              "wall_seconds": 0.8807318489998579
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+          "seconds": 20.836,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "large_native_measurement": {
+              "accepted_history": 12000,
+              "cpu_seconds": 0.7827542549999968,
+              "cutoff": "2026-10-01T16:00:02.999999Z",
+              "rows_read": 12000,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                12.0
+              ],
+              "wall_seconds": 0.7834248130020569
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+          "seconds": 0.901,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "large_native_fixture_batches": [
+              {
+                "elapsed_seconds": 2.6577836249998654,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 5.995500692002679,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 9.66937137900095,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 13.308724556001835,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 16.46595423100007,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 19.62019374800002,
+                "rows": 10000
+              }
+            ],
+            "large_native_measurement": {
+              "accepted_history": 0,
+              "cpu_seconds": 1.915672090000001,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "rows_read": 2563,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [
+                "history:TIME_BUDGET_EXHAUSTED"
+              ],
+              "volumes": [],
+              "wall_seconds": 1.917101000999537
+            },
+            "large_native_source_inventory": {
+              "history.sqlite": [
+                "ef2f4f20b5200126a49f79886567286ee85df2bfc68130404d97a7f99e2ccbc0",
+                33188,
+                73646080,
+                540685,
+                1791181890308736358,
+                1791181890232736934,
+                1791181890232736934
+              ]
+            },
+            "large_native_validations_before_deadline": 2563
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+          "seconds": 2.028,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "runtime_32MiB_rejection": {
+              "partial_history": 0,
+              "quota_bytes": 33554432,
+              "source_bytes": 73646080,
+              "source_unchanged": true,
+              "wall_seconds": 0.2421014200008358
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+          "seconds": 0.244,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "runtime_disk_scratch": {
+              "accepted_history": 12000,
+              "cpu_seconds": 0.983213579000001,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "estimated_peak_bytes": 74711040,
+              "filesystem": "overlay",
+              "measured_peak_scratch_bytes": 73658368,
+              "owned_session_removed": true,
+              "quota_bytes": 536870912,
+              "required_free_inode_percent": 10,
+              "required_reserve_bytes": 2147483648,
+              "rows_read": 12000,
+              "source_bytes": 73646080,
+              "source_unchanged": true,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                14.0
+              ],
+              "wall_seconds": 0.9849306719988817
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
+          "seconds": 1.11,
+          "status": "PASS"
+        }
+      ],
+      "tests": 5
+    },
+    "GREEN_INITIALIZER_AND_HISTORY": {
+      "failures": 0,
+      "junit_sha256": "f805cfe938e6f45bcb15d21f7d5a223b0e6b0e22164b0085f8b92d20cdf3391c",
+      "note": "Intermediate117 PASS before the marker-custody guard. Final latest batches212 distinct +5scale=217 provide the updated guards; not a single217-test invocation.",
+      "testcases": [
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1879244,
+                  1791180464139977275,
+                  1791180464140157098,
+                  1791180464140157098
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1879244,
+                  1791180464139977275,
+                  1791180464140157098,
+                  1791180464140157098
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "FULL",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-FULL]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1879253,
+                  1791180464147627820,
+                  1791180464147804285,
+                  1791180464147804285
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1879253,
+                  1791180464147627820,
+                  1791180464147804285,
+                  1791180464147804285
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879263,
+                  1791180464151000946,
+                  1791180464151297799,
+                  1791180464151297799
+                ],
+                "legacy.sqlite-wal": [
+                  "3b3e8620825f4e224835f80755a27b1c529b6c26ebf7998cd8c7a5d47d1ea1ad",
+                  33188,
+                  24752,
+                  1879264,
+                  1791180464151297799,
+                  1791180464151348265,
+                  1791180464151348265
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879263,
+                  1791180464151000946,
+                  1791180464151297799,
+                  1791180464151297799
+                ],
+                "legacy.sqlite-wal": [
+                  "3b3e8620825f4e224835f80755a27b1c529b6c26ebf7998cd8c7a5d47d1ea1ad",
+                  33188,
+                  24752,
+                  1879264,
+                  1791180464151297799,
+                  1791180464151348265,
+                  1791180464151348265
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "FULL",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879276,
+                  1791180464154443190,
+                  1791180464154640536,
+                  1791180464154640536
+                ],
+                "legacy.sqlite-wal": [
+                  "b2c1a61b9f4db6543c916f6b10ca86460af973a044d5ed3abbf3794c31de96bb",
+                  33188,
+                  24752,
+                  1879277,
+                  1791180464154640536,
+                  1791180464154676942,
+                  1791180464154676942
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879276,
+                  1791180464154443190,
+                  1791180464154640536,
+                  1791180464154640536
+                ],
+                "legacy.sqlite-wal": [
+                  "b2c1a61b9f4db6543c916f6b10ca86460af973a044d5ed3abbf3794c31de96bb",
+                  33188,
+                  24752,
+                  1879277,
+                  1791180464154640536,
+                  1791180464154676942,
+                  1791180464154676942
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1879288,
+                  1791180464158033455,
+                  1791180464158166470,
+                  1791180464158166470
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1879288,
+                  1791180464158033455,
+                  1791180464158166470,
+                  1791180464158166470
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "FULL",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-FULL]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1879297,
+                  1791180464160735725,
+                  1791180464160955800,
+                  1791180464160955800
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1879297,
+                  1791180464160735725,
+                  1791180464160955800,
+                  1791180464160955800
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-CLOSE_ONLY]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879307,
+                  1791180464163691103,
+                  1791180464164016143,
+                  1791180464164016143
+                ],
+                "legacy.sqlite-wal": [
+                  "689cb840b8b78117e8190c43690253733975028555bfe6911cdbd6cc273518e5",
+                  33188,
+                  24752,
+                  1879308,
+                  1791180464164016143,
+                  1791180464164056063,
+                  1791180464164056063
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879307,
+                  1791180464163691103,
+                  1791180464164016143,
+                  1791180464164016143
+                ],
+                "legacy.sqlite-wal": [
+                  "689cb840b8b78117e8190c43690253733975028555bfe6911cdbd6cc273518e5",
+                  33188,
+                  24752,
+                  1879308,
+                  1791180464164016143,
+                  1791180464164056063,
+                  1791180464164056063
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "FULL",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879320,
+                  1791180464167700376,
+                  1791180464167951146,
+                  1791180464167951146
+                ],
+                "legacy.sqlite-wal": [
+                  "5244835740237667a85c554a8c298a45708c42dcd6d16b8ac76a9f6d6edf8215",
+                  33188,
+                  24752,
+                  1879321,
+                  1791180464167951146,
+                  1791180464168014342,
+                  1791180464168014342
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1879320,
+                  1791180464167700376,
+                  1791180464167951146,
+                  1791180464167951146
+                ],
+                "legacy.sqlite-wal": [
+                  "5244835740237667a85c554a8c298a45708c42dcd6d16b8ac76a9f6d6edf8215",
+                  33188,
+                  24752,
+                  1879321,
+                  1791180464167951146,
+                  1791180464168014342,
+                  1791180464168014342
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_new_native_writer_validates_initializes_commits_then_negotiates_wal",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_currency_identity_is_exact_and_missing_currency_is_rejected",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[volume_unit-SHARES-UNKNOWN]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[quantity_unit-SHARES-UNKNOWN]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[quantity_multiplier-1-100]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[volume_semantics-CUMULATIVE-INTERVAL]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[turnover_currency-ARS-UNKNOWN]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[turnover-100000-200000]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[provider_currency_status-EXPLICIT-REQUESTED_IDENTITY_ONLY]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[published_at-2026-10-01T16:00:00Z-2026-10-01T17:00:00Z]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD09_offsets_order_absolute_microsecond_instants_and_replay_stays_causal",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes1-DATE_INVALID]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes2-SESSION_WEEKEND]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes3-SESSION_NOT_OPERATIONAL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes6-VOLUME_NONFINITE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes7-VOLUME_NONPOSITIVE]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes8-OHLC_INCONSISTENT]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes9-OHLC_PARTIAL]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes10-CLOCK_AWARE_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes11-KNOWN_AT_IN_FUTURE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes12-PROVIDER_AFTER_KNOWN]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes13-ADJUSTMENT_CONFLICT]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes14-ADJUSTMENT_PROVENANCE_REQUIRED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identity",
+          "seconds": 0.036,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_fifteen_revisions_count_one_and_conflict_revokes_without_resurrection",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready",
+          "seconds": 0.018,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence",
+          "seconds": 0.083,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fourth",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities",
+          "seconds": 0.454,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_batch_validation_and_mid_transaction_abort_leave_no_partial_commit",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_history_DB_LOCK_RECOVERY_retries_after_lock_without_partial_versions",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+          "seconds": 0.025,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
+          "seconds": 0.019,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_indices",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_nonlist_PPI_payload_is_a_typed_failure_before_creating_a_store",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_connection",
+          "seconds": 0.037,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_batch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_currency",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_currency",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[nan]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_platform_without_atime_preservation_fails_closed",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[hardlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "scratch_occupied_bytes": 86016
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[bytes]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[inodes]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[symlink]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[public_root]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[unknown_residue]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[aliased_lease]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+          "seconds": 0.105,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "scratch_kill_restart": {
+              "child_exit": -9,
+              "inspection": {
+                "allocation_unit": 4096,
+                "filesystem": "overlay",
+                "free_bytes": 28463337472,
+                "free_inodes": 2005191,
+                "max_bytes": 134217728,
+                "min_free_inode_percent": 0,
+                "mode": "0700",
+                "occupied_bytes": 86016,
+                "owner_uid": 1000,
+                "reserve_bytes": 0,
+                "residual_sessions": 1,
+                "total_inodes": 2097152
+              },
+              "next_reader_estimated_peak_bytes": 1138688,
+              "quota_bytes": 134217728,
+              "residual_bytes": 86016,
+              "residual_preserved": true,
+              "source_unchanged": true,
+              "total_estimated_bytes": 1224704
+            }
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+          "seconds": 0.092,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_execution_is_permanently_disabled",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_partial_payload_salvages_valid_rows_without_inventing",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_context_thresholds_match_audited_policy",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_collection_does_not_equal_ready_paper",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_fallback_only_supported_families_and_under_90",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconciler_uses_porota_universe_with_full_identity",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_reconcile_priority_prefers_empty_then_low_context",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_history_v2_identity_prevents_cross_family_collision",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_data912_cannot_replace_ppi_but_version_is_preserved",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_adjusted_series_is_preserved_separately_without_replacing_raw",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_caucion_rate_is_dynamic_not_static_contract",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_futures_margin_is_dynamic_and_contract_multiplier_is_static",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_complete_static_contract_does_not_expire_only_by_age",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_duplicate_spot_dynamic_flags_do_not_block_contract_candidate",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_contract_missing_stays_fail_closed_before_dynamic_layer",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "test_hf6_history_data912_v2.py::test_unknown_source_class_is_ignored_fail_closed",
+          "seconds": 0.001,
+          "status": "PASS"
+        }
+      ],
+      "tests": 117
+    },
+    "GREEN_INITIALIZER_CALLERS_AND_CUSTODY": {
+      "failures": 0,
+      "junit_sha256": "0683d746780cf3647a025cb1fecf03c9b48fedce007e1de845bdbb0a7cf16d36",
+      "testcases": [
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1883279,
+                  1791180763864181733,
+                  1791180763864416805,
+                  1791180763864416805
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1883279,
+                  1791180763864181733,
+                  1791180763864416805,
+                  1791180763864416805
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "FULL",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-FULL]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1883298,
+                  1791180763874420206,
+                  1791180763874970292,
+                  1791180763874970292
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1883298,
+                  1791180763874420206,
+                  1791180763874970292,
+                  1791180763874970292
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-CLOSE_ONLY]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883308,
+                  1791180763878182072,
+                  1791180763878614168,
+                  1791180763878614168
+                ],
+                "legacy.sqlite-wal": [
+                  "4c2451a12b6c7feabfe6076f0215a8fd31183d259f13d27d93cac61b049e7179",
+                  33188,
+                  24752,
+                  1883309,
+                  1791180763878614168,
+                  1791180763878783154,
+                  1791180763878783154
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883308,
+                  1791180763878182072,
+                  1791180763878614168,
+                  1791180763878614168
+                ],
+                "legacy.sqlite-wal": [
+                  "4c2451a12b6c7feabfe6076f0215a8fd31183d259f13d27d93cac61b049e7179",
+                  33188,
+                  24752,
+                  1883309,
+                  1791180763878614168,
+                  1791180763878783154,
+                  1791180763878783154
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "FULL",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883321,
+                  1791180763882207452,
+                  1791180763882454373,
+                  1791180763882454373
+                ],
+                "legacy.sqlite-wal": [
+                  "1b2da82be26b108649acb4e0050c826001deb2c2a94f78f5da19209a210abefb",
+                  33188,
+                  24752,
+                  1883322,
+                  1791180763882454373,
+                  1791180763882517740,
+                  1791180763882517740
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883321,
+                  1791180763882207452,
+                  1791180763882454373,
+                  1791180763882454373
+                ],
+                "legacy.sqlite-wal": [
+                  "1b2da82be26b108649acb4e0050c826001deb2c2a94f78f5da19209a210abefb",
+                  33188,
+                  24752,
+                  1883322,
+                  1791180763882454373,
+                  1791180763882517740,
+                  1791180763882517740
+                ]
+              },
+              "initializer": "FULL",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1883333,
+                  1791180763886888256,
+                  1791180763887700294,
+                  1791180763887700294
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "d37afcb76a3f6094619b9619eef8343636cec9f6527950e81892ad74709c36a4",
+                  33188,
+                  16384,
+                  1883333,
+                  1791180763886888256,
+                  1791180763887700294,
+                  1791180763887700294
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "FULL",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-FULL]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1883342,
+                  1791180763890439388,
+                  1791180763890782006,
+                  1791180763890782006
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "dfa0b7c358b0d4efdf46fc0790bfce250779cbf3d381477e7d8563410cd8c991",
+                  33188,
+                  16384,
+                  1883342,
+                  1791180763890439388,
+                  1791180763890782006,
+                  1791180763890782006
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "DELETE",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883352,
+                  1791180763894672183,
+                  1791180763895118765,
+                  1791180763895118765
+                ],
+                "legacy.sqlite-wal": [
+                  "382d26c5cf2ec5b98509d1232bab8b68307c041a1e743ec29a7d4f62d063601e",
+                  33188,
+                  24752,
+                  1883353,
+                  1791180763895118765,
+                  1791180763895288047,
+                  1791180763895288047
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883352,
+                  1791180763894672183,
+                  1791180763895118765,
+                  1791180763895118765
+                ],
+                "legacy.sqlite-wal": [
+                  "382d26c5cf2ec5b98509d1232bab8b68307c041a1e743ec29a7d4f62d063601e",
+                  33188,
+                  24752,
+                  1883353,
+                  1791180763895118765,
+                  1791180763895288047,
+                  1791180763895288047
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "FULL",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "legacy_init_copy": {
+              "after": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883365,
+                  1791180763898715894,
+                  1791180763898957533,
+                  1791180763898957533
+                ],
+                "legacy.sqlite-wal": [
+                  "a6816587841bd95b0865b31f0bb08f442ff374fd3bf9126a59fe8723d3246554",
+                  33188,
+                  24752,
+                  1883366,
+                  1791180763898957533,
+                  1791180763898994822,
+                  1791180763898994822
+                ]
+              },
+              "before": {
+                "legacy.sqlite": [
+                  "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+                  33188,
+                  4096,
+                  1883365,
+                  1791180763898715894,
+                  1791180763898957533,
+                  1791180763898957533
+                ],
+                "legacy.sqlite-wal": [
+                  "a6816587841bd95b0865b31f0bb08f442ff374fd3bf9126a59fe8723d3246554",
+                  33188,
+                  24752,
+                  1883366,
+                  1791180763898957533,
+                  1791180763898994822,
+                  1791180763898994822
+                ]
+              },
+              "initializer": "CLOSE_ONLY",
+              "source_kind": "CLOSE_ONLY",
+              "source_mode": "WAL_WITHOUT_SHM",
+              "source_sqlite_opens": 0,
+              "source_unchanged": true,
+              "wal_negotiations": 0
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_new_native_writer_validates_initializes_commits_then_negotiates_wal",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "scratch_occupied_bytes": 86016
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[bytes]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[inodes]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[symlink]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[public_root]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[unknown_residue]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[aliased_lease]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+          "seconds": 0.11,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[hardlink]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[marker_replacement]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {
+            "scratch_kill_restart": {
+              "child_exit": -9,
+              "inspection": {
+                "allocation_unit": 4096,
+                "filesystem": "overlay",
+                "free_bytes": 28463095808,
+                "free_inodes": 2005177,
+                "max_bytes": 134217728,
+                "min_free_inode_percent": 0,
+                "mode": "0700",
+                "occupied_bytes": 86016,
+                "owner_uid": 1000,
+                "reserve_bytes": 0,
+                "residual_sessions": 1,
+                "total_inodes": 2097152
+              },
+              "next_reader_estimated_peak_bytes": 1138688,
+              "quota_bytes": 134217728,
+              "residual_bytes": 86016,
+              "residual_preserved": true,
+              "source_unchanged": true,
+              "total_estimated_bytes": 1224704
+            }
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+          "seconds": 0.102,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD06_adjusted_secondary_never_overwrites_raw_and_action_bases_are_separate",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_currency_identity_is_exact_and_missing_currency_is_rejected",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD08_retry_preserves_version_known_at_and_only_updates_check_clock",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[volume_unit-SHARES-UNKNOWN]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[quantity_unit-SHARES-UNKNOWN]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[quantity_multiplier-1-100]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[volume_semantics-CUMULATIVE-INTERVAL]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[turnover_currency-ARS-UNKNOWN]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[turnover-100000-200000]",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[provider_currency_status-EXPLICIT-REQUESTED_IDENTITY_ONLY]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC[published_at-2026-10-01T16:00:00Z-2026-10-01T17:00:00Z]",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
+          "seconds": 0.018,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_quantity_kind_only_correction_gets_a_version_without_inventing_unit_metadata",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_engine_generated_annotations_do_not_create_a_revision_or_move_first_known",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_resurrecting_units",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_old_hash_without_units_cannot_backfill_unit_or_replay_a_different_semantic_payload",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD09_offsets_order_absolute_microsecond_instants_and_replay_stays_causal",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes1-DATE_INVALID]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes2-SESSION_WEEKEND]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes3-SESSION_NOT_OPERATIONAL]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes4-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes5-CLOSE_NONFINITE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes6-VOLUME_NONFINITE]",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes7-VOLUME_NONPOSITIVE]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes8-OHLC_INCONSISTENT]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes9-OHLC_PARTIAL]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes10-CLOCK_AWARE_REQUIRED]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes11-KNOWN_AT_IN_FUTURE]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes12-PROVIDER_AFTER_KNOWN]",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes13-ADJUSTMENT_CONFLICT]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_universal_sink_validation_prevents_any_row_write[changes14-ADJUSTMENT_PROVENANCE_REQUIRED]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_rejects_future_known_revision_and_legacy_ambiguous_identity",
+          "seconds": 0.068,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_fifteen_revisions_count_one_and_conflict_revokes_without_resurrection",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD12_sources_bases_currencies_are_never_concatenated_to_ready",
+          "seconds": 0.027,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate",
+          "seconds": 0.006,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_concurrent_identical_writers_have_one_version_and_atomic_idempotence",
+          "seconds": 0.074,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD17_ABA_has_three_causal_versions_and_identical_retry_does_not_add_fourth",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_NEW_history_revision_lookup_work_does_not_grow_with_unrelated_provider_identities",
+          "seconds": 0.489,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_batch_validation_and_mid_transaction_abort_leave_no_partial_commit",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_history_DB_LOCK_RECOVERY_retries_after_lock_without_partial_versions",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+          "seconds": 0.028,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_S_HEARTBEAT_NO_PROGRESS_retains_zero_progress_as_distinct_from_ready",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_cross_store_failure_has_durable_stage_and_resumes_without_duplicate_attempt",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_close_only_currency_isolation_ABA_and_atomic_batch",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD18_committed_saga_retry_after_intervening_revision_does_not_resurrect_old_data",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_conflicting_daily_PPI_duplicates_are_all_quarantined_with_exact_indices",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_nonlist_PPI_payload_is_a_typed_failure_before_creating_a_store",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD11_shadow_reads_explicit_dedicated_path_without_calling_its_write_connection",
+          "seconds": 0.036,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD10_legacy_writer_shares_numeric_validation_and_rolls_back_entire_batch",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes0-DATE_IN_FUTURE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes1-DATE_INVALID]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes2-C_NONFINITE]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes3-OHLC_INCONSISTENT]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes4-O_MISSING]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_Data912_reports_exact_rejections_before_shared_sink[changes5-V_NONFINITE]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches",
+          "seconds": 0.01,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[429-DATA912_RATE_LIMIT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD20_provider_retry_failure_has_safe_taxonomy_and_no_false_completion[timeout-DATA912_TIMEOUT]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD21_coverage_cut_cohort_currency_sessions_and_consumer_do_not_imply_ready",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_retains_source_and_quarantines_unknown_ambiguous_currency",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_copy_migration_includes_close_only_legacy_without_guessing_currency",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_explicit_legacy_currency_survives_a_multi_currency_catalog_cohort",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_convergence.py::test_AUD07_A3_quote_currency_is_not_underlying_currency_and_old_targets_fail_closed",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes0]",
+          "seconds": 0.032,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes1]",
+          "seconds": 0.021,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes2]",
+          "seconds": 0.04,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes3]",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes4]",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes5]",
+          "seconds": 0.02,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes6]",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes7]",
+          "seconds": 0.029,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes8]",
+          "seconds": 0.02,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_series_no_se_pisan_por_ticker_y_fecha[changes9]",
+          "seconds": 0.017,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_revision_corrige_apertura_sin_anticipar_el_dato",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_revision_invalida_no_resucita_version_anterior",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes0]",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes1]",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes2]",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes3]",
+          "seconds": 0.017,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes4]",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes5]",
+          "seconds": 0.011,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes6]",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes7]",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes8]",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes9]",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_guarda_barras_inconsistentes[changes10]",
+          "seconds": 0.019,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_barra_abierta_y_retroactividad_rechazadas",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_muestras_no_aceptan_volumen_vwap_ni_completitud",
+          "seconds": 0.009,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_cierre_sin_nuevas_lecturas_reinicio_y_dedupe_de_zona_horaria",
+          "seconds": 0.028,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_llegada_tardia_reconstruye_ohcl_y_conserva_disponibilidad",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_tiempo_de_negocio_no_se_reemplaza_por_recepcion",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_no_rellena_minutos_sin_observaciones",
+          "seconds": 0.02,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_misma_marca_temporal_distinto_precio_es_conflicto",
+          "seconds": 0.013,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change0]",
+          "seconds": 0.014,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change1]",
+          "seconds": 0.016,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change2]",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change3]",
+          "seconds": 0.029,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change4]",
+          "seconds": 0.012,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change5]",
+          "seconds": 0.024,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change6]",
+          "seconds": 0.032,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lecturas_invalidas_quedan_rechazadas_sin_inventar_fecha[change7]",
+          "seconds": 0.02,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_checkpoint_agregados_y_cursor_se_revierten_juntos",
+          "seconds": 0.022,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_metadatos_de_contrato_corruptos_no_traban_el_checkpoint",
+          "seconds": 0.015,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_lotes_y_dos_workers_no_duplican_barras",
+          "seconds": 0.034,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_migracion_legacy_concilia_reintentos_sin_modificar_origen",
+          "seconds": 0.017,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_historial_vacio_no_borra_ultimo_valido_y_raw_se_conserva",
+          "seconds": 0.049,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload0]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload1]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload2]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload3]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload4]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload5]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_contador_no_confunde_errores_o_futuros_con_barras[payload6]",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_duplicados_no_inflan_cobertura",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_descarga_fallida_rota_en_vez_de_bloquear_universo",
+          "seconds": 0.033,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_identidad_de_mercado_ausente_sigue_fallando_cerrado",
+          "seconds": 0.019,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada",
+          "seconds": 0.679,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_shadow_evaluates_but_does_not_block",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_binding_negative_blocks",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_binding_missing_evidence_is_fail_closed",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_contract_identity_alias_and_settlement",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_contract_secret_rejected",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_contract_never_auto_activates",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_history_identical_version_is_deduped",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_history_file_without_v2_schema_falls_back_legacy",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_scheduler_uses_multiple_evidence_sources_and_news_off",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_ppi_normalizer_drops_account_quantity_and_does_not_infer_steps",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_storage_lifecycle_is_audit_only",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_a3_is_background_only",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_settlement_no_time_max",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_navigation_and_system_sections_and_vivo_contract",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_trusted_browser_wrapper_has_no_credential_login",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_functional_health_is_read_only_by_contract",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_contract_scheduler_cadence_has_one_canonical_source",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_family_readiness_never_auto_activates_even_when_complete",
+          "seconds": 0.008,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_blocked_auth_capture_is_persisted_as_run_not_contract",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_legacy_bridge_is_metadata_only_and_never_activates",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_host_backup_source_excludes_secrets_and_records_vector_evidence",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_module_inventory_has_no_unreviewed_orphans",
+          "seconds": 14.544,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_t1_settlement_diagnostics_remains_pending_confirmation",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_emergency_cap_auto_is_quantitatively_derived",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_max_hold_uses_current_session_clock_without_stale_magic_number",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_max_hold_reports_when_eod_really_dominates_without_retuning",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_paper_fee_reconciliation_never_calls_broker",
+          "seconds": 0.019,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_sector_map_requires_reviewed_source",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc6_default_sector_map_contains_only_reviewed_sourced_rows",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_rc4_replay_slippage_is_paper_labeled_and_converts_to_bps",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_sre_backups_reuses_complete_coverage_matrix",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_introspection_superseded_snapshot_uses_live_observer_state",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_scraping_dashboard_exposes_run_evidence_without_promoting_ready",
+          "seconds": 0.018,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_acceptance.py::test_deploy_contract_is_split_and_preflight_green",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_hf2_consolidation.py::test_hf2_version_and_orders_remain_blocked",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_hf2_consolidation.py::test_contract_evidence_weekend_is_completely_off",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_hf2_consolidation.py::test_contract_windows_keep_preopen_market_and_weekday_static",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_hf2_consolidation.py::test_live_page_keeps_current_round_and_history_semantics_clean",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc4_hf2_consolidation.py::test_formalized_browser_runner_keeps_fail_closed_guards",
+          "seconds": 0.0,
+          "status": "PASS"
+        },
+        {
+          "failure": null,
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
+          "seconds": 0.002,
+          "status": "PASS"
+        }
+      ],
+      "tests": 186
+    },
+    "RED_ORIGINAL_ADAPTER": {
+      "failures": 8,
+      "junit_sha256": "6e0448eda6bd4a2d626e15f41ff95e33cde532322e187068f0bec4678883c034",
+      "testcases": [
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject0/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-FULL]",
+          "seconds": 0.004,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject1/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-DELETE-CLOSE_ONLY]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject2/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject3/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[FULL-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject4/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-FULL]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject5/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-DELETE-CLOSE_ONLY]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject6/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-FULL]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "failure": "AssertionError: LEGACY_REJECTION_MUST_PRECEDE_SOURCE_SQLITE\nassert '/tmp/pytest...egacy.sqlite' not in '/tmp/pytest...egacy.sqlite'\n  \n  '/tmp/pytest-of-age...ource/legacy.sqlite' is contained here:\n    /tmp/pytest-of-agent/pytest-243/test_NEW_canonical_init_reject7/source/legacy.sqlite",
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation[CLOSE_ONLY-WAL_WITHOUT_SHM-CLOSE_ONLY]",
+          "seconds": 0.003,
+          "status": "FAIL"
+        }
+      ],
+      "tests": 8
+    }
+  },
+  "root_owned_diagnostic_fix": {
+    "receipt": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
+    "root_sha": "6ccec25b",
+    "scope": "BF direct diagnostic now verified-copy read with1s budget; root owns six RED/GREEN nodes."
+  },
+  "schema_version": 1,
+  "scratch_dependency_sha": "82c8787a4b219d6dd2afa1499046bc87c8f5d157",
+  "source_file_sha256": {
+    "cu_history_store_v2_hf6.py": "890de82a33a59dbee06bd776c5d7e41cd6554b703ab486a52b43f3a571d4b987",
+    "cv_history_store_adapter_hf6.py": "625a94f690144d61e9e00ea15400cbc3865e2f9eb6b67e0fa3ab3a823ad598d4",
+    "ea_history_close_series_hf2.py": "c50711fb49c275e3829b67ff1b7cf65706cb6fc18af58c1e767ebbe48a36fff8",
+    "rc6_audit_evidence/history_probe.py": "69327379de78fa1eb7b954b57fb1bc50ddce28a762a1a846e2233012c7ade302",
+    "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+    "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+    "tests/test_rc6_history_initialization_copy.py": "151ca150e4ad91f394ac751bc8a31327eeb4849b0ec5ae207f42f5411a2963f2",
+    "tests/test_rc6_sqlite_disk_scratch.py": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a"
+  }
+}
