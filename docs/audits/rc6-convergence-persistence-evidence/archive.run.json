@@ -1,0 +1,48 @@
+{
+  "broker_or_provider_calls_authorized": false,
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_rc6_convergence_persistence.py",
+    "-k",
+    "two_thousand",
+    "--junitxml=/workspace/porota_rc6_worktrees/persistence/docs/audits/rc6-convergence-persistence-evidence/archive.junit.xml"
+  ],
+  "environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "umask": "022"
+  },
+  "exit_code": 0,
+  "external_archive_authentication_certified": false,
+  "finished_at": "2026-10-05T02:32:57.768928+00:00",
+  "junit": "archive.junit.xml",
+  "junit_sha256": "87e19d0dd6b1eb31c5f3224f1a3ce842194ae93d6e1b970345dd4368a29eb507",
+  "ppi_watch": "UNTOUCHED",
+  "production_capacity_certified": false,
+  "proof": "U15-bounded-archive-cycles.json",
+  "proof_sha256": "c0ab4411a13471396fe04fe9759afd5ca3fdd2764df8c118efc5650b66f0312c",
+  "python_version": "3.11.16",
+  "run_id": "RC6-PERSISTENCE-ARCHIVE-b82666db",
+  "schema": "rc6.persistence-offline-test-run.v1",
+  "scope": "PAPER_SHADOW_SYNTHETIC_OFFLINE",
+  "source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+  "source_tracked_clean_before_and_after": true,
+  "source_tree_sha": "775ba49f7dbd091ed3deccc499e9b0e953103df1",
+  "started_at": "2026-10-05T02:30:58.667173+00:00",
+  "suites": [
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "1",
+      "time": "118.292",
+      "timestamp": "2026-10-05T02:30:59.377272+00:00"
+    }
+  ]
+}

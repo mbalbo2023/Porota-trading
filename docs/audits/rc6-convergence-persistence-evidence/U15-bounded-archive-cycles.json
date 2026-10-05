@@ -1,0 +1,18 @@
+{
+  "archive_bytes": 12439271,
+  "archive_bytes_budget": 536870912,
+  "archive_files_budget": 32768,
+  "checkpoint_bytes": 411,
+  "commits": 2000,
+  "continuous_receipt_digest_chain": true,
+  "custody": "LOCAL_PRIVATE_FSYNC_NOT_WORM",
+  "elapsed_test_seconds": 117.349,
+  "live_ack_files": 0,
+  "live_files_budget": 32,
+  "maximum_projected_live_bytes": 40720,
+  "maximum_projected_live_files": 24,
+  "ppi_watch": "UNTOUCHED",
+  "real_orders_sent": 0,
+  "receipts": 1996,
+  "writer_restarts": 1999
+}

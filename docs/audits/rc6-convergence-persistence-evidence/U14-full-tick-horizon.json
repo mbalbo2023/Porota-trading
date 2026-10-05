@@ -1,0 +1,24 @@
+{
+  "archive_configured": false,
+  "bytes_budget": 134217728,
+  "commits": 1201,
+  "elapsed_runtime_hours": 10,
+  "elapsed_test_seconds": 215.59,
+  "files_budget": 8192,
+  "fixture_catalog_identities": 5,
+  "fixture_observations_static": true,
+  "maximum_projected_bytes": 39362742,
+  "maximum_projected_files": 6010,
+  "old_hard": {
+    "minutes": 50.5,
+    "reason": "RETENTION_HARD_FILES_CAPACITY_REACHED"
+  },
+  "old_soft_minutes": 40.5,
+  "ppi_watch": "UNTOUCHED",
+  "production_capacity_claim": false,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "restarts": 2,
+  "source_database_bytes_unchanged": true,
+  "tick_seconds": 30
+}
