@@ -425,3 +425,25 @@ Fsync real y cinco EXIT PAPER internos pasaron; RSS1,654,472,704B y fuentes
 quedaron dentro de límites. Complete/cleanup siguenfalse y CLI1 es RED:
 el contrato requiere PRE+OPEN completos. No se declara ahorro porcentual
 ni se aumenta plazo/GC/cuota. RAW en evidence/native-big-4ba47b87-157.
+
+La versión fortalecida del wrapper OWNed97 pasó sus28 guardas controladas con
+whole1732/frozen311157, sin fallos/errors/skips y sin ejecutar worker/horizonte.
+Su preflight exige autoridad Git real, blobs/modos/namespace completos,
+índice/TAR originales,157 versiones sin duplicados e imports propios. FIFO,
+send/sendall y captura inicial del índice se corrigieron antes de esa corrida;
+son hallazgos estáticos, no fallos nativos anteriores. Los cuatro RAW originales
+están en native-horizon-wrapper-ed97-evidence. La integración preserva las
+cuotas y carga constructor/recovery, limpieza y emisión al reloj original30s.
+
+Con esa fuente fortalecida, whole ROOTd933/frozen311157 completó otro NORMAL4
+descriptivo1200/6000:58.403s/CPU58.196s/RSS321,073,152B. PREOPEN y tres OPEN
+restauraron los cinco miembros originales y sus manifest/CURRENT/receipts;
+clocks completos10.985/15.250/15.933/14.521s. Sus1866 blobs/modos, imports,
+índice/TAR y once campos/hash de SourceDB quedaron intactos; provider/network0.
+Se observaron132 fsync y232 mediciones scratch, mantenimiento/recovery/pins
+nativos. Compaction ACK, rotaciones, intents GC completos y miembros borrados
+son cero: no se presenta un positivo de borrado. RAW originales lossless y
+custodia de copia en evidence/native-normal4-d9333065-157. Execution_complete
+es true; complete/horizon/acceptance siguen false. Sólo cubre960s de as_of;
+1201 postPRE más PRE, reinicios361/841 y datos obsoletos siguen pendientes,
+así como BIG90 completo, Gov final, navegador, imagen y runtime.
