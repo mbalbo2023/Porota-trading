@@ -1486,24 +1486,37 @@
   "scenario_count": 52,
   "schema": "rc6.convergence-scenario-guards.sre.v1",
   "validator_regression_evidence": {
-    "claim_boundary": "Original input and all15Git source refs stay intact; closure/JUnit input files are synthetic validator fixtures, never proof of55requirements or market execution.",
-    "cli_dependency_sha256": "3307953ba4c4593f73204d6fb21990f68af5544f7a8457c66ee6c7a32623f8b4",
-    "junit_sha256": "0eb9db7a27cdaee2b3d3d91d11f10365021f5aff1ab63aef3011c7f0fd66d9ab",
+    "assertion_scope": "OFFLINE_CODE_AND_FROZEN_TEST_RECEIPTS; NOT_RUNTIME_ATTESTATION",
+    "claim_boundary": "All six original byte pins and all 15 Git source refs stay intact; closure/JUnit files are EXPLICIT_SYNTHETIC_ONLY validator fixtures, never proof of 55 requirements, 80 market scenarios or 90 front clauses.",
+    "cli_dependency_sha256": "9da4ab21022ef249d57f295978aecb19616ab066e8e34b4f30ce6353bb4a4572",
+    "front_clause_fixture_label": "EXPLICIT_SYNTHETIC_ONLY",
+    "front_clause_negatives": [
+      "MISSING",
+      "DUPLICATE",
+      "ORIGINAL_COLUMN_REBOUND",
+      "MISSING_NATIVE_GUARD",
+      "REHASHED_ORIGINAL_BYTE_REPLACEMENT"
+    ],
+    "front_variant_original_clause_count": 90,
+    "junit_sha256": "3c9b0b4bd5e08f17e4c1c7fc91520e1b8767da80261217ca88b6b34f2daa85cd",
     "mode": "NATIVE_GIT_CLI_AND_LOCAL_BARE_ORIGIN_FIXTURES",
+    "original_input_byte_pins": 6,
     "output_alias_after_fix": "ALL3_NATIVE_ALIASES_REJECTED_AND_UNRELATED_RECEIPT_BYTES_PRESERVED",
     "output_alias_negative_before_fix": {
       "hardlink": "CLI_RETURNED_0_AND_OVERWROTE_UNRELATED_EXISTING_RECEIPT",
       "parent_symlink": "CLI_RETURNED_0_AND_OVERWROTE_UNRELATED_EXISTING_RECEIPT"
     },
+    "synthetic_matching_junit_with_nonexistent_native_guard": "REJECTED_BY_COMMITTED_SOURCE_AST",
     "testsuites": [
       {
         "errors": "0",
         "failures": "0",
+        "hostname": "9905252a2cbf",
         "name": "pytest",
         "skipped": "0",
-        "tests": "76",
-        "time": "18.061",
-        "timestamp": "2026-10-05T03:41:56.404618+00:00"
+        "tests": "84",
+        "time": "26.575",
+        "timestamp": "2026-10-05T04:49:22.671178+00:00"
       }
     ],
     "workflow_syntax": {

@@ -78,12 +78,25 @@ def fixture_base(tmp_path_factory):
             "fix": "Validate exact source inventory and executed-guard linking.",
             "native_caller": "Offline convergence CLI only; no market/provider runtime.",
             "remaining_uncertainty": "Synthetic XML is not external execution authentication.",
+            "assertion_scope": "EXPLICIT_SYNTHETIC_ONLY",
             "code_paths": ["scripts/porota_predeploy_binding.py"], "test_nodes": [GUARD]}
             for item in sorted(ids)]
+    original_front = provenance.original_front_variants(
+        (inputs / "ORIGINAL_RA_A_F01_F02.md").read_text(),
+        (inputs / "ORIGINAL_RA_A_F03_F05.md").read_text())
+    front = rows(provenance.FRONT_VARIANTS)
+    for row in front:
+        row["original_columns"] = original_front[row["id"]]
+    # Fresh pinned inputs and the controlled closure file itself are additional
+    # committed sources in this fixture. List them explicitly before commit.
+    paths = set(provenance.tree(root, "HEAD"))
+    paths.update(str(path.relative_to(root)) for path in inputs.iterdir() if path.is_file())
+    paths.add(provenance.INPUT_ROOT + "/" + provenance.CLOSURE)
     matrix = {"schema": "rc6.convergence-closure.v1", "requirements": rows(provenance.REQUIREMENTS),
         "scenarios": rows({f"R{i:02d}" for i in range(1, 81)}),
+        "front_variants": front,
         "path_evolution": {path: {"reason": "Controlled fixture evolution requires a referenced guard.",
-            "requirement_ids": ["U01"]} for path in provenance.tree(root, "HEAD")}}
+            "requirement_ids": ["U01"]} for path in paths}}
     write_json(inputs / provenance.CLOSURE, matrix)
     commit(root)
     return root
@@ -125,11 +138,15 @@ def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_coun
     assert report["candidate_tree"] == native_git(candidate[0], "rev-parse", "HEAD^{tree}")
     assert len(report["sources"]) == 15 and report["source_union_paths"] == 170
     assert len(report["requirements"]) == 55 and len(report["scenarios"]) == 80
+    assert len(report["front_variants"]) == 90
+    assert {row["id"] for row in report["front_variants"]} == provenance.FRONT_VARIANTS
+    assert all(row["assertion_scope"] == "EXPLICIT_SYNTHETIC_ONLY" for row in report["front_variants"])
     assert report["test_execution"]["executed_unique_cases"] == 1
     assert report["test_execution"]["overlapping_suite_counts_added"] is False
     assert report["merge_authorized"] is report["deploy_authorized"] is False
     assert report["runtime"] == report["provider_open_capacity"] == "NO_VERIFICADO"
     assert report["economic_edge"] == "NO_DEMOSTRADO"
+    assert report["assertion_scope"] == "OFFLINE_CODE_AND_FROZEN_TEST_RECEIPTS; NOT_RUNTIME_ATTESTATION"
 
 
 def test_native_inventory_without_junit_cannot_claim_executed_guards(candidate):
@@ -297,3 +314,41 @@ def test_missing_or_ambiguous_closure_guards_never_bless_source_evolution(candid
     else: matrix["path_evolution"] = {}
     write_json(path, matrix); commit(root)
     assert_rejected(candidate, "CLOSURE" if mutation != "unexplained_evolution" else "UNEXPLAINED_SOURCE_EVOLUTION")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "rebound_clause", "missing_guard"])
+def test_all_ninety_original_front_variants_and_their_exact_clauses_are_mandatory(candidate, mutation):
+    root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_text()); fronts = matrix["front_variants"]
+    if mutation == "missing": fronts.pop()
+    elif mutation == "duplicate": fronts[-1] = deepcopy(fronts[0])
+    elif mutation == "rebound_clause": fronts[0]["original_columns"][-1] = "Invented replacement claim"
+    else: fronts[0]["test_nodes"] = []
+    write_json(path, matrix); commit(root)
+    assert_rejected(candidate, "ORIGINAL_FRONT_CLAUSE_REBOUND" if mutation == "rebound_clause" else "CLOSURE")
+
+
+@pytest.mark.parametrize("filename", ["ORIGINAL_RA_A_F01_F02.md", "ORIGINAL_RA_A_F03_F05.md"])
+def test_rehashing_front_originals_cannot_replace_the_independent_original_byte_pins(candidate, filename):
+    root = candidate[0]; inputs = root / provenance.INPUT_ROOT; path = inputs / filename
+    path.write_bytes(path.read_bytes() + b"\nControlled replacement of a pinned original.\n")
+    index = json.loads((inputs / "ORIGINAL_INPUT_DIGESTS.json").read_text())
+    index["files"][filename] = {"bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    write_json(inputs / "ORIGINAL_INPUT_DIGESTS.json", index); commit(root)
+    assert_rejected(candidate, "ORIGINAL_HANDOFF_BYTES_CHANGED")
+
+
+def test_synthetic_matching_junit_cannot_invent_a_guard_absent_from_committed_source_ast(candidate):
+    root, xml, _ = candidate; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    invented = "test_invented_matching_receipt_without_native_declaration"
+    matrix = json.loads(path.read_text())
+    matrix["requirements"][0]["test_nodes"] = [GUARD.split("::")[0] + "::" + invented]
+    write_json(path, matrix); commit(root)
+    document = ET.parse(xml); document.find(".//testcase").set("name", invented); document.write(xml, encoding="utf-8")
+    assert_rejected(candidate, "CLOSURE_GUARD_DECLARATION_MISSING")
+
+
+def test_new_committed_source_requires_an_explicit_guarded_reconciliation(candidate):
+    root = candidate[0]; (root / "new-unexplained-source.py").write_text("VALUE = 'additional native source'\n")
+    commit(root)
+    assert_rejected(candidate, "UNEXPLAINED_SOURCE_EVOLUTION:new-unexplained-source.py")
