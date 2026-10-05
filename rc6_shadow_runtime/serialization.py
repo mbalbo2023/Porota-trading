@@ -13,10 +13,18 @@ from concurrent.futures import ThreadPoolExecutor
 from collections import deque
 
 SCHEMA = "rc6.lossless-json-storage.v1"
+PACKED_SCHEMA = "rc6.lossless-json-storage.v2"
+STORAGE_SCHEMAS = frozenset({SCHEMA, PACKED_SCHEMA})
 CODEC = "GZIP_CANONICAL_ASCII_JSON_V1"
 THRESHOLD = 256 * 1024
 MAX_NODES = 32000000
 MAX_DEPTH = 64
+
+
+def is_storage(value):
+    """Recognize explicit supported formats; unknown versions never downgrade."""
+    return (isinstance(value, dict) and isinstance(value.get("schema"), str)
+            and value["schema"] in STORAGE_SCHEMAS)
 
 
 def canonical_bytes(value):
@@ -301,6 +309,9 @@ def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=No
 
 def verify_storage_wire(value, *, durable_limit, expansion_limit, deadline=None, _pipeline_hash=False):
     """CRC+canonical-byte SHA without materializing expanded logical JSON."""
+    if isinstance(value, dict) and value.get("schema") == PACKED_SCHEMA:
+        from .packed_storage import verify_wire
+        return verify_wire(value, durable_limit=durable_limit, expansion_limit=expansion_limit, deadline=deadline)
     if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
     _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=False, deadline=deadline,
@@ -345,11 +356,15 @@ def _loads(raw, *, share_subtrees):
 
 def decode_storage(value, *, durable_limit, expansion_limit, share_subtrees=False, deadline=None):
     if (isinstance(value, dict) and isinstance(value.get("schema"), str)
-            and value["schema"].startswith("rc6.lossless-json-storage.") and value["schema"] != SCHEMA):
+            and value["schema"].startswith("rc6.lossless-json-storage.") and value["schema"] not in STORAGE_SCHEMAS):
         raise ValueError("SHADOW_STORAGE_SCHEMA_UNSUPPORTED")
-    if not isinstance(value, dict) or value.get("schema") != SCHEMA:
+    if not is_storage(value):
         return value
-    raw = _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=True, deadline=deadline)
+    if value["schema"] == PACKED_SCHEMA:
+        from .packed_storage import unpack_wire
+        raw = unpack_wire(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=True, deadline=deadline)
+    else:
+        raw = _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=True, deadline=deadline)
     result = _loads(raw, share_subtrees=share_subtrees)
     del raw
     _shape(result)

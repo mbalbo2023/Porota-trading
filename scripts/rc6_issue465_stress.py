@@ -106,12 +106,26 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
     return store
 
 
-def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes):
+def _shadow_child(database, output, started, release, queue, slow_disk, maximum_bytes, canonical_runtime=False):
     from rc6_shadow_runtime import persistence
     from rc6_shadow_runtime.worker import ShadowRuntime
     import rc6_shadow_runtime.worker as worker_module
     import rc6_shadow_runtime.stages as stages_module
     from rc6_dynamic_universe.runtime import read_runtime
+    fixture_environment = None
+    if canonical_runtime:
+        # This spawned process owns only its newly created empty DATA tree.
+        # Source roots, archive and evidence are then native factory defaults.
+        for key in tuple(os.environ):
+            if key.startswith("POROTA_CAPACITY_") and key.endswith("_PATH"):
+                os.environ.pop(key)
+        for key in ("HIST_DB_PATH", "POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT",
+                    "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES",
+                    "POROTA_IOL_SHADOW_ROOT", "POROTA_IOL_SHADOW_CACHE_PATH"):
+            os.environ.pop(key, None)
+        fixture_environment = {"DATA_DIR": str(Path(database).parent.parent),
+            "PAPER_V17_DB_PATH": str(database), "POROTA_DYNAMIC_CAPACITY_MODE": "OFF"}
+        os.environ.update(fixture_environment)
     begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
     phases = []
     handlers = {}
@@ -220,8 +234,13 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
     try:
         data = read_runtime(database, as_of=AT, row_limit=20000, query_budget_seconds=2)
         phases.append("BOUNDED_READ")
-        worker = ShadowRuntime.from_environment(database, evidence_root=output, source_roots=[],
-                               maximum_bytes=maximum_bytes)
+        if canonical_runtime:
+            worker = ShadowRuntime.from_environment(database, maximum_bytes=maximum_bytes)
+            if worker.root.absolute() != Path(output).absolute():
+                raise ValueError("SYNTHETIC_CANONICAL_ROOT_MISMATCH")
+        else:
+            worker = ShadowRuntime.from_environment(database, evidence_root=output, source_roots=[],
+                                   maximum_bytes=maximum_bytes)
         report = worker.tick(PRE)
         phases.append("PREOPEN_COMMITTED")
         del report
@@ -248,6 +267,10 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
                   "source_database_effect": "READ_ONLY", "committed_sequence": committed["pointer"]["sequence"],
                   "generation_schema": committed["manifest"]["schema"],
                   "configuration_fingerprint": committed["manifest"]["configuration_fingerprint"],
+                  "canonical_factory": canonical_runtime, "fixture_environment": fixture_environment,
+                  "database": str(database), "evidence_root": str(worker.root),
+                  "archive_root": str(worker.files.archive_root) if worker.files.archive_root is not None else None,
+                  "source_roots": list(map(str, worker.source_roots)),
                   "verification_level": committed["export_contract"]["verification_level"],
                   "capacity_policy": report["capacity_policy"],
                   "catalog_ready_count": len(report["catalog_ready"])}
@@ -347,19 +370,27 @@ def factual_exit_probe(path):
 
 
 def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
-               slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False):
+               slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False, canonical_runtime=False):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()):
         raise ValueError("EMPTY_SYNTHETIC_WORKSPACE_REQUIRED")
-    database = root / "source.db"
+    if type(canonical_runtime) is not bool:
+        raise ValueError("CANONICAL_RUNTIME_FLAG_INVALID")
+    database = root / "data" / "paper_v17" / "observer_v17.db" if canonical_runtime else root / "source.db"
+    database.parent.mkdir(parents=True, exist_ok=True)
+    if canonical_runtime:
+        from cg_paper_workspace import artifact_root
+        output = artifact_root(database) / "dynamic-shadow"
+    else:
+        output = root / "shadow"
     fixture_database(database, catalog_count=catalog_count,
                      observations_per_identity=observations_per_identity)
     before = sha256(database)
     ctx = mp.get_context("spawn")
     started, release, queue = ctx.Event(), ctx.Event(), ctx.Queue()
-    child = ctx.Process(target=_shadow_child, args=(str(database), str(root/"shadow"),
-                        started, release, queue, slow_disk, maximum_bytes))
+    child = ctx.Process(target=_shadow_child, args=(str(database), str(output),
+                        started, release, queue, slow_disk, maximum_bytes, canonical_runtime))
     cycle_begin = time.monotonic(); deadline = cycle_begin+90
     child.start()
     shadow = {"status": "SHADOW_FAIL_CLOSED", "cycle_completion": False, "cycle_handled": False,
@@ -402,8 +433,8 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             child.join(5)
         queue.close()
         queue.join_thread()
-    shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in (root/"shadow").rglob("*") if p.is_file()))
-    shadow.setdefault("evidence_files", sum(p.is_file() for p in (root/"shadow").rglob("*")))
+    shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
+    shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
     shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
     unchanged = before == sha256(database)
     fsync = shadow["fsync"]
@@ -420,6 +451,7 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             "slow_fsync_exit_isolation_proven": slow_proven, "shadow": shadow,
             "factual_exits": exits, "source_database_unchanged": unchanged,
             "source_sha256": before, "real_orders_sent": 0,
+            "canonical_runtime_requested": canonical_runtime, "database": str(database), "evidence_root": str(output),
             "real_routes": "NOT_CALLED", "runtime_touched": False,
             "provider_requests": 0, "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY"}
     result["completion_required"] = not allow_fail_closed
@@ -446,11 +478,13 @@ def main(argv=None):
     parser.add_argument("--catalog-count", type=int, default=12000)
     parser.add_argument("--observations-per-identity", type=int, default=5)
     parser.add_argument("--slow-disk", action="store_true")
+    parser.add_argument("--canonical-runtime", action="store_true")
     args = parser.parse_args(argv)
     code = 0
     try:
         result = run_stress(args.root, catalog_count=args.catalog_count,
-                            observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk)
+                            observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
+                            canonical_runtime=args.canonical_runtime)
     except StressResourceLimit as error:
         result, code = error.evidence, 1
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")

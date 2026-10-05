@@ -15,7 +15,8 @@ from rc6_performance.common import canonical, digest, identity, number, stamp, d
 from rc6_performance.costs import realized_round_trip_cost
 from rc6_performance.metrics import distribution
 from .entry_signals import ART, _fingerprint, _json, _native_payload, _read_rows, _signal_input_fingerprint
-from .serialization import encode_storage, decode_storage, SCHEMA as STORAGE_SCHEMA
+from .serialization import decode_storage, is_storage
+from .packed_storage import encode_packed_storage
 
 SCHEMA = "rc6.prospective-operational-funnel.v1"
 DISCOVERY_EVIDENCE_SCHEMA = "rc6.causal-discovery-evidence.v1"
@@ -33,7 +34,7 @@ TABLES = ("decision_evidence_snapshots", "paper_fills", "paper_family_lifecycle_
 
 def encode_funnel_checkpoint(value):
     try:
-        return encode_storage(value, durable_limit=MAX_CHECKPOINT_BYTES,
+        return encode_packed_storage(value, durable_limit=MAX_CHECKPOINT_BYTES,
                               expansion_limit=MAX_EXPANDED_CHECKPOINT_BYTES)
     except ValueError as error:
         if "CAPACITY" in str(error): raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED") from error
@@ -480,7 +481,7 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
                             exit_lab_report=None, previous=None, row_limit=500, return_encoded_checkpoint=False):
     """Return report/state; caller owns the existing atomic evidence writer."""
     at = stamp(as_of)
-    stored_previous = isinstance(previous, dict) and previous.get("schema") == STORAGE_SCHEMA
+    stored_previous = is_storage(previous)
     previous = decode_funnel_checkpoint(previous)
     if not isinstance(planner_report, dict) or (planner_report.get("real_orders_sent", 0) != 0 or
             planner_report.get("real_routes", "NOT_CALLED") != "NOT_CALLED"):

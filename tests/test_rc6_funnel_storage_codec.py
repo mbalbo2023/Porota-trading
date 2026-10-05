@@ -74,7 +74,7 @@ def test_native_funnel_large_metadata_roundtrip_restarts_with_identical_complete
         "identity": ["S" + str(index), "ACCIONES", "BYMA", "ARS", "A-24HS"]} for index in range(1000)]
     report, state = funnel.evaluate_runtime_funnel(store.path, as_of=START, planner_report=initial)
     packed = funnel.encode_funnel_checkpoint(state)
-    assert packed["schema"] == serialization.SCHEMA
+    assert packed["schema"] == serialization.PACKED_SCHEMA
     assert len(state["reaches"]) == len(state["cohorts"]) == 1000
     assert funnel.decode_funnel_checkpoint(packed) == state
     later = START + timedelta(seconds=30)

@@ -23,7 +23,8 @@ import zlib
 
 from rc6_dynamic_universe.common import digest, stamp
 from rc6_dynamic_universe.sources import audit_sources, source_errors_are_sanitized
-from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, PreparedStorage, SCHEMA as STORAGE_SCHEMA
+from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, is_storage
+from .packed_storage import PreparedPackedStorage as PreparedStorage, envelope_components
 
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
 LEGACY_GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v1"
@@ -306,7 +307,7 @@ class EvidenceFiles:
         if envelope.get("digest") != actual:
             raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
         return (payload, {"payload_digest": actual, "logical_bytes": logical_size,
-            "storage_schema": STORAGE_SCHEMA if payload is not envelope["payload"] else "PLAIN_JSON"}) if details else payload
+            "storage_schema": envelope["payload"]["schema"] if payload is not envelope["payload"] else "PLAIN_JSON"}) if details else payload
 
     def _independent(self, name):
         path = self.path(name)
@@ -646,7 +647,7 @@ class EvidenceFiles:
                 if len(wire) > self.payload_limit: raise ValueError("SHADOW_PAYLOAD_LIMIT")
             envelope = _json(wire)
             stored = envelope.get("payload") if isinstance(envelope, dict) else None
-            if isinstance(stored, dict) and stored.get("schema") == STORAGE_SCHEMA:
+            if is_storage(stored):
                 if role == "status" or role == "checkpoint" and checkpoint:
                     value = decode_storage(stored, durable_limit=self.payload_limit,
                                            expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
@@ -819,10 +820,11 @@ class EvidenceFiles:
                 if role == "status":
                     values[role].update(report_digest=payload_digests["report"], checkpoint_digest=payload_digests["checkpoint"])
                 representation, payload_digests[role] = prepared[role].encode(values[role])
-                wire = _encode({"digest": payload_digests[role], "payload": representation})
+                envelope = {"digest": payload_digests[role], "payload": representation}
+                wire = _encode(envelope)
                 if len(wire) > self.payload_limit:
                     raise ValueError("SHADOW_PAYLOAD_LIMIT")
-                encoded[role] = gzip.compress(wire, mtime=0, compresslevel=1) if name.endswith(".gz") else wire
+                encoded[role] = b"".join(envelope_components(envelope)) if name.endswith(".gz") else wire
             manifest = {"schema": GENERATION_SCHEMA, **metadata, "as_of": values["report"]["as_of"],
                 "safety": deepcopy(SAFETY),
                 "previous_generation_id": pointer.get("generation_id"),

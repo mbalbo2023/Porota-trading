@@ -70,6 +70,24 @@ def test_slow_disk_or_shadow_quota_failure_cannot_block_actual_exit_supervisor(t
         assert result["slow_fsync_exit_isolation_proven"]
 
 
+def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint(tmp_path):
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    from rc6_shadow_runtime.persistence import shadow_evidence_root, shadow_archive_root
+    from unittest.mock import patch
+    result = run_stress(tmp_path / "canonical", catalog_count=20, canonical_runtime=True, slow_disk=True)
+    shadow = result["shadow"]
+    assert result["canonical_runtime_requested"] and shadow["canonical_factory"] and shadow["cycle_completion"]
+    assert result["source_database_unchanged"] and result["slow_fsync_exit_isolation_proven"]
+    assert result["factual_exits"]["sell_fills"] == 5
+    env = shadow["fixture_environment"]
+    with patch.dict(os.environ, env, clear=True):
+        restored = ShadowRuntime.from_environment(result["database"])
+        assert str(shadow_evidence_root(result["database"])) == result["evidence_root"]
+        assert str(shadow_archive_root(result["database"])) == shadow["archive_root"]
+        assert list(map(str, restored.source_roots)) == shadow["source_roots"]
+        assert restored.configuration_fingerprint(AT) == shadow["configuration_fingerprint"]
+
+
 def test_wal_writer_lock_does_not_turn_shadow_into_writer_or_unbounded_query(tmp_path):
     path = tmp_path / "source.db"
     fixture_database(path, catalog_count=101)
