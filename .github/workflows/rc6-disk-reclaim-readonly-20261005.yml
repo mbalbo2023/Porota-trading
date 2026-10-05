@@ -1,0 +1,201 @@
+name: RC6 disk reclaim read-only audit 2026-10-05
+
+on:
+  push:
+    branches:
+      - audit/rc6-disk-reclaim-readonly-20261005
+    paths:
+      - .github/workflows/rc6-disk-reclaim-readonly-20261005.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - name: Prepare strict SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/key" "$HOME/.ssh/known_hosts"
+
+      - name: Read-only disk reclaim inventory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh -i "$HOME/.ssh/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          REPO=/opt/porota-trading
+          echo "RC6_DISK_AUDIT=START"
+          echo "UTC=$(date -u +%FT%TZ)"
+          echo "HOST_SHA=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo UNKNOWN)"
+          echo "ROOT_DF_BEGIN"
+          df -hT /
+          df -PB1 /
+          df -Pi /
+          echo "ROOT_DF_END"
+
+          echo "RUNTIME_SAFETY_BEGIN"
+          sudo -n timeout 10 python3 - "$REPO/data/paper_v17/observer_v17.db" <<'PY'
+          import sqlite3,sys
+          p=sys.argv[1]
+          c=sqlite3.connect(f"file:{p}?mode=ro",uri=True,timeout=3)
+          c.execute("PRAGMA query_only=ON")
+          mode,orders=c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+          c.close()
+          print(f"MODE={mode}")
+          print(f"REAL_ORDERS_SENT={orders}")
+          assert mode=="PRODUCTION_PAPER" and int(orders)==0
+          PY
+          for c in porota_production_observer porota_production_dashboard porota_critical_approval_rc6; do
+            if sudo -n docker inspect "$c" >/dev/null 2>&1; then
+              sudo -n docker inspect -f 'CONTAINER={{.Name}}|status={{.State.Status}}|oom={{.State.OOMKilled}}|restarts={{.RestartCount}}|image={{.Image}}' "$c"
+            fi
+          done
+          echo "PPI_WATCH_BEGIN"
+          for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
+            printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
+          done
+          echo "PPI_WATCH_END"
+          echo "RUNTIME_SAFETY_END"
+
+          echo "POLICY_CANDIDATES_BEGIN"
+          sudo -n python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          now=time.time()
+
+          def size(path):
+              p=Path(path)
+              if p.is_symlink(): return 0
+              if p.is_file():
+                  try: return p.stat().st_size
+                  except OSError: return 0
+              total=0
+              for base,_,files in os.walk(p,followlinks=False):
+                  for name in files:
+                      q=Path(base)/name
+                      try:
+                          if not q.is_symlink(): total += q.stat().st_size
+                      except OSError: pass
+              return total
+
+          tmp=[]
+          root=Path("/tmp")
+          if root.exists():
+              for p in root.iterdir():
+                  if not p.name.startswith(("porota","rc6")): continue
+                  try: st=p.stat()
+                  except OSError: continue
+                  if now-st.st_mtime <= 7*86400: continue
+                  tmp.append({"path":str(p),"bytes":size(p),"mtime":st.st_mtime})
+          print("TMP_DELETE_CANDIDATES="+json.dumps(sorted(tmp,key=lambda x:(x["mtime"],x["path"])),separators=(",",":")))
+          print("TMP_DELETE_BYTES="+str(sum(x["bytes"] for x in tmp)))
+
+          groups=[
+            ("GENERAL","/opt/porota-backups","porota-general-*.tar.gz",3,{"porota-general-20260912T071509Z.tar.gz"}),
+            ("PAPER","/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/paper","observer_*.db.gz",3,set()),
+            ("HISTORY","/opt/porota-trading/data/paper_v17/artifacts/observer_v17.db/backups/history","market_history_*.db.gz",3,set()),
+          ]
+          total=0
+          for label,root_s,pattern,keep,pinned in groups:
+              root=Path(root_s)
+              rows=[]
+              if root.exists():
+                  for p in root.glob(pattern):
+                      if not p.is_file(): continue
+                      st=p.stat()
+                      rows.append({"path":str(p),"name":p.name,"bytes":st.st_size,"mtime":st.st_mtime})
+              rows.sort(key=lambda x:(x["mtime"],x["path"]),reverse=True)
+              keep_paths={x["path"] for x in rows[:max(1,keep)]}
+              keep_paths.update(x["path"] for x in rows if x["name"] in pinned)
+              delete=[x for x in rows if x["path"] not in keep_paths]
+              kept=[x for x in rows if x["path"] in keep_paths]
+              b=sum(x["bytes"] for x in delete); total+=b
+              print(f"{label}_KEEP="+json.dumps(kept,separators=(",",":")))
+              print(f"{label}_DELETE="+json.dumps(delete,separators=(",",":")))
+              print(f"{label}_DELETE_BYTES={b}")
+          print(f"BACKUP_DELETE_BYTES_TOTAL={total}")
+          PY
+          echo "POLICY_CANDIDATES_END"
+
+          echo "APT_JOURNAL_BEGIN"
+          sudo -n du -sb /var/cache/apt 2>/dev/null | sed 's/^/APT_CACHE_BYTES=/' || true
+          sudo -n du -sb /var/lib/apt/lists 2>/dev/null | sed 's/^/APT_LISTS_BYTES=/' || true
+          sudo -n journalctl --disk-usage 2>/dev/null || true
+          echo "APT_JOURNAL_END"
+
+          echo "DEPLOY_TMP_BEGIN"
+          sudo -n find /tmp -maxdepth 1 -mindepth 1 -type d -name 'porota-deploy-v2-*' -printf '%T@|%p\n' 2>/dev/null | sort -n || true
+          sudo -n du -sb /tmp/porota-deploy-v2-* 2>/dev/null || true
+          echo "DEPLOY_TMP_END"
+
+          echo "DOCKER_SYSTEM_DF_BEGIN"
+          sudo -n docker system df || true
+          echo "DOCKER_SYSTEM_DF_END"
+
+          echo "DOCKER_CONTAINERS_BEGIN"
+          sudo -n docker ps -a --no-trunc --format 'CID={{.ID}}|name={{.Names}}|image={{.Image}}|status={{.Status}}' || true
+          echo "DOCKER_CONTAINERS_END"
+
+          echo "DOCKER_IMAGES_BEGIN"
+          sudo -n docker image ls --no-trunc --format 'repo={{.Repository}}|tag={{.Tag}}|id={{.ID}}|created={{.CreatedAt}}|size={{.Size}}' || true
+          echo "DOCKER_IMAGES_END"
+
+          echo "DOCKER_UNUSED_RC6_CANDIDATES_BEGIN"
+          sudo -n python3 - <<'PY'
+          import subprocess
+          def run(*a):
+              return subprocess.run(a,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout.strip()
+          used=set(filter(None,run("docker","ps","-aq").splitlines()))
+          used_images=set()
+          for cid in used:
+              x=run("docker","inspect","-f","{{.Image}}",cid)
+              if x: used_images.add(x)
+          ids=set(filter(None,run("docker","image","ls","-q","--no-trunc").splitlines()))
+          for iid in sorted(ids):
+              tags=run("docker","image","inspect","-f","{{range .RepoTags}}{{println .}}{{end}}",iid).splitlines()
+              candidate=[t for t in tags if t.startswith("porota-trading-bot:17.0.0-rc6-candidate-")]
+              if candidate and iid not in used_images:
+                  size=run("docker","image","inspect","-f","{{.Size}}",iid)
+                  print("UNUSED_RC6_CANDIDATE|id="+iid+"|bytes="+size+"|tags="+",".join(candidate))
+          PY
+          echo "DOCKER_UNUSED_RC6_CANDIDATES_END"
+
+          echo "DOCKER_DANGLING_BEGIN"
+          sudo -n docker image ls --no-trunc --filter dangling=true --format 'id={{.ID}}|size={{.Size}}|created={{.CreatedAt}}' || true
+          echo "DOCKER_DANGLING_END"
+
+          echo "DOCKER_BUILDER_BEGIN"
+          sudo -n docker builder du 2>/dev/null || true
+          if sudo -n docker buildx version >/dev/null 2>&1; then
+            sudo -n docker buildx du 2>/dev/null || true
+          fi
+          echo "DOCKER_BUILDER_END"
+
+          echo "TOP_USAGE_BEGIN"
+          sudo -n timeout 90 du -x -B1 -d1 /opt 2>/dev/null | sort -n | tail -20 || true
+          sudo -n timeout 90 du -x -B1 -d1 /var 2>/dev/null | sort -n | tail -20 || true
+          sudo -n timeout 60 du -x -B1 -d1 /tmp 2>/dev/null | sort -n | tail -20 || true
+          echo "TOP_USAGE_END"
+
+          echo "MUTATIONS=NONE"
+          echo "RC6_DISK_AUDIT=GREEN"
+          REMOTE
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f "$HOME/.ssh/key"
