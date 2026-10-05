@@ -57,12 +57,34 @@ capacity rejections and static/mutable-header updates. A dispatch/order guard
 checks only call structure and unchanged `_scalar` invocation order; it is
 not a publisher performance measurement.
 
-AST/oracle review and independent Finance review precede any Native execution.
-The coordinated focal must use a clean whole Git archive and the literal
-frozen Python 3.11 interpreter with exact 157 lock names/versions, zero
-overlays, source SHA/mode/blob and import closure before/after, offline guards
-and original raw JUnit. No product imports, tests, timings or publisher run
-have been executed for this change at this SOURCE preparation stage.
+AST/oracle and independent Finance review closed without a material blocker on
+`270242ddd9e1f1fc8c158835304dd2ca186208f2`, tree
+`6d6dc9461a772030daa2c7d614b1473ecf98903e`. Static comparison confirms that
+only the productive `_append` method changed and both oracle methods match
+the baseline AST after removing only `packed.` qualification.
+
+The authorized six-module focal passed **365/365** cases in one collection:
+94 scalar dispatch, 74 volatile bindings, 84 small containers, 43 allocations,
+48 packed storage and 22 funnel codec. The 94 scalar cases are new; the other
+271 cases overlap the previous focal and are not added as independent coverage.
+JUnit records zero failures, errors, skips or duplicate
+nodes. PID 224746 ran the literal `/workspace/venv_rc6_frozen311/bin/python`
+(Python 3.11.16) after verifying 157 lock names and versions before fixtures;
+this is not a byte proof of installed distributions. All 1,975 source Git file
+SHA256s, modes and blob IDs remained identical, with zero overlays, 98 own
+imports and zero alien imports. Network and protected source-SQLite attempts
+were zero. DATA400 was not an input and no DATA400 all-stat snapshot is claimed.
+The process exited zero and its PID was absent from `/proc` after completion.
+The 10.658-second focal duration includes setup, not publisher performance.
+
+[The Native dossier](packed_scalar_dispatch/DOSSIER.json) preserves 16 originals
+losslessly, including wrapper, source export driver/index, locks, log, JUnit,
+receipt, original plan, tested sources, baseline and main-PID exit observation.
+JUnit SHA256 is
+`b35a8255a8bf67f21c80581727e763245ddfca28355bc7bfba23738a0d08f172`;
+receipt SHA256 is
+`8144d39d70d054318ad6583463add9cdea97995e5c54add05f92affe4390aa2a`.
+No publisher run or auxiliary decode replay was executed for this change.
 
 Two additional caller observations are kept separate. The same `engines`
 object appears in report and checkpoint, but separate builders may have
