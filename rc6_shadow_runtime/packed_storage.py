@@ -231,6 +231,8 @@ class _CaptureBuffer:
 
     def flush(self):
         if self.template:
+            if len(self.literals) > MAX_BINDINGS:
+                raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
             self.result.append(Capture(bytes(self.template), tuple(self.literals)))
             self.template.clear(); self.literals.clear()
 

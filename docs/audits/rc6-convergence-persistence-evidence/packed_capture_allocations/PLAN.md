@@ -1,8 +1,14 @@
 # Packed V2 capture allocation workstream
 
-State at this source checkpoint: `DESARROLLADO`; native guards and resource
-measurements have **not run**. This document does not grant pipeline, archive,
-UI, image, deploy or runtime acceptance.
+State at the initial source checkpoint `0b380438`: `DESARROLLADO`; native guards
+and resource measurements had **not run**. The later 0b380438 focal ran 162/162
+cases successfully in 23.64 s (JUnit), including the initial 30 new cases, on
+the exact whole source and frozen157 interpreter. It is not acceptance of the
+subsequent literal-limit correction or a resource gate. Raw evidence remains
+under `/tmp/rc6-packed-capture-0b380438-157-raw`; source SHA/modes/Git blobs were
+unchanged for all 1,650 files, with no overlays, alien imports or network calls.
+This document does not grant pipeline, archive, UI, image, deploy or runtime
+acceptance.
 
 - Workstream: `RC6_PACK_CAPTURE_ALLOCATIONS` / `WRITE_OWNER`.
 - Isolated branch: `work/rc6-packed-capture-allocations-20261005`.
@@ -75,6 +81,11 @@ New module: `tests/test_rc6_packed_capture_allocations.py`.
   JSON. These are 16 declared parameter combinations.
 - `test_volatile_root_sections_remain_single_exact_literal_capture`: four
   declared root names, with full literal bytes preserved.
+- `test_direct_capture_keeps_combined_literal_capacity_guard`: four reduced
+  capacity rejections and the exact four-literal boundary control. Root found
+  the omitted local guard during the initial focal. The guard is restored
+  before freezing bytes in `flush`; no default-limit inference substitutes
+  for it. These five new cases are pending native execution at this revision.
 - `test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens`:
   count actual Capture constructor calls for 2,000 independent identities;
   assert new calls equal output chunks and compare with the original loop.
@@ -89,14 +100,14 @@ New module: `tests/test_rc6_packed_capture_allocations.py`.
   native PAPER producer plus worker, full committed reader and derived
   projection; match all role digests and the committed pointer.
 
-There are 30 declared cases in the new module; actual collection/execution
+There are 35 declared cases in the updated new module; actual collection/execution
 counts must come from the future frozen-source JUnit. Relevant existing guards
 are the packed-storage, funnel-storage codec, generation and native runtime
 wiring modules. Native test execution is serialized under a separate CPU slot.
 
 ## Pending evidence
 
-No savings have been measured. The next focal must use a whole Git source
+No CPU or RSS savings have been measured. The next focal must use a whole Git source
 archive, zero product overlays, literal
 `/workspace/venv_rc6_frozen311/bin/python`, exact 157 names/versions checked
 before fixtures, preserved source SHA/modes, blocked network and import

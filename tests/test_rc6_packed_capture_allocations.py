@@ -121,6 +121,18 @@ def test_volatile_root_sections_remain_single_exact_literal_capture(name):
     assert actual == expected == (packed.Capture(b"\0"*5, (canonical(value),)),)
 
 
+@pytest.mark.parametrize("maximum", [0, 1, 2, 3, 4])
+def test_direct_capture_keeps_combined_literal_capacity_guard(monkeypatch, maximum):
+    monkeypatch.setattr(packed, "MAX_BINDINGS", maximum)
+    value = {"a_at": None, "b_at": False, "c_seconds": -0.0, "d_at": "2026-10-05T16:00:00+00:00"}
+    if maximum < 4:
+        for builder in (LegacyCaptureBuilder, packed._CaptureBuilder):
+            with pytest.raises(ValueError, match="^SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED$"):
+                builder(value).capture(value)
+    else:
+        assert packed._CaptureBuilder(value).capture(value) == LegacyCaptureBuilder(value).capture(value)
+
+
 def test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens(monkeypatch):
     rows = [{"label": f"identity-{index}", "quantity": index,
              "typed": [False, 0, -0.0, 0.0, None]} for index in range(2000)]
