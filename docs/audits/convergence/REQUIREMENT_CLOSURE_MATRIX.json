@@ -5614,6 +5614,12 @@
         "U28"
       ]
     },
+    "scripts/rc6_disk_space_guard.py": {
+      "reason": "Add the measured remaining SQLite scratch allocation to the existing exact image-tar/unpacked/two-bundle formula, preserving one shared2GiB residual reserve and separate filesystem/inode guards.",
+      "requirement_ids": [
+        "U28"
+      ]
+    },
     "scripts/rc6_dynamic_universe_shadow.py": {
       "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
       "requirement_ids": [
@@ -5723,6 +5729,16 @@
         "U10",
         "U22",
         "U23"
+      ]
+    },
+    "tests/probes/rc6_projection_index_derivation_probe.py": {
+      "reason": "Preserve the identical independent probe across exact archived RED/GREEN trees, distinguishing a SQL-derived filter/index binding failure from a wire/custody or financial authority bypass; authoritative final guards remain the native committed-projection tests.",
+      "requirement_ids": [
+        "U17",
+        "U21",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03"
       ]
     },
     "tests/probes/rc6_retention_ack_resume_probe.py": {
@@ -11412,8 +11428,5 @@
   "schema": "rc6.convergence-closure.v1",
   "software_scope": "PAPER_SHADOW_OFFLINE; no runtime, real provider capacity or economic edge attestation",
   "status": "DEVELOPED_REQUIRES_FINAL_FROZEN_EXECUTION",
-  "unexplained_paths": [
-    "scripts/rc6_disk_space_guard.py",
-    "tests/probes/rc6_projection_index_derivation_probe.py"
-  ]
+  "unexplained_paths": []
 }
