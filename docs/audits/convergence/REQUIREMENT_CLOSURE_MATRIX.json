@@ -434,7 +434,8 @@
         "U24"
       ],
       "native_caller": "read_runtime, ShadowRuntime._metadata and native stages/entry_signals/families/lab -> source_connection -> readonly_copy; source SQLite is never opened by these readers.",
-      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/source_read_custody_512_evidence.json",
+      "ownership_scope": "ROOT_INTEGRATION_SUPPLEMENTAL_SOURCE_MAPPING",
       "rca": "The original107 native read_runtime and worker metadata readers opened mode=ro on original SQLite files, preserving main/WAL bytes while changing main access time and SHM access/change/modification times. The actual normal4 source-custody check therefore failed.",
       "remaining_uncertainty": "The original two-reader metadata reproduction and the later native consumer/transport guards retain separate scopes. No financial cash/ledger byte modification, continuity with8192 configurations, full live-host scalability or final frozen artifact execution is claimed.",
       "test_nodes": [
@@ -447,7 +448,7 @@
         "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
         "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected"
       ],
-      "workstream": "HISTORY"
+      "workstream": "INTEGRATION"
     },
     {
       "code_paths": [
@@ -5355,6 +5356,62 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-integrated-source512-b26f4d93.json": {
+      "reason": "Bind actual integrated focal argv, CPython3.11.16,157 distributions, b26 SHA/tree, JUnit bytes/hash/count and unchanged source/modes; eligible_to_deploy and acceptance_complete remain false.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U13",
+        "U14",
+        "U18",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-integrated-source512-b26f4d93.log": {
+      "reason": "Preserve the exact integrated native focal stdout/stderr including warnings; raw log whitespace is retained and the scope is source-only.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U13",
+        "U14",
+        "U18",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-integrated-source512-b26f4d93.xml": {
+      "reason": "Preserve the actual229-case integrated focal JUnit bytes from complete b26 source with157 distributions, no omissions or duplicates and unchanged1553 tracked bytes/modes. Focal execution is not full governed, image, BIG or sustained horizon acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U13",
+        "U14",
+        "U18",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-integrated-source512-runner-b26f4d93.py": {
+      "reason": "Preserve the exact executed external focal runner source with NoAtime file-byte/mode capture, raw JUnit/log preservation and explicit non-governed/non-image/non-horizon scope. Its metadata does not substitute for final canonical callers.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U13",
+        "U14",
+        "U18",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
       ]
     },
     "docs/audits/convergence/evidence/native-normal4-original-107a.json": {

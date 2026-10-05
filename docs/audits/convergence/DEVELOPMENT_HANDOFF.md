@@ -168,6 +168,15 @@ del modelo main se informa como hipótesis de eventos. No se convierte cada
 observación del auditor en un nuevo error matemático ni se atribuye una ejecución
 final a estos recibos históricos.
 
+El conjunto focal integrado de `b26f4d9360e2f0a7d31abf08d9f29dc79409b64d`
+ejecutó229 casos en37.49 segundos con CPython3.11.16 y157 distribuciones;
+no tuvo fallos, errores, skips ni nodos duplicados. Conservó los1553 archivos
+tracked y sus modos. Los bytes de JUnit, log, recibo y runner se preservan en
+`evidence/native-integrated-source512-b26f4d93.*`. Incluye controles de archivo,
+binding y replay SRE, el enlace prebuild FIP/Gov/JUnit y el caller canónico
+pequeño de stress. Es ejecución focal de fuente: no sustituye la suite completa,
+la imagen, el horizonte físico ni las pruebas grandes de navegador.
+
 ## Artefacto y despliegue posterior
 
 Sólo después de cerrar integración se publica un PR DRAFT único y se ejecuta
