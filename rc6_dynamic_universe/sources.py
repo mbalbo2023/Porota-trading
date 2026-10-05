@@ -248,6 +248,54 @@ def source_reason_code(value):
         "RuntimeError": "SOURCE_UNAVAILABLE"}.get(name, "SOURCE_ERROR_REDACTED")
 
 
+def _sanitized_error_list(item):
+    errors = []
+    for error in (item if isinstance(item, list) else [item]):
+        if isinstance(error, Mapping) and set(error) == {"kind", "code"} and error.get("kind") in {"errors", "error", "reason", "shape"}:
+            codes = error["code"] if isinstance(error["code"], list) else [error["code"]]
+            errors.append({"kind": error["kind"], "code": [code if isinstance(code, str) and code in {
+                "sources", "records", "symbols", "observations", "routes"} else source_reason_code(code) for code in codes]})
+        else:
+            errors.append(source_reason_code(error))
+    return errors
+
+
+def source_errors_are_sanitized(value):
+    """Check the same taxonomy without cloning unrelated market evidence.
+
+    Memoization belongs to this single call and holds no persistent source
+    authority. Nonbuiltin containers retain their original equality behavior.
+    """
+    memo, active = {}, set()
+    def checked(node):
+        if type(node) not in (dict, list):
+            return node == sanitize_source_errors(node) if isinstance(node, (Mapping, list)) else True
+        key = id(node)
+        if key in active: return False
+        if key in memo: return memo[key]
+        active.add(key)
+        try:
+            if type(node) is list:
+                result = all(checked(item) for item in node)
+            else:
+                result = True
+                for name, item in node.items():
+                    if name in {"reason", "native_reason", "error", "last_error"}:
+                        valid = item == source_reason_code(item) if item is not None else True
+                    elif name == "errors":
+                        valid = item == _sanitized_error_list(item)
+                    else:
+                        valid = checked(item)
+                    if not valid:
+                        result = False
+                        break
+            memo[key] = result
+            return result
+        finally:
+            active.remove(key)
+    return checked(value)
+
+
 def sanitize_source_errors(value):
     """Sanitize newly received and resumed caches before any durable write."""
     if isinstance(value, Mapping):
@@ -256,15 +304,7 @@ def sanitize_source_errors(value):
             if key in {"reason", "native_reason", "error", "last_error"}:
                 result[key] = source_reason_code(item) if item is not None else None
             elif key == "errors":
-                errors = []
-                for error in (item if isinstance(item, list) else [item]):
-                    if isinstance(error, Mapping) and set(error) == {"kind", "code"} and error.get("kind") in {"errors", "error", "reason", "shape"}:
-                        codes = error["code"] if isinstance(error["code"], list) else [error["code"]]
-                        errors.append({"kind": error["kind"], "code": [code if isinstance(code, str) and code in {
-                            "sources", "records", "symbols", "observations", "routes"} else source_reason_code(code) for code in codes]})
-                    else:
-                        errors.append(source_reason_code(error))
-                result[key] = errors
+                result[key] = _sanitized_error_list(item)
             else:
                 result[key] = sanitize_source_errors(item)
         return result
@@ -487,7 +527,7 @@ def audit_sources(snapshots=None, *, as_of=None, max_age_seconds=120, reports=No
             # A JSON pointer and its digest bind the existing report, retaining
             # all rows/errors/clocks/conflicts in one authoritative model.
             linked[str(index)] = {"source": report["source"], "report_pointer": f"/source_reports/{index}",
-                "report_digest": digest(report), "status": report["status"],
+                "report_digest": report_hash, "status": report["status"],
                 "counts": dict(report["counts"]), "provider_available": report.get("provider_available"),
                 "source_paths": sorted({str(row["source_path"]) for row in rows if row.get("source_path")}),
                 "path_provenance_missing": sum(not row.get("source_path") for row in rows),

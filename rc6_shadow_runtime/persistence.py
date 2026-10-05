@@ -21,7 +21,7 @@ import uuid
 import zlib
 
 from rc6_dynamic_universe.common import digest, stamp
-from rc6_dynamic_universe.sources import audit_sources, sanitize_source_errors
+from rc6_dynamic_universe.sources import audit_sources, source_errors_are_sanitized
 from .serialization import encode_storage, decode_storage, verify_storage_wire, canonical_metrics, PreparedStorage, SCHEMA as STORAGE_SCHEMA
 
 GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
@@ -64,7 +64,7 @@ def _semantic_sources(report, *, legacy=False):
         raise ValueError("SHADOW_SOURCE_AUDIT_INVALID")
     if reports and audit.get("source_reports_digest") != digest(reports):
         raise ValueError("SHADOW_SOURCE_AUDIT_DIGEST_MISMATCH")
-    if not legacy and reports != sanitize_source_errors(reports):
+    if not legacy and not source_errors_are_sanitized(reports):
         raise ValueError("SHADOW_SOURCE_ERROR_TAXONOMY_MISMATCH")
     expected = audit_sources(reports=reports, as_of=report["as_of"])
     if legacy and not reports and not audit:
@@ -167,6 +167,7 @@ class EvidenceFiles:
         if any(path.is_symlink() for path in (self.authority_root, *self.authority_root.parents)):
             raise ValueError("SHADOW_DIRECTORY_ALIAS_FORBIDDEN")
         self.lock = None
+        self._wire_receipts = {}
         self.fault_inject = fault_inject
 
     def __enter__(self):
@@ -188,6 +189,7 @@ class EvidenceFiles:
                 raise ValueError("SHADOW_FILE_ALIAS_FORBIDDEN")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self._recover_publication()
+            self._wire_receipts.clear()
         except BaseException:
             self.lock.close()
             self.lock = None
@@ -195,6 +197,7 @@ class EvidenceFiles:
         return self
 
     def __exit__(self, *args):
+        self._wire_receipts.clear()
         if self.lock is not None:
             self.lock.close()
             self.lock = None
@@ -579,16 +582,28 @@ class EvidenceFiles:
         if (manifest.get("source_watermark", {}).get("as_of") != manifest.get("as_of")
                 or digest(manifest.get("safety")) != digest(SAFETY)):
             raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
-        verified, result = {}, {"manifest": manifest, "pointer": pointer}
+        verified, result, pending_receipts = {}, {"manifest": manifest, "pointer": pointer}, {}
         for role, name in GENERATION_ROLES.items():
             guard()
             record = manifest["files"][role]
             if record.get("name") != name: raise ValueError("SHADOW_GENERATION_PATH_MISMATCH")
             member = self._bytes(generation / name)
-            if _sha(member) != record.get("sha256"): raise ValueError("SHADOW_GENERATION_FILE_HASH_MISMATCH")
+            member_sha = _sha(member)
+            if member_sha != record.get("sha256"): raise ValueError("SHADOW_GENERATION_FILE_HASH_MISMATCH")
             if role == "projection":
                 result["projection_bytes"] = member
                 verified[role] = {key: record[key] for key in ("payload_digest", "logical_bytes", "storage_schema")}
+                continue
+            # This is a private receipt for the identical immutable bytes
+            # already verified in this writer transaction, never a decoded
+            # checkpoint or a reader cache. Every use still opens and hashes
+            # the source member and rechecks CURRENT/custody/headers/deadline.
+            receipt_key = (pointer["manifest_sha256"], role, member_sha,
+                           self.payload_limit, EXPANDED_PAYLOAD_LIMIT)
+            reusable = self.lock is not None and role != "status" and not (role == "checkpoint" and checkpoint)
+            cached = self._wire_receipts.get(receipt_key) if reusable else None
+            if cached is not None:
+                verified[role] = deepcopy(cached)
                 continue
             wire = member
             if name.endswith(".gz"):
@@ -619,6 +634,8 @@ class EvidenceFiles:
             if envelope.get("digest") != proof["payload_digest"] or record.get("payload_digest") != proof["payload_digest"]:
                 raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
             verified[role] = {**proof, "durable_bytes": len(member), "wire_bytes": len(wire)}
+            if self.lock is not None and role != "status":
+                pending_receipts[receipt_key] = deepcopy(verified[role])
             if role == "status" or (role == "checkpoint" and checkpoint): result[role] = value
         status = result["status"]
         if (status.get("report_digest") != verified["report"]["payload_digest"]
@@ -635,6 +652,10 @@ class EvidenceFiles:
             "configuration_fingerprint": manifest["configuration_fingerprint"], "safety": deepcopy(SAFETY),
             "verified_payloads": verified, "role_headers": headers,
             "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION"}
+        if self.lock is not None:
+            self._wire_receipts = {key: value for key, value in self._wire_receipts.items()
+                                   if key[0] == pointer["manifest_sha256"]}
+            self._wire_receipts.update(pending_receipts)
         return result
 
     def read_writer_generation(self, *, checkpoint):

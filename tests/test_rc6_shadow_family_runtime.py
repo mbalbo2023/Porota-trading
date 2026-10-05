@@ -70,6 +70,52 @@ def source_row(record, **fields):
             "received_at": AT.isoformat(), **fields}
 
 
+@pytest.mark.parametrize("as_of", [AT-timedelta(seconds=15), AT, AT+timedelta(minutes=5)])
+def test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads(tmp_path, monkeypatch, as_of):
+    import ast
+    import inspect
+    from rc6_shadow_runtime import families
+    # Reproduce precisely the preceding eager lookup, including all other
+    # native handler logic, to compare every clock/field/identity and absence.
+    source = ast.parse(inspect.getsource(families.family_reports))
+    class EagerLookup(ast.NodeTransformer):
+        changed = 0
+        def visit_IfExp(self, node):
+            self.generic_visit(node)
+            if (isinstance(node.body, ast.Subscript) and isinstance(node.body.value, ast.Name)
+                    and node.body.value.id == "quotes" and isinstance(node.orelse, ast.Call)
+                    and isinstance(node.orelse.func, ast.Name) and node.orelse.func.id == "_quote"):
+                self.changed += 1
+                return ast.copy_location(ast.Call(func=ast.Attribute(value=ast.Name(id="quotes", ctx=ast.Load()),
+                    attr="get", ctx=ast.Load()), args=[node.body.slice, node.orelse], keywords=[]), node)
+            return node
+    transform = EagerLookup(); transform.visit(source)
+    assert transform.changed == 3
+    namespace = dict(families.__dict__)
+    exec(compile(ast.fix_missing_locations(source), "<prior-eager-family-lookup>", "exec"), namespace)
+    catalog = [instrument("S"+str(index), family, market="A3" if family == "FUTUROS" else "BYMA")
+               for index, family in enumerate(("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+                    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI"))]
+    path = fixture_db(tmp_path, catalog)
+    for record in catalog:
+        snapshot(path, record)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    calls = []
+    original = families._quote
+    def checked(rows, at):
+        calls.append(len(rows))
+        return original(rows, at)
+    namespace["_quote"] = checked
+    expected = namespace["family_reports"](path, as_of=as_of, catalog=catalog)
+    assert calls.count(0) == 7
+    calls.clear()
+    monkeypatch.setattr(families, "_quote", checked)
+    actual = families.family_reports(path, as_of=as_of, catalog=catalog)
+    assert actual == expected
+    assert calls.count(0) == 0 and len(calls) == 9
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
 def test_dispatches_all_ten_families_with_specialized_evidence_and_no_database_mutation(tmp_path):
     catalog = [instrument("GGAL", "ACCIONES"), instrument("AAPL", "CEDEARS"), instrument("SPY", "ETFS"),
                instrument("AL30", "BONOS"), instrument("S31O6", "LETRAS"), instrument("YMCJO", "OBLIGACIONES"),

@@ -80,7 +80,7 @@ def native_rows(report):
     for row in funnel.get("by_currency_channel", []): yield "funnel_aggregates", row, True
 
 
-def index_record(dataset, ordinal, row, native, *, raw=None, dictionary=None):
+def index_record(dataset, ordinal, row, native, *, raw=None, dictionary=None, _compressor=None):
     raw = encoded(row) if raw is None else raw
     if len(raw.encode()) > MAX_ROW_BYTES:
         raise ValueError("SHADOW_PROJECTION_ROW_LIMIT")
@@ -100,7 +100,10 @@ def index_record(dataset, ordinal, row, native, *, raw=None, dictionary=None):
     rank = row.get("rank")
     if isinstance(rank, bool) or not isinstance(rank, (int, float)): rank = None
     if rank is not None: rank = float(rank)
-    compressor = zlib.compressobj(level=1, zdict=dictionary) if dictionary is not None else zlib.compressobj(level=1)
+    # Copy only a never-started encoder within this one immutable derivation.
+    # Each row still owns an independent zlib stream with the exact dictionary.
+    compressor = _compressor.copy() if _compressor is not None else (
+        zlib.compressobj(level=1, zdict=dictionary) if dictionary is not None else zlib.compressobj(level=1))
     compressed = compressor.compress(raw.encode())+compressor.flush()
     return (dataset, ordinal, upper(ticker), upper(family), upper(currency), upper(market), upper(settlement),
         upper(strategy), upper(row.get("channel")), upper(state), cohort_id(row) if dataset.startswith("funnel") else "",
@@ -167,6 +170,7 @@ class PreparedProjection:
         if row_codec not in {ROW_CODEC, LEGACY_ROW_CODEC}: raise ValueError("SHADOW_PROJECTION_SCHEMA_UNSUPPORTED")
         self.row_codec = row_codec
         self.dictionary = row_dictionary(report) if row_codec == ROW_CODEC else None
+        compressor = zlib.compressobj(level=1, zdict=self.dictionary) if self.dictionary is not None else zlib.compressobj(level=1)
         self.connection = sqlite3.connect(":memory:")
         connection = self.connection
         connection.executescript("""PRAGMA page_size=4096; PRAGMA journal_mode=OFF; PRAGMA user_version=1; PRAGMA temp_store=MEMORY;
@@ -186,7 +190,7 @@ class PreparedProjection:
             ordinal = ordinals.get(dataset, 0); ordinals[dataset] = ordinal+1; count += 1
             if count > MAX_ROWS: raise ValueError("SHADOW_PROJECTION_CARDINALITY_LIMIT")
             raw = encoded(row)
-            record = index_record(dataset, ordinal, row, native, raw=raw, dictionary=self.dictionary)
+            record = index_record(dataset, ordinal, row, native, raw=raw, dictionary=self.dictionary, _compressor=compressor)
             line = encoded(list(record[:-1]))[:-1].encode()+b","+raw.encode()+b"]\n"
             accumulators.setdefault(dataset, hashlib.sha256()).update(line)
             sizes[dataset] = sizes.get(dataset, 0)+len(line)

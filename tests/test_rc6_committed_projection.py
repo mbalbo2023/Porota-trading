@@ -18,6 +18,31 @@ def custody_stats(root):
             for path in paths if path.is_file()}
 
 
+@pytest.mark.parametrize("row_codec", ["ZLIB_CANONICAL_JSON_DICTIONARY_V1", "ZLIB_CANONICAL_JSON_V1"])
+def test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page(tmp_path, monkeypatch, row_codec):
+    from rc6_shadow_runtime import projection
+    native = native_fixture(tmp_path, count=12)
+    original = projection.index_record
+    digests = {role: native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES}
+    optimized = projection.build_projection(native.cut["report"], digests, row_codec=row_codec)
+    def independent(*args, **kwargs):
+        kwargs.pop("_compressor", None)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(projection, "index_record", independent)
+    baseline = projection.build_projection(native.cut["report"], digests, row_codec=row_codec)
+    assert optimized == baseline
+    connection, header = open_projection(optimized[0])
+    try:
+        assert logical_digest(connection, header) == (optimized[2]["payload_digest"], optimized[2]["logical_bytes"])
+        pages, scope = projection.query_projection(connection, header, filters={"currency": "ARS"}, offset=10,
+                                                  limit=10, deadline=time.monotonic()+1)
+        assert pages["opportunities"]["total"] == 24
+        assert len(pages["opportunities"]["rows"]) == 10
+        assert scope["selected"]["currency"] == "ARS"
+    finally:
+        connection.close()
+
+
 def test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody(tmp_path):
     native = native_fixture(tmp_path, count=25)
     before = custody_stats(native.root)
@@ -151,3 +176,57 @@ def test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_onc
     assert sorted(calls) == sorted(expected)
     assert result["checkpoint"] == native.cut["checkpoint"]
     assert result["export_contract"]["verification_level"] == "WIRE_AND_CHECKPOINT_SEMANTICS"
+
+
+def test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph(tmp_path, monkeypatch):
+    from collections import Counter
+    from rc6_shadow_runtime import serialization
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    native = native_fixture(tmp_path, count=3)
+    original = serialization._storage_bytes
+    calls = []
+    def checked(value, **kwargs):
+        calls.append(value["logical_sha256"])
+        return original(value, **kwargs)
+    monkeypatch.setattr(serialization, "_storage_bytes", checked)
+    files = native.worker.files
+    with files:
+        first = files.read_writer_generation(checkpoint=True)
+        first["checkpoint"]["as_of"] = "2099-01-01T00:00:00+00:00"
+        first["export_contract"]["verified_payloads"]["report"]["payload_digest"] = "0"*64
+        second = files.read_writer_generation(checkpoint=False)
+        third = files.read_writer_generation(checkpoint=True)
+        assert second["export_contract"]["verified_payloads"]["report"]["payload_digest"] != "0"*64
+        assert third["checkpoint"] == native.cut["checkpoint"]
+        expected = {role: native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES}
+        assert Counter(calls) == Counter({expected["report"]: 1, expected["checkpoint"]: 2, expected["status"]: 3})
+    assert files._wire_receipts == {}
+    calls.clear()
+    files.read_writer_generation(checkpoint=False)
+    assert Counter(calls) == Counter(expected.values())
+
+
+@pytest.mark.parametrize("attack", ["member", "hardlink", "authority", "deadline", "limit", "failure"])
+def test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure(tmp_path, monkeypatch, attack):
+    from rc6_shadow_runtime import serialization
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    native = native_fixture(tmp_path, count=3)
+    files = native.worker.files
+    with files:
+        files.read_writer_generation(checkpoint=True)
+        member = native.root / ("gen-"+native.cut["pointer"]["generation_id"]) / persistence.GENERATION_ROLES["report"]
+        if attack == "member":
+            raw = member.read_bytes(); member.write_bytes(raw[:-1]+bytes([raw[-1]^1]))
+        elif attack == "hardlink":
+            import os
+            os.link(member, tmp_path/"alias")
+        elif attack == "authority":
+            authority = files.authority_root/"HEAD.json"
+            value = json.loads(authority.read_bytes()); value["committed"] = None
+            authority.write_text(json.dumps(value))
+        elif attack == "limit":
+            files.payload_limit = 1
+        elif attack == "failure":
+            files.record_failure(as_of=native.as_of.isoformat(), error=ValueError("SHADOW_SYNTHETIC_FAILURE"))
+        with pytest.raises(ValueError, match="SHADOW_|RETENTION_"):
+            files._wire_generation(checkpoint=False, deadline=time.monotonic()-1 if attack == "deadline" else None)

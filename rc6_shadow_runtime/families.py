@@ -526,7 +526,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
 
     def equity(record, *, as_of):
         key = identity(record)
-        result = {"status": "OBSERVE_ONLY", "quote": quotes.get(key, _quote([], at)),
+        result = {"status": "OBSERVE_ONLY", "quote": quotes[key] if key in quotes else _quote([], at),
                   "entry_authority": False, "momentum_signal": "NOT_EVALUATED_BY_FAMILY_OBSERVER"}
         if key[1] == "CEDEARS":
             result["cedear_features"] = {
@@ -555,7 +555,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
         analytics = {name: _field(name, rows, at=at, ttl=300, numeric=name not in {"flows", "curve"}, signed=name in {"yield", "carry"})
                      for name in ("yield", "duration", "parity", "carry", "flows", "curve")}
         maturity = _field("maturity_at", rows, at=at, ttl=None, static=True)
-        return {"status": "OBSERVE_ONLY", "quote": quotes.get(key, _quote([], at)), "terms": terms,
+        return {"status": "OBSERVE_ONLY", "quote": quotes[key] if key in quotes else _quote([], at), "terms": terms,
                 "nominal_contract_status": "VERIFIED_NOMINAL_CONTRACT" if valid else "NO_VERIFICADO",
                 "analytics": analytics, "maturity": maturity, "cash_per_nominal_currency": key[3], "cash_per_nominal": (
                     quotes[key]["price"]*multiplier if valid and quotes.get(key, {}).get("price") is not None else None),
@@ -564,7 +564,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
 
     def options(record, *, as_of):
         key = identity(record)
-        rows, quote = evidence[key], quotes.get(key, _quote([], at))
+        rows, quote = evidence[key], quotes[key] if key in quotes else _quote([], at)
         terms = {name: _field(name, rows, at=at, ttl=None, static=True, numeric=name == "strike")
                  for name in ("underlying", "strike", "expires_at", "strike_unit", "option_right")}
         underlying = terms["underlying"]["value"]

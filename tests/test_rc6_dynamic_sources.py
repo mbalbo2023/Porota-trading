@@ -17,6 +17,41 @@ def row(**values):
             "price_unit": "PER_SHARE", "volume": 1000, "volume_unit": "SHARES", **values}
 
 
+@pytest.mark.parametrize("value", [
+    {"reason": None, "nested": [{"native_reason": "PPI_INTRADAY_UNAVAILABLE"}]},
+    {"reason": "Authorization: Bearer SYNTHETIC_SECRET", "other": {"price": 100}},
+    {"errors": ["SOURCE_TIMEOUT", "SOURCE_ERROR_REDACTED"]},
+    {"errors": "SOURCE_TIMEOUT"},
+    {"errors": [{"kind": "shape", "code": ["records", "symbols"]}]},
+    {"errors": [{"kind": "shape", "code": "records"}]},
+    {"errors": [{"kind": "unknown", "code": ["records"]}]},
+    {"errors": [{"kind": "shape", "code": [False, 0, None, "token=secret"]}]},
+    [{"error": "SOURCE_TIMEOUT"}, {"last_error": "SOURCE_TRANSPORT_FAILURE"}],
+])
+def test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged(value):
+    from rc6_dynamic_universe.sources import sanitize_source_errors, source_errors_are_sanitized
+    original = deepcopy(value)
+    sanitized = sanitize_source_errors(value)
+    assert source_errors_are_sanitized(value) == (value == sanitized)
+    assert source_errors_are_sanitized(sanitized)
+    assert value == original
+
+
+def test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation(monkeypatch):
+    from rc6_dynamic_universe import sources
+    report = observations([row(), row(symbol="OTHER")])
+    original = deepcopy(report)
+    def forbidden(_):
+        raise AssertionError("Native taxonomy validation must not clone the market evidence")
+    monkeypatch.setattr(sources, "sanitize_source_errors", forbidden)
+    assert sources.source_errors_are_sanitized([report, report])
+    assert report == original
+    report["observations"][0]["reason"] = "token=SYNTHETIC_SECRET"
+    assert not sources.source_errors_are_sanitized([report, report])
+    cycle = {}; cycle["nested"] = cycle
+    assert not sources.source_errors_are_sanitized(cycle)
+
+
 def observations(records, **kwargs):
     return source_observations({"records": records}, source="BYMA", as_of=AT, **kwargs)
 
