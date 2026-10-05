@@ -118,12 +118,19 @@
   "runtime_validated": false,
   "schema": "rc6.native-horizon-wrapper-correction.v1",
   "self_commit_sha": null,
+  "source_only_final_review": {
+    "changes": [
+      "An observation-preinspection error is counted as a failed observed wrapper invocation; no incomplete counter is silently accepted.",
+      "Final PRIMARY custody evidence is stored independently before later index/code/import checks, preserving factual DB-unchanged evidence when another proof fails."
+    ],
+    "status": "SOURCE_REVIEW_ONLY_NOT_EXECUTED"
+  },
   "source_only_validation": {
     "AST_and_compile_without_import_or_execution": "PASS",
     "native_pytest_cases_executed": 0,
     "native_worker_calls_executed": 0,
     "source_paths_sha256": {
-      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "d507a05be9275c3c166543adf9c88401db661f4265cb1b1a21af8d95d986e3d5",
+      "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "81882df4f08801e37e1615c1b06a36e5ae8eeccc134b53c0f16392fa98d09a7a",
       "tests/test_rc6_native_archive_horizon_wrapper.py": "7d055198244d15c0980b5bbe695d5c5a2bd4f818201bf0269117df9c603f4914"
     }
   },

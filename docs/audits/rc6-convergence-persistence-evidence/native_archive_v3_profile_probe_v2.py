@@ -349,13 +349,13 @@ class NativeRetentionObservation:
     def observe(self, name, owner, arguments, keywords):
         counter = self.counters[name]; counter["entered"] += 1
         before = None
-        if name == "_compact_ack":
-            before = (owner.root / ("archive-ack-"+str(arguments[0])+".json")).exists()
-        elif name == "_recover_archive_gc" and (owner.archive_root / "GC.json").exists():
-            intent = read_json(owner.archive_root / "GC.json")
-            before = {"intent": intent, "present_targets": sum(
-                (owner.archive_root / target["name"]).exists() for target in intent["targets"])}
         try:
+            if name == "_compact_ack":
+                before = (owner.root / ("archive-ack-"+str(arguments[0])+".json")).exists()
+            elif name == "_recover_archive_gc" and (owner.archive_root / "GC.json").exists():
+                intent = read_json(owner.archive_root / "GC.json")
+                before = {"intent": intent, "present_targets": sum(
+                    (owner.archive_root / target["name"]).exists() for target in intent["targets"])}
             value = self.originals[name](owner, *arguments, **keywords)
             state = {"call_number": counter["entered"]}
             if name in ("_pins", "_archive_pins"):
@@ -878,20 +878,22 @@ def main():
         try:
             peaks()
             after = database_inventory(database)
+            # Custody evidence remains factual even if a later independent
+            # code/index/import proof fails; do not relabel it as DB mutation.
+            result.update(source_database_after=after, source_database_unchanged=before == after)
+            result["source_database_changes"].extend(inventory_changes(before, after, "final"))
             if (read_json(index_path) != pin or signature(source_tar)["sha256"] != pin["tar_sha256"]
                     or hashlib.sha256(raw(index_path)).hexdigest() != result["source_index_sha256"]):
                 raise AssertionError("NATIVE_PROFILE_SOURCE_INDEX_OR_TAR_CHANGED")
             code_after, authority_after = verify_source(repository, source_root, args.source_sha, args.source_tree, pin)
             graph_after = import_inventory(source_root, code_before)
             result["import_graph_union"].update(graph_after["modules"])
-            result.update(source_database_after=after, source_database_unchanged=before == after,
-                code_source_unchanged=code_before == code_after, source_authority_after=authority_after,
+            result.update(code_source_unchanged=code_before == code_after, source_authority_after=authority_after,
                 source_index_and_tar_unchanged=True,
                 source_code_inventory_after_sha256=hashlib.sha256(
                     json.dumps(code_after, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                 import_graph_after=graph_after, import_graph_verified=True,
                 scratch_final=sqlite_scratch.inspect_scratch(scratch))
-            result["source_database_changes"].extend(inventory_changes(before, after, "final"))
         except BaseException as error:
             result["execution_complete"] = False
             result["finalization_error"] = {"class": type(error).__name__, "reason": str(error), "traceback": traceback.format_exc()}
