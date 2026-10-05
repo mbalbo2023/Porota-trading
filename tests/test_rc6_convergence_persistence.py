@@ -26,7 +26,8 @@ import pytest
 from rc6_dynamic_universe.common import digest
 from rc6_dynamic_universe.sources import audit_sources, source_observations
 from rc6_shadow_runtime import persistence
-from rc6_shadow_runtime.persistence import EvidenceFiles, GENERATION_SCHEMA, ROLES, read_committed_generation, shadow_evidence_root
+from rc6_shadow_runtime.persistence import (EvidenceFiles, GENERATION_SCHEMA, ROLES, read_committed_generation,
+    shadow_evidence_root, shadow_archive_root, shadow_archive_maximum_bytes)
 from rc6_shadow_runtime.retention import EvidenceRetention, RetentionPressure
 from rc6_shadow_runtime.worker import ShadowRuntime
 from tests.test_issue465_generations import publish
@@ -107,6 +108,66 @@ def test_default_root_real_worker_reader_and_configuration_identity(tmp_path, mo
     alias = tmp_path / "alias"; alias.symlink_to(worker.root, target_is_directory=True)
     with pytest.raises(ValueError, match="ALIAS"):
         shadow_evidence_root(store.path, {"POROTA_DYNAMIC_SHADOW_ROOT": str(alias)})
+
+
+def test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota(tmp_path, monkeypatch):
+    from cg_paper_workspace import artifact_root
+    from rc6_shadow_runtime.archive_namespace import inspect_archive
+    monkeypatch.delenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", raising=False)
+    monkeypatch.delenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES", raising=False)
+    store, _ = make_store(tmp_path, count=3)
+    root = tmp_path / "shadow"
+    original = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    archive = artifact_root(store.path) / "dynamic-shadow-archive"
+    assert original.files.archive_root == shadow_archive_root(store.path) == archive
+    assert original.files.archive_maximum_bytes == shadow_archive_maximum_bytes() == 512 * 1024**2
+    assert not archive.exists()
+    first = original.tick(PRE)
+    inventory = inspect_archive(archive)
+    assert inventory["files"] == 1 and inventory["occupied_bytes"] == 0
+    cut = read_committed_generation(root)
+    assert first["configuration_fingerprint"] == cut["manifest"]["configuration_fingerprint"] == original.configuration_fingerprint(PRE)
+    other_archive = tmp_path / "other-archive"
+    monkeypatch.setenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", str(other_archive))
+    monkeypatch.setenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES", str(512 * 1024**2 - 1))
+    current = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    assert current.files.archive_root == other_archive
+    assert current.files.archive_maximum_bytes == 512 * 1024**2 - 1
+    assert current.configuration_fingerprint(PRE) != first["configuration_fingerprint"]
+    second = current.tick(PRE + timedelta(seconds=30))
+    assert not second["checkpoint_reused"]
+    resumed = ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    third = resumed.tick(PRE + timedelta(seconds=60))
+    assert third["checkpoint_reused"] and third["configuration_fingerprint"] == second["configuration_fingerprint"]
+    # Offline explicit construction stays deterministic even with an
+    # operational archive environment configured by a different fixture.
+    offline = ShadowRuntime(store.path, evidence_root=tmp_path / "offline", source_roots=[], archive_root=None)
+    assert offline.files.archive_root is None
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "+1", "01", "1.0", "True", "NaN", "536870913", "999999999999999999999999"])
+def test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs(tmp_path, monkeypatch, value):
+    store, _ = make_store(tmp_path, count=1)
+    root = tmp_path / "shadow"
+    monkeypatch.setenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES", value)
+    with pytest.raises(ValueError, match="BYTE_POLICY_INVALID"):
+        ShadowRuntime.from_environment(store.path, evidence_root=root, source_roots=[])
+    assert not root.exists()
+
+
+def test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    root = tmp_path / "shadow"
+    environment = {"POROTA_DYNAMIC_SHADOW_ROOT": str(root)}
+    database = Path(store.path)
+    for archive in (database, database.parent, root, root / "nested", root.parent):
+        with pytest.raises(ValueError, match="SEPARATE"):
+            shadow_archive_root(store.path, {**environment, "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT": str(archive)})
+    target = tmp_path / "private-archive"; target.mkdir(mode=0o700)
+    alias = tmp_path / "archive-alias"; alias.symlink_to(target, target_is_directory=True)
+    for archive in (alias, alias / "child"):
+        with pytest.raises(ValueError, match="ALIAS"):
+            shadow_archive_root(store.path, {**environment, "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT": str(archive)})
 
 
 @pytest.mark.parametrize("budget", [False, True, 0, -1, 2.001, float("inf"), float("nan"), "0.5"])

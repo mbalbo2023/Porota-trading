@@ -20,6 +20,7 @@ from rc6_dynamic_universe.live import run_shadow
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_dynamic_universe.sources import source_observations, source_reason_code, sanitize_source_errors
 from .persistence import (EvidenceFiles, failure_reason, shadow_evidence_root,
+                          shadow_archive_root, shadow_archive_maximum_bytes,
                           DEFAULT_MAXIMUM_FILES, GENERATION_SCHEMA)
 
 LOG = logging.getLogger("dynamic_shadow")
@@ -81,7 +82,9 @@ class ShadowRuntime:
         self.database = Path(database).resolve(strict=True)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root) if evidence_root is not None else shadow_evidence_root(self.database)
-        archive_root = archive_root or os.getenv("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "").strip() or None
+        # Explicit construction supports isolated offline fixtures without an
+        # archive. Operational construction uses the canonical factory below.
+        archive_root = Path(archive_root).absolute() if archive_root is not None else None
         data_root = Path(os.getenv("DATA_DIR", str(self.database.parent.parent)))
         self.source_roots = list(dict.fromkeys(Path(p).resolve() for p in (
             source_roots if source_roots is not None else
@@ -125,13 +128,16 @@ class ShadowRuntime:
             "capacity": str(self.capacity_path), "evidence_schema": GENERATION_SCHEMA,
             "evidence_root": str(self.root), "retention": {"maximum_bytes": maximum_bytes,
                 "maximum_files": maximum_files, "archive_maximum_bytes": archive_maximum_bytes},
-            "archive_configured": archive_root is not None})
+            "archive_configured": archive_root is not None,
+            "archive_root": str(archive_root) if archive_root is not None else None})
 
     @classmethod
     def from_environment(cls, database, **kwargs):
         """Canonical worker construction reused by read-only predeploy gates."""
         history = Path(os.getenv("HIST_DB_PATH", str(Path(os.getenv("DATA_DIR", "data")) / "market_history.db")))
         kwargs.setdefault("history_database", history if history.exists() else None)
+        kwargs.setdefault("archive_root", shadow_archive_root(database))
+        kwargs.setdefault("archive_maximum_bytes", shadow_archive_maximum_bytes())
         return cls(database, **kwargs)
 
     def configuration_fingerprint(self, as_of, *, capacity_policy=None):

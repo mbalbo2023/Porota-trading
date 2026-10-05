@@ -59,6 +59,37 @@ def shadow_evidence_root(database, environ=None):
     return root
 
 
+def shadow_archive_root(database, environ=None):
+    """Canonical private sibling archive, separate from every input/output."""
+    from cg_paper_workspace import artifact_root
+    env = os.environ if environ is None else environ
+    configured = env.get("POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "").strip()
+    root = Path(configured).absolute() if configured else artifact_root(database) / "dynamic-shadow-archive"
+    if any(path.is_symlink() for path in (root, *root.parents)):
+        raise ValueError("SHADOW_DIRECTORY_ALIAS_FORBIDDEN")
+    resolved, database_path = root.resolve(), Path(database).resolve()
+    evidence = shadow_evidence_root(database, env).resolve()
+    if (resolved == database_path or database_path.is_relative_to(resolved)
+            or resolved == evidence or resolved.is_relative_to(evidence) or evidence.is_relative_to(resolved)):
+        raise ValueError("SHADOW_ARCHIVE_MUST_BE_SEPARATE")
+    if root.exists() and not root.is_dir():
+        raise ValueError("SHADOW_ARCHIVE_DIRECTORY_REQUIRED")
+    return root
+
+
+def shadow_archive_maximum_bytes(environ=None):
+    """Parse the configured archive cap without increasing the 512-MiB bound."""
+    from .archive_namespace import DEFAULT_MAXIMUM_BYTES
+    env = os.environ if environ is None else environ
+    value = env.get("POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES", str(DEFAULT_MAXIMUM_BYTES)).strip()
+    if not re.fullmatch(r"[1-9][0-9]{0,9}", value):
+        raise ValueError("SHADOW_ARCHIVE_BYTE_POLICY_INVALID")
+    maximum = int(value)
+    if maximum > DEFAULT_MAXIMUM_BYTES:
+        raise ValueError("SHADOW_ARCHIVE_BYTE_POLICY_INVALID")
+    return maximum
+
+
 def _semantic_sources(report, *, legacy=False):
     reports, audit = report.get("source_reports", []), report.get("source_audit", {})
     if not isinstance(reports, list) or not isinstance(audit, dict):
