@@ -1310,7 +1310,12 @@ def _exact_history_target(store, target):
 def _history_cutoff_repair_complete() -> bool:
     try:
         from cv_history_store_adapter_hf6 import default_history_store
-        with default_history_store().connect() as c:
+        from rc6_audit_evidence.sqlite_snapshot import readonly_copy
+        # This dated repair marker is a diagnostic, not a writer session or
+        # evidence of current complete historical coverage. A missing source
+        # must stay missing; a WAL source must not acquire a new SHM here.
+        with readonly_copy(default_history_store().path, validate=False,
+                deadline=time.monotonic() + 1.0) as c:
             exists = c.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rc6_history_cutoff_repair_runs'"
             ).fetchone()
@@ -1320,7 +1325,7 @@ def _history_cutoff_repair_complete() -> bool:
                 "SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'"
             ).fetchone()
             return bool(row and str(row[0]).upper() == "COMPLETE")
-    except (sqlite3.Error, OSError):
+    except (sqlite3.Error, OSError, ValueError):
         return False
 
 

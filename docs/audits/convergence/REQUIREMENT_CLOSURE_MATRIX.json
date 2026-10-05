@@ -16,7 +16,7 @@
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
       "rca": "A reviewed controller declared dynamic activation before checking20000 physically retained receipts.",
-      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
+      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
       "test_nodes": [
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration"
@@ -69,6 +69,33 @@
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_correction_is_a_causal_revision_even_with_identical_OHLC",
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source"
+      ],
+      "workstream": "HISTORY"
+    },
+    {
+      "code_paths": [
+        "bf_production_paper_observer.py",
+        "rc6_audit_evidence/history_probe.py",
+        "rc6_audit_evidence/package.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
+      "fix": "Use a bounded private source-preserving SQLite snapshot; retain the marker as a dated diagnostic without current coverage authority.",
+      "id": "NEW_OBSERVER_HISTORY_DIAGNOSTIC",
+      "linked_requirement_ids": [
+        "U24",
+        "AUD-468-18"
+      ],
+      "native_caller": "Production history collector/sink -> canonical History Store and actual SHADOW preopen.tick.",
+      "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
+      "rca": "A native dated read-only marker query used the writer adapter and changed source metadata or created a missing dataset.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds.",
+      "test_nodes": [
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source"
       ],
       "workstream": "HISTORY"
     },
@@ -837,7 +864,7 @@
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "evidence_boundary": "NATIVE_SDK_FAKE_WIRE_AND_MULTIPROCESS_SQL",
-      "fix": "Espera SQL bounded; cero send incierto. Round BUSY deja suspensi\u00f3n privada duradera.",
+      "fix": "Espera SQL bounded; cero send incierto. Round BUSY deja suspensi\u00f3n privada duradera. Retention followup also checks critical receipt/storage space and honest readonly uncertainty; original BUSY/accounting clause remains unchanged.",
       "id": "F01-22",
       "linked_requirement_ids": [
         "U02"
@@ -857,6 +884,7 @@
       "test_nodes": [
         "tests/test_issue465_budget_adversarial.py::test_actual_guarded_pre_wire_sqlite_fault_cleanup_recovers_all_five_exits",
         "tests/test_issue465_budget_adversarial.py::test_db_locked_is_bounded_and_no_wire_while_uncertain",
+        "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
         "tests/test_rc6_exit_reader_cadence.py::test_native_round_busy_has_durable_cross_process_barrier_and_read_only_evidence"
       ],
       "workstream": "BUDGET"
@@ -1241,7 +1269,7 @@
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "evidence_boundary": "NATIVE_SDK_FAKE_WIRE_AND_SQL",
-      "fix": "Requested/allowed/used/dropped y receipts exactos; window telemetry podada declara su incompletitud.",
+      "fix": "Requested/allowed/used/dropped y receipts exactos; window telemetry podada declara su incompletitud. Retention followup also checks critical receipt/storage space and honest readonly uncertainty; original BUSY/accounting clause remains unchanged.",
       "id": "F01-35",
       "linked_requirement_ids": [
         "U02"
@@ -1260,6 +1288,10 @@
       "remaining_uncertainty": "PPI_OPEN_CAPACITY_NO_VERIFICADO; HOST_SLO_NO_VERIFICADO",
       "test_nodes": [
         "tests/test_issue465_budget_adversarial.py::test_window_metrics_have_full_scope_denial_reservation_and_borrowing",
+        "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
+        "tests/test_rc6_budget_receipt_retention.py::test_genuine_sql_full_retained_binding_debt_stays_off_wire_until_legal_aging",
+        "tests/test_rc6_budget_receipt_retention.py::test_native_reviewed_activation_blocks_20000_retained_lower_receipts_before_wire",
+        "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
         "tests/test_rc6_convergence_budget_liveness.py::test_f01_interleaved_native_scanner_and_exit_preserve_complete_floor",
         "tests/test_rc6_convergence_budget_liveness.py::test_u02_six_scopes_per_second_stay_bounded_and_exit_recovers_after_aging",
         "tests/test_rc6_ppi_global_budget.py::test_all_endpoints_and_consumers_share_one_global_allowance"
@@ -2597,6 +2629,7 @@
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
@@ -2642,6 +2675,7 @@
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
@@ -2756,9 +2790,10 @@
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_513_files_never_deleted_without_ack_and_shadow_degrades",
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
@@ -3109,9 +3144,10 @@
       "rca": "caller real sin archivo",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
@@ -3297,15 +3333,7 @@
     "bf_production_paper_observer.py": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
-        "AUD-468-06",
-        "AUD-468-07",
-        "AUD-468-09",
-        "AUD-468-10",
-        "AUD-468-11",
-        "AUD-468-12",
         "AUD-468-18",
-        "AUD-468-20",
-        "AUD-468-21",
         "U24"
       ]
     },
@@ -3631,6 +3659,51 @@
         "U26"
       ]
     },
+    "docs/audits/convergence/evidence/observer-history-diagnostic-green.xml": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/observer-history-diagnostic-red.xml": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/observer-history-diagnostic.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "docs/audits/convergence/evidence/original-closure-rebinding-green.xml": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -3663,6 +3736,104 @@
         "U05",
         "U07",
         "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-aging.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-guards.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-interop.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-native.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-orphan.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-protected.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/rc6-budget-retention-red-probe.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
       ]
     },
     "docs/audits/convergence/evidence/rc6-budget-revalidation-red.xml": {
@@ -3962,6 +4133,39 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/projection_index_derivation_review.md": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/projection_index_green_f6e46b9d_receipt.json": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/projection_index_red_e321d8ad_receipt.json": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
       ]
     },
     "docs/audits/rc6_convergence_finance/red_c27dfd9.json": {
@@ -4329,7 +4533,33 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/large-harness-small-rejection-strict.json": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -4550,6 +4780,19 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -4671,6 +4914,12 @@
         "U29"
       ]
     },
+    "ops/policy/rc6-disk-housekeeping-v1.json": {
+      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
+      "requirement_ids": [
+        "U28"
+      ]
+    },
     "ops/policy/rc6-supply-chain-v1.json": {
       "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
       "requirement_ids": [
@@ -4680,7 +4929,9 @@
     "porota_mode_manager.py": {
       "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
       "requirement_ids": [
-        "U04"
+        "U04",
+        "U13",
+        "U28"
       ]
     },
     "rc6_annual_instrument_analysis.py": {
@@ -5433,6 +5684,14 @@
         "U13"
       ]
     },
+    "scripts/rc6_sqlite_scratch_guard.py": {
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U28"
+      ]
+    },
     "test_hf6_history_data912_v2.py": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -5812,6 +6071,14 @@
         "U25"
       ]
     },
+    "tests/test_rc6_convergence_sre_scratch.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U28"
+      ]
+    },
     "tests/test_rc6_convergence_sre_supply_cleanup.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -5877,6 +6144,12 @@
       ]
     },
     "tests/test_rc6_disk_deploy_guard.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U28"
+      ]
+    },
+    "tests/test_rc6_disk_housekeeping_policy.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
         "U28"
@@ -5978,6 +6251,13 @@
         "U03"
       ]
     },
+    "tests/test_rc6_observer_history_diagnostics.py": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-18",
+        "U24"
+      ]
+    },
     "tests/test_rc6_performance_runtime.py": {
       "reason": "Preserve corrected #453 LONG DLR lifecycle, native linage, costs/currency and no-edge performance limits; exact UTC, executable tick and frozen evidence phases strengthen causal financial reconciliation.",
       "requirement_ids": [
@@ -6002,6 +6282,15 @@
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
         "U27"
+      ]
+    },
+    "tests/test_rc6_projection_source_guard.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I05"
       ]
     },
     "tests/test_rc6_shadow_lab_atomic_capture.py": {
@@ -6158,6 +6447,7 @@
         "tests/test_rc6_dynamic_orchestrator.py::test_runtime_ready_view_keeps_every_ready_family_and_does_not_mutate_catalog",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "CORE"
@@ -6610,6 +6900,7 @@
     },
     {
       "code_paths": [
+        "bf_production_paper_observer.py",
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -6645,6 +6936,9 @@
         "tests/test_rc6_history_convergence.py::test_NEW_semantic_metadata_removal_and_ABA_revoke_and_restore_at_actual_known_clocks",
         "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
         "tests/test_rc6_history_probe.py::test_NEW_disk_sampling_survives_scratch_directory_disappearing_during_traversal",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_unit_only_correction_revokes_quantity_at_known_cut_and_preserves_source",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
@@ -6782,7 +7076,7 @@
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Poda precede todo crecimiento; telemetry no-binding limitada por bytes; receipts/envelopes/circuits/lease permanecen exactos; cuota cubre DB+journal y marcador.",
+      "fix": "Poda precede todo crecimiento; telemetry no-binding limitada por bytes; receipts/envelopes/circuits/lease permanecen exactos; cuota cubre DB+journal y marcador. Reserva de crecimiento EXIT retenido y p\u00e1ginas antes de acquire/START LOWER; expiraci\u00f3n exacta<now-3600, preservando token activo; sidecar full/UNKNOWN bloquea activaci\u00f3n observable, sin elevar20k/cuota/caps. RO occupancy distinguishes binding/stored/legallyexpired; no GC credit for active token or pages. Orphan companions are checked before ABSENT, with cold zero-wire/empty-positive controls.",
       "id": "U02",
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
       "original_requirement": {
@@ -6793,8 +7087,8 @@
         "severity": "P1"
       },
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
-      "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
-      "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
+      "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging. Adem\u00e1s20k receipts binding retenidos una hora pod\u00edan saturarse con LOWER permitido por rate caps225/30s, sin reservar espacio f\u00edsico EXIT; la carga anterior de denials no lo cubr\u00eda.",
+      "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
       "test_nodes": [
         "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
         "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
@@ -6841,7 +7135,8 @@
     },
     {
       "code_paths": [
-        "porota_mode_manager.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "OFF/SHADOW/APPROVED config-only desde `porota_mode_manager`, sin credenciales en logs ni activaci\u00f3n autom\u00e1tica.",
@@ -6862,7 +7157,21 @@
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values",
         "tests/test_rc6_convergence_sre_launcher.py::test_shipped_configuration_and_missing_inputs_never_autoactivate",
-        "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller"
+        "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller",
+        "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path",
+        "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
+        "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom"
       ],
       "workstream": "SRE"
     },
@@ -6872,7 +7181,7 @@
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Preflight rechaza demanda completa incompatible, incluido tracking>64. Cold bloqueo nunca bypass. Warm EXIT conserva exacta authority/caps/cadence/expiry/debt; LOWER no renueva ni cambia prioridad original entre acquire y wire.",
+      "fix": "Preflight rechaza demanda completa incompatible, incluido tracking>64. Cold bloqueo nunca bypass. Warm EXIT conserva exacta authority/caps/cadence/expiry/debt; LOWER no renueva ni cambia prioridad original entre acquire y wire. Static retention preflight y consulta canonical READ_ONLY antes de nueva autorizaci\u00f3n; fila/pages/UNKNOWN bloquean sin wire.64/5s READY se reemplaza por tracking fixture64/60s/32MiB; demanda28/5s nunca cabe20k/h. RO occupancy distinguishes binding/stored/legallyexpired; no GC credit for active token or pages. Orphan companions are checked before ABSENT, with cold zero-wire/empty-positive controls.",
       "id": "U05",
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
       "original_requirement": {
@@ -6883,8 +7192,8 @@
         "severity": "P1"
       },
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
-      "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
-      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
+      "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger. Rate/cadence factibles no implicaban que la demanda cr\u00edtica retenida una hora cupiera en20k/cuota, ni verificaban ocupaci\u00f3n legacy en una activaci\u00f3n fr\u00eda.",
+      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
       "test_nodes": [
         "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
         "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
@@ -7115,7 +7424,9 @@
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
-        "scripts/rc6_shadow_health_gate.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -7137,7 +7448,21 @@
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
         "tests/test_rc6_convergence_sre_health.py::test_observable_restart_can_recover_after_two_cadences_and_current_progress",
         "tests/test_rc6_convergence_sre_health.py::test_real_producer_health_is_green_without_provider_or_source_writes",
-        "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence"
+        "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence",
+        "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path",
+        "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
+        "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom"
       ],
       "workstream": "SRE"
     },
@@ -7164,9 +7489,10 @@
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
@@ -7368,6 +7694,7 @@
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
@@ -7429,6 +7756,7 @@
     },
     {
       "code_paths": [
+        "bf_production_paper_observer.py",
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
         "rc6_audit_evidence/sqlite_scratch.py",
@@ -7462,6 +7790,9 @@
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
+        "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
@@ -7572,7 +7903,9 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "ops/policy/rc6-disk-housekeeping-v1.json",
-        "scripts/rc6_deploy_scoped_cleanup.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_deploy_scoped_cleanup.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "YAML/JSON/runbook/gates concuerdan; no reinstalar arbitrariamente6 GiB ni etiquetar como incumplimiento el piso autorizado.",
@@ -7589,6 +7922,20 @@
       "rca": "Unificar documentaci\u00f3n de disco con autorizaci\u00f3n din\u00e1mica+2 GiB.",
       "remaining_uncertainty": "Formula image tar+exact unpacked image+2*bundle+2GiB residual; zero arbitrary pretransfer floor. No global prune, foreign-container inspection, DB/shared-cache mutation.",
       "test_nodes": [
+        "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path",
+        "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
+        "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_cleanup_inventory_failure_or_unknown_namespace_never_deletes",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_scoped_cleanup_keeps_active_stopped_stable_and_explicit_pins",
         "tests/test_rc6_disk_deploy_guard.py::test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_needed",
@@ -7664,6 +8011,9 @@
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
         "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
         "tests/test_ws_dash_trader_terminal_08.py::test_canonical_reader_rejection_has_no_legacy_fallback",
         "tests/test_ws_dash_trader_terminal_08.py::test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default",
         "tests/test_ws_dash_trader_terminal_08.py::test_missing_canonical_reader_preserves_awaiting_reconciliation",
@@ -7701,7 +8051,10 @@
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
         "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
-        "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population"
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect"
       ],
       "workstream": "UX"
     },
@@ -7740,6 +8093,9 @@
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
         "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
         "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency"
       ],
       "workstream": "UX"
@@ -7780,10 +8136,12 @@
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "scripts/rc6_dashboard_route_inventory.py",
+        "tests/ci_rc6_projection_large_reader.py",
         "tests/ci_trader_terminal_browser.py",
         "tests/rc6_dashboard_native_fixture.py",
         "tests/test_rc6_dashboard_convergence.py",
-        "tests/test_rc6_dashboard_projection.py"
+        "tests/test_rc6_dashboard_projection.py",
+        "tests/test_rc6_projection_source_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
@@ -7807,6 +8165,9 @@
         "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
         "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
         "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
         "tests/test_ws_dash_04_full_dashboard_truth.py::test_every_registered_route_has_a_programmatic_surface_and_dataset_inventory",
         "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
         "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview",
@@ -7877,6 +8238,7 @@
     },
     {
       "code_paths": [
+        "bf_production_paper_observer.py",
         "ct_ppi_history_salvage_hf6.py",
         "cu_history_store_v2_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -7900,7 +8262,9 @@
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
-        "scripts/rc6_shadow_health_gate.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -9972,7 +10336,8 @@
     },
     {
       "code_paths": [
-        "porota_mode_manager.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "OFF/SHADOW/APPROVED config-only desde `porota_mode_manager`, sin credenciales en logs ni activaci\u00f3n autom\u00e1tica.",
@@ -10004,14 +10369,30 @@
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values",
         "tests/test_rc6_convergence_sre_launcher.py::test_shipped_configuration_and_missing_inputs_never_autoactivate",
-        "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller"
+        "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller",
+        "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path",
+        "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
+        "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom"
       ],
       "workstream": "SRE"
     },
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
-        "scripts/rc6_shadow_health_gate.py"
+        "porota_mode_manager.py",
+        "scripts/rc6_shadow_health_gate.py",
+        "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -10044,7 +10425,21 @@
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
         "tests/test_rc6_convergence_sre_health.py::test_observable_restart_can_recover_after_two_cadences_and_current_progress",
         "tests/test_rc6_convergence_sre_health.py::test_real_producer_health_is_green_without_provider_or_source_writes",
-        "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence"
+        "tests/test_rc6_convergence_sre_health.py::test_real_reader_rejects_untrusted_or_missing_health_evidence",
+        "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path",
+        "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete",
+        "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
+        "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom"
       ],
       "workstream": "SRE"
     },
@@ -10172,6 +10567,7 @@
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
@@ -10360,9 +10756,10 @@
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart",
+        "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
+        "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
       ],
       "workstream": "PERSISTENCE"
@@ -10410,7 +10807,7 @@
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Poda precede todo crecimiento; telemetry no-binding limitada por bytes; receipts/envelopes/circuits/lease permanecen exactos; cuota cubre DB+journal y marcador.",
+      "fix": "Poda precede todo crecimiento; telemetry no-binding limitada por bytes; receipts/envelopes/circuits/lease permanecen exactos; cuota cubre DB+journal y marcador. Reserva de crecimiento EXIT retenido y p\u00e1ginas antes de acquire/START LOWER; expiraci\u00f3n exacta<now-3600, preservando token activo; sidecar full/UNKNOWN bloquea activaci\u00f3n observable, sin elevar20k/cuota/caps. RO occupancy distinguishes binding/stored/legallyexpired; no GC credit for active token or pages. Orphan companions are checked before ABSENT, with cold zero-wire/empty-positive controls.",
       "id": "R64",
       "linked_requirement": "U02",
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
@@ -10432,8 +10829,8 @@
         "original_verdict": "FAIL U02"
       },
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
-      "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging.",
-      "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados",
+      "rca": "Inserci\u00f3n de clock/buckets preced\u00eda poda; SQLITE_FULL imped\u00eda alcanzar mantenimiento, dejando EXIT bloqueado tras aging. Adem\u00e1s20k receipts binding retenidos una hora pod\u00edan saturarse con LOWER permitido por rate caps225/30s, sin reservar espacio f\u00edsico EXIT; la carga anterior de denials no lo cubr\u00eda.",
+      "remaining_uncertainty": "Cadencia seis scopes/s y horizonte son carga offline sint\u00e9tica; Telemetry window puede ser parcial y se declara; no sustituye debt exacto; Latencia/IO/RSS del host productivo no verificados; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
       "test_nodes": [
         "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
         "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
@@ -10501,7 +10898,7 @@
         "rc6_ppi_global_budget.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Preflight rechaza demanda completa incompatible, incluido tracking>64. Cold bloqueo nunca bypass. Warm EXIT conserva exacta authority/caps/cadence/expiry/debt; LOWER no renueva ni cambia prioridad original entre acquire y wire.",
+      "fix": "Preflight rechaza demanda completa incompatible, incluido tracking>64. Cold bloqueo nunca bypass. Warm EXIT conserva exacta authority/caps/cadence/expiry/debt; LOWER no renueva ni cambia prioridad original entre acquire y wire. Static retention preflight y consulta canonical READ_ONLY antes de nueva autorizaci\u00f3n; fila/pages/UNKNOWN bloquean sin wire.64/5s READY se reemplaza por tracking fixture64/60s/32MiB; demanda28/5s nunca cabe20k/h. RO occupancy distinguishes binding/stored/legallyexpired; no GC credit for active token or pages. Orphan companions are checked before ABSENT, with cold zero-wire/empty-positive controls.",
       "id": "R66",
       "linked_requirement": "U05",
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
@@ -10523,8 +10920,8 @@
         "original_verdict": "FAIL U05"
       },
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
-      "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger.",
-      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana",
+      "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger. Rate/cadence factibles no implicaban que la demanda cr\u00edtica retenida una hora cupiera en20k/cuota, ni verificaban ocupaci\u00f3n legacy en una activaci\u00f3n fr\u00eda.",
+      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
       "test_nodes": [
         "tests/test_rc6_budget_receipt_retention.py::test_actual_sdk_three_windows_and_restart_keep_exit_receipt_headroom",
         "tests/test_rc6_budget_receipt_retention.py::test_existing_retention_preflight_unknown_state_grants_no_authority_and_changes_no_files",
@@ -11015,5 +11412,8 @@
   "schema": "rc6.convergence-closure.v1",
   "software_scope": "PAPER_SHADOW_OFFLINE; no runtime, real provider capacity or economic edge attestation",
   "status": "DEVELOPED_REQUIRES_FINAL_FROZEN_EXECUTION",
-  "unexplained_paths": []
+  "unexplained_paths": [
+    "scripts/rc6_disk_space_guard.py",
+    "tests/probes/rc6_projection_index_derivation_probe.py"
+  ]
 }
