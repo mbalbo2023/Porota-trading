@@ -413,3 +413,15 @@ del resultado aún quedan fuera del reloj por corte de a4; los reinicios361/841
 no se ejercitaron. No hay auditoría de imports en este wrapper externo. RAW
 íntegros en evidence/native-normal4-eb17b878-157; no es rueda1201, Gov final,
 navegador, artefacto ni runtime.
+
+El prefiltro escalar de _count conserva un oracle independiente del algoritmo
+anterior y pasó113/113 sobre whole OWNad5/frozen311157: graph/incoming/refs/
+orden/capturas/wire/reader exactos,1845 blobs/modos intactos,94 imports propios,
+cero alien/network/SourceSQLite. RAW y fuentes originales lossless en
+packed_container_count. La integración4ba tiene exactamente su mismo árbol.
+Su BIG uninstrumented completó publication y restore7.965s, con progreso
+PREOPEN completo a82.707s; OPEN entró después y agotó el límite original90s.
+Fsync real y cinco EXIT PAPER internos pasaron; RSS1,654,472,704B y fuentes
+quedaron dentro de límites. Complete/cleanup siguenfalse y CLI1 es RED:
+el contrato requiere PRE+OPEN completos. No se declara ahorro porcentual
+ni se aumenta plazo/GC/cuota. RAW en evidence/native-big-4ba47b87-157.
