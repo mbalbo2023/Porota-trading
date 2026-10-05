@@ -47,7 +47,7 @@ def source_file_custody(path):
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
     h = hashlib.sha256()
     fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
-              "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+              "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:

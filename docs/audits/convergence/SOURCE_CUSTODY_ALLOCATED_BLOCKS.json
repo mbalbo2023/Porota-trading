@@ -1,0 +1,78 @@
+{
+  "artifact_validated": false,
+  "deployed": false,
+  "error": "Future horizon requirements and derived descriptions requested eleven DB stat fields plus SHA256, but the public source custody helper bound only ten stat fields plus SHA256. Its allocated st_blocks value was absent.",
+  "external_limits": [
+    "No old mutation/wire bypass is inferred from an absent stat field.",
+    "Native guards and exact whole-source frozen157 proof remain pending a ROOT CPU slot.",
+    "No native1201-wheel, NORMAL4, BIG, PPI/account/market authority, Docker/image or final artifact result."
+  ],
+  "final_input_provenance": null,
+  "fix": "Add st_blocks to the same existing before/after/path comparison and published tuple. Keep opening RO|NOATIME|NOFOLLOW|NONBLOCK, hashing the same complete bytes, single-link/regular validation and snapshot member-presence semantics.",
+  "fix_paths": [
+    "scripts/rc6_issue465_stress.py",
+    "tests/test_rc6_source_custody_allocated_blocks.py"
+  ],
+  "guard_catalogue": {
+    "declared_base_nodes": 2,
+    "declared_cases": 2,
+    "executed_cases": 0,
+    "scope": "Private physical SQLite-WAL and sparse-allocation oracles; no original R/55 count growth and no native worker/horizon execution."
+  },
+  "guard_nodes": [
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_real_primary_wal_shm_snapshots_bind_eleven_stats_and_sha_without_source_effect",
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_same_sparse_bytes_and_logical_size_keep_actual_allocated_blocks_distinct"
+  ],
+  "guard_oracles": {
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_real_primary_wal_shm_snapshots_bind_eleven_stats_and_sha_without_source_effect": "Actual private SQLite connection keeps MAIN/WAL/SHM alive. Independent os.stat and NOATIME raw SHA observe those files before/after public snapshot, proving actual allocated blocks and unchanged complete physical/source bytes within this fixture.",
+    "tests/test_rc6_source_custody_allocated_blocks.py::test_same_sparse_bytes_and_logical_size_keep_actual_allocated_blocks_distinct": "Actual private sparse file is physically allocated with posix_fallocate while its bytes and apparent size remain unchanged. Native stat/sha oracles distinguish the physical allocated-block counts in consecutive snapshots; ctime can also change, so no old ten-field invisible mutation bypass is inferred."
+  },
+  "historical_boundary": {
+    "d933_claim_scope": "Actual DB snapshot has ten stats plus SHA and absent sidecars; it is not eleven stats plus SHA. Separate code/member inventories do have eleven.",
+    "d933_raw_external_path": "/tmp/rc6-canonical-d9333065-normal4-157-raw/native-normal4-result.json",
+    "d933_raw_sha256": "cd97b3b9aff7997c86c93626e65d1e3a547f5a3034f674c3236c33aa7a166473",
+    "historical_raws_preserved_unchanged": true,
+    "original11_claim_derivatives_correction_owner": "ROOT",
+    "original_root_source_review": "b4b274311a2e87cf4597d829254ea846e381698a/tree db490cfc0d679bc84e908352bca21755161902ce",
+    "source_review_is_not_a_specific_old_native_red": true
+  },
+  "native_execution": null,
+  "ownership": {
+    "base_sha": "adeb66cf17ffac3403187c82e771f048fd2fdd5e",
+    "base_tree": "4e4dd7ad150143a20c1fbe57245779d3cb478e73",
+    "branch": "work/rc6-source-db-st-blocks-20261005",
+    "scope": "Only source_file_custody fields, new allocated-block custody guards and this correction record; ROOT is sole integrator.",
+    "status": "WRITE_OWNER_DELEGATED_SOURCE_ONLY",
+    "workstream_id": "RC6_SOURCE_CUSTODY_ALLOCATED_BLOCKS"
+  },
+  "quotas_deadlines_GC_clocks_policy_unchanged": true,
+  "rca": "The horizon profile delegates PRIMARY/WAL/SHM/journal snapshots to scripts.rc6_issue465_stress.source_custody_snapshot. That helper published and compared its old ten-field tuple, while the profile separate code/member FIELDS already included eleven. Those separate code/member checks do not prove DB st_blocks.",
+  "runtime_validated": false,
+  "schema": "rc6.source-custody-allocated-blocks-correction.v1",
+  "self_commit_sha": null,
+  "sha256_is_additional_not_counted_as_stat": true,
+  "source_only_validation": {
+    "AST_and_compile_without_import_or_execution": "PASS",
+    "native_cases_executed": 0,
+    "path_sha256": {
+      "scripts/rc6_issue465_stress.py": "1643c3d58ab69b8ccdfed8b2818bb5ceb03adae77fa85f9cd702b36a3fdf4492",
+      "tests/test_rc6_source_custody_allocated_blocks.py": "ee05149d32521c6a207a7dcda4bcbc4de699e155c75e9e82dd36f35878fd3805"
+    }
+  },
+  "source_reads_write_no_SQL_and_provider_routes": "NOT_CALLED",
+  "stat_field_count": 11,
+  "status": "SOURCE_ONLY_NOT_EXECUTED",
+  "verified_stat_fields": [
+    "st_dev",
+    "st_ino",
+    "st_uid",
+    "st_gid",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_blocks",
+    "st_atime_ns",
+    "st_mtime_ns",
+    "st_ctime_ns"
+  ]
+}
