@@ -4,7 +4,12 @@ State at the initial source checkpoint `0b380438`: `DESARROLLADO`; native guards
 and resource measurements had **not run**. The later 0b380438 focal ran 162/162
 cases successfully in 23.64 s (JUnit), including the initial 30 new cases, on
 the exact whole source and frozen157 interpreter. It is not acceptance of the
-subsequent literal-limit correction or a resource gate. Raw evidence remains
+subsequent literal-limit correction or a resource gate. The corrected whole
+source `934894569810b1bbc176ce93ba95cc1ee51cfb0c` subsequently passed its
+35 allocation cases in 4.41 s (JUnit), including the five reduced-capacity
+cases. That execution used the same literal frozen interpreter, exact 157
+names/versions and preserved all 1,650 source SHA/modes/Git blobs, with zero
+overlays, alien imports or network attempts. Raw evidence remains
 under `/tmp/rc6-packed-capture-0b380438-157-raw`; source SHA/modes/Git blobs were
 unchanged for all 1,650 files, with no overlays, alien imports or network calls.
 This document does not grant pipeline, archive, UI, image, deploy or runtime
@@ -85,7 +90,7 @@ New module: `tests/test_rc6_packed_capture_allocations.py`.
   capacity rejections and the exact four-literal boundary control. Root found
   the omitted local guard during the initial focal. The guard is restored
   before freezing bytes in `flush`; no default-limit inference substitutes
-  for it. These five new cases are pending native execution at this revision.
+  for it. These five cases passed in the native focal of whole source 93489456.
 - `test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens`:
   count actual Capture constructor calls for 2,000 independent identities;
   assert new calls equal output chunks and compare with the original loop.
@@ -100,17 +105,22 @@ New module: `tests/test_rc6_packed_capture_allocations.py`.
   native PAPER producer plus worker, full committed reader and derived
   projection; match all role digests and the committed pointer.
 
-There are 35 declared cases in the updated new module; actual collection/execution
-counts must come from the future frozen-source JUnit. Relevant existing guards
+The updated new module collected and passed 35 cases in the whole-source 93489456
+frozen-source JUnit. Relevant existing guards
 are the packed-storage, funnel-storage codec, generation and native runtime
 wiring modules. Native test execution is serialized under a separate CPU slot.
 
 ## Pending evidence
 
-No CPU or RSS savings have been measured. The next focal must use a whole Git source
+No CPU or RSS savings have been measured. Both completed focals used a whole Git source
 archive, zero product overlays, literal
 `/workspace/venv_rc6_frozen311/bin/python`, exact 157 names/versions checked
 before fixtures, preserved source SHA/modes, blocked network and import
-closure. A subsequent native 12k/60k run requires Root's separate authorization
+closure. [NATIVE_EVIDENCE.json](NATIVE_EVIDENCE.json) binds both executed source
+SHAs and the original raw hashes; XML, source indices and logs are retained as
+lossless gzip of their original bytes. The 162 cases belong to 0b380438; the
+corrected 35 cases belong to 93489456. No second 162-case run is claimed.
+
+A subsequent native 12k/60k run requires Root's separate authorization
 and the unchanged 90 s / 2 GiB / live 512 entries / live 128 MiB / archive
 512 MiB / scratch 512 MiB constraints. This source checkpoint is not that run.
