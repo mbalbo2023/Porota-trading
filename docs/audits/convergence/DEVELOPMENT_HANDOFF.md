@@ -209,6 +209,17 @@ La investigación de captura mantiene el mismo deadline, doble validación,
 cuotas y custodia; este diagnóstico no reemplaza una ejecución grande exitosa
 sin instrumentación ni el horizonte completo. La capacidad sigue BLOQUEADA.
 
+Dos capturas diagnósticas aisladas de esa misma fuente y entorno completo
+terminaron en0.065297 y0.058374 segundos con el plazo de0.25 intacto. La segunda
+retenía un family report nativo, pero no los objetos del planner que coexistían
+en el tick fallido. No hubo GC durante esas dos capturas; los checks de scratch
+consumieron aproximadamente0.004 segundos. No se atribuye el fallo del tick a
+esos checks ni se retira la segunda verificación SHA. El instrumento opcional
+de stacks registra también GC real y avance numérico de captura, con callbacks
+restaurados al terminar, sin cambiar los umbrales ni deshabilitar recolección.
+Esa ampliación es código preparado para un diagnóstico posterior, no una
+nueva corrida ejecutada ni una aceptación de rendimiento.
+
 ## Artefacto y despliegue posterior
 
 Sólo después de cerrar integración se publica un PR DRAFT único y se ejecuta

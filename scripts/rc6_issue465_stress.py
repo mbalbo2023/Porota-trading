@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib
 import json
+import gc
 import multiprocessing as mp
 import os
 from pathlib import Path
@@ -170,10 +171,46 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
         os.environ.update(fixture_environment)
     begin, cpu, initial_io = time.monotonic(), time.process_time(), io_snapshot()
     stack_stream = None
+    gc_callback = None
+    gc_diagnostic = {"events": 0, "source_capture_events": 0, "write_errors": 0}
     if diagnostic_stacks is not None:
         import faulthandler
-        descriptor = os.open(diagnostic_stacks, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        descriptor = os.open(diagnostic_stacks, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_APPEND, 0o600)
         stack_stream = os.fdopen(descriptor, "w")
+        def gc_callback(phase, info):
+            # Observe real collection without changing thresholds or policy.
+            # Only numeric capture progress is recorded, never source rows.
+            at = time.monotonic()
+            event = {"diagnostic_event": "GC", "phase": phase,
+                     "generation": info.get("generation"), "at_monotonic": at,
+                     "child_cpu_seconds": time.process_time()-cpu,
+                     "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                     "collected": info.get("collected"), "uncollectable": info.get("uncollectable")}
+            frame = sys._getframe(1)
+            try:
+                for _ in range(32):
+                    if frame is None:
+                        break
+                    if frame.f_globals.get("__name__") == "rc6_audit_evidence.sqlite_snapshot":
+                        progress = frame.f_locals
+                        event["source_capture"] = {"function": frame.f_code.co_name,
+                            "line": frame.f_lineno, "consumed_bytes": progress.get("consumed"),
+                            "copy_pass": progress.get("destination") is not None}
+                        deadline = progress.get("deadline")
+                        if type(deadline) in (int, float):
+                            event["source_capture"]["remaining_seconds"] = deadline-at
+                        gc_diagnostic["source_capture_events"] += 1
+                        break
+                    frame = frame.f_back
+                raw = (json.dumps(event, sort_keys=True, allow_nan=False)+"\n").encode()
+                if os.write(descriptor, raw) != len(raw):
+                    gc_diagnostic["write_errors"] += 1
+                gc_diagnostic["events"] += 1
+            except Exception:
+                gc_diagnostic["write_errors"] += 1
+            finally:
+                del frame
+        gc.callbacks.append(gc_callback)
         # A native stack witness survives termination at the unchanged deadline.
         # This optional instrument always marks its result diagnostic-only.
         faulthandler.dump_traceback_later(10, repeat=True, file=stack_stream)
@@ -300,7 +337,6 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
         report = worker.tick(PRE)
         phases.append("PREOPEN_COMMITTED")
         del report
-        import gc
         gc.collect()
         report = worker.tick(AT)
         phases.append("OPEN_CYCLE_COMPLETED")
@@ -359,8 +395,14 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
     finally:
         persistence.os.fsync = actual_fsync
         if stack_stream is not None:
-            faulthandler.cancel_dump_traceback_later()
-            stack_stream.close()
+            try:
+                gc.callbacks.remove(gc_callback)
+            finally:
+                faulthandler.cancel_dump_traceback_later()
+                stack_stream.close()
+    if diagnostic_stacks is not None:
+        result["diagnostic_gc_receipt"] = dict(gc_diagnostic,
+            policy_changed=False, scope="OBSERVED_REAL_CHILD_COLLECTION_ONLY")
     result.update(phases=phases, cycle_handled=True,
                   full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
@@ -586,7 +628,7 @@ def main(argv=None):
     parser.add_argument("--observations-per-identity", type=int, default=5)
     parser.add_argument("--slow-disk", action="store_true")
     parser.add_argument("--canonical-runtime", action="store_true")
-    parser.add_argument("--diagnostic-stacks", help="New private raw stack file; result is diagnostic-only")
+    parser.add_argument("--diagnostic-stacks", help="New private raw stack/GC file; result is diagnostic-only")
     args = parser.parse_args(argv)
     code = 0
     try:
