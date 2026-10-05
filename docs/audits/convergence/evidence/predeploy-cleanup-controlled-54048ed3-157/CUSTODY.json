@@ -24,6 +24,10 @@
     "sqlite_attempts": 0,
     "unexpected_imports": 0
   },
+  "original_roots": {
+    "RAW": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw",
+    "WHOLE_SOURCE": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source"
+  },
   "overlay_count": 0,
   "python_sources_stored_as_source_suffix": true,
   "raw_file_count": 18,
@@ -31,6 +35,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/focal.xml",
       "original_bytes": 19979,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239649133793867,
@@ -45,7 +50,9 @@
         "st_size": 19979,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "focal.xml",
+      "original_root_relative_path": "focal.xml",
       "original_sha256": "08303e26f8df30d7d0da8c14d26f5d275130b33094b03091d6155eb173c50691",
       "stored_bytes": 19979,
       "stored_mode": "100644",
@@ -55,6 +62,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/focal.log",
       "original_bytes": 328,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -69,7 +77,9 @@
         "st_size": 328,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "focal.log",
+      "original_root_relative_path": "focal.log",
       "original_sha256": "7050a3650b68b4cd09e8b21fcb21ef6b2720078c8e077671ef4b50b9dbd78ce5",
       "stored_bytes": 328,
       "stored_mode": "100644",
@@ -79,6 +89,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/focal.receipt.json",
       "original_bytes": 103014,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675497624022,
@@ -93,7 +104,9 @@
         "st_size": 103014,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "focal.receipt.json",
+      "original_root_relative_path": "focal.receipt.json",
       "original_sha256": "8faba32e254e0dd0e9df094842ca459d065a2ad51170f276e898a6765bee4376",
       "stored_bytes": 103014,
       "stored_mode": "100644",
@@ -103,6 +116,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/kernel.resources.json",
       "original_bytes": 1355,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -117,7 +131,9 @@
         "st_size": 1355,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "kernel.resources.json",
+      "original_root_relative_path": "kernel.resources.json",
       "original_sha256": "ff0404c9e9d16b34ae7304fa6148a35e9fa559665f8daa92352a85e85b1ffc08",
       "stored_bytes": 1355,
       "stored_mode": "100644",
@@ -127,6 +143,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/launch.json",
       "original_bytes": 1816,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -141,7 +158,9 @@
         "st_size": 1816,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "launch.json",
+      "original_root_relative_path": "launch.json",
       "original_sha256": "775cb25df24ac8a05dc6e21a1dd9e39358ccd307850d4e830f8805540b99f0a3",
       "stored_bytes": 1816,
       "stored_mode": "100644",
@@ -151,6 +170,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/collection-before-fixtures.json",
       "original_bytes": 26986,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -165,7 +185,9 @@
         "st_size": 26986,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "collection-before-fixtures.json",
+      "original_root_relative_path": "collection-before-fixtures.json",
       "original_sha256": "472445f7dc1c694b23c01b5632fc411b0ea1a65870c0e2cb2447312d44453946",
       "stored_bytes": 26986,
       "stored_mode": "100644",
@@ -175,6 +197,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/parent.prefixture157.json",
       "original_bytes": 1806,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -189,7 +212,9 @@
         "st_size": 1806,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "parent.prefixture157.json",
+      "original_root_relative_path": "parent.prefixture157.json",
       "original_sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
       "stored_bytes": 1806,
       "stored_mode": "100644",
@@ -199,6 +224,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/child.prefixture157.json",
       "original_bytes": 1806,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -213,7 +239,9 @@
         "st_size": 1806,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "child.prefixture157.json",
+      "original_root_relative_path": "child.prefixture157.json",
       "original_sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439",
       "stored_bytes": 1806,
       "stored_mode": "100644",
@@ -223,6 +251,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "GZIP_MTIME_ZERO_LOSSLESS",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/parent.source-before.index.json",
       "original_bytes": 1402296,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675501623996,
@@ -237,7 +266,9 @@
         "st_size": 1402296,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "parent.source-before.index.json",
+      "original_root_relative_path": "parent.source-before.index.json",
       "original_sha256": "eb25e48220e2a0fa0f51e66b669239523028ddff3cde3d92d326e5ed0d46d72f",
       "stored_bytes": 247726,
       "stored_mode": "100644",
@@ -247,6 +278,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "GZIP_MTIME_ZERO_LOSSLESS",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/parent.source-after.index.json",
       "original_bytes": 1402296,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675505623969,
@@ -261,7 +293,9 @@
         "st_size": 1402296,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "parent.source-after.index.json",
+      "original_root_relative_path": "parent.source-after.index.json",
       "original_sha256": "75f177eaa490abbed16d4a2a0928375ae86d93e7552bc9fad7d8a5fe16cebe1c",
       "stored_bytes": 247726,
       "stored_mode": "100644",
@@ -271,6 +305,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "GZIP_MTIME_ZERO_LOSSLESS",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/child.source-before.index.json",
       "original_bytes": 1402296,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675505623969,
@@ -285,7 +320,9 @@
         "st_size": 1402296,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "child.source-before.index.json",
+      "original_root_relative_path": "child.source-before.index.json",
       "original_sha256": "1d76ba2a89bad1c69721cc0fddd2328694c4f9d99704c5cb6981b24cd3d26713",
       "stored_bytes": 247721,
       "stored_mode": "100644",
@@ -295,6 +332,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "GZIP_MTIME_ZERO_LOSSLESS",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/child.source-after.index.json",
       "original_bytes": 1402296,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239675505623969,
@@ -309,7 +347,9 @@
         "st_size": 1402296,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "child.source-after.index.json",
+      "original_root_relative_path": "child.source-after.index.json",
       "original_sha256": "75f177eaa490abbed16d4a2a0928375ae86d93e7552bc9fad7d8a5fe16cebe1c",
       "stored_bytes": 247726,
       "stored_mode": "100644",
@@ -319,6 +359,7 @@
     {
       "archival_python_suffix": true,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/runner.py",
       "original_bytes": 17203,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239637097869358,
@@ -333,7 +374,9 @@
         "st_size": 17203,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "runner.py",
+      "original_root_relative_path": "runner.py",
       "original_sha256": "5b7666be5e2744a69b4da175b0568df573c907e3cd6d9560e5a93e065eaf72de",
       "stored_bytes": 17203,
       "stored_mode": "100644",
@@ -343,6 +386,7 @@
     {
       "archival_python_suffix": true,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/source_support.py",
       "original_bytes": 31518,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239637145869056,
@@ -357,7 +401,9 @@
         "st_size": 31518,
         "st_uid": 1000
       },
+      "original_namespace": "RAW",
       "original_relative_path": "source_support.py",
+      "original_root_relative_path": "source_support.py",
       "original_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
       "stored_bytes": 31518,
       "stored_mode": "100644",
@@ -367,6 +413,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source/requirements.lock.txt",
       "original_bytes": 20883,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239635661878372,
@@ -383,7 +430,9 @@
       },
       "original_git_blob": "c37fb993c92835266eefe5344020e3296a1c064f",
       "original_git_mode": "100644",
+      "original_namespace": "WHOLE_SOURCE",
       "original_relative_path": "source/requirements.lock.txt",
+      "original_root_relative_path": "requirements.lock.txt",
       "original_sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce",
       "stored_bytes": 20883,
       "stored_mode": "100644",
@@ -393,6 +442,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source/requirements.build.lock.txt",
       "original_bytes": 458,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239635661878372,
@@ -409,7 +459,9 @@
       },
       "original_git_blob": "b1f9e3600ee15a407c769f8c52cdd4da954648a8",
       "original_git_mode": "100644",
+      "original_namespace": "WHOLE_SOURCE",
       "original_relative_path": "source/requirements.build.lock.txt",
+      "original_root_relative_path": "requirements.build.lock.txt",
       "original_sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b",
       "stored_bytes": 458,
       "stored_mode": "100644",
@@ -419,6 +471,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source/ops/policy/rc6-supply-chain-v1.json",
       "original_bytes": 103636,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239635649878447,
@@ -435,7 +488,9 @@
       },
       "original_git_blob": "a6d4abd5c46358b6b2707e4b209f14e0babb38fb",
       "original_git_mode": "100644",
+      "original_namespace": "WHOLE_SOURCE",
       "original_relative_path": "source/ops/policy/rc6-supply-chain-v1.json",
+      "original_root_relative_path": "ops/policy/rc6-supply-chain-v1.json",
       "original_sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
       "stored_bytes": 103636,
       "stored_mode": "100644",
@@ -445,6 +500,7 @@
     {
       "archival_python_suffix": false,
       "encoding": "BYTE_EXACT",
+      "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/source/ops/policy/test-policy.yaml",
       "original_bytes": 1556,
       "original_copytime_stat_fields": {
         "st_atime_ns": 1791239635649878447,
@@ -461,7 +517,9 @@
       },
       "original_git_blob": "c1488edf5fa369b82811b930c0f581be92013636",
       "original_git_mode": "100644",
+      "original_namespace": "WHOLE_SOURCE",
       "original_relative_path": "source/ops/policy/test-policy.yaml",
+      "original_root_relative_path": "ops/policy/test-policy.yaml",
       "original_sha256": "1fe33e6137bc0a6769ce390d0c4fbf584624bbec36d97254bf54ab85cc75a7e9",
       "stored_bytes": 1556,
       "stored_mode": "100644",
@@ -570,7 +628,10 @@
       "uname=empty",
       "gname=empty"
     ],
+    "original_absolute_path": "/workspace/rc6-predeploy-cleanup-54048ed3-focal-20261005-a/raw/whole-source-54048ed3-after-native.tar.gz",
+    "original_namespace": "RAW",
     "original_relative_path": "whole-source-54048ed3-after-native.tar.gz",
+    "original_root_relative_path": "whole-source-54048ed3-after-native.tar.gz",
     "scope": "POST_NATIVE_WHOLE_TRACKED_SOURCE_SNAPSHOT; GIT_METADATA_AUTHORITY_IN_NATIVE_SOURCE_INDEX",
     "sha256": "c867b49fc3f1f771dc3e122e740628a4042078b76124d5a2189a616d7d4a935b",
     "source_bytes": 78260524,

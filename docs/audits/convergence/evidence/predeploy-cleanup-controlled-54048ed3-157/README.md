@@ -25,6 +25,13 @@ no archived test source or exclusion. Source locks/policy are preserved byte
 exact and tied to their original Git blobs. CUSTODY.json maps every original to
 stored path, hashes/modes/sizes and all eleven copytime fields.
 
+Each record now also identifies its exact original absolute path, namespace and
+path within that namespace. The original_roots mapping declares RAW and the
+sibling WHOLE_SOURCE checkout separately. The prior original_relative_path is
+preserved as an archival identifier; the source/ prefix in four lock/policy
+identifiers is not a child of RAW. These additive documentary fields do not
+change any original payload, recorded copytime metadata or execution result.
+
 A whole-source TAR is preserved externally at the original RAW path. It was
 created after Native from the exact unchanged physical source and Git blob
 bindings; it is not claimed as a pre-fixture artifact or final build. It contains
