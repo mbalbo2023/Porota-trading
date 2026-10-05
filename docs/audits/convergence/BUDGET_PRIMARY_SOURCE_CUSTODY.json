@@ -1,0 +1,62 @@
+{
+  "schema": "rc6.budget-primary-source-custody-development.v1",
+  "status": "DESARROLLADO_PENDING_NATIVE_EXACT_GIT_SOURCE_REPLAY",
+  "base_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+  "base_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080",
+  "workstream": "BUDGET_SOURCE_CUSTODY",
+  "branch": "work/rc6-budget-source-custody-20261005",
+  "related_existing_additional_finding": "NEW_SOURCE_SQLITE_SIDECAR_METADATA_MUTATION",
+  "related_original_requirement_ids": ["U01", "U05", "U07", "AUD-468-04"],
+  "error": "Two budget helpers open the original PAPER primary SQLite path with mode=ro. Read-only SQL does not guarantee unchanged atime or WAL SHM metadata. These helpers are also called by APPROVED runtime capacity and the EXIT round observer.",
+  "rca": {
+    "original_budget_sha256": "f4109344794f02ef0bec511af8f41042069aaee48226acfb5d96f677da987dc8",
+    "original_primary_connect_lines": [49, 76],
+    "root_caller": "RuntimeCapacityController.state(APPROVED_DYNAMIC) -> supervisable_position_count",
+    "other_callers": ["RuntimePPIBudget._current/_opened", "RuntimePPIBudget.start -> controller.state/_current", "RuntimePPIBudget.observe_exit_round -> _supervisable_identity_digests and controller.state", "bv.run_reader -> exit_reader_cadence and ProductionMarketReader.observe_exit_round"],
+    "fingerprint_fields_unchanged": ["status", "mode", "configuration_fingerprint", "recommendation_digest", "approval_digest", "reason_codes", "exit_capacity"],
+    "scope": "PAPER ledger only; no PPI Watch files, provider calls, broker mutations, cash changes or real orders"
+  },
+  "fix": {
+    "paths": ["rc6_ppi_global_budget.py", "rc6_dynamic_universe/promotion.py"],
+    "transport": "existing source_connection -> readonly_copy: source-owner NoAtime capture, coherent private main+WAL, SHM reconstructed exclusively in scratch, double source byte/identity verification",
+    "query_contract": "PAPER observer_state=('PRODUCTION_PAPER',0), OPEN paper_positions plus ACTIVE paper_future_positions, including expired/pending ACTIVE futures, exact five-key identity digests and original64 tracking ceiling",
+    "sql_and_math": "unchanged SQL predicates, family/state counts, reserve/capacity/cadence/retention arithmetic and successful capacity fingerprints; sqlite3.Row is converted to tuple for PAPER state comparison",
+    "new_standalone_capture_limit_seconds": 0.15,
+    "limit_origin": "NEW conservative total custody guard; the original5ms SQLite busy timeout was never an absolute execution deadline.0.15s matches the existing native worker metadata capture bound.",
+    "deadline_rule": "min(inherited monotonic absolute deadline, capture entry+0.15); one bound covers capture, SQL and mandatory cleanup; neither10s readonly_copy default nor a new5s cadence is introduced",
+    "busy_timeout_milliseconds": 5,
+    "vm_step_ceiling": 100000,
+    "progress_check_steps": 100,
+    "optional_deadline_apis": ["supervisable_position_count(database,unverified=None,*,deadline=None)", "_supervisable_identity_digests(database,*,deadline=None)", "RuntimeCapacityController.state(as_of=None,*,deadline=None)", "RuntimePPIBudget._current(priority='DISCOVERY',deadline=None)"],
+    "observer_contract": "derive one absolute deadline from remaining producer cadence at observer entry; pass it through _current/count/digests/state; include observer elapsed time before publishing round evidence",
+    "failure_contract": "missing/busy/concurrent/aliased/unprivileged/oversized/scratch-full/expired source returns None or caller-supplied unverified, never inferred zero. APPROVED activation and LOWER fail closed; existing warm EXIT keeps only saved caps/cadence/expiry/debt under its existing blocked activation contract.",
+    "sidecar": "arbiter global.sqlite SQL, maintenance, receipts, policy debt, real wire leasing and intentional writer ownership unchanged"
+  },
+  "native_guards_prepared_not_yet_executed": [
+    "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+    "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+    "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+    "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+    "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+    "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
+    "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+    "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+    "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+    "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round"
+  ],
+  "prior_probe": "tests/probes/rc6_budget_primary_custody_probe.py",
+  "evidence_pending": ["Exact whole Git archive ORIGINAL native count+digests custody RED with successful math controls", "Exact complete OWN Git source native guard JUnit and CURRENT replay", "Root integration native caller verification"],
+  "limits": [
+    "Prepared guards and static review do not establish an executed native RED or GREEN.",
+    "Synthetic native five OPEN plus five ACTIVE positions are not five actual live A3 contracts or PPI authority.",
+    "Checks detect exhausted elapsed budget and require cleanup; they do not preempt blocking kernel IO or claim a host/provider timing SLO.",
+    "No standalone execution deadline existed in state/_current/_opened/start. Producer5s round observation and coalescer5s follower deadline are distinct existing boundaries.",
+    "A complete source replay is intermediate development evidence, not final FIP, immutable image, deployment or runtime attestation.",
+    "No original requirement count, history123/217 count, or final acceptance is enlarged by these guards."
+  ],
+  "artifact_validated": false,
+  "deployed": false,
+  "runtime_validated": false,
+  "final_input_provenance": null,
+  "self_commit_sha": null
+}

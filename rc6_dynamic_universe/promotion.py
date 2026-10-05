@@ -215,7 +215,7 @@ class RuntimeCapacityController:
             "status", "mode", "configuration_fingerprint", "recommendation_digest", "approval_digest", "reason_codes", "exit_capacity")})
         return state
 
-    def state(self, as_of=None):
+    def state(self, as_of=None, *, deadline=None):
         try:
             policy = self.inputs["policy"]
             if policy is None:
@@ -237,7 +237,7 @@ class RuntimeCapacityController:
             if resolved["status"] == "APPROVED_DYNAMIC" and self.database is not None:
                 from rc6_ppi_global_budget import (supervisable_position_count,
                     exit_capacity_contract, exit_retention_preflight)
-                opened = supervisable_position_count(self.database)
+                opened = supervisable_position_count(self.database, deadline=deadline)
                 if opened is None:
                     resolved.update(status="BASELINE_FAIL_CLOSED", production_limits_modified=False,
                         reason_codes=["CAPACITY_OPENED_LEDGER_UNVERIFIED"])

@@ -76,7 +76,7 @@ class ExactController:
     def __init__(self, state):
         self.current = state
 
-    def state(self, _at=None):
+    def state(self, _at=None, *, deadline=None):
         return deepcopy(self.current)
 
     def shadow_report(self):

@@ -10,7 +10,7 @@ from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from copy import deepcopy
-from math import ceil
+from math import ceil, isfinite
 import fcntl
 import json
 import os
@@ -41,16 +41,47 @@ RECEIPT_STORAGE_BYTES = 512
 CRITICAL_STATE_STORAGE_BYTES = 128 * 1024
 SUPERVISABLE_POSITION_STATES = (("paper_positions", "OPEN"), ("paper_future_positions", "ACTIVE"))
 EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSITIONS_ROUND_V1"})
+# New custody guard, not a preexisting execution deadline: the former 5ms
+# SQLite timeout bounded only lock waiting. Capture, SQL and cleanup share this
+# conservative total bound; an inherited earlier absolute deadline wins.
+LEDGER_SNAPSHOT_SECONDS = .15
 
 
-def _supervisable_identity_digests(database):
+@contextmanager
+def _ledger_snapshot(database, *, deadline=None):
+    end = time.monotonic() + LEDGER_SNAPSHOT_SECONDS
+    if deadline is not None:
+        if (isinstance(deadline, bool) or not isinstance(deadline, (int, float))
+                or not Decimal(str(deadline)).is_finite()):
+            raise ValueError("PPI_BUDGET_LEDGER_DEADLINE_INVALID")
+        end = min(end, deadline)
+    if time.monotonic() >= end:
+        raise ValueError("PPI_BUDGET_LEDGER_DEADLINE_EXHAUSTED")
+    from rc6_shadow_runtime.source_reads import source_connection
+    with source_connection(database, deadline=end) as (connection, _):
+        connection.execute("PRAGMA busy_timeout=5")
+        # Preserve the original 100000-VM-step ceiling while checking time
+        # throughout SQL too, instead of replacing the copy's deadline guard.
+        steps = 0
+        def stop():
+            nonlocal steps
+            steps += 100
+            return int(steps >= 100000 or time.monotonic() >= end)
+        connection.set_progress_handler(stop, 100)
+        connection.execute("BEGIN")
+        yield connection
+    # Cleanup is mandatory even on a timeout. Its elapsed time cannot turn an
+    # expired capture into a successful fresh ledger observation.
+    if time.monotonic() >= end:
+        raise ValueError("PPI_BUDGET_LEDGER_DEADLINE_EXHAUSTED")
+
+
+def _supervisable_identity_digests(database, *, deadline=None):
     """Verified exact five-key ledger scope, without provider/catalog inference."""
     try:
-        with closing(sqlite3.connect(Path(database).resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
-            c.execute("PRAGMA query_only=ON")
-            c.set_progress_handler(lambda: 1, 100000)
-            c.execute("BEGIN")
-            if c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone() != ("PRODUCTION_PAPER", 0):
+        with _ledger_snapshot(database, deadline=deadline) as c:
+            state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
                 return None
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if "paper_positions" not in tables:
@@ -66,17 +97,16 @@ def _supervisable_identity_digests(database):
         return None
 
 
-def supervisable_position_count(database, unverified=None):
+def supervisable_position_count(database, unverified=None, *, deadline=None):
     """Count every exit-supervised family in one verified PAPER snapshot.
 
     None means unknown, never zero. Readers and capacity approval can consume
     the same table/state contract without importing a broker or provider.
+    The new 0.15s custody guard includes a private NoAtime capture and cleanup;
+    it never replaces an inherited earlier monotonic execution deadline.
     """
     try:
-        with closing(sqlite3.connect(Path(database).resolve().as_uri() + "?mode=ro", uri=True, timeout=.005)) as c:
-            c.execute("PRAGMA query_only=ON")
-            c.set_progress_handler(lambda: 1, 100000)
-            c.execute("BEGIN")
+        with _ledger_snapshot(database, deadline=deadline) as c:
             state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
             if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
                 raise ValueError("PPI_BUDGET_PAPER_SOURCE_UNVERIFIED")
@@ -1444,8 +1474,8 @@ class RuntimePPIBudget:
         self._admission_scopes = {}
         self._scope_lock = threading.Lock()
 
-    def _opened(self, unverified):
-        return supervisable_position_count(self.database, unverified)
+    def _opened(self, unverified, *, deadline=None):
+        return supervisable_position_count(self.database, unverified, deadline=deadline)
 
     def _previous(self):
         if not self.path.exists():
@@ -1491,8 +1521,8 @@ class RuntimePPIBudget:
                 protected=[self.database, *self.controller.input_paths])
         return self.budget
 
-    def _current(self, *, priority="DISCOVERY"):
-        state = self.controller.state(self.clock())
+    def _current(self, *, priority="DISCOVERY", deadline=None):
+        state = self.controller.state(self.clock(), **({"deadline": deadline} if deadline is not None else {}))
         if state["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY":
             retention_reasons = state.get("exit_receipt_capacity", {}).get("reason_codes", [])
             return self._blocked_activation(state,
@@ -1507,14 +1537,15 @@ class RuntimePPIBudget:
                 self.budget = GlobalPPIBudget(self.path, saved, clock=self.clock,
                     protected=[self.database, *self.controller.input_paths])
             previous = self.budget.policy
-            opened = self._opened(max(20, _native_integer(self.controller.environ, "PAPER_MAX_OPEN_POSITIONS", 5)))
+            opened = self._opened(max(20, _native_integer(self.controller.environ, "PAPER_MAX_OPEN_POSITIONS", 5)),
+                deadline=deadline)
             self.budget.policy = validate_policy(baseline_budget_policy(previous,
                 opened_count=opened, as_of=self.clock(), environ=self.controller.environ))
             return self.budget
         # Recheck the ledger at the send seam too. Controllers without a
         # database are useful pure policy readers, but grant no wire authority
         # to a runtime whose durable PAPER position count is unknown.
-        durable_opened = self._opened(None)
+        durable_opened = self._opened(None, deadline=deadline)
         if durable_opened is None:
             return self._blocked_activation(state, "CAPACITY_OPENED_LEDGER_UNVERIFIED", priority)
         opened = 0
@@ -1628,16 +1659,26 @@ class RuntimePPIBudget:
 
     def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0):
         """Explicit producer write, distinct from runtime_budget_snapshot."""
+        entered = time.monotonic()
         try:
-            budget = self._current(priority="EXIT_CRITICAL")
+            measured = all(not isinstance(value, bool) and isinstance(value, (int, float))
+                and isfinite(value) and value >= 0 for value in (elapsed_seconds, deadline_seconds))
+        except OverflowError:
+            measured = False
+        # This is the producer's remaining round budget, not another cadence
+        # starting after its books. All ledger captures inherit one absolute.
+        deadline = entered + max(0, deadline_seconds - elapsed_seconds) if measured else entered
+        try:
+            budget = self._current(priority="EXIT_CRITICAL", deadline=deadline)
             if budget is None:
                 return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
-            identities = _supervisable_identity_digests(self.database)
-            state = self.controller.state(self.clock())
+            identities = _supervisable_identity_digests(self.database, deadline=deadline)
+            state = self.controller.state(self.clock(), deadline=deadline)
             if (state.get("status") != "APPROVED_DYNAMIC"
                     or (self.activation_contract or {}).get("status") != "READY"):
                 identities = None
-            return budget.observe_exit_round(elapsed_seconds=elapsed_seconds,
+            observed_elapsed = elapsed_seconds + (time.monotonic() - entered) if measured else elapsed_seconds
+            return budget.observe_exit_round(elapsed_seconds=observed_elapsed,
                 deadline_seconds=deadline_seconds, failures=failures,
                 required_identity_digests=identities)
         except (BudgetBackpressure, OSError, ValueError, TypeError, sqlite3.Error):
