@@ -6396,6 +6396,39 @@
         "U26"
       ]
     },
+    "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe.py": {
+      "reason": "Preserve the exact original V1 native capacity runner bytes used by the failed107 diagnostic, without replacing its original metadata or8192 quota outcome.",
+      "requirement_ids": [
+        "U04",
+        "U14",
+        "U15",
+        "U18",
+        "U28"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": {
+      "reason": "Run native archive capacity on a complete immutable zero-overlay source pin with canonical disk scratch, original512 live entries, all source database custody fields, exact five-member restores and measured physical temporary peaks. Four cuts remain descriptive; the full1201 OPEN ticks plus separate PRE seed require real execution, not extrapolation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/native_capacity_witness_v2_source_checkpoint.json": {
+      "reason": "Record only the V2 witness source checkpoint and original V1 runner identity; syntax and source inspection are not physical horizon, BIG, browser or final artifact acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28"
+      ]
+    },
     "docs/audits/rc6-convergence-persistence-evidence/native_large_18e_two_ticks_complete.json": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
