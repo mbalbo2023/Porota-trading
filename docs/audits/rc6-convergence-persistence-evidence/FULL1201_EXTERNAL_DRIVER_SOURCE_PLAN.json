@@ -4,9 +4,9 @@
     "environment": "Approved exact Python version selected by CLI, Linux/x86_64/glibc>=2.36 real virtualenv, installed total+unique157 exact policy/lock names/versions/hashsets before fixture creation.",
     "imports": "Producer records actual child module origins; driver validates that pinned source/stdlib/actual virtualenv graph. Supervisor itself imports stdlib only, aside from Python environment startup behavior.",
     "maintenance": "No additional worker/GC/restore/SQLite/pin calls. Positive rotations/ACKcompaction required by native full contract; zero GCdeleted/intent is explicitly no positive deletion proof.",
-    "process": "New process session, native PID, actual wait4 status/user+systemCPU/RSS/input+outputblocks/reap. Watchdog sends TERM then KILL after separately declared grace; unreaped process blocks acceptance.",
+    "process": "New process session, native PID, actual wait4 status/user+systemCPU/lifetimeRSS/input+outputblocks/reap. Completion must be observed by wait4 strictly before the management deadline; polling cannot infer an earlier exit. Lifetime wait4 RSS must remain within the existing2GiB limit. Watchdog makes one TERM/KILL termination attempt with separately declared grace; unreaped process prevents acceptance and all postcaptures of source/index/tar/database/log.",
     "progress": "Only native stdout/result.json are producers. Driver reports elapsed/remain/log bytes/PID without interpreting an in-progress result as complete.",
-    "result": "Lossless native JSON/log retained. Green requires exact actual1202 cuts and all flags/metadata/custody/source checks, normal child exit0, no management timeout/errors, actual reap.",
+    "result": "Lossless native JSON/log retained after actual reap. Green requires exact actual1202 cuts and all flags/metadata/custody/source checks, final CURRENT clock+sequence equal the last cut, normal child exit0 observed before the management deadline, existing2GiB lifetimeRSS, no management timeout/errors and actual reap.",
     "source": "Independent stdlib raw Git/whole namespace and SHA/mode/blob verification before/after, original index/tar rehash, driver bytes bound to the Git member."
   },
   "future_command": "/workspace/venv_rc6_frozen311/bin/python -I -B \"$PREPARED_DRIVER\" --source-repo \"$RC6_HORIZON_REPO\" --source-root \"$RC6_HORIZON_WHOLE\" --source-sha \"$RC6_HORIZON_SHA\" --source-tree \"$RC6_HORIZON_TREE\" --source-index \"$RC6_HORIZON_PREPARED/source.index.json\" --raw-root \"$RC6_HORIZON_RAW_NEW\" --data-root \"$RC6_HORIZON_DATA_NEW\" --python /workspace/venv_rc6_frozen311/bin/python --python-version 3.11.16 --watchdog-seconds \"$RC6_HORIZON_MANAGEMENT_WATCHDOG\"",
@@ -119,10 +119,36 @@
   "schema": "rc6.full1201-external-driver-source-plan.v1",
   "source_driver": {
     "authority": "Future Source S must contain this exact .py.source member; external executed bytes are checked against its wholeSource Git binding before fixtures.",
-    "bytes": 33513,
+    "bytes": 35110,
     "mode": "100644",
     "path": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source",
-    "sha256": "80b4daca4f8c8227d735cabdff6895b8cca41c19028c59d4fd279a6934cb48b3"
+    "sha256": "c75351acfe681012d120b6b265e3541da984fa27213f588bb3f91b26ae1f4593"
   },
+  "source_review_corrections": [
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Late polling could reap a child after the management deadline while leaving the timeout flag false.",
+      "fix": "Timestamp after wait4 must be strictly before the deadline; later observation remains NOT_ACCEPTED even if normal exit0. The driver never claims an actual exit timestamp from wait4.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Final custody could read source/index/tar/log after termination failed to reap the child.",
+      "fix": "Unreaped state skips all postcaptures, records the unobserved custody limit and prevents acceptance; termination is not retried with a fresh grace.",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "A verified final archive HEAD did not independently bind final CURRENT to the last cut.",
+      "fix": "Require producer final_as_of and final_sequence to match cuts[-1].",
+      "native_reproduction": false
+    },
+    {
+      "classification": "STATIC_SOURCE_FINDING_CORRECTED_BEFORE_NATIVE",
+      "finding": "Native RSS was captured before its final JSON serialization.",
+      "fix": "Require actual wait4 lifetime peak_rss_bytes to satisfy the same existing2GiB limit after reap.",
+      "native_reproduction": false
+    }
+  ],
   "status": "SOURCE_ONLY_NOT_EXECUTED"
 }

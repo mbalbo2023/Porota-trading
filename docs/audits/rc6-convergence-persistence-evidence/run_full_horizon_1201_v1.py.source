@@ -324,6 +324,9 @@ def inspect_native(native, source, pin, qualification, database, errors):
     head = native["verified_final_archive_head"]
     require(head["contracted_horizon_seconds"] == 32400 and head["recovery_margin_seconds"] == 3600
         and head["source_as_of_max"] == cuts[-1]["as_of"],"VERIFIED_NATIVE_HEAD_WHEEL_PLUS_RECOVERY")
+    require(native.get("final_as_of") == cuts[-1]["as_of"]
+        and type(native.get("final_sequence")) is int and native["final_sequence"] == cuts[-1]["sequence"],
+        "FINAL_CURRENT_CLOCK_AND_SEQUENCE_MATCH_LAST_NATIVE_CUT")
     guard = native["private_execution_guard"]
     require(guard["network_attempt_count"] == guard["sqlite_rejected_count"] == native["provider_requests"] == 0
         and guard["primary_sqlite_sealed_after_fixture"] is True,"PRIVATE_SQLITE_AND_PYTHON_TRANSPORT_BARRIER")
@@ -424,6 +427,7 @@ def main():
         "management_watchdog_seconds":args.watchdog_seconds,"native_full_cycle_limit_seconds":30,"native_ticks_expected":1202,
         "management_grace_seconds":args.terminate_grace_seconds,"source_overlays_allowed":0,
         "native_pid":None,"process_reaped":False,"management_watchdog_exhausted":False,"errors":[],
+        "native_completion_observed_within_management_deadline":False,"termination_attempted":False,
         "final_input_provenance":None,"artifact_validated":False,"runtime_validated":False,"deployed":False,
         "scope":"LOCAL_SYNTHETIC_NATIVE1201_POSTPRE_PLUS_PRE_WHEEL_NOT_CONTINUOUS_OPEN_REAL_SESSION_OR_FINAL_ARTIFACT",
         "limits":["The native producer records its own actual import graph and initial11-stat/sha baseline. The driver validates that captured graph and independently captures DB custody after reap; it does not inspect a running child sys.modules.",
@@ -468,11 +472,17 @@ def main():
             deadline = started+args.watchdog_seconds
             while True:
                 completed = reap(child)
+                observed_at = time.monotonic()
                 if completed is not None:
-                    result.update(wait4=completed,process_reaped=True)
+                    within_deadline = observed_at < deadline
+                    result.update(wait4=completed,process_reaped=True,
+                        native_completion_observation_elapsed_seconds=observed_at-started,
+                        native_completion_observed_within_management_deadline=within_deadline,
+                        management_watchdog_exhausted=not within_deadline)
                     break
-                if time.monotonic() >= deadline:
+                if observed_at >= deadline:
                     result["management_watchdog_exhausted"] = True
+                    result["termination_attempted"] = True
                     completed = terminate(child,args.terminate_grace_seconds)
                     result.update(wait4=completed,process_reaped=completed["reaped"])
                     break
@@ -485,6 +495,9 @@ def main():
                 time.sleep(min(args.progress_poll_seconds,max(0,deadline-time.monotonic())))
         if not result["process_reaped"]:
             raise ValueError("CHILD_NOT_REAPED_SOURCE_CAPTURE_AND_ACCEPTANCE_REFUSED")
+        peak_rss = result["wait4"]["peak_rss_bytes"]
+        if type(peak_rss) is not int or peak_rss < 0 or peak_rss > 2*1024**3:
+            result["errors"].append("WAIT4_CHILD_LIFETIME_RSS_EXCEEDS_EXISTING2GIB_LIMIT_OR_INVALID")
         native_path = data/"result.json"
         if native_path.exists():
             snapshot,native_wire = capture(native_path,keep_bytes=True)
@@ -501,25 +514,33 @@ def main():
     except BaseException as error:
         result["errors"].append("DRIVER_EXCEPTION:"+type(error).__name__+":"+str(error))
         result["exception_traceback"] = traceback.format_exc()
-        if child is not None and child.returncode is None and not result["process_reaped"]:
+        if child is not None and child.returncode is None and not result["process_reaped"] and not result["termination_attempted"]:
+            result["termination_attempted"] = True
             completion = terminate(child,args.terminate_grace_seconds)
             result.update(wait4=completion,process_reaped=completion["reaped"])
     finally:
         if started is not None:
             result["management_elapsed_wall_seconds"] = time.monotonic()-started
         try:
-            if before is not None:
+            safe_to_capture = child is None or result["process_reaped"]
+            if not safe_to_capture:
+                result.update(postreap_custody_observed=False,
+                    postreap_custody_reason="CHILD_UNREAPED_NO_SOURCE_INDEX_TAR_DATABASE_OR_LOG_POSTCAPTURE")
+            if safe_to_capture and before is not None:
                 after, authority = verify_source(repository,source,args.source_sha,args.source_tree,pin)
                 result.update(source_authority_after=authority,source_inventory_after_sha256=hashlib.sha256(
                     json.dumps(after,sort_keys=True,separators=(",",":")).encode()).hexdigest(),whole_source_bytes_modes_blobs_and_namespace_unchanged=before==after)
                 if before != after or capture(index)[0]["sha256"] != result["source_index_sha256"] or capture(index.parent/"source.tar")[0]["sha256"] != result["source_tar_sha256"]:
                     result["errors"].append("SOURCE_OR_INDEX_TAR_CHANGED")
-            if (raw/"native1201.log").exists():
+            if safe_to_capture and (raw/"native1201.log").exists():
                 log_snapshot,_ = capture(raw/"native1201.log")
                 result.update(native_log_sha256=log_snapshot["sha256"],native_log_bytes=log_snapshot["st_size"])
+            if child is not None and safe_to_capture:
+                result["postreap_custody_observed"] = True
         except BaseException as error:
             result["errors"].append("FINAL_CUSTODY_EXCEPTION:"+type(error).__name__+":"+str(error))
-        accepted = result["process_reaped"] and not result["management_watchdog_exhausted"] and not result["errors"] and before is not None
+        accepted = (result["process_reaped"] and result["native_completion_observed_within_management_deadline"]
+            and not result["management_watchdog_exhausted"] and not result["errors"] and before is not None)
         result.update(native_horizon_validated=accepted,classification="LOCAL_SYNTHETIC_FULL1201_NATIVE_HORIZON_GREEN" if accepted else "FULL1201_NOT_ACCEPTED")
         write_json(raw/"driver-final.json",result)
         print(json.dumps({"classification":result["classification"],"source_sha":args.source_sha,"native_pid":result["native_pid"],
