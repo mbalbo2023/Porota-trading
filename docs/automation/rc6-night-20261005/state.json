@@ -16,8 +16,25 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T09:58:13.610Z-bhxbhiixdf6",
+    "owner": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-05T09:58:13.610Z",
+    "expires_at": "2026-10-05T10:18:13.610Z",
+    "base_commit": "6e37531d958dec4784fa523a9bfb08c0a98cf1ec",
+    "purpose": "RECONCILE_CANDIDATE_ADVANCE"
+  },
+  "pending_action": {
+    "type": "RECONCILE_CANDIDATE_ADVANCE",
+    "previous_candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "candidate_sha": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
+    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "candidate_prs_found": 0,
+    "owner_comment_id": 5986480121,
+    "latest_coordination_comment_id": 5986721421,
+    "planned_receipt_marker": "NIGHT_CANDIDATE_PROGRESS=WS-RC6-NIGHT-CONVERGENCE-20261005:ca3df68631164b9a20fdfd1d2617a24e18e042cf",
+    "started_at": "2026-10-05T09:58:13.610Z"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
