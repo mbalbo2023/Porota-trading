@@ -71,7 +71,8 @@
     "base_nodes": 15,
     "count_scope": "AST-declared miniature Git/metadata, controlled-clock, private FIFO and socket controls/negatives only; not original R/55 counts or native1201 scope.",
     "declared_cases": 28,
-    "executed_cases": 0
+    "executed_cases": 28,
+    "execution_scope": "ONE_EXACT_ED97_EXECUTION_28_OF28_PASS_NO_FAIL_ERROR_SKIP; controlled wrapper guards, not full worker cycles"
   },
   "guard_nodes": [
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
@@ -91,7 +92,82 @@
     "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings"
   ],
   "guard_scope": "Controlled wrapper clocks/metadata, miniature native Git object controls/adversaries, miniature manifest bindings, private FIFO and local/unconnected socket barriers only. None is a full worker/native1201-wheel/storage-capacity/provider/image/FIP/runtime PASS.",
-  "native_execution": null,
+  "native_execution": {
+    "actual_import_modules_after": 270,
+    "actual_import_modules_before": 240,
+    "classification": "SCOPED_WRAPPER_GUARDS_GREEN",
+    "command": [
+      "-q",
+      "--strict-markers",
+      "tests/test_rc6_native_archive_horizon_wrapper.py",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--junitxml=/tmp/rc6-budget-horizon-ed97-28-20261005/native-wrapper-guards.junit.xml",
+      "--basetemp=/tmp/rc6-budget-horizon-ed97-28-20261005/fixtures/pytest"
+    ],
+    "command_environment": "env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6_frozen311/bin/python -B",
+    "declared_base_nodes": 15,
+    "errors": 0,
+    "evidence_catalogue": [
+      {
+        "bytes": 115714,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/native-wrapper-guards-receipt.json",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "03155c2cd1e64e4e509c71a29d37fc3841d31dac35f08166c9825ffe1d7d690e"
+      },
+      {
+        "bytes": 8705,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/native-wrapper-guards.junit.xml",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "8b3748298ca113cabed75a35243db2a31ba0fe533ceec5d2a6b9927288463b01"
+      },
+      {
+        "bytes": 515930,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/source.index.json",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "390f57928ead597ed95a9cfceb3a854f5e811c61d4e8bd87e968f285baa46d96"
+      },
+      {
+        "bytes": 6182,
+        "path": "docs/audits/rc6-convergence-persistence-evidence/native-horizon-wrapper-ed97-evidence/controlled-runner.py.source",
+        "scope": "ORIGINAL_BYTES_FROM_THE_ONE_ED97_SCOPED_EXECUTION",
+        "sha256": "4816236b89d0ffe2a44c6aa7d9aa2e4ec640e68f7ff84f3fd0defdc7e961c270"
+      }
+    ],
+    "failures": 0,
+    "import_scope": "EXACT_SOURCE_ROOT_STDLIB_ACTUAL_FROZEN_VENV_NO_ALIEN_MODULES",
+    "installed_expected_total": 157,
+    "installed_total": 157,
+    "installed_unique_total": 157,
+    "limits": [
+      "One scoped test execution; no addition to old suite counts or original55/R counts.",
+      "No actual1201-wheel, normal4, provider/PPI timing, OS isolation, image or finalFIP authority.",
+      "Two intentional unconnected-INET negative sends are rejected by test-local guards; outer transport counter remains zero.",
+      "The run emitted Xunit2 record_property compatibility warnings as framework diagnostics. The original XML preserves all28 testcase outcomes and their scope properties; this does not change the horizon boundary.",
+      "The documentary commit carrying this record is later than ed97 and is not the tested source. Self commit/FIP remain null."
+    ],
+    "literal_environment_and_hashlocks_verified_before_fixtures": true,
+    "native_full_worker_cycles_executed": 0,
+    "native_horizon_ticks_executed": 0,
+    "overlay_count": 0,
+    "phase": "INTERMEDIATE_EXACT_COMPLETE_OWN_GIT_SOURCE_NOT_FINAL_CANDIDATE",
+    "scope": "28_CONTROLLED_CLOCK_METADATA_MINIATURE_GIT_FIFO_SOCKET_GUARDS_NOT_NATIVE_HORIZON",
+    "skipped": 0,
+    "source_bytes_modes_and_git_blobs_unchanged": true,
+    "source_file_count": 1732,
+    "source_index_and_tar_unchanged": true,
+    "source_sha": "ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b",
+    "source_tar": {
+      "original_external_path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source.tar",
+      "packaged": false,
+      "scope": "Original complete exact Git archive from ed97 retained externally with this SHA. The packaged index and immutable Git objects bind source contents; rebuilding source contents is not a new attestation of identical tar wire bytes.",
+      "sha256": "71f0c314834bca5a6079a6de9b8c6ad2a0965e6510fc915a3891ad29415c86bd"
+    },
+    "source_tree": "5e42c97350684585c26cacee6d9bbb41ed1f4ef5",
+    "tests": 28,
+    "wall_seconds": 0.8769669060129672
+  },
   "native_gate_boundary": {
     "actual_factory_restarts_required": [
       361,
@@ -129,23 +205,23 @@
       "Source-only independent Finance review identified a FIFO source.index could block before fixture qualification. Raw reads now require a regular single-link unchanged inode, NOFOLLOW/NOATIME/NONBLOCK and matching descriptor/path metadata; no pre-fix native RED is claimed.",
       "Source-only independent Finance review identified source_index_sha256 was captured after fixture writes. One initial raw index read now supplies both parsed pin and original digest before qualification/fixture writes; the final raw digest compares against that same original authority. No pre-fix native RED is claimed."
     ],
-    "independent_review_scope": "FINANCE_STATIC_SOURCE_ONLY_NOT_NATIVE_RED; corrected source/guards remain unexecuted pending coordinated CPU slot.",
-    "status": "SOURCE_REVIEW_ONLY_NOT_EXECUTED"
+    "independent_review_scope": "FINANCE_STATIC_SOURCE_ONLY_NOT_NATIVE_RED; Finance confirmed the three source corrections before ROOT allocated the subsequent scoped guard execution.",
+    "status": "SOURCE_REVIEW_CLOSED_BEFORE_SEPARATE_ED97_SCOPED_EXECUTION"
   },
   "source_only_validation": {
     "AST_and_compile_without_import_or_execution": "PASS",
     "native_pytest_cases_executed": 0,
     "native_worker_calls_executed": 0,
+    "scope": "Historical AST/compile phase before the separate scoped guard execution; native execution is bound below to the exact ed97 commit.",
     "source_paths_sha256": {
       "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": "4a0ec1ef33b6dbdd5c8edc0119441b0b576e39fe5bfd548f1b6e2bc91ceb6ec6",
       "tests/test_rc6_native_archive_horizon_wrapper.py": "999e6e5ba1cf1edd483a9a9279430785bdcc2b9cc309ae3d9144a61666d6a6d7"
     }
   },
   "source_strengthening_execution_pending": [
-    "Whole-source frozen157 native wrapper guards",
     "ROOT normal1200/6000 four-cut native run on integrated strengthened source",
     "All1201 postPRE native calls plus PRE with actual recovery/GC/rotation/pin/temp/deadline verification"
   ],
   "source_strengthening_pending": [],
-  "status": "SOURCE_ONLY_NOT_EXECUTED"
+  "status": "SCOPED_WRAPPER_GUARDS_GREEN_NATIVE_HORIZON_PENDING"
 }
