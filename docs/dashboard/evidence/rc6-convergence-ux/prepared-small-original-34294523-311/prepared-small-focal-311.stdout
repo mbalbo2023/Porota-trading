@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /workspace/venv_rc6_frozen311/bin/python
+rootdir: /workspace/rc6-ux-prepared-small-34294523-whole
+configfile: pytest.ini
+collecting ... collected 5 items
+
+tests/test_rc6_browser_prepared.py::test_multifamily_rpc_cannot_generate_fixture_before_its_twenty_second_request PASSED [ 20%]
+tests/test_rc6_browser_prepared.py::test_native_preparation_cli_rejects_output_before_fixture_or_source_write[source] PASSED [ 40%]
+tests/test_rc6_browser_prepared.py::test_native_preparation_cli_rejects_output_before_fixture_or_source_write[existing] PASSED [ 60%]
+tests/test_rc6_browser_prepared.py::test_native_preparation_cli_rejects_output_before_fixture_or_source_write[parent_symlink] PASSED [ 80%]
+tests/test_rc6_browser_prepared.py::test_native_preparation_wrong_interpreter_rejects_before_any_fixture_output PASSED [100%]
+
+- generated xml file: /tmp/rc6-ux-prepared-small-34294523-raw/prepared-small-focal-311.xml -
+============================== 5 passed in 4.21s ===============================

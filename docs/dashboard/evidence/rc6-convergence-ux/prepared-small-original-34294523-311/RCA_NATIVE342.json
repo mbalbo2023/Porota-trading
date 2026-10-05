@@ -1,0 +1,59 @@
+{
+  "acceptance_complete": false,
+  "chrome_executed": false,
+  "collected": 95,
+  "elapsed_seconds": 133.63138067199907,
+  "executable": "/workspace/venv_rc6_frozen311/bin/python",
+  "findings": [
+    {
+      "kind": "failure",
+      "message": "tests.rc6_browser_ipc.GateFailure: DRIVER_SQLITE_FORBIDDEN",
+      "nodeid": "tests.test_rc6_browser_family_health_coverage::test_native_health_cleanup_publisher_failure_still_reaps_child_and_restores_environment",
+      "seconds": "0.005",
+      "traceback": "complete_archive = (PosixPath('/tmp/rc6-ux-prepared-small-34294523-raw/pytest-complete-311/native-product-complete-source1/source'), Posi...aw/pytest-complete-311/native-product-complete-source1/source.index.json'), '088f804a6aa72d3db1a11246ba185a7140207bb4')\ntmp_path = PosixPath('/tmp/rc6-ux-prepared-small-34294523-raw/pytest-complete-311/test_native_health_cleanup_pub0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8691fd0e90>\n\n    def test_native_health_cleanup_publisher_failure_still_reaps_child_and_restores_environment(complete_archive, tmp_path, monkeypatch):\n        \"\"\"Fault only after a real native tick; no fabricated PID/cut/publisher.\"\"\"\n        import os\n        from tests.rc6_browser_ipc import read_source_index\n        from tests.rc6_dashboard_native_fixture import LiveHealthFixture\n        root, index, _ = complete_archive\n        before = dict(os.environ)\n        fixture = LiveHealthFixture(tmp_path, root, index, executable=sys.executable,\n            source_index=read_source_index(index, root))\n        with pytest.raises(RuntimeError, match=\"^TEST_STOP_PUBLISHER_FAILURE$\"):\n>           with fixture:\n\ntests/test_rc6_browser_family_health_coverage.py:175: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \ntests/rc6_dashboard_native_fixture.py:72: in __enter__\n    self.store, self.database, self.root = _health_seed(self.temporary)\n                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntests/rc6_dashboard_native_fixture.py:222: in _health_seed\n    store = PaperStore(str(database))\n            ^^^^^^^^^^^^^^^^^^^^^^^^^\nbe_paper_engine.py:304: in __init__\n    self.init_db()\nbe_paper_engine.py:334: in init_db\n    with self.connect() as c:\n         ^^^^^^^^^^^^^^\nbe_paper_engine.py:311: in connect\n    conn = sqlite3.connect(self.path, timeout=20)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\n_args = ('/tmp/rc6-ux-prepared-small-34294523-raw/pytest-complete-311/test_native_health_cleanup_pub0/data/paper_v17/observer_v17.db',)\n_kwargs = {'timeout': 20}\n\n    def no_sqlite(*_args, **_kwargs):\n        self.driver_sqlite.append(\"BLOCKED\")\n>       raise GateFailure(\"DRIVER_SQLITE_FORBIDDEN\")\nE       tests.rc6_browser_ipc.GateFailure: DRIVER_SQLITE_FORBIDDEN\n\ntests/rc6_browser_ipc.py:286: GateFailure"
+    },
+    {
+      "kind": "error",
+      "message": "failed on teardown with \"tests.rc6_browser_ipc.GateFailure: DRIVER_NETWORK_OR_SQLITE_ATTEMPTED\"",
+      "nodeid": "tests.test_rc6_browser_family_health_coverage::test_real_health_child_rejects_start_control_before_any_native_tick_or_database[invalid_start]",
+      "seconds": "1.326",
+      "traceback": "complete_archive = (PosixPath('/tmp/rc6-ux-prepared-small-34294523-raw/pytest-complete-311/native-product-complete-source1/source'), Posi...aw/pytest-complete-311/native-product-complete-source1/source.index.json'), '088f804a6aa72d3db1a11246ba185a7140207bb4')\nprepared_multifamily = {'receipt_path': PosixPath('/tmp/rc6-ux-prepared-small-34294523-raw/pytest-complete-311/multifamily-prepared-parent0/f...6_browser_prepare.py', '--expected-python', '/workspace/venv_rc6_frozen311/bin/python', ...], 'pid': 221261, ...}, ...}\n\n    @pytest.fixture(scope=\"module\")\n    def multifamily_product(complete_archive, prepared_multifamily):\n        root, index, _ = complete_archive\n        prepared = prepared_multifamily\n>       with ProductClient(sys.executable, root=root, index=index, require_complete_index=True) as product:\n\ntests/test_rc6_browser_family_health_coverage.py:31: \n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \ntests/rc6_browser_ipc.py:476: in __exit__\n    require(not self.driver_network and not self.driver_sqlite, \"DRIVER_NETWORK_OR_SQLITE_ATTEMPTED\")\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nvalue = False, gate = 'DRIVER_NETWORK_OR_SQLITE_ATTEMPTED', details = None\n\n    def require(value, gate, details=None):\n        if not value:\n>           raise GateFailure(gate, details)\nE           tests.rc6_browser_ipc.GateFailure: DRIVER_NETWORK_OR_SQLITE_ATTEMPTED\n\ntests/rc6_browser_ipc.py:45: GateFailure"
+    }
+  ],
+  "fresh_big_browser_acceptance": "PENDING",
+  "installed_count": 157,
+  "junit_duplicate_nodeids": 0,
+  "junit_testcase_outcomes": {
+    "errors": 1,
+    "failures": 1,
+    "passed": 93,
+    "skipped": 0,
+    "tests": 95
+  },
+  "metadata_sha256": "754416932c5894eda247dffbc31ef666bc9b703d25ffab7fe824cffadfcdd5ac",
+  "primary_failure_stage": "Before native health tick: LiveHealthFixture.__enter__ -> _health_seed -> PaperStore.init_db -> sqlite3.connect -> DRIVER_SQLITE_FORBIDDEN.",
+  "proposed_fix": "Only multifamily_product becomes function-scoped; prepared_multifamily stays module-scoped with original 10 ticks,318 full identities. Each consumer closes/reaps/restores driver guards before independent health controls.",
+  "pytest_call_outcomes": {
+    "failed": 1,
+    "passed": 94
+  },
+  "pytest_teardown_errors": 1,
+  "python312_executed": false,
+  "related_live_processes_after": 0,
+  "returncode": 1,
+  "root_cause": "Module-scoped multifamily_product retains ProductClient global driver sqlite3.connect guard during a later direct157 native health producer control.",
+  "schema": "rc6.ux-native342-family-health-driver-lifetime-rca.v1",
+  "secondary_error_stage": "Module fixture teardown records that driver attempt and rejects DRIVER_NETWORK_OR_SQLITE_ATTEMPTED; the error is attached to the last passing call, not a second financial failure.",
+  "source_files": 1792,
+  "source_hashes_modes_blobs_unchanged": true,
+  "source_sha": "34294523f057abfb308db12c57a74bf0c0dd5eb8",
+  "source_tree": "088f804a6aa72d3db1a11246ba185a7140207bb4",
+  "unchanged_contracts": [
+    "Driver network/SQLite blocking and counters",
+    "Source/custody/import closure proofs",
+    "Producer90/RPC20/render1s/health2s/4MiB caps",
+    "Catalog/full5/three real DLR FUTs/10ticks/GC",
+    "All95 permanent assertions and original65/7 evidence"
+  ],
+  "unique_testcase_nodeids": 95
+}

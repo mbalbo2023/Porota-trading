@@ -1,0 +1,33 @@
+{
+  "acceptance_complete": false,
+  "focal_is_subset_of_complete95": true,
+  "launcher_sha256": "b275861dfd90b1222adfe9d22fe034c3162545f1276d0dcba584b87399f2233d",
+  "modules": {
+    "tests/test_rc6_browser_family_health_coverage.py": 18,
+    "tests/test_rc6_browser_prepared.py": 22,
+    "tests/test_rc6_browser_product_ipc.py": 35,
+    "tests/test_rc6_projection_browser_diagnostic.py": 13,
+    "tests/test_rc6_projection_large_browser.py": 7
+  },
+  "native_or_browser_executed": false,
+  "overlay_count": 0,
+  "planned_complete_cases_per_interpreter": 95,
+  "planned_focal_cases": 2,
+  "planned_focal_nodes": [
+    "tests/test_rc6_browser_family_health_coverage.py::test_multifamily_native_catalog_preserves_supported_dlr_and_actual_page_denominators",
+    "tests/test_rc6_browser_family_health_coverage.py::test_native_health_cleanup_publisher_failure_still_reaps_child_and_restores_environment"
+  ],
+  "raw": "/tmp/rc6-ux-family-health-9e36e92a-raw",
+  "raw_commit_sha256": "948a481a89c870f1ce6beee447b5428c64d8ef60b579043f2e4dd0f9f04a5838",
+  "schema": "rc6.ux-native-health-family-lifetime-source-preparation.v1",
+  "scope": "SOURCE_ONLY_NOT_NATIVE_EXECUTION",
+  "source": "/workspace/rc6-ux-family-health-9e36e92a-whole",
+  "source342_original95_retained_red": true,
+  "source342_original_raw_driver_sha256": "f0e9828a630282183582a89be412c0f4f684b96fcb45eb023b8cb1449478e414",
+  "source6d_original65_pass7_error_retained": true,
+  "source_files": 1792,
+  "source_index_sha256": "33cf66ac9ba580c5ef37d4cf59d4301eaa9fd57961788824dbb198bb9731e7b0",
+  "source_sha": "9e36e92ac30803f93b555ce65da7ab346729ec1c",
+  "source_tar_sha256": "16fd1afc47ae94701865709b06425c13818685aa0321c99bec4ed38143787c75",
+  "source_tree": "fa1b6a9dccad56eca707c692f271fed28ad99ac1"
+}
