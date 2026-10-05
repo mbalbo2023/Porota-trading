@@ -202,6 +202,15 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     require(original_scenarios == parsed_scenarios, "ORIGINAL_SCENARIOS_REBOUND")
     matrix = read_json(committed_input(root, candidate_sha, CLOSURE))
     require(matrix.get("schema") == "rc6.convergence-closure.v1", "CLOSURE_SCHEMA_INVALID")
+    for field, originals, binding, reason in (
+        ("requirements", registry, "original_requirement", "ORIGINAL_CLOSURE_REQUIREMENT_REBOUND"),
+        ("scenarios", original_scenarios, "original_scenario", "ORIGINAL_CLOSURE_SCENARIO_REBOUND"),
+    ):
+        original_by_id = {row["id"]: row for row in originals}
+        require(isinstance(matrix.get(field), list), reason)
+        for row in matrix[field]:
+            require(isinstance(row, dict) and row.get("id") in original_by_id
+                    and row.get(binding) == original_by_id[row["id"]], reason)
     original_front = original_front_variants(
         committed_input(root, candidate_sha, "ORIGINAL_RA_A_F01_F02.md").decode(),
         committed_input(root, candidate_sha, "ORIGINAL_RA_A_F03_F05.md").decode())

@@ -6,6 +6,7 @@ it does not certify market executions or implement all fifty-five requirements.
 Predeploy fetches the original refs before running these network-free tests.
 """
 from copy import deepcopy
+import csv
 import hashlib
 import json
 import os
@@ -84,6 +85,16 @@ def fixture_base(tmp_path_factory):
     original_front = provenance.original_front_variants(
         (inputs / "ORIGINAL_RA_A_F01_F02.md").read_text(),
         (inputs / "ORIGINAL_RA_A_F03_F05.md").read_text())
+    with (inputs / provenance.REGISTRY).open(newline="") as source:
+        original_requirements = {row["id"]: row for row in csv.DictReader(source)}
+    original_scenarios = {row["id"]: row for row in
+        json.loads((inputs / provenance.SCENARIOS).read_text())["rows"]}
+    requirements = rows(provenance.REQUIREMENTS)
+    scenarios = rows({f"R{i:02d}" for i in range(1, 81)})
+    for row in requirements:
+        row["original_requirement"] = original_requirements[row["id"]]
+    for row in scenarios:
+        row["original_scenario"] = original_scenarios[row["id"]]
     front = rows(provenance.FRONT_VARIANTS)
     for row in front:
         row["original_columns"] = original_front[row["id"]]
@@ -92,8 +103,8 @@ def fixture_base(tmp_path_factory):
     paths = set(provenance.tree(root, "HEAD"))
     paths.update(str(path.relative_to(root)) for path in inputs.iterdir() if path.is_file())
     paths.add(provenance.INPUT_ROOT + "/" + provenance.CLOSURE)
-    matrix = {"schema": "rc6.convergence-closure.v1", "requirements": rows(provenance.REQUIREMENTS),
-        "scenarios": rows({f"R{i:02d}" for i in range(1, 81)}),
+    matrix = {"schema": "rc6.convergence-closure.v1", "requirements": requirements,
+        "scenarios": scenarios,
         "front_variants": front,
         "path_evolution": {path: {"reason": "Controlled fixture evolution requires a referenced guard.",
             "requirement_ids": ["U01"]} for path in paths}}
@@ -250,6 +261,25 @@ def test_derived_original_scenario_cannot_relabel_the_pinned_markdown(candidate)
     rows = json.loads(path.read_text()); rows["rows"][0]["expected"] = "Fabricated replacement expectation"
     write_json(path, rows); commit(root)
     assert_rejected(candidate, "ORIGINAL_SCENARIOS")
+
+
+@pytest.mark.parametrize("field", ["expected", "original_observed", "original_verdict"])
+def test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard(candidate, field):
+    root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_text())
+    matrix["scenarios"][0]["original_scenario"][field] = "Fabricated original statement"
+    write_json(path, matrix); commit(root)
+    assert_rejected(candidate, "ORIGINAL_CLOSURE_SCENARIO_REBOUND")
+
+
+def test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard(candidate):
+    root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+    matrix = json.loads(path.read_text())
+    original = matrix["requirements"][0]["original_requirement"]
+    field = next(name for name in original if name != "id")
+    original[field] = "Fabricated original requirement"
+    write_json(path, matrix); commit(root)
+    assert_rejected(candidate, "ORIGINAL_CLOSURE_REQUIREMENT_REBOUND")
 
 
 def test_missing_original_input_is_not_replaced_by_a_complete_self_asserted_index(candidate):
