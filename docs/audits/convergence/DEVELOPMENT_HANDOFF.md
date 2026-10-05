@@ -295,7 +295,8 @@ fue340,795,392B en126.30s, con las cuotas nativas intactas. El intento inicial
 sin timebin no lanzó child y se preserva como infraestructura; la calibración
 que superó64MiB y el rechazo de tres imágenes grandes bajo live128MiB también
 se preservan. Esta medición no ejecuta un fullworker ni el horizonte completo;
-su guard permanente y la ejecución final de la integración siguen pendientes.
+el guard permanente tiene una calificación posterior c437 descrita más abajo.
+La ejecución de la fuente final sigue pendiente.
 
 El control pequeño del observador GC completó el pipeline y cinco salidas
 PAPER dentro del fsync con190 eventos y cero errores del callback. El BIG
@@ -321,7 +322,8 @@ La separación de los drivers de navegador está integrada desde OWN881efed5:
 Playwright queda en el driver; los handlers nativos se ejecutan en un child
 con157 distribuciones verificadas antes del fixture y con fuente Git completa.
 El IPC prepara respuesta fresca, custodia,4MiB y los plazos originales; sus
-guards funcionales311/312 requieren corregir la revisión y una ejecución separada.
+guards funcionales311/312 pasaron después de la corrección OWNb6fd descrita
+más abajo y requieren calificación de la fuente final.
 La preparación fuente
 no constituye aceptación de esos guards ni de las294 rutas/resoluciones,
 aliases/foco/accesibilidad o del corte BIG OPEN final.
@@ -348,13 +350,19 @@ incluyen Chrome, BIG OPEN ni el plazo de render del catálogo grande. La
 ejecución final de la integración y del navegador sigue obligatoria.
 
 El guard automático near64MiB/depth32 está integrado desde OWN81f6+3c41.
-Dos nodes compartirán una ejecución nueva de34 publicaciones/33 archivos/
-33 decodes con los cinco miembros originales, wait4 RSS real y wall total
+Dos nodes comparten una ejecución nueva sobre whole c437/frozen157 de34
+publicaciones/33 archivos/33 decodes con los cinco miembros originales,
+wait4 RSS real y wall total
 de300s desde launch hasta salida, incluidas custodia y emisión/fsync. El
 watchdog330 sólo termina y conserva diagnóstico; no autoriza PASS. La
 revisión estática corrigió la cola de deadline, cobertura UDP y la resolución
-dir_fd de observaciones antes de borrar. AST/compile no son ejecución nativa;
-la calificación de esta fuente integrada sigue pendiente. Gov debe conservar
+dir_fd de observaciones antes de borrar. Ambos nodes pasaron con una sola
+ejecución nativa:125.848s internos,126.016s de launch a reap y342,335,488B
+de RSS. Los1727 blobs/modos de fuente y los once campos de custodia quedaron
+intactos;51 imports propios y cero externos/network. El primer intento sólo
+falló en colección por el path aislado, sin fixtures ni child, y conserva
+su RAW. El dossier byteexacto está en archive_maximum_member_c437; no prueba
+fullworker, horizonte, BIG90 ni fuente final. Gov debe conservar
 una autoridad Git íntegra del mismo HEAD; ausencia de Git falla cerrada.
 
 Los helpers externos de registro compacto/ref/gzip y sus30 controles privados
@@ -363,3 +371,21 @@ ni Gov; los recibos127/12/1 mantienen sus alcances OWN sin sumar ni relabel.
 El suplemento6737 permanece predecesor. Sólo la fuente estable S permite
 regenerar los seis bindings tipados ROOT y el documento D; Gov/FIP/imagen
 deben calificar C después de D. La generación compacta final sigue pendiente.
+
+El wrapper de horizonte corrigió tres fallas de medición detectadas en fuente:
+cuatro cortes sólo pueden declarar execution_complete, el constructor/recovery
+de los reinicios361/841 entra en el reloj completo original30s, y cada restore
+exige exactamente los cinco miembros originales. Sus guards de clocks/metadata
+son SOURCE-only, no una rueda física de1201 ticks. La revisión adicional de
+Git/imports/157 y contadores observados de ACK/GC/pins continúa en OWN. La rueda
+debe ejecutar1201 ticks posteriores a PRE, más ese PRE real, y conservar fases
+de negocio y degradación por datos fijos obsoletos. Diez horas de as_of acelerado
+no certifican diez horas de mercado OPEN ni una sesión real de PPI.
+
+El diagnóstico del checkpoint real400 completó restore en8.192s, con754,880,512B
+de RSS y fuentes/datos sin cambios. Un segundo proceso, capture-report, salió
+con SIGSEGV antes de PREPARE a10.237s, coincidiendo con la primera muestra de
+pila; la causa producto/instrumentación/entorno permanece sin atribuir. Se
+conservan los RAW externos restore-raw y capture-raw. Un control único sin
+muestreo está preparado para discriminar esa hipótesis con el mismo producto,
+corte,60s y2GiB; no equivale a aceptación BIG90 ni ahorro medido del publisher.

@@ -223,6 +223,7 @@
         "bv_paper_runtime.py",
         "cu_history_store_v2_hf6.py",
         "cv_history_store_adapter_hf6.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ea_history_close_series_hf2.py",
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
@@ -254,7 +255,7 @@
       "native_caller": "bf_production_paper_observer._history_cutoff_repair_complete -> readonly_copy; historical marker is advisory only.",
       "owner_mapping": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
       "rca": "A native dated read-only marker query used the writer adapter and changed source metadata or created a missing dataset.",
-      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
@@ -2287,6 +2288,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2352,6 +2354,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2417,6 +2420,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2482,6 +2486,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2547,6 +2552,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2612,6 +2618,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2677,6 +2684,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2743,6 +2751,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2808,6 +2817,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2873,6 +2883,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -2939,6 +2950,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3004,6 +3016,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3109,6 +3122,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3222,6 +3236,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3288,6 +3303,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3354,6 +3370,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3420,6 +3437,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3486,6 +3504,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3552,6 +3571,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3620,6 +3640,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3686,6 +3707,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3825,6 +3847,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -3964,6 +3987,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4032,6 +4056,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4098,6 +4123,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4241,6 +4267,11 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -4284,6 +4315,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4351,6 +4383,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4418,6 +4451,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4486,6 +4520,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4597,7 +4632,12 @@
         "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
-        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -4605,6 +4645,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4673,6 +4714,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4743,6 +4785,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4810,6 +4853,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -4879,6 +4923,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -5021,6 +5066,11 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -5064,6 +5114,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -5172,6 +5223,11 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire",
@@ -5729,6 +5785,318 @@
         "U18",
         "U21",
         "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/DOSSIER.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/MANIFEST.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/README.md": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/collection.log": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/launch.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/maximum-member.xml": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest-resource.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest.log": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/pytest.pid": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_governed/source.index.json.gz": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/corrected_outer.stdin.py": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/launch.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/maximum-member.xml": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest-resource.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest.log": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_collection_infra/pytest.pid": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/initial_outer.stdin.py": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/child-resource.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/launch-before.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/launch-final.json": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/native-receipt.json.gz": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/native/native.log": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/rc6_archive_maximum_member_probe.py.gz": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/archive_maximum_member_c437/raw/test_rc6_archive_maximum_member_guard.py.gz": {
+      "reason": "Preserve exact integrated c437 automatic-memory evidence with both original infrastructure collection failure and corrected Python-path invocation, two passing nodes sharing one actual near64MiB/depth32 execution, nonce and receipt SHA. Native launch-to-kernel-reap126.016s, RSS342,335,488 bytes,34 publications/33 archives/decodes, five exact original members, source1727 bytes/modes/blobs and51 own imports remain within original limits. Raw XML/log/source index/native receipt and original source blobs are byte-exact or losslessly compressed; outer tool-stdin bodies are explicitly reconstructed without a prelaunch body-hash claim. This closes only the source automatic archive-memory guard, not full worker, all33 maximum ancestors, BIG90, horizon, browser, final governed/image or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
         "U29"
       ]
     },
@@ -8178,6 +8546,20 @@
         "U26"
       ]
     },
+    "docs/audits/rc6-convergence-persistence-evidence/HORIZON_WRAPPER_CORRECTION.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "docs/audits/rc6-convergence-persistence-evidence/README.md": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -8525,7 +8907,7 @@
       ]
     },
     "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": {
-      "reason": "Run native archive capacity on a complete immutable zero-overlay source pin with canonical disk scratch, original512 live entries, all source database custody fields, exact five-member restores and measured physical temporary peaks. Four cuts remain descriptive; the full1201 OPEN ticks plus separate PRE seed require real execution, not extrapolation.",
+      "reason": "Run native archive capacity on a complete immutable zero-overlay source pin with canonical disk scratch, original512 live entries, all source database custody fields, exact five-member restores and measured physical temporary peaks. Four cuts have execution_complete only and cannot claim complete/acceptance; restart factory/recovery and member cleanup are inside the original30s full-cycle clock. Full1201 actual postPRE ticks plus one PRE seed require execution, native phase/freshness observations and actual retention/GC/ACK evidence, not extrapolation or forced OPEN market authority. Source strengthening and native qualification remain pending.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -13100,6 +13482,18 @@
         "U03"
       ]
     },
+    "tests/test_rc6_native_archive_horizon_wrapper.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28"
+      ]
+    },
     "tests/test_rc6_native_source_reads.py": {
       "reason": "Exercise all six native source callers with real quiescent WAL/SHM, original bytes and all custody fields, original keys/cursors/clocks, equivalent512 fingerprints/checkpoints, alias/replacement/deadline/scratch denial and actual concurrent PaperStore mutation. Fixture preparation closes its own writers without changing business SQL or assertions.",
       "requirement_ids": [
@@ -14104,6 +14498,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -14139,7 +14534,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
-      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -14215,6 +14610,11 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -14638,6 +15038,7 @@
         ".github/workflows/porota-deploy-v2-promote.yml",
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "porota_mode_manager.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
@@ -14679,7 +15080,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -14775,6 +15176,11 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -14825,6 +15231,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
@@ -14863,7 +15270,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.; Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy.; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.; Final material acceptance remains pending: actual normal1200/6000 V3 archive across nine hours plus one hour recovery, physical peak/all temporary residence and canonical BIG/browser gates have not completed. Earlier V2 cost exceeded512MiB and earlier large browser renders exceeded one second; neither result is reinterpreted as a measured outcome for the new codec/archive. Intermediate structural/native-small guards do not close these gates.",
+      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.; Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy.; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.; Final material acceptance remains pending: actual normal1200/6000 V3 archive across nine hours plus one hour recovery, physical peak/all temporary residence and canonical BIG/browser gates have not completed. Earlier V2 cost exceeded512MiB and earlier large browser renders exceeded one second; neither result is reinterpreted as a measured outcome for the new codec/archive. Intermediate structural/native-small guards do not close these gates.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -14948,6 +15355,11 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -14989,6 +15401,7 @@
     },
     {
       "code_paths": [
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/exact_page_storage.py",
@@ -15014,7 +15427,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACKs durables se acumulaban dentro de livequota.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -15065,6 +15478,11 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire",
@@ -15189,6 +15607,7 @@
     },
     {
       "code_paths": [
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/exact_page_storage.py",
@@ -15214,7 +15633,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -15268,7 +15687,12 @@
         "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
-        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -15546,6 +15970,7 @@
         "bv_paper_runtime.py",
         "cu_history_store_v2_hf6.py",
         "cv_history_store_adapter_hf6.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ea_history_close_series_hf2.py",
         "rc6_audit_evidence/history_probe.py",
         "rc6_audit_evidence/package.py",
@@ -15582,7 +16007,7 @@
       },
       "owner_mapping": "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json",
       "rca": "SQLite mode=ro on a main+WAL source without SHM could create source SHM and change filesystem metadata.",
-      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Full current historical dataset and deployed consumer behavior: NO_VERIFICADO.; Synthetic fixture GREEN supplies no READY_PAPER, performance or production-capacity authority.; O_NOATIME capability and ownership are required; unsupported source-owner capture fails closed.; Source all-stat invariance belongs to historical/export/preopen copies; active trading SQLite readers have their own SQL/locking contract.; The fixed source ceiling is 512 MiB and total preopen deadline is at most two seconds. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_historical_package.py::test_dirty_source_transaction_does_not_publish",
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
@@ -15641,6 +16066,11 @@
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
         "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -15889,6 +16319,7 @@
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
         "rc6_shadow_runtime/archive_components.py",
@@ -15915,7 +16346,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Unificar documentaci\u00f3n de disco con autorizaci\u00f3n din\u00e1mica+2 GiB.",
-      "remaining_uncertainty": "Formula image tar+exact unpacked image+2*bundle+2GiB residual; zero arbitrary pretransfer floor. No global prune, foreign-container inspection, DB/shared-cache mutation. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Formula image tar+exact unpacked image+2*bundle+2GiB residual; zero arbitrary pretransfer floor. No global prune, foreign-container inspection, DB/shared-cache mutation. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
@@ -15981,7 +16412,12 @@
         "tests/test_rc6_disk_deploy_guard.py::test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_needed",
         "tests/test_rc6_disk_deploy_guard.py::test_final_cleanup_revalidates_critical_approval_after_cleanup",
         "tests/test_rc6_disk_deploy_guard.py::test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy",
-        "tests/test_rc6_disk_housekeeping_policy.py::test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size"
+        "tests/test_rc6_disk_housekeeping_policy.py::test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock"
       ],
       "workstream": "SRE"
     },
@@ -16582,6 +17018,7 @@
         ".github/workflows/porota-deploy-v2-promote.yml",
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "porota_mode_manager.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
@@ -16617,7 +17054,7 @@
       "original_control_origin": "Six absent controls named in pinned unique order, section10; original guarantee restored through the declared actual native successor caller.",
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
@@ -18682,6 +19119,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
@@ -18728,7 +19166,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
-      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -18804,6 +19242,11 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -18826,6 +19269,7 @@
         ".github/workflows/porota-deploy-v2-promote.yml",
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "porota_mode_manager.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
@@ -18878,7 +19322,7 @@
       },
       "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
-      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
+      "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -18974,6 +19418,11 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -19388,6 +19837,7 @@
     },
     {
       "code_paths": [
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/exact_page_storage.py",
@@ -19424,7 +19874,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -19478,7 +19928,12 @@
         "tests/test_rc6_exact_page_storage.py::test_page_full_roundtrip_exact",
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
-        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding"
+        "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -19524,6 +19979,7 @@
       "code_paths": [
         "bd_ppi_readonly_guard.py",
         "bv_paper_runtime.py",
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
@@ -19573,7 +20029,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.; Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy.; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.; Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy.; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -19658,6 +20114,11 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -19699,6 +20160,7 @@
     },
     {
       "code_paths": [
+        "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/exact_page_storage.py",
@@ -19735,7 +20197,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "ACKs durables se acumulaban dentro de livequota.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. Root integrated OWN a4 horizon-wrapper corrections: four cuts cannot claim full completion, restart constructor/recovery is charged to the original30s full-cycle clock, and each native restore must contain exactly the five original members. Controlled clock/member guards are SOURCE-only pending execution and cannot replace1201 actual postPRE ticks plus PRE, native retention/GC/ACK observations or final qualification. Actual business phases and stale fixed-source degradation remain authoritative; no10h OPEN market or wallclock session is asserted. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
@@ -19786,6 +20248,11 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion",
         "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire",
