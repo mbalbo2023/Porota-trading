@@ -3577,6 +3577,18 @@
         "U29"
       ]
     },
+    "docs/audits/RC6_SRE_SQLITE_DISK_SCRATCH_NATIVE.json": {
+      "reason": "Preserve the exact archived source, native larger-than32MiB private-copy measurement and original contract-mode RED/GREEN receipts. The170-case canonical guard receipt is an intermediate source execution; large OPEN health and final frozen artifact execution remain separately required.",
+      "requirement_ids": [
+        "AUD-468-07",
+        "AUD-468-18",
+        "AUD-468-21",
+        "U04",
+        "U13",
+        "U24",
+        "U28"
+      ]
+    },
     "docs/audits/convergence/DEVELOPMENT_HANDOFF.md": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
