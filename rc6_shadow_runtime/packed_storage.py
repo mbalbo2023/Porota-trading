@@ -41,6 +41,10 @@ _KEYS = {"schema", "codec", "packets", "templates_count", "literals_count", "dir
 _SMALL_ITEMS = 16
 _SMALL_STRING = 256
 _SMALL_INTEGER_BITS = 4096
+_BINDING_SCALAR_ENTRIES = 4096
+_BINDING_SCALAR_BYTES = 1024 * 1024
+_BINDING_SCALAR_STRING = 256
+_BINDING_SCALAR_INTEGER_BITS = 4096
 
 
 def _canonical(value, *, ascii=True):
@@ -292,6 +296,9 @@ class _CaptureBuilder:
         self.objects, self.incoming = {}, {}
         self.cache = {} if cache is None else cache
         self.scalars = {}
+        # Binding bytes belong to one capture call, never the named-capture
+        # cache or another cut/publication. Direct append calls keep fallback.
+        self._binding_scalars, self._binding_bytes = None, 0
         self._count(value)
 
     def _count(self, value):
@@ -317,6 +324,24 @@ class _CaptureBuilder:
         if key not in self.scalars:
             self.scalars[key] = _canonical(value)
         return self.scalars[key]
+
+    def _binding_scalar(self, value):
+        cache = self._binding_scalars
+        kind = type(value)
+        if (cache is None or kind not in (type(None), bool, int, float, str)
+                or kind is str and len(value) > _BINDING_SCALAR_STRING
+                or kind is int and value.bit_length() > _BINDING_SCALAR_INTEGER_BITS):
+            return _canonical(value)
+        key = kind, value.hex() if kind is float else value
+        raw = cache.get(key)
+        if raw is not None:
+            return raw
+        raw = _canonical(value)
+        if (len(cache) < _BINDING_SCALAR_ENTRIES
+                and self._binding_bytes+len(raw) <= _BINDING_SCALAR_BYTES):
+            cache[key] = raw
+            self._binding_bytes += len(raw)
+        return raw
 
     def _named(self, value):
         literals, indices = [], {}
@@ -355,7 +380,7 @@ class _CaptureBuilder:
                 buffer.append((b"," if ordinal else b"")+self._scalar(key)+b":")
                 child = value[key]
                 if _root_volatile(key):
-                    buffer.bind(_canonical(child))
+                    buffer.bind(self._binding_scalar(child))
                 else:
                     self._append(child, key, buffer)
             buffer.append(b"}")
@@ -370,12 +395,19 @@ class _CaptureBuilder:
             buffer.append(self._scalar(value))
 
     def capture(self, value, name=""):
-        if _root_volatile(name):
-            return (Capture(b"\0"+b"\0"*4, (_canonical(value),)),)
-        buffer = _CaptureBuffer()
-        self._append(value, name, buffer, root=True)
-        buffer.flush()
-        return tuple(buffer.result)
+        previous = self._binding_scalars, self._binding_bytes
+        self._binding_scalars, self._binding_bytes = {}, 0
+        try:
+            if _root_volatile(name):
+                return (Capture(b"\0"+b"\0"*4, (self._binding_scalar(value),)),)
+            buffer = _CaptureBuffer()
+            self._append(value, name, buffer, root=True)
+            buffer.flush()
+            return tuple(buffer.result)
+        finally:
+            # Reentrant default=str keeps the surrounding capture's private
+            # context, while top-level calls leave no cache behind.
+            self._binding_scalars, self._binding_bytes = previous
 
 
 class PreparedPackedStorage:
