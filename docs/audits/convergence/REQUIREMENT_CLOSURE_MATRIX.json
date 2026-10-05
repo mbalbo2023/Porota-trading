@@ -3671,6 +3671,14 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/REMEDIATION_REGISTER.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
