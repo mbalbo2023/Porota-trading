@@ -356,3 +356,50 @@ def test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_
     with closing(sqlite3.connect(budget.path)) as c:
         assert c.execute("SELECT used FROM budget_requests WHERE lease=?", (pending["lease"],)).fetchone() == (1,)
         assert json.loads(c.execute("SELECT value FROM budget_state WHERE key='inflight'").fetchone()[0])["lease"] == pending["lease"]
+
+
+def test_native_cold_missing_main_checks_every_orphan_before_new_sdk_wire(wire, tmp_path, monkeypatch):
+    clock, calls, behavior = wire
+    reviewed, recommendation, report, approval = reviewed_native_capacity(wire)
+    behavior["latency"] = 0
+    for index, suffix in enumerate((None, "-wal", "-shm", "-journal", ".exit-round-degraded",
+                                   ".exit-round.lock", ".wire.lock", ".init.lock")):
+        case_root = tmp_path / f"case-{index}"
+        case_root.mkdir()
+        store, _ = native_opened_store(case_root, clock, monkeypatch, count=1)
+        ctl = RuntimeCapacityController(store.path, environ={}, policy=reviewed,
+            recommendation=recommendation, report=report, approval=approval)
+        arbiter = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+        if suffix is not None:
+            arbiter.path.parent.mkdir(parents=True)
+            auxiliary = arbiter.path.with_name(arbiter.path.name + suffix)
+            auxiliary.write_bytes(b"OFFLINE_ORPHAN_BUDGET_COMPANION")
+            auxiliary.chmod(0o600)
+        before = {p: (p.read_bytes(), p.stat().st_mode) for p in arbiter.path.parent.iterdir()} if arbiter.path.parent.exists() else {}
+        observed = exit_retention_preflight(store.path, ctl.state(clock.now()), opened_count=1, as_of=clock.now())
+        assert not arbiter.path.exists()
+        if suffix is None:
+            assert observed["status"] == "READY" and observed["source_status"] == "ABSENT"
+            assert not arbiter.path.parent.exists()  # No readonly bootstrap.
+            assert runtime_budget_snapshot(store.path, as_of=clock.now())["status"] == "ABSENT"
+        else:
+            assert observed["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+            assert observed["source_status"] == "UNVERIFIED"
+            assert runtime_budget_snapshot(store.path, as_of=clock.now())["status"] == "UNVERIFIED"
+        reader = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=arbiter, consumer="EXIT_READER")
+        try:
+            reader.login_once()
+            sends = len(market_sends(calls))
+            identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+            if suffix is None:
+                assert scoped_book(reader, identity, "EXIT_CRITICAL")
+                assert len(market_sends(calls)) == sends + 1 and arbiter.path.exists()
+            else:
+                with pytest.raises(BudgetBackpressure, match="STORAGE_UNVERIFIED"):
+                    scoped_book(reader, identity, "EXIT_CRITICAL")
+                assert len(market_sends(calls)) == sends
+                assert not arbiter.path.exists()
+                assert arbiter.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+                assert {p: (p.read_bytes(), p.stat().st_mode) for p in arbiter.path.parent.iterdir()} == before
+        finally:
+            reader.close()

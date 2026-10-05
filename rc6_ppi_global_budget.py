@@ -307,17 +307,20 @@ def exit_retention_preflight(database, state, *, opened_count, as_of):
         try:
             metadata = path.stat()
         except FileNotFoundError:
-            return base | {"source_status": "ABSENT", "retained_receipts": 0, "available_rows": RECEIPT_LIMIT}
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            metadata = None
+        if metadata is not None and (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1):
             raise ValueError("PPI_BUDGET_PATH_ALIAS")
-        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock"):
+        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock", ".wire.lock", ".init.lock"):
             auxiliary = Path(str(path) + suffix)
             try:
                 aux = auxiliary.lstat()
             except FileNotFoundError:
                 continue
-            if not stat.S_ISREG(aux.st_mode) or aux.st_nlink != 1 or suffix in {"-wal", "-shm"}:
+            if (metadata is None or not stat.S_ISREG(aux.st_mode) or aux.st_nlink != 1
+                    or suffix in {"-wal", "-shm"}):
                 raise ValueError("PPI_BUDGET_PATH_ALIAS")
+        if metadata is None:
+            return base | {"source_status": "ABSENT", "retained_receipts": 0, "available_rows": RECEIPT_LIMIT}
         with path.open("rb") as stream:
             header = stream.read(32)
         if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
@@ -1682,22 +1685,24 @@ def runtime_budget_snapshot(database, *, as_of=None):
         try:
             metadata = path.stat()
         except FileNotFoundError:
-            return result
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            metadata = None
+        if metadata is not None and (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1):
             raise ValueError("PPI_BUDGET_PATH_ALIAS")
         round_guard_active = False
-        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock"):
+        for suffix in ("-journal", "-wal", "-shm", ".exit-round-degraded", ".exit-round.lock", ".wire.lock", ".init.lock"):
             auxiliary = Path(str(path) + suffix)
             try:
                 aux_metadata = auxiliary.lstat()
             except FileNotFoundError:
                 continue
-            if not stat.S_ISREG(aux_metadata.st_mode) or aux_metadata.st_nlink != 1:
+            if metadata is None or not stat.S_ISREG(aux_metadata.st_mode) or aux_metadata.st_nlink != 1:
                 raise ValueError("PPI_BUDGET_PATH_ALIAS")
             if suffix in {"-wal", "-shm"}:
                 raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
             if suffix == ".exit-round-degraded":
                 round_guard_active = True
+        if metadata is None:
+            return result
         # Refuse a WAL main before SQLite can create a missing SHM companion.
         with path.open("rb") as stream:
             header = stream.read(32)
