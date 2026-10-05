@@ -12,13 +12,11 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
-import tempfile
+import tempfile  # Compatibility for existing offline capture instrumentation.
 import time
 from contextlib import contextmanager
 
-
-class SnapshotError(ValueError):
-    """Sanitized reason, with no private source path or SQLite details."""
+from .sqlite_scratch import SnapshotError, inspect_scratch, private_scratch, snapshot_peak_bytes
 
 
 def _check(deadline):
@@ -49,7 +47,7 @@ def _inventory(path):
     return result
 
 
-def _read(member, expected, *, deadline, destination=None):
+def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
     # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
     # source-owner capture is required; silently degrading would change it.
     if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
@@ -76,6 +74,8 @@ def _read(member, expected, *, deadline, destination=None):
                 consumed += len(chunk)
                 digest.update(chunk)
                 if destination is not None:
+                    if scratch_guard is not None:
+                        scratch_guard.check()
                     destination.write(chunk)
             if _metadata(os.fstat(stream.fileno())) != expected:
                 raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
@@ -86,11 +86,15 @@ def _read(member, expected, *, deadline, destination=None):
 
 @contextmanager
 def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
-                  validate=True):
+                  validate=True, scratch_root=None, max_scratch_bytes=None,
+                  reserve_bytes=None, min_free_inode_percent=None):
     """Yield a Row connection on a coherent copy; clean it on every exit.
 
     ``validate=False`` omits full quick_check for bounded dashboard reads.
     Main/WAL identity, byte digests and causal stability are always checked.
+    Runtime scratch is configured by POROTA_SQLITE_SCRATCH_* and anchored to
+    the primary PAPER dataset. Its total includes residue and regenerated SHM;
+    defaults without that configuration retain temporary offline capture.
     An unchanged committed image can be copied while a writer holds an unused
     DELETE-mode lock; a nonempty rollback journal cannot be copied safely.
     """
@@ -108,7 +112,11 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
         before = _inventory(path)
         if sum(info[4] for info in before.values()) > max_source_bytes:
             raise SnapshotError("SOURCE_BYTE_BUDGET_EXHAUSTED")
-        with tempfile.TemporaryDirectory(prefix="rc6-sqlite-copy-") as scratch:
+        with private_scratch(path, main_bytes=before[''][4],
+                wal_bytes=before.get('-wal', (0, 0, 0, 0, 0))[4],
+                source_shm_bytes=before.get('-shm', (0, 0, 0, 0, 0))[4],
+                scratch_root=scratch_root, max_scratch_bytes=max_scratch_bytes,
+                reserve_bytes=reserve_bytes, min_free_inode_percent=min_free_inode_percent) as (scratch, guard):
             copy = Path(scratch) / "snapshot.sqlite"
             digests = {}
             for suffix, info in before.items():
@@ -120,7 +128,8 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
                     with target.open("xb") as output:
                         os.chmod(target, 0o600)
                         digests[suffix] = _read(Path(str(path) + suffix), info,
-                                                deadline=deadline, destination=output)
+                                                deadline=deadline, destination=output,
+                                                scratch_guard=guard)
                 else:
                     digests[suffix] = _read(Path(str(path) + suffix), info, deadline=deadline)
             if _inventory(path) != before:
@@ -131,12 +140,19 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
             if _inventory(path) != before:
                 raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
             _check(deadline)
+            if guard is not None:
+                guard.check()
             connection = sqlite3.connect(copy.as_uri() + "?mode=ro", uri=True, timeout=.025)
             try:
                 connection.row_factory = sqlite3.Row
                 connection.execute("PRAGMA query_only=ON")
                 connection.execute("PRAGMA busy_timeout=25")
                 connection.execute("PRAGMA trusted_schema=OFF")
+                # Avoid SQLite sorter spill to an unrelated /tmp tmpfs. Query
+                # cardinality and deadlines remain the consumer's own bounds.
+                connection.execute("PRAGMA temp_store=MEMORY")
+                if guard is not None:
+                    guard.check()
                 connection.set_progress_handler(
                     lambda: int(deadline is not None and time.monotonic() >= deadline), 100)
                 if validate and connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
@@ -144,6 +160,8 @@ def readonly_copy(path, *, deadline=None, max_source_bytes=512 * 1024 * 1024,
                 _check(deadline)
                 yield connection
                 _check(deadline)
+                if guard is not None:
+                    guard.check()
             finally:
                 connection.close()
     except sqlite3.Error:
