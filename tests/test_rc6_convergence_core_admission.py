@@ -125,6 +125,22 @@ def test_u08_invalid_latest_same_identity_is_tombstone_and_partial_key_is_closed
     assert store.latest_quote({k:v for k,v in identity.items() if k!='currency'}) is None
 
 
+def test_aud01_native_stale_tail_remains_hold_with_a_fresh_book_and_refresh(tmp_path, monkeypatch):
+    store, r = seeded(tmp_path)
+    cut = AT + timedelta(minutes=20)
+    # A repeated response and new book must preserve the old provider clock.
+    scalping.persist_payload(store, r, points(AT), received_at=cut)
+    store.add_quote(quote(cut))
+    monkeypatch.setenv('PAPER_SCALPING_MODE', 'ACTIVE_PAPER')
+    assert scalping.evaluate_candidate(store, r, at=cut) == 'HOLD'
+    assert scalping.promote_paper_candidate(store, r, at=cut) == 'STALE_INTRADAY_SOURCE'
+    with store.connect() as connection:
+        reason = connection.execute('SELECT reason FROM scalping_candidates ORDER BY id DESC LIMIT 1').fetchone()[0]
+        assert reason == 'STALE_INTRADAY_SOURCE'
+        assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
+        assert connection.execute('SELECT real_orders_sent FROM observer_state').fetchone()[0] == 0
+
+
 def test_aud02_fifteen_burst_events_do_not_become_a_fifteen_minute_signal(tmp_path):
     store,r=seeded(tmp_path)
     at=AT+timedelta(seconds=32)
@@ -140,6 +156,23 @@ def test_aud02_fifteen_burst_events_do_not_become_a_fifteen_minute_signal(tmp_pa
         assert model['sample_kind']=='DISTINCT_SOURCE_EVENTS' and model['bar_duration_seconds'] is None
 
 
+def test_aud02_native_forty_two_minute_sparse_window_is_not_continuous(tmp_path):
+    store = engine.PaperStore(str(tmp_path / 'paper.sqlite'))
+    scalping.init_schema(store)
+    r = record()
+    sparse = [(scalping._stamp(AT-timedelta(minutes=46-3*i)), D(100)+D(i)/2,
+               D(20 if i % 2 == 0 else 10)) for i in range(16)]
+    scalping.persist_payload(store, r, sparse[:15], received_at=AT-timedelta(minutes=4))
+    assert scalping.persist_payload(store, r, sparse, received_at=AT)['state'] == 'CONFIRMED_INTERVAL_VOLUME'
+    store.add_quote(quote(AT))
+    assert scalping.evaluate_candidate(store, r, at=AT) == 'HOLD'
+    with store.connect() as connection:
+        row = connection.execute('SELECT reason,economics_json FROM scalping_candidates ORDER BY id DESC LIMIT 1').fetchone()
+        assert row['reason'] == 'INTRADAY_EVENT_CONTINUITY_UNVERIFIED'
+        assert json.loads(row['economics_json'])['temporal_contract']['observed_span_seconds'] == 42*60
+        assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
+
+
 def test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract(tmp_path):
     store=engine.PaperStore(str(tmp_path/'paper.sqlite'));scalping.init_schema(store)
     r=record();r['raw']={}
@@ -149,6 +182,45 @@ def test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract(tm
     contract=record()['raw']['intraday_volume_contract']|{'unit':'TURNOVER_MONEY','currency':'ARS'}
     with pytest.raises(ValueError,match='QUANTITY_VOLUME_UNAVAILABLE'):
         quantity_activity([D(100),D(50)],contract)
+
+
+@pytest.mark.parametrize('accumulation', ['INTERVAL', 'CUMULATIVE'])
+def test_aud03_native_volume_semantics_come_from_the_dated_contract(tmp_path, accumulation):
+    store = engine.PaperStore(str(tmp_path / 'paper.sqlite'))
+    scalping.init_schema(store)
+    r = record()
+    r['raw']['intraday_volume_contract']['accumulation'] = accumulation
+    native = points(AT)
+    if accumulation == 'INTERVAL':
+        # Increasing interval quantities are legitimate; no descent heuristic.
+        native = [(time, price, D(10+i)) for i, (time, price, _) in enumerate(native)]
+    scalping.persist_payload(store, r, native[:15], received_at=AT-timedelta(minutes=1))
+    result = scalping.persist_payload(store, r, native, received_at=AT)
+    store.add_quote(quote(AT))
+    if accumulation == 'INTERVAL':
+        assert result['state'] == 'CONFIRMED_INTERVAL_VOLUME'
+        assert scalping.evaluate_candidate(store, r, at=AT) == 'BUY_CANDIDATE'
+    else:
+        assert result['state'] == 'PPI_CUMULATIVE_VOLUME_RESET_UNVERIFIED'
+        assert scalping.evaluate_candidate(store, r, at=AT) == 'HOLD'
+    with store.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM paper_fills').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('span_minutes', [1, 15, 30, 90])
+def test_aud05_native_main_reports_the_observed_horizon_for_each_event_window(tmp_path, span_minutes):
+    store = engine.PaperStore(str(tmp_path / 'paper.sqlite'))
+    for index in range(20):
+        at = AT-timedelta(seconds=span_minutes*60*(19-index)/19)
+        store.add_quote(quote(at))
+    broker = engine.PaperBroker(store, clock_fn=lambda: AT.isoformat(), ai_mode='OFF')
+    vector = store.signal_prices(quote(AT), AT, window_minutes=90)
+    inputs = broker._entry_signal_inputs(vector, quote(AT), AT)
+    assert len(vector) == 20
+    assert inputs['temporal_contract']['observed_span_seconds'] == span_minutes*60
+    assert inputs['temporal_contract']['sample_kind'] == 'DISTINCT_SOURCE_EVENTS'
+    assert inputs['temporal_contract']['bar_duration_seconds'] is None
+    assert len(inputs['price_samples']) == 20
 
 
 def test_aud05_main_snapshot_declares_event_horizon_and_records_actual_span(tmp_path):
