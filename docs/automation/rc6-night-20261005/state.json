@@ -16,17 +16,8 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-05T02:36:35.263Z-disk-audit-tl8sjdd8",
-    "holder": "SUPERVISOR_SETUP_DISK_GATE_AUDIT",
-    "acquired_at": "2026-10-05T02:36:35.263Z",
-    "expires_at": "2026-10-05T02:56:35.263Z"
-  },
-  "pending_action": {
-    "type": "PERSIST_DISK_GATE_AUDIT_AND_PROMPT_CLARIFICATION",
-    "started_at": "2026-10-05T02:36:35.263Z",
-    "receipt_marker": "NIGHT_DISK_GATE_AUDIT=WS-RC6-NIGHT-CONVERGENCE-20261005"
-  },
+  "lease": null,
+  "pending_action": null,
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -56,6 +47,11 @@
       "type": "contingency_access_and_recovery_audit",
       "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5986952508",
       "observed_at": "2026-10-05T02:15:02.786Z"
+    },
+    {
+      "type": "disk_and_cleanup_declaration_audit",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5987147010",
+      "observed_at": "2026-10-05T02:37:30.342Z"
     }
   ],
   "blockers": [
@@ -111,7 +107,7 @@
     "created_at": "2026-10-05T01:54:44Z",
     "control_commit": "d19f49a058427cd52bfae2b4febf257277927353"
   },
-  "last_setup_verified_at": "2026-10-05T02:29:07.480Z",
+  "last_setup_verified_at": "2026-10-05T02:37:30.342Z",
   "contingency_audit": {
     "observed_at": "2026-10-05T02:12:54.262Z",
     "small_artifact_transfer": "VERIFIED_BYTES_AND_GITHUB_DIGEST",
@@ -161,6 +157,12 @@
     "min_inode_free_percent": 10,
     "final_workflow_approval": "PENDING",
     "finding": "SEED_WORKFLOW_HAS_UNSCOPED_DOCKER_PRUNE_AND_TMP_PATTERN_REMOVALS; AUDIT_AND_REMEDIATE_AFTER_OWNER_RELEASE",
-    "policy_directive": "ACLARACIÓN OBLIGATORIA DE DISCO Y LIMPIEZA — comprobada por pedido de Martín el 4/10/2026:\nEl control PREDEPLOY en el Droplet es siempre obligatorio, por Actions canónico y con medidas frescas. Presupuesto por filesystem con artefacto final: tar comprimido + tamaño Docker exacto + 2*bundle + reserva residual 2GiB, más costos reales adicionales de migración/evidencia; inodos según policy (actualmente mínimo10%). Los 2GiB son reserva después del deploy/cleanup, no capacidad total necesaria. No reutilizar números históricos.\nLa limpieza previa es condicional al déficit de espacio/inodos: seleccionar sólo recursos elegibles del scope autorizado, preservar pins/imágenes/contenedores/datos/evidencia protegidos, medir antes/después y repetir el gate. Si sigue insuficiente no transferir/cargar/promover. Revalidar espacio después de transferir y antes de load/promote.\nLa limpieza POSTDEPLOY es obligatoria y medida; exigir reserva/inodos finales, recursos conservados y salud posterior. Preservar cleanup seguro tras fallo/cancelación, incluyendo los caminos previos a promoción; conservar la causa original y evidencia antes de eliminar temporales.\nHallazgo estático en semilla c27dfd963c4fe83465c0f2105347e974fbbe6356, .github/workflows/porota-deploy-v2-promote.yml: existen docker image prune -f, docker builder prune -af, docker buildx prune -af y borrado por patrón /tmp/porota-deploy-v2-* fuera del cleanup acotado por candidato. La policy declara Docker OBSERVE_ONLY, por lo que se debe auditar coherencia y alcance de esas llamadas directas. El cleanup de falla es más acotado, pero su sola existencia no valida los otros caminos.\nAntes de aprobar el candidato final comprobar que cada camino de cleanup respeta scope/pins/evidencia/mutex; no certificarlo sólo por tests GREEN o por el nombre safe. Si sobreviven esas operaciones amplias, resolver por fix-forward en sucesor propio después de RELEASED y WRITE_OWNER, sin interferir con SRE activo. No ejecutar ahora limpieza ni modificar workflows ajenos. Mantener todas las restantes instrucciones y deadlines."
+    "policy_directive": "ACLARACIÓN OBLIGATORIA DE DISCO Y LIMPIEZA — comprobada por pedido de Martín el 4/10/2026:\nEl control PREDEPLOY en el Droplet es siempre obligatorio, por Actions canónico y con medidas frescas. Presupuesto por filesystem con artefacto final: tar comprimido + tamaño Docker exacto + 2*bundle + reserva residual 2GiB, más costos reales adicionales de migración/evidencia; inodos según policy (actualmente mínimo10%). Los 2GiB son reserva después del deploy/cleanup, no capacidad total necesaria. No reutilizar números históricos.\nLa limpieza previa es condicional al déficit de espacio/inodos: seleccionar sólo recursos elegibles del scope autorizado, preservar pins/imágenes/contenedores/datos/evidencia protegidos, medir antes/después y repetir el gate. Si sigue insuficiente no transferir/cargar/promover. Revalidar espacio después de transferir y antes de load/promote.\nLa limpieza POSTDEPLOY es obligatoria y medida; exigir reserva/inodos finales, recursos conservados y salud posterior. Preservar cleanup seguro tras fallo/cancelación, incluyendo los caminos previos a promoción; conservar la causa original y evidencia antes de eliminar temporales.\nHallazgo estático en semilla c27dfd963c4fe83465c0f2105347e974fbbe6356, .github/workflows/porota-deploy-v2-promote.yml: existen docker image prune -f, docker builder prune -af, docker buildx prune -af y borrado por patrón /tmp/porota-deploy-v2-* fuera del cleanup acotado por candidato. La policy declara Docker OBSERVE_ONLY, por lo que se debe auditar coherencia y alcance de esas llamadas directas. El cleanup de falla es más acotado, pero su sola existencia no valida los otros caminos.\nAntes de aprobar el candidato final comprobar que cada camino de cleanup respeta scope/pins/evidencia/mutex; no certificarlo sólo por tests GREEN o por el nombre safe. Si sobreviven esas operaciones amplias, resolver por fix-forward en sucesor propio después de RELEASED y WRITE_OWNER, sin interferir con SRE activo. No ejecutar ahora limpieza ni modificar workflows ajenos. Mantener todas las restantes instrucciones y deadlines.",
+    "receipt": {
+      "id": 5987147010,
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5987147010",
+      "created_at": "2026-10-05T02:37:16Z"
+    },
+    "automation_prompt_readback_verified": true
   }
 }
