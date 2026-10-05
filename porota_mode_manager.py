@@ -17,11 +17,12 @@ import base64
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -128,6 +129,107 @@ RC6_FROZEN_PAPER_SETTINGS = {
     "PAPER_CAUCION_SWEEP_START_MINUTES_BEFORE_CLOSE": "30",
     "PAPER_CAUCION_SWEEP_CUTOFF_MINUTES_BEFORE_CLOSE": "5",
 }
+
+CAPACITY_ENV_KEYS = (
+    "POROTA_DYNAMIC_CAPACITY_MODE", "POROTA_CAPACITY_POLICY_PATH",
+    "POROTA_CAPACITY_REPORT_PATH", "POROTA_CAPACITY_RECOMMENDATION_PATH",
+    "POROTA_CAPACITY_APPROVAL_PATH", "POROTA_CAPACITY_SHADOW_PATH",
+)
+CAPACITY_INPUT_ROOTS = (PurePosixPath("/app/ops/policy"), PurePosixPath("/app/data/rc6-capacity"))
+
+
+def dynamic_capacity_settings(env=None):
+    """Canonical config-only inputs; no file can silently enable APPROVED."""
+    from cg_paper_workspace import artifact_root
+    source = env_file() if env is None else env
+    shadow_root = PurePosixPath(str(artifact_root(CONTAINER_DB))) / "dynamic-shadow"
+    values = {
+        "POROTA_DYNAMIC_CAPACITY_MODE": "OFF",
+        "POROTA_CAPACITY_POLICY_PATH": "/app/ops/policy/rc6-dynamic-capacity-v1.json",
+        "POROTA_CAPACITY_REPORT_PATH": "",
+        "POROTA_CAPACITY_RECOMMENDATION_PATH": "",
+        "POROTA_CAPACITY_APPROVAL_PATH": "",
+        "POROTA_CAPACITY_SHADOW_PATH": str(shadow_root),
+    }
+    for key in CAPACITY_ENV_KEYS:
+        raw = source.get(key, values[key])
+        if not isinstance(raw, str) or any(ord(char) < 32 for char in raw):
+            raise ValueError("RC6_CAPACITY_CONFIG_CONTROL_CHARACTER:" + key)
+        values[key] = raw.strip()
+    mode = values["POROTA_DYNAMIC_CAPACITY_MODE"].upper()
+    if mode not in {"OFF", "SHADOW", "APPROVED"}:
+        raise ValueError("RC6_CAPACITY_MODE_INVALID")
+    values["POROTA_DYNAMIC_CAPACITY_MODE"] = mode
+    if mode == "APPROVED":
+        for key in CAPACITY_ENV_KEYS[2:5]:
+            if not values[key]:
+                raise ValueError("RC6_CAPACITY_INPUT_REQUIRED:" + key)
+    for key in CAPACITY_ENV_KEYS[1:]:
+        value = values[key]
+        if not value:
+            if key in {"POROTA_CAPACITY_POLICY_PATH", "POROTA_CAPACITY_SHADOW_PATH"} or mode == "APPROVED":
+                raise ValueError("RC6_CAPACITY_INPUT_REQUIRED:" + key)
+            continue
+        parsed = PurePosixPath(value)
+        if (not parsed.is_absolute() or parsed.as_posix() != value or ".." in parsed.parts
+                or "\\" in value or any(char in value for char in ('"', "'", "=", "`"))):
+            raise ValueError("RC6_CAPACITY_PATH_INVALID:" + key)
+        if key == "POROTA_CAPACITY_SHADOW_PATH":
+            if parsed not in {shadow_root, shadow_root / "CURRENT.json", shadow_root / "latest.json.gz"}:
+                raise ValueError("RC6_CAPACITY_SHADOW_ROOT_MISMATCH")
+        elif not any(root in parsed.parents for root in CAPACITY_INPUT_ROOTS) or parsed.suffix != ".json":
+            raise ValueError("RC6_CAPACITY_PATH_OUTSIDE_ALLOWLIST:" + key)
+        host = ROOT / str(parsed.relative_to("/app"))
+        for part in (host, *host.parents):
+            if part == ROOT:
+                break
+            if part.is_symlink():
+                raise ValueError("RC6_CAPACITY_PATH_SYMLINK:" + key)
+        if key != "POROTA_CAPACITY_SHADOW_PATH" and (mode == "APPROVED" or host.exists()):
+            if (not host.is_file() or host.stat().st_nlink != 1
+                    or host.stat().st_size > 8 * 1024**2
+                    or stat.S_IMODE(host.stat().st_mode) & 0o7133):
+                raise ValueError("RC6_CAPACITY_INPUT_UNSAFE_OR_UNAVAILABLE:" + key)
+    # Both consumers read the writer's one canonical generation directory.
+    values["POROTA_DYNAMIC_SHADOW_ROOT"] = str(shadow_root)
+    values["POROTA_SHADOW_RUNTIME_ROOT"] = str(shadow_root)
+    for key in ("POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT"):
+        if source.get(key, str(shadow_root)) != str(shadow_root):
+            raise ValueError("RC6_CAPACITY_SHADOW_ROOT_MISMATCH")
+    return values
+
+
+def _write_private_env(target, values):
+    """Never expose a newly written credential file with an inherited umask."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".runtime-env-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(values) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return target
+
+
+def _runtime_build_identity():
+    """Values come from staged source metadata, never operator environment."""
+    from scripts.porota_artifact_provenance import decode_json
+    path = ROOT / "POROTA_SOURCE_PROVENANCE.json"
+    if not path.exists():
+        return {"POROTA_BUILD_SHA": "", "POROTA_CANDIDATE_TREE_SHA": ""}
+    if (path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1
+            or stat.S_IMODE(path.stat().st_mode) != 0o644):
+        raise ValueError("RC6_RUNTIME_SOURCE_PROVENANCE_INVALID")
+    source = decode_json(path.read_bytes())
+    import re
+    if any(re.fullmatch(r"[0-9a-f]{40}", str(source.get(key, ""))) is None
+           for key in ("candidate_sha", "candidate_tree_sha")):
+        raise ValueError("RC6_RUNTIME_SOURCE_PROVENANCE_INVALID")
+    return {"POROTA_BUILD_SHA": source["candidate_sha"], "POROTA_CANDIDATE_TREE_SHA": source["candidate_tree_sha"]}
 
 
 def paper_settings(env):
@@ -238,16 +340,19 @@ def dashboard_env(mode):
         if "=" not in line:
             continue
         key = line.split("=", 1)[0].strip()
-        if not key.startswith(forbidden) and key not in {"DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS}:
+        if (not key.startswith(forbidden) and key not in {
+                "DASHBOARD_OPERATION_MODE", "PAPER_DB_PATH", DB_ENV, *PAPER_DEFAULTS,
+                *CAPACITY_ENV_KEYS, "POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT",
+                "POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA"}):
             safe.append(line)
     safe += [f"DASHBOARD_OPERATION_MODE={mode}",
              f"{DB_ENV}={CONTAINER_DB}",
              "DASHBOARD_REFRESH_SECONDS=30",
              "SERVER_TIMEZONE=America/Argentina/Buenos_Aires"]
     safe += [f"{key}={value}" for key, value in paper_settings(env_file()).items()]
-    target.write_text("\n".join(safe) + "\n", encoding="utf-8")
-    os.chmod(target, 0o600)
-    return target
+    safe += [f"{key}={value}" for key, value in dynamic_capacity_settings().items()]
+    safe += [f"{key}={value}" for key, value in _runtime_build_identity().items()]
+    return _write_private_env(target, safe)
 
 
 def observer_runtime_env():
@@ -259,52 +364,94 @@ def observer_runtime_env():
         "TELEGRAM_CHAT_ID": env.get("TELEGRAM_CHAT_ID", "").strip(),
     }
     values.update(paper_settings(env))
+    values.update(dynamic_capacity_settings(env))
+    values.update(_runtime_build_identity())
     # Contract Evidence recolecta PPI read-only para todas las familias auditables.\n    # Nunca habilita decisiones ni órdenes; las familias fuera de alcance siguen fail-closed.\n    values["POROTA_CONTRACT_EVIDENCE_MODE"] = env.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED").strip().upper() or "ENABLED"\n    # RC6 settlement hotfix: autoridad explícita sólo en el observer PAPER.
     # El módulo de settlement permanece fail-closed fuera de este runtime.
     values["PAPER_T1_FULL_DATE_RELEASE"] = "true"
     values[DB_ENV] = CONTAINER_DB
-    target.write_text("\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
-                      encoding="utf-8")
-    os.chmod(target, 0o600)
-    return target
+    return _write_private_env(target, [f"{name}={value}" for name, value in values.items()])
 
+
+def verify_dashboard_source_identity(runtime_sources):
+    """Check every mounted hook/package against the exact image provenance."""
+    from scripts.porota_artifact_provenance import decode_json, validate_image_labels
+    manifest_path = ROOT / "POROTA_SOURCE_PROVENANCE.json"
+    if (not manifest_path.is_file() or manifest_path.is_symlink() or manifest_path.stat().st_nlink != 1
+            or stat.S_IMODE(manifest_path.stat().st_mode) != 0o644):
+        raise RuntimeError("RC6_DASHBOARD_SOURCE_PROVENANCE_MISSING")
+    raw = manifest_path.read_bytes()
+    manifest = decode_json(raw)
+    labels = json.loads(run("docker", "image", "inspect", "--format", "{{json .Config.Labels}}",
+                            IMAGE, capture=True).stdout)
+    validate_image_labels(labels, manifest)
+    rows = {row["path"]: row for row in manifest["files"]}
+    for name in runtime_sources:
+        source = ROOT / name
+        paths = list(source.rglob("*")) if source.is_dir() else [source]
+        if not paths or source.is_symlink():
+            raise RuntimeError("RC6_DASHBOARD_SOURCE_MISSING:" + name)
+        if source.is_dir():
+            expected = {relative for relative, row in rows.items()
+                        if relative.startswith(name + "/") and row.get("image_required") and row.get("bundle_required")}
+            observed = {path.relative_to(ROOT).as_posix() for path in paths if not path.is_dir()}
+            if not expected or observed != expected:
+                raise RuntimeError("RC6_DASHBOARD_SOURCE_PROVENANCE_MISMATCH:" + name)
+        for path in paths:
+            if path.is_symlink():
+                raise RuntimeError("RC6_DASHBOARD_SOURCE_SYMLINK")
+            if path.is_dir():
+                continue
+            relative = path.relative_to(ROOT).as_posix()
+            row = rows.get(relative)
+            if (not row or not row.get("image_required") or not row.get("bundle_required")
+                    or not path.is_file() or path.stat().st_nlink != 1
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != row["sha256"]
+                    or stat.S_IMODE(path.stat().st_mode) != (0o755 if row["git_mode"] == "100755" else 0o644)):
+                raise RuntimeError("RC6_DASHBOARD_SOURCE_PROVENANCE_MISMATCH:" + relative)
+    return {"candidate_sha": manifest["candidate_sha"], "candidate_tree_sha": manifest["candidate_tree_sha"]}
+
+
+DASHBOARD_RUNTIME_SOURCES = (
+    "bg_paper_dashboard.py",
+    "zz_wave8_dashboard_live_rc6.py",
+    "da_dashboard_ux_hf6.py",
+    "rc6_annual_instrument_analysis.py",
+    "rc6_on_validation.py",
+    "bd_ppi_readonly_guard.py",
+    "c_ppi_client.py",
+    "cr_pending_settlement_diagnostics_hf6.py",
+    "eq_dashboard_table_layout_rc6.py",
+    "rc6_dashboard_responsive_ux.py",
+    "rc6_family_readiness.py",
+    "o_dashboard.py",
+    "rc6_ppi_iol_reconciliation_rc6.py",
+    "rc6_cauciones_shadow_evidence.py",
+    "er_dashboard_table_semantics_rc6.py",
+    "iol_shadow_observation_rc6.py",
+    "iol_shadow_collector_rc6.py",
+    "iol_mcp_readonly_adapter_rc6.py",
+    "rc6_trader_dashboard",
+)
 
 def start_dashboard(mode):
     env_path = dashboard_env(mode)
-    run("docker", "rm", "-f", "porota_production_dashboard", check=False, capture=True)
     # The dashboard image is immutable, but the deployment host is the canonical
     # source staged by the transactional workflow. Mount only the RC6 dashboard
     # modules read-only so a stale /app copy can never mask the exact candidate.
     # The observer and PPI Watch remain separate owners and are not mounted here.
-    runtime_sources = (
-        "bg_paper_dashboard.py",
-        "zz_wave8_dashboard_live_rc6.py",
-        "da_dashboard_ux_hf6.py",
-        "rc6_annual_instrument_analysis.py",
-        "rc6_on_validation.py",
-        "bd_ppi_readonly_guard.py",
-        "c_ppi_client.py",
-        "cr_pending_settlement_diagnostics_hf6.py",
-        "eq_dashboard_table_layout_rc6.py",
-        "rc6_dashboard_responsive_ux.py",
-        "rc6_family_readiness.py",
-        "o_dashboard.py",
-        "rc6_ppi_iol_reconciliation_rc6.py",
-        "rc6_cauciones_shadow_evidence.py",
-        "er_dashboard_table_semantics_rc6.py",
-        "iol_shadow_observation_rc6.py",
-        "iol_shadow_collector_rc6.py",
-        "iol_mcp_readonly_adapter_rc6.py",
-    )
+    runtime_sources = DASHBOARD_RUNTIME_SOURCES
+    verify_dashboard_source_identity(runtime_sources)
     source_mounts = []
     for filename in runtime_sources:
         source = ROOT / filename
-        if not source.is_file():
+        if not source.exists():
             raise RuntimeError("RC6_DASHBOARD_SOURCE_MISSING:" + filename)
         source_mounts.extend((
             "--mount",
             f"type=bind,source={source},target=/app/{filename},readonly",
         ))
+    run("docker", "rm", "-f", "porota_production_dashboard", check=False, capture=True)
     run("docker", "run", "-d", "--name", "porota_production_dashboard",
         "--pull", "never", "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
@@ -316,15 +463,17 @@ def start_dashboard(mode):
 
 
 def simulation():
+    runtime_env = observer_runtime_env()
+    dashboard_env("PRODUCTION_PAPER")
+    verify_dashboard_source_identity(DASHBOARD_RUNTIME_SOURCES)
+    secret = ROOT / ".secrets" / "ppi_production.json"
+    if not secret.exists():
+        raise RuntimeError("Falta el secreto productivo de solo lectura.")
     stop_engines()
     write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
                 "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, detail="Iniciando")
     start_dashboard("PRODUCTION_PAPER")
-    secret = ROOT / ".secrets" / "ppi_production.json"
-    if not secret.exists():
-        raise RuntimeError("Falta el secreto productivo de solo lectura.")
-    runtime_env = observer_runtime_env()
     # RC6 worker provenance: the candidate image is verified by the deploy
     # workflow before this manager is invoked. Remove any previous observer and
     # run only that immutable image; then fail closed if PID 1 exits immediately.

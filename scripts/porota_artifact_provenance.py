@@ -35,6 +35,13 @@ class ProvenanceError(ValueError):
     """A fail-closed provenance failure, with a stable error signature."""
 
 
+def canonical_file_mode(git_mode: str) -> int:
+    """Git regular blobs have exactly 0644/0755, including special bits."""
+    if git_mode not in {"100644", "100755"}:
+        raise ProvenanceError("NON_CANONICAL_GIT_MODE")
+    return 0o755 if git_mode == "100755" else 0o644
+
+
 def canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n").encode()
 
@@ -241,8 +248,7 @@ def create_source_manifest(
                 count += len(block)
         if count != info.st_size or blob_digest.hexdigest() != oid:
             raise ProvenanceError("CHECKOUT_BYTE_MISMATCH:" + path)
-        executable = mode == "100755"
-        if bool(info.st_mode & 0o111) != executable:
+        if stat.S_IMODE(info.st_mode) != canonical_file_mode(mode):
             raise ProvenanceError("CHECKOUT_MODE_MISMATCH:" + path)
         excluded = dockerignore_exclusion(path, dockerignore)
         runtime = is_runtime_relevant(path)
@@ -277,7 +283,8 @@ def verify_build_context(repo_root: Path, source: dict, manifest_path: Path) -> 
     generated = repo_root / SOURCE_MANIFEST_NAME
     if (not generated.is_file() or generated.is_symlink()
             or generated.read_bytes() != manifest_path.read_bytes()
-            or generated.stat().st_nlink != 1 or generated.stat().st_mode & 0o111):
+            or generated.stat().st_nlink != 1
+            or stat.S_IMODE(generated.stat().st_mode) != 0o644):
         raise ProvenanceError("BUILD_CONTEXT_SOURCE_MANIFEST_MISMATCH")
     for root, directories, files in os.walk(repo_root, followlinks=False):
         current = Path(root)
@@ -347,6 +354,8 @@ def validate_image_files(artifact_root: Path, source: dict, source_bytes: bytes)
         raise ProvenanceError("IMAGE_SOURCE_MANIFEST_MISMATCH")
     if embedded.stat().st_mode & 0o111:
         raise ProvenanceError("IMAGE_SOURCE_MANIFEST_EXECUTABLE")
+    if stat.S_IMODE(embedded.stat().st_mode) != 0o644:
+        raise ProvenanceError("IMAGE_SOURCE_MANIFEST_MODE_MISMATCH")
     missing = sorted(p for p, row in expected.items() if row["image_required"] and p not in present)
     if missing:
         raise ProvenanceError("IMAGE_MISSING_SOURCE:" + ",".join(missing))
@@ -360,7 +369,7 @@ def validate_image_files(artifact_root: Path, source: dict, source_bytes: bytes)
             raise ProvenanceError("IMAGE_EXCLUDED_SOURCE_PRESENT:" + rel)
         if path.stat().st_size != row["bytes"] or sha256_file(path) != row["sha256"]:
             raise ProvenanceError("IMAGE_SOURCE_BYTE_MISMATCH:" + rel)
-        if bool(path.stat().st_mode & 0o111) != (row["git_mode"] == "100755"):
+        if stat.S_IMODE(path.stat().st_mode) != canonical_file_mode(row["git_mode"]):
             raise ProvenanceError("IMAGE_SOURCE_MODE_MISMATCH:" + rel)
         checked += 1
     return {"status": "GREEN", "source_files_verified": checked,
@@ -441,13 +450,15 @@ def validate_bundle(repo_root: Path, bundle_path: Path, bundle_manifest_path: Pa
             raise ProvenanceError("BUNDLE_EMBEDDED_MANIFEST_MISMATCH")
         if any(members[name].mode & 0o111 for name in metadata):
             raise ProvenanceError("BUNDLE_GENERATED_METADATA_EXECUTABLE")
+        if any(members[name].mode != 0o644 for name in metadata):
+            raise ProvenanceError("BUNDLE_GENERATED_METADATA_MODE_MISMATCH")
         for name, row in rows.items():
             member = members[name]
             handle = archive.extractfile(member)
             digest_bytes = hashlib.file_digest(handle, "sha256").hexdigest()
             if member.size != row["bytes"] or digest_bytes != row["sha256"]:
                 raise ProvenanceError("BUNDLE_SOURCE_BYTE_MISMATCH:" + name)
-            if bool(member.mode & 0o111) != (row["git_mode"] == "100755"):
+            if member.mode != canonical_file_mode(row["git_mode"]):
                 raise ProvenanceError("BUNDLE_SOURCE_MODE_MISMATCH:" + name)
     return {"status": "GREEN", "bundle_sha256": digest, "bundle_files_verified": len(rows),
             "candidate_sha": source["candidate_sha"], "candidate_tree_sha": source["candidate_tree_sha"],

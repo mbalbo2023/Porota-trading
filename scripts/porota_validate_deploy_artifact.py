@@ -25,6 +25,8 @@ RUNTIME_EXACT = {
     "docker-compose.yml",
     "requirements.txt",
     "requirements.lock.txt",
+    "requirements.build.lock.txt",
+    "ops/policy/rc6-supply-chain-v1.json",
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
 }
@@ -119,6 +121,26 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
         p for p in expected if p in safe_present
         and (sha256(repo_root / p) != sha256(artifact_root / p))
     )
+    # The byte-provenance gate binds Git modes. Standalone fixtures also obey
+    # the same complete-mode policy; no writable/special-bit variants pass.
+    git_modes = {}
+    if (repo_root / ".git").exists():
+        raw = subprocess.check_output(["git", "-C", str(repo_root), "ls-files", "-s", "-z"])
+        for entry in raw.split(b"\0"):
+            if entry:
+                metadata, name = entry.split(b"\t", 1)
+                mode, _, stage = metadata.decode().split()
+                if stage != "0" or mode not in {"100644", "100755"}:
+                    raise ValueError("ARTIFACT_SOURCE_GIT_MODE_INVALID")
+                git_modes[name.decode()] = 0o755 if mode == "100755" else 0o644
+    source_mode_mismatches, artifact_mode_mismatches = [], []
+    for rel in expected:
+        source_mode = stat.S_IMODE((repo_root / rel).stat().st_mode)
+        wanted = git_modes.get(rel, 0o755 if source_mode & 0o111 else 0o644)
+        if source_mode != wanted:
+            source_mode_mismatches.append(rel)
+        if rel in safe_present and stat.S_IMODE((artifact_root / rel).stat().st_mode) != wanted:
+            artifact_mode_mismatches.append(rel)
     unexpected_runtime_files = sorted(
         p for p in present if p not in expected and is_runtime_relevant(p)
     )
@@ -148,6 +170,7 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
                 "path": rel,
                 "sha256": sha256(artifact_root / rel),
                 "bytes": (artifact_root / rel).stat().st_size,
+                "mode": format(stat.S_IMODE((artifact_root / rel).stat().st_mode), "04o"),
             }
         )
 
@@ -155,12 +178,15 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
         "schema_version": 1,
         "status": "GREEN"
         if not (missing_runtime or missing_imports or parse_errors
-                or source_byte_mismatches or unexpected_runtime_files or unsafe_paths)
+                or source_byte_mismatches or source_mode_mismatches
+                or artifact_mode_mismatches or unexpected_runtime_files or unsafe_paths)
         else "FAILED",
         "expected_runtime_files": len(expected),
         "artifact_runtime_files": len(manifest_files),
         "missing_runtime_files": missing_runtime,
         "source_byte_mismatches": source_byte_mismatches,
+        "source_mode_mismatches": sorted(source_mode_mismatches),
+        "artifact_mode_mismatches": sorted(artifact_mode_mismatches),
         "unexpected_runtime_files": unexpected_runtime_files,
         "unsafe_paths": unsafe_paths,
         "missing_local_imports": missing_imports,
