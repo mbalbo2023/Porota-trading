@@ -85,7 +85,7 @@ class DailyRisk:
             previous = c.execute('SELECT * FROM paper_daily_risk WHERE day=? AND currency=?',
                                  (day,currency)).fetchone()
             latest_row = c.execute("""SELECT evaluated_at FROM paper_daily_risk
-                WHERE currency=? ORDER BY julianday(evaluated_at) DESC LIMIT 1""",
+                WHERE currency=? ORDER BY rc6_instant_us(evaluated_at) DESC LIMIT 1""",
                 (currency,)).fetchone()
             latest_at = latest_row['evaluated_at'] if latest_row else None
             input_at = at.isoformat()
@@ -130,7 +130,7 @@ class DailyRisk:
                         raise ValueError('Ledger con fechas futuras')
                 if c.execute("""SELECT 1 FROM paper_spot_sales s JOIN paper_fills f ON f.id=s.fill_id
                     JOIN paper_positions p ON p.paper_id=s.paper_id WHERE p.currency=?
-                    AND julianday(f.filled_at)>julianday(?) LIMIT 1""",
+                    AND rc6_instant_us(f.filled_at)>rc6_instant_us(?) LIMIT 1""",
                     (currency,at.isoformat())).fetchone():
                     raise ValueError('Ledger parcial con fechas futuras')
                 opened_rows,closed_rows = self.broker._positions_at(at,c)

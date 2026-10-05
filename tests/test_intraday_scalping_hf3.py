@@ -4,6 +4,7 @@ import json
 from json import JSONDecodeError
 
 import pytest
+from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
 from be_paper_engine import PaperStore
 import bg_paper_dashboard as dashboard
@@ -28,9 +29,9 @@ def payload(count, *, changed=None):
 
 
 def record(**changes):
-    return dict(ticker="GGAL",instrument_type="ACCIONES",market="BYMA",
+    return with_synthetic_volume_contract(dict(ticker="GGAL",instrument_type="ACCIONES",market="BYMA",
                 currency="ARS",settlement="A-24HS",capability="READY_PAPER_SPOT",
-                status="AVAILABLE") | changes
+                status="AVAILABLE") | changes)
 
 
 @pytest.fixture

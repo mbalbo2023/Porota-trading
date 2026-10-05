@@ -1,3 +1,4 @@
+from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 """F-02 regression through the long-lived native worker and real SQLite inputs.
 
 Only the read-only PPI boundary is substituted. Selection, session gates,
@@ -19,9 +20,9 @@ DAY = datetime.fromisoformat("2026-10-05T10:46:00-03:00")
 
 
 def instrument(ticker="GGAL", **changes):
-    return {"ticker": ticker, "instrument_type": "ACCIONES", "market": "BYMA",
+    return with_synthetic_volume_contract({"ticker": ticker, "instrument_type": "ACCIONES", "market": "BYMA",
             "currency": "ARS", "settlement": "A-24HS", "capability": "READY_PAPER_SPOT",
-            "status": "AVAILABLE", **changes}
+            "status": "AVAILABLE", **changes})
 
 
 def payload(at):
@@ -53,7 +54,7 @@ class Harness:
             for row in self.records:
                 catalog.persist(c, {**row, "settlement_source": "PPI_FIELD",
                     "description": "offline F-02 fixture", "last_seen_at": self.at.isoformat(),
-                    "run_id": "issue465", "raw": {"_discovery_source": "PPI_PRIMARY"}})
+                    "run_id": "issue465", "raw": {**row.get("raw", {}), "_discovery_source": "PPI_PRIMARY"}})
             catalog.sync_candidate_universe(c, self.at.isoformat())
         harness = self
 
@@ -605,7 +606,7 @@ def test_direct_persistence_cannot_recover_negative_from_stale_or_future_source(
     source = received - timedelta(seconds=age_seconds)
     points = scalping.normalize_payload([{"date": source.isoformat(), "price": "100", "volume": "10"}],
         received_at=received)
-    with pytest.raises(ValueError, match="INTRADAY_REPROBE_NO_FRESH_SOURCE"):
+    with pytest.raises(ValueError, match="INTRADAY_REPROBE_NO_FRESH_SOURCE|INTRADAY_EVENT_IN_FUTURE"):
         scalping.persist_payload(h.store, h.records[0], points, received_at=received.isoformat())
     state = scalping._state(h.store, scalping._identity(h.records[0]))
     assert state["state"] == "PPI_INSTRUMENT_NOT_FOUND" and state["observations"] == 0
@@ -680,7 +681,10 @@ def test_never_negative_legacy_contract_retains_native_warmup_and_paper_entry(tm
     assert [call[0] for call in h.calls] == [0, 1]
     assert h.cuts[0]["states"][0]["state"] == "PENDING_LIVE_CONFIRMATION"
     assert h.cuts[-1]["states"][0]["state"] == "CONFIRMED_INTERVAL_VOLUME"
-    assert h.cuts[-1]["states"][0]["detail"].startswith("observaciones=")
+    native_detail = json.loads(h.cuts[-1]["states"][0]["detail"])
+    assert native_detail["contract_detail"].startswith("observaciones=")
+    assert native_detail["schema"] == "rc6.intraday-source-contract.v1"
+    assert "capability" not in native_detail
     assert h.cuts[-1]["fills"] == 1
     assert all(cut["heartbeat"]["failed"] == 0 for cut in h.cuts)
 

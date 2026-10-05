@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from decimal import Decimal
 
-from bs_instrument_contracts import aware_datetime, decimal_value
+from bs_instrument_contracts import aware_datetime, decimal_value, utc_microseconds
 
 EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING"})
 
@@ -14,6 +14,10 @@ def init_schema(store):
         c.executescript("""
         CREATE TABLE IF NOT EXISTS paper_exit_intents(
           paper_id TEXT PRIMARY KEY REFERENCES paper_positions(paper_id),
+          state TEXT NOT NULL, cause TEXT, due_at TEXT, blocked_reason TEXT NOT NULL,
+          supervised_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS paper_future_exit_intents(
+          lifecycle_id TEXT PRIMARY KEY REFERENCES paper_future_positions(lifecycle_id),
           state TEXT NOT NULL, cause TEXT, due_at TEXT, blocked_reason TEXT NOT NULL,
           supervised_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS paper_supervisor_state(
@@ -31,7 +35,7 @@ def admission_error(store, at, max_silence_seconds=20):
         if not health or health["state"] != "RUNNING":
             return "EXIT_SUPERVISOR_UNAVAILABLE"
         try:
-            age = (aware_datetime(at) - aware_datetime(health["heartbeat_at"])).total_seconds()
+            age = (utc_microseconds(at) - utc_microseconds(health["heartbeat_at"])) / 1_000_000
             if not 0 <= age <= max_silence_seconds:
                 return "EXIT_SUPERVISOR_STALE"
         except (ValueError, TypeError):
@@ -40,7 +44,7 @@ def admission_error(store, at, max_silence_seconds=20):
         if not reader or reader["state"] != "READY":
             return "EXIT_READER_UNAVAILABLE"
         try:
-            age = (aware_datetime(at) - aware_datetime(reader["heartbeat_at"])).total_seconds()
+            age = (utc_microseconds(at) - utc_microseconds(reader["heartbeat_at"])) / 1_000_000
             if not 0 <= age <= max_silence_seconds:
                 return "EXIT_READER_STALE"
         except (ValueError, TypeError):
@@ -48,6 +52,10 @@ def admission_error(store, at, max_silence_seconds=20):
         if c.execute("""SELECT 1 FROM paper_positions p LEFT JOIN paper_exit_intents x USING(paper_id)
           WHERE p.status='OPEN' AND (x.state IS NULL OR x.state<>'OPEN') LIMIT 1""").fetchone():
             return "OPEN_POSITION_NEEDS_SUPERVISION_OR_EXIT"
+        if c.execute("""SELECT 1 FROM paper_future_positions p
+          LEFT JOIN paper_future_exit_intents x USING(lifecycle_id)
+          WHERE p.status='ACTIVE' AND (x.state IS NULL OR x.state<>'OPEN') LIMIT 1""").fetchone():
+            return "OPEN_FUTURE_NEEDS_SUPERVISION_OR_EXIT"
     return ""
 
 
@@ -121,7 +129,7 @@ class PositionExitSupervisor:
                 self._probe(p["paper_id"], "CONDITION", self.clock_fn(), cause)
             return self._persist(p, Verdict(p["paper_id"],state,cause,reason), at)
         try:
-            age = (aware_datetime(at) - aware_datetime(p["opened_at"])).total_seconds() / 60
+            age = (utc_microseconds(at) - utc_microseconds(p["opened_at"])) / 60_000_000
             if age < 0:
                 return verdict("WATCH_INVALID_CLOCK", "Apertura posterior al reloj")
             if not cause and self.session_policy and self.session_policy.exit_due(p, at):
@@ -169,7 +177,7 @@ class PositionExitSupervisor:
             error = q.time_error(at, max_age_seconds=self.broker.quote_max_age_seconds)
             if error:
                 return verdict(prefix + "STALE_QUOTE", error)
-            if aware_datetime(q.book_at) < aware_datetime(p["opened_at"]):
+            if utc_microseconds(q.book_at) < utc_microseconds(p["opened_at"]):
                 return verdict(prefix + "STALE_QUOTE", "Libro anterior a la apertura")
             bid = decimal_value(q.bid, "bid", positive=True)
             ask = decimal_value(q.ask, "ask", positive=True)

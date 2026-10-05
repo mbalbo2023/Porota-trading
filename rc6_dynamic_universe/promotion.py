@@ -212,7 +212,7 @@ class RuntimeCapacityController:
     @staticmethod
     def _fingerprinted(state):
         state["fingerprint"] = digest({k: state.get(k) for k in (
-            "status", "mode", "configuration_fingerprint", "recommendation_digest", "approval_digest", "reason_codes")})
+            "status", "mode", "configuration_fingerprint", "recommendation_digest", "approval_digest", "reason_codes", "exit_capacity")})
         return state
 
     def state(self, as_of=None):
@@ -234,6 +234,18 @@ class RuntimeCapacityController:
                 values[key] = value
             resolved = resolve_capacity_policy(policy, **values, as_of=as_of)
             resolved["approval_digest"] = (values.get("approval") or {}).get("approval_digest")
+            if resolved["status"] == "APPROVED_DYNAMIC" and self.database is not None:
+                from rc6_ppi_global_budget import supervisable_position_count, exit_capacity_contract
+                opened = supervisable_position_count(self.database)
+                if opened is None:
+                    resolved.update(status="BASELINE_FAIL_CLOSED", production_limits_modified=False,
+                        reason_codes=["CAPACITY_OPENED_LEDGER_UNVERIFIED"])
+                else:
+                    exit_contract = exit_capacity_contract(resolved, opened_count=opened)
+                    resolved["exit_capacity"] = exit_contract
+                    if exit_contract["status"] != "READY":
+                        resolved.update(status="ACTIVATION_BLOCKED_EXIT_CAPACITY",
+                            production_limits_modified=False, reason_codes=exit_contract["reason_codes"])
             return self._fingerprinted(resolved)
         except (OSError, ValueError, KeyError, TypeError):
             return self._fingerprinted({"status": "BASELINE_FAIL_CLOSED", "mode": "OFF", "configuration_fingerprint": None,

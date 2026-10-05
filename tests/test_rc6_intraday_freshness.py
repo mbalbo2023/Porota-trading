@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import cf_intraday_scalping as scalping
+from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
 
 class Store:
@@ -54,9 +55,9 @@ class IntradayFreshnessTests(unittest.TestCase):
                 CREATE TABLE paper_positions(
                   id INTEGER PRIMARY KEY, status TEXT, features_json TEXT);
             """)
-        self.record = dict(ticker="GGAL", instrument_type="ACCIONES", market="BYMA",
+        self.record = with_synthetic_volume_contract(dict(ticker="GGAL", instrument_type="ACCIONES", market="BYMA",
                            currency="ARS", settlement="A-24HS",
-                           capability="READY_PAPER_SPOT", status="AVAILABLE")
+                           capability="READY_PAPER_SPOT", status="AVAILABLE"))
         self.start = datetime.fromisoformat("2026-10-05T10:30:00-03:00")
         self.persist(15, "2026-10-05T10:45:00-03:00")
         confirmed = self.persist(16, "2026-10-05T10:46:00-03:00")
@@ -111,7 +112,7 @@ class IntradayFreshnessTests(unittest.TestCase):
                 self.__dict__.update(kwargs)
 
         broker = Mock()
-        broker._open.return_value = (True, "OPENED_SIMULATED", "paper-1")
+        broker.admit_paper_candidate.return_value = (True, "OPENED_SIMULATED", "paper-1")
         factory = Mock(return_value=broker)
         engine_module = types.ModuleType("be_paper_engine")
         engine_module.Quote = Quote
@@ -124,7 +125,7 @@ class IntradayFreshnessTests(unittest.TestCase):
         with patch.dict(sys.modules, modules):
             self.assertEqual(scalping.promote_paper_candidate(self.store, self.record, at=at), reason)
         factory.assert_not_called()
-        broker._open.assert_not_called()
+        broker.admit_paper_candidate.assert_not_called()
         self.assertEqual(self.store.decisions, [])
 
     def test_empty_payload_revokes_confirmation_and_keeps_history(self):
@@ -176,9 +177,11 @@ class IntradayFreshnessTests(unittest.TestCase):
         at = "2026-10-05T10:46:00-03:00"
         payload = self.payload(16) + [{"date": "2026-10-05T10:46:04-03:00", "price": "104", "volume": "20"}]
         points = scalping.normalize_payload(payload, received_at=at)
-        scalping.persist_payload(self.store, self.record, points, received_at=at)
-        self.assert_hold(at, "INTRADAY_TIMESTAMP_IN_FUTURE")
-        self.assert_promotion_blocked(at, "INTRADAY_TIMESTAMP_IN_FUTURE")
+        # U03: future evidence is rejected at persistence, not retained as authority.
+        with self.assertRaisesRegex(ValueError, "INTRADAY_EVENT_IN_FUTURE"):
+            scalping.persist_payload(self.store, self.record, points, received_at=at)
+        with self.store.connect() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM ppi_intraday_points WHERE event_at>?", (scalping._stamp(at),)).fetchone()[0], 0)
 
     def test_stale_checked_at_and_invalid_provider_dates_are_blocked(self):
         self.update_state("checked_at", "2026-10-05T10:44:00-03:00")
@@ -213,7 +216,7 @@ class IntradayFreshnessTests(unittest.TestCase):
         with patch.dict(sys.modules, modules):
             self.assertEqual(scalping.promote_paper_candidate(self.store, self.record, at=at), "OPENED_SIMULATED")
         factory.assert_called_once()
-        broker._open.assert_called_once()
+        broker.admit_paper_candidate.assert_called_once()
         self.assertEqual(len(self.store.decisions), 1)
 
     def test_delayed_promotion_rechecks_source_before_constructing_broker(self):
