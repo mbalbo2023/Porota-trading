@@ -1,0 +1,8 @@
+tree 7b01f90025b251e9c3a72a79b949b561b7a45933
+parent 8108eb4aaa17d388d6f4723593d24e92e4388192
+author Codex <codex@openai.com> 1791227730 +0000
+committer Codex <codex@openai.com> 1791227730 +0000
+
+Isolate every inherited capacity input for live health
+
+The native capacity input_paths contract admits all matching environment keys. Clear those inherited bindings in the private fixture, preserve only readonly source policy and private CURRENT roles, and check actual worker source roots. Extend the live native guard to verify inherited inputs are excluded and their bytes/stats remain intact. Source AST and diffcheck only; no native/browser execution yet.
