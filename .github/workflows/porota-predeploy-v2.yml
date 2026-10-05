@@ -130,6 +130,14 @@ jobs:
           test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
 
+      - name: Inventory original convergence source refs before governed tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_convergence_provenance.py \
+            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
+            --out /tmp/porota-convergence-input-inventory.json --fetch-source-refs
+
       - name: Governed automatic test discovery and execution
         shell: bash
         run: |
@@ -609,4 +617,5 @@ jobs:
           rm -rf /tmp/porota-predeploy-published-evidence
           rm -f /tmp/porota-installed-dependencies.txt /tmp/porota-predeploy-origin.json
           rm -f /tmp/porota-final-input-provenance.json
+          rm -f /tmp/porota-convergence-input-inventory.json
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

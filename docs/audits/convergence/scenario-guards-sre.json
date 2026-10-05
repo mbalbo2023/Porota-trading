@@ -1,0 +1,1517 @@
+{
+  "counting_rule": "Each original R ID once; overlapping test templates and parametrized cases are shared guards, not added independent scenarios.",
+  "covered_ids": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R10",
+    "R11",
+    "R12",
+    "R13",
+    "R14",
+    "R15",
+    "R16",
+    "R17",
+    "R18",
+    "R19",
+    "R20",
+    "R21",
+    "R22",
+    "R23",
+    "R24",
+    "R25",
+    "R26",
+    "R27",
+    "R28",
+    "R29",
+    "R30",
+    "R31",
+    "R32",
+    "R33",
+    "R34",
+    "R35",
+    "R36",
+    "R37",
+    "R38",
+    "R39",
+    "R40",
+    "R41",
+    "R42",
+    "R43",
+    "R44",
+    "R45",
+    "R67",
+    "R68",
+    "R69",
+    "R70",
+    "R71",
+    "R72",
+    "R73"
+  ],
+  "economic_edge": "NO_DEMOSTRADO",
+  "execution_rule": "Existence checks only validate mapping. Actual software guard outcomes must be resolved from final frozen JUnit; source/AST inspection never counts as market execution.",
+  "market_execution": "NO_VERIFICADO",
+  "original_scenario_ledger": "docs/audits/convergence/ORIGINAL_SCENARIOS_469.json",
+  "original_scenario_ledger_sha256": "3a7f0f38f7d4ceb90e196a883b9660421ad1b7bfd2e7c75235f2bacc07ae0059",
+  "ppi_watch": "NOT_TOUCHED",
+  "provider_open_capacity": "NO_VERIFICADO",
+  "real_orders_sent": 0,
+  "rows": [
+    {
+      "attack": "quote stale",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No entrar/salir con precio vencido",
+      "fix": "Preserve native source-clock admission and exit freshness checks.",
+      "id": "R01",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Quote.time_error -> PaperBroker._open/_close -> PositionExitSupervisor.supervise",
+      "original_code_path": "BE, `bm_exit_supervisor.py`",
+      "original_gap": "Latencia proveedor real",
+      "original_observed": "Guards freshness; marca stale",
+      "original_test": "C/N RA-B exit suite",
+      "original_verdict": "PASS acotado",
+      "rca": "No entrar/salir con precio vencido",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual provider latency/freshness and host clock unverified.",
+      "test_nodes": [
+        "tests/test_exit_supervision_v17.py::test_no_rejuvenece_datos_con_hora_de_recepcion",
+        "tests/test_exit_supervision_v17.py::test_demora_previa_no_ejecuta_con_cotizacion_vieja_y_ia_off"
+      ]
+    },
+    {
+      "attack": "timestamp intraday repetido",
+      "code_paths": [
+        "cf_intraday_scalping.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No contar refresh como muestra nueva",
+      "fix": "Keep distinct native event times; refresh does not become a new sample.",
+      "id": "R02",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "normalize_payload -> persist_payload",
+      "original_code_path": "CF `persist_payload`",
+      "original_gap": "Rollback intra-read aparte",
+      "original_observed": "Warmup/interval contract conserva unicidad",
+      "original_test": "N F02 repeat-time",
+      "original_verdict": "PASS nominal",
+      "rca": "No contar refresh como muestra nueva",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Provider tick granularity and upstream repeated timestamps unverified.",
+      "test_nodes": [
+        "tests/test_intraday_scalping_hf3.py::test_volumen_se_confirma_solo_con_solapamiento_estable_y_minuto_nuevo",
+        "tests/test_exit_supervision_v17.py::test_senal_excluye_duplicados_y_datos_no_disponibles_al_decidir"
+      ]
+    },
+    {
+      "attack": "volumen nominal vs shares",
+      "code_paths": [
+        "rc6_dynamic_universe/sources.py",
+        "rc6_dynamic_universe/tradeability.py",
+        "rc6_shadow_runtime/families.py"
+      ],
+      "coverage": "NATIVE_UNKNOWN_UNIT_DENIAL",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No inferir participaci\u00f3n desde unidad desconocida",
+      "fix": "Preserve explicit unit requirement for native volume/depth evidence.",
+      "id": "R03",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "source_observations and specialized family source policy",
+      "original_code_path": "DU/tradeability, SR/families",
+      "original_gap": "Unidad real PPI",
+      "original_observed": "Desconocido bloquea tradeability; fuente real ausente",
+      "original_test": "C/N family-source; P interval",
+      "original_verdict": "PARTIAL",
+      "rca": "No inferir participaci\u00f3n desde unidad desconocida",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real PPI nominal/share units are not proven; keep unknown without inferred conversion.",
+      "test_nodes": [
+        "tests/test_rc6_dynamic_sources.py::test_nominal_volume_and_cash_depth_are_not_guessed_from_raw_fields",
+        "tests/test_rc6_dynamic_sources.py::test_volume_semantics_must_be_explicit_before_rvol_input_is_usable",
+        "tests/test_rc6_final_family_source_policy.py::test_unknown_complement_quote_units_remain_unverified_for_deep_tradeability"
+      ]
+    },
+    {
+      "attack": "sumar ARS/USD",
+      "code_paths": [
+        "bw_daily_risk.py",
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Ledgers separados",
+      "fix": "Currency-qualified risk/cash cuts never sum ARS and USD without authority.",
+      "id": "R04",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "DailyRisk evaluate and specialized currency ledgers",
+      "original_code_path": "`bw_daily_risk.py`, PKG",
+      "original_gap": "FX/fees reales",
+      "original_observed": "DailyRisk ARS\u221210100/USD0; recompute por moneda",
+      "original_test": "P risk/finance",
+      "original_verdict": "PASS local",
+      "rca": "Ledgers separados",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Live FX, contract fees and cash movements unverified.",
+      "test_nodes": [
+        "tests/test_daily_risk_outbox_v17.py::test_latch_al_limite_incluye_realizado_reinicio_y_moneda_independiente",
+        "tests/test_rc6_future_programming_complete.py::test_multiple_exact_dlr_expiries_keep_currency_risk_and_cash_separate"
+      ]
+    },
+    {
+      "attack": "book faltante",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No inventar fill",
+      "fix": "No invented missing-book fill; persist intent/carry across restart.",
+      "id": "R05",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "PositionExitSupervisor.supervise missing quote",
+      "original_code_path": "BE; BD",
+      "original_gap": "Carry/outage live",
+      "original_observed": "Missing book impide autoridad/fill",
+      "original_test": "C/N exit suite",
+      "original_verdict": "PASS_C / X live",
+      "rca": "No inventar fill",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Live outage and carry recovery latency unverified.",
+      "test_nodes": [
+        "tests/test_exit_supervision_v17.py::test_max_hold_sin_datos_persiste_y_se_ejecuta_despues_de_reiniciar",
+        "tests/test_rc6_convergence_scenario_preservation.py::test_eod_without_book_preserves_carry_after_close_and_restart_until_executable_session"
+      ]
+    },
+    {
+      "attack": "book cruzado",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "NATIVE_SPOT_AND_SPECIALIZED_FUTURE_BOOK_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Rechazar puntas inv\u00e1lidas",
+      "final_integration_dependencies": [
+        "tests/test_rc6_convergence_finance_review.py::test_u09_direct_future_close_rejects_off_grid_or_crossed_book_with_valid_control"
+      ],
+      "fix": "Preserve bid/ask validation before spot ledger admission.",
+      "id": "R06",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "PaperBroker._open native crossed-book admission",
+      "original_code_path": "BE quote validation",
+      "original_gap": "Proveedor actual",
+      "original_observed": "Branch de book inv\u00e1lido; sin ejecuci\u00f3n propia de toda familia",
+      "original_test": "C/N focal",
+      "original_verdict": "PARTIAL",
+      "rca": "Rechazar puntas inv\u00e1lidas",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Native spot and specialized future crossed-book controls; no live book execution or independent proof of every family.",
+      "test_nodes": [
+        "tests/test_production_paper_v1634.py::test_v17_compra_rechaza_puntas_cruzadas",
+        "tests/test_rc6_convergence_finance_review.py::test_u09_direct_future_close_rejects_off_grid_or_crossed_book_with_valid_control"
+      ]
+    },
+    {
+      "attack": "depth cero",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "NATIVE_SPOT_AND_SPECIALIZED_FUTURE_DEPTH_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No fill por last",
+      "final_integration_dependencies": [
+        "tests/test_rc6_convergence_finance_review.py::test_u08_future_partial_depth_does_not_create_terminal_fill_and_recovers_on_later_full_book"
+      ],
+      "fix": "Depth zero cannot be replaced by last-trade price or an invented fill.",
+      "id": "R07",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "PaperBroker._close and PositionExitSupervisor.supervise",
+      "original_code_path": "BE `_close/_open_future`",
+      "original_gap": "Cola/partial OPEN",
+      "original_observed": "Depth ejecutable requerido",
+      "original_test": "C/N exit/future",
+      "original_verdict": "PASS_C",
+      "rca": "No fill por last",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Native spot depth0 and specialized future partial-depth recovery; live queue position and provider partial OPEN fills remain unverified.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_scenario_preservation.py::test_gap_without_depth_persists_intent_then_restart_uses_new_factual_book",
+        "tests/test_production_paper_v1634.py::test_sin_ask_size_no_hay_fill",
+        "tests/test_rc6_convergence_finance_review.py::test_u08_future_partial_depth_does_not_create_terminal_fill_and_recovers_on_later_full_book"
+      ]
+    },
+    {
+      "attack": "spread extremo",
+      "code_paths": [
+        "cf_intraday_scalping.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Rechazo/admisi\u00f3n econ\u00f3mica conservadora",
+      "fix": "Native spread cap denies candidate without granting economics/entry authority.",
+      "id": "R08",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "evaluate_candidate native spread/economics branch",
+      "original_code_path": "CF evaluate_candidate",
+      "original_gap": "Umbral OOS",
+      "original_observed": "CF spread cap; range no demuestra edge",
+      "original_test": "C; P economics",
+      "original_verdict": "PASS_C / X edge",
+      "rca": "Rechazo/admisi\u00f3n econ\u00f3mica conservadora",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Threshold calibration and OOS edge are not established by observed intraday range.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_scenario_preservation.py::test_extreme_native_spread_blocks_scalping_candidate_without_claiming_economic_edge"
+      ]
+    },
+    {
+      "attack": "gap a trav\u00e9s del stop",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "NATIVE_SAMPLED_GAP_LEDGER",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Fill en bid real peor; no p\u00e9rdida garantizada",
+      "fix": "Stop is a durable exit trigger; executable sampled bid determines simulated fill.",
+      "id": "R09",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "PositionExitSupervisor.supervise -> native _close ledger",
+      "original_code_path": "BE `_maybe_close`",
+      "original_gap": "Tail distribution",
+      "original_observed": "Stop es trigger sujeto a book",
+      "original_test": "C; sin gap OPEN",
+      "original_verdict": "X / riesgo expl\u00edcito",
+      "rca": "Fill en bid real peor; no p\u00e9rdida garantizada",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Synthetic PAPER bid/slippage only; no tail distribution, real liquidity or guaranteed stop price.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_scenario_preservation.py::test_gap_through_stop_fills_current_bid_with_adverse_slippage_not_nominal_stop",
+        "tests/test_rc6_convergence_scenario_preservation.py::test_gap_without_depth_persists_intent_then_restart_uses_new_factual_book"
+      ]
+    },
+    {
+      "attack": "flash move entre polls",
+      "code_paths": [
+        "bm_exit_supervisor.py",
+        "be_paper_engine.py"
+      ],
+      "coverage": "SAMPLED_BOOK_ONLY_INTRAPOLL_UNKNOWN",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No atribuir touch como fill cierto",
+      "fix": "Do not infer a fill from an unprocessed historical/interval touch.",
+      "id": "R10",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "PositionExitSupervisor.tick reads latest sampled book",
+      "original_code_path": "exit reader/replay",
+      "original_gap": "Fill probability",
+      "original_observed": "No se midi\u00f3 cola/latencia intrapoll",
+      "original_test": "C; NO EJEC. mercado",
+      "original_verdict": "X",
+      "rca": "No atribuir touch como fill cierto",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Flash trajectory, intrapoll touch/fill probability, network latency and queue priority remain unknown.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_scenario_preservation.py::test_flash_between_supervisor_polls_does_not_invent_an_intrabar_stop_fill"
+      ]
+    },
+    {
+      "attack": "halt/suspensi\u00f3n",
+      "code_paths": [
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/source_authority.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "PARTIAL_NATIVE_ABSENCE_GUARD_LIVE_HALT_UNKNOWN",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Bloquear entradas; exposici\u00f3n/alarma expl\u00edcita",
+      "fix": "Preserve absence/inoperability denial and explicit unknown halt authority; do not fabricate a halt feed.",
+      "id": "R11",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Missing-source family policy and exit reader/supervisor readiness",
+      "original_code_path": "session/family/BE",
+      "original_gap": "Feed/horario excepcional",
+      "original_observed": "Sin autoridad de halt vivo probada",
+      "original_test": "C; NO EJEC. halt real",
+      "original_verdict": "X",
+      "rca": "Bloquear entradas; exposici\u00f3n/alarma expl\u00edcita",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "No dedicated authenticated live halt/suspension feed is demonstrated; these tests cover missing-authority/readiness only, not a live halt event.",
+      "test_nodes": [
+        "tests/test_rc6_final_family_source_policy.py::test_empty_catalog_still_emits_all_family_policies_and_unknown_fails_closed",
+        "tests/test_exit_supervision_v17.py::test_supervisor_silencioso_o_posicion_pendiente_bloquea_nuevas_compras"
+      ]
+    },
+    {
+      "attack": "preopen\u2192open",
+      "code_paths": [
+        "rc6_shadow_runtime/worker.py",
+        "rc6_shadow_runtime/preopen.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Freeze PIT, no futura reescritura",
+      "fix": "Frozen causal preopen inputs survive later source changes/restart.",
+      "id": "R12",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "ShadowRuntime.tick preopen freeze/open/restart",
+      "original_code_path": "SR/preopen,worker",
+      "original_gap": "Cohorte real OPEN",
+      "original_observed": "Freeze y OPEN handlers verificados",
+      "original_test": "N RA-B; P stress chico",
+      "original_verdict": "PASS local",
+      "rca": "Freeze PIT, no futura reescritura",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual OPEN provider cohort and live PIT delivery timing unverified.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_runtime_wiring.py::test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_history_store_real_versions_feed_frozen_rank_and_keep_full_catalogue"
+      ]
+    },
+    {
+      "attack": "EOD sin libro",
+      "code_paths": [
+        "bm_exit_supervisor.py",
+        "bq_exit_policy.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No fabricar cierre ni ocultar carry",
+      "fix": "Preserve exposure after EOD without executable book and carry intent through restart.",
+      "id": "R13",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "EOD exit intent -> market/session execution check",
+      "original_code_path": "BE/BV/session",
+      "original_gap": "Outage cierre real",
+      "original_observed": "Fresh executable book requerido; no garant\u00eda de flat",
+      "original_test": "C/N boundary",
+      "original_verdict": "PARTIAL",
+      "rca": "No fabricar cierre ni ocultar carry",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real close outage/carry SLA unknown; no guarantee that a position becomes flat.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_scenario_preservation.py::test_eod_without_book_preserves_carry_after_close_and_restart_until_executable_session",
+        "tests/test_exit_supervision_v17.py::test_no_fabrica_fill_con_mercado_cerrado_ni_calendario_desconocido"
+      ]
+    },
+    {
+      "attack": "fin de semana/feriado",
+      "code_paths": [
+        "ak_byma_calendar.py",
+        "bq_exit_policy.py"
+      ],
+      "coverage": "NATIVE_AUDITED_CALENDAR_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Calendario autorizado",
+      "fix": "Preserve known holidays/weekends and fail closed on unaudited years.",
+      "id": "R14",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "es_dia_habil_operativo and PaperSessionPolicy",
+      "original_code_path": "future policy/session",
+      "original_gap": "Calendario primario live",
+      "original_observed": "Weekday/time est\u00e1tico no certifica feriado",
+      "original_test": "C",
+      "original_verdict": "X",
+      "rca": "Calendario autorizado",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Audited static calendar/known-year semantics only; live exceptional closures and future years unknown.",
+      "test_nodes": [
+        "tests/test_byma_calendar.py::test_domingo_queda_bloqueado",
+        "tests/test_byma_calendar.py::test_feriado_oficial_queda_bloqueado",
+        "tests/test_byma_calendar.py::test_anio_no_auditado_falla_cerrado",
+        "tests/test_rc6_shadow_preopen_runtime.py::test_calendar_uses_audited_holidays_and_does_not_guess_unaudited_year"
+      ]
+    },
+    {
+      "attack": "feriado USA CEDEAR",
+      "code_paths": [
+        "am_us_equity_calendar_rc6.py",
+        "ek_history_freshness_metrics_rc5.py"
+      ],
+      "coverage": "NATIVE_UNDERLYING_CALENDAR_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Clock/subyacente no sustituido por captura local",
+      "fix": "Preserve separate US holiday/session guards without substituting capture clock.",
+      "id": "R15",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "cedear_opening_gate and underlying US business-day gap",
+      "original_code_path": "SR/families, DU/tradeability",
+      "original_gap": "US calendar/CCL/ratio",
+      "original_observed": "Feature/sesi\u00f3n separadas; live no ejecutado",
+      "original_test": "C",
+      "original_verdict": "X",
+      "rca": "Clock/subyacente no sustituido por captura local",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Calendar functions are executed; live CEDEAR/underlying opening, CCL/ratio and broker calendar authority remain unverified.",
+      "test_nodes": [
+        "tests/test_rc6_cedear_underlying_calendar.py::test_cedear_entries_require_regular_us_session_but_actions_do_not",
+        "tests/test_rc6_history_cedear_calendar.py::test_cedear_history_freshness_uses_underlying_us_business_days"
+      ]
+    },
+    {
+      "attack": "expiry futuro",
+      "code_paths": [
+        "rc6_paper_family_lifecycle.py",
+        "bs_instrument_contracts.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Serie/contrato/restauraci\u00f3n exactos",
+      "fix": "Preserve exact future contract and expiry timing across restart.",
+      "id": "R16",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "FamilyPaperExecutor expiry and immutable open-contract restore",
+      "original_code_path": "future policy/LIFE",
+      "original_gap": "Holiday/serie PPI",
+      "original_observed": "Contrato alterado tras restart rechazado",
+      "original_test": "P/N finance",
+      "original_verdict": "PASS local / X externo",
+      "rca": "Serie/contrato/restauraci\u00f3n exactos",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Live A3 holiday/series authority and broker expiry settlement unverified.",
+      "test_nodes": [
+        "tests/test_rc6_future_programming_complete.py::test_expiry_is_not_due_during_opening_hours_of_expiry_day",
+        "tests/test_rc6_future_programming_complete.py::test_restored_exit_after_restart_uses_open_contract_when_current_changes"
+      ]
+    },
+    {
+      "attack": "opci\u00f3n expiry/assignment",
+      "code_paths": [
+        "rc6_shadow_runtime/families.py",
+        "bq_exit_policy.py"
+      ],
+      "coverage": "NATIVE_OPTION_INOPERABILITY_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Modelo especializado, sin fallback spot",
+      "fix": "Missing specialized option inputs do not grant spot fallback or expiry authority.",
+      "id": "R17",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Specialized option source evidence and option session expiry check",
+      "original_code_path": "SR/families",
+      "original_gap": "Assignment/Greeks/OI",
+      "original_observed": "OBSERVE_ONLY; no lifecycle operable demostrado",
+      "original_test": "C",
+      "original_verdict": "X operaci\u00f3n",
+      "rca": "Modelo especializado, sin fallback spot",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "No live option assignment/Greeks/OI or operable assignment lifecycle claimed; preserve specialized observation semantics.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_family_runtime.py::test_missing_or_stale_specialized_evidence_never_falls_back_to_equity",
+        "tests/test_exit_supervision_v17.py::test_option_without_aware_expiry_never_enters_session"
+      ]
+    },
+    {
+      "attack": "contrato futuro ausente",
+      "code_paths": [
+        "be_paper_engine.py",
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No apertura sin contrato exacto",
+      "fix": "No futures opening authority without exact specialized contract evidence.",
+      "id": "R18",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Specialized futures entry contract and family snapshot validation",
+      "original_code_path": "BE `_open_future`",
+      "original_gap": "Broker series",
+      "original_observed": "Guard fail-closed",
+      "original_test": "C/N future",
+      "original_verdict": "PASS_C",
+      "rca": "No apertura sin contrato exacto",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Live broker contract/series authority unverified.",
+      "test_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_identity_dimensions_and_nonmissing_contract_cohorts_stay_blocked",
+        "tests/test_rc6_shadow_entry_signals.py::test_futures_entry_lab_requires_exact_specialized_contract"
+      ]
+    },
+    {
+      "attack": "multiplier incorrecto",
+      "code_paths": [
+        "rc6_paper_family_lifecycle.py",
+        "bs_instrument_contracts.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Rechazo antes de cash",
+      "fix": "Preserve 1000 multiplier/lot1 and immutable contract snapshot checks before cash mutation.",
+      "id": "R19",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Exact DLR contract policy and restored contract validation",
+      "original_code_path": "LIFE/contract policy",
+      "original_gap": "Contrato externo por serie",
+      "original_observed": "DLR 1000 y lote 1 exigidos",
+      "original_test": "P/N finance",
+      "original_verdict": "PASS local",
+      "rca": "Rechazo antes de cash",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "External current-series multiplier/fee authority unverified.",
+      "test_nodes": [
+        "tests/test_rc6_future_contract_policy.py::test_standard_dlr_policy_uses_exact_a3_terms_and_paper_full_notional",
+        "tests/test_rc6_future_programming_complete.py::test_corrupt_contract_snapshot_blocks_restore_risk_mark_and_close"
+      ]
+    },
+    {
+      "attack": "outage PPI",
+      "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Retries/breaker acotados; no price 0",
+      "fix": "Native errors stay errors; bounded retries do not invent provider-zero prices.",
+      "id": "R20",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "retry_read and ProductionMarketReader native global circuits",
+      "original_code_path": "BD/BUD",
+      "original_gap": "Liveness y RTO proveedor",
+      "original_observed": "Falla lectura, no book inventado",
+      "original_test": "N retries",
+      "original_verdict": "PARTIAL",
+      "rca": "Retries/breaker acotados; no price 0",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual provider liveness/RTO/outage recovery unverified.",
+      "test_nodes": [
+        "tests/test_intraday_scalping_hf3.py::test_lectura_vacia_se_reintenta_una_sola_vez_sin_login",
+        "tests/test_rc6_ppi_global_budget.py::test_sdk_session_error_after_http200_is_global_not_a_provider_zero"
+      ]
+    },
+    {
+      "attack": "IOL parcial",
+      "code_paths": [
+        "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/source_authority.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Useful separado de error, no autoridad",
+      "fix": "Preserve useful partial reference evidence while denying complementary entry authority.",
+      "id": "R21",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "source_observations and source audit reconciliation",
+      "original_code_path": "DU/sources, SR/source_authority",
+      "original_gap": "Texto libre U16",
+      "original_observed": "PARTIAL_SOURCE_ERRORS y entry false",
+      "original_test": "P RA-D/E",
+      "original_verdict": "PASS parcial",
+      "rca": "Useful separado de error, no autoridad",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real IOL source availability/timing unverified.",
+      "test_nodes": [
+        "tests/test_rc6_dynamic_sources.py::test_partial_provider_failures_are_visible_and_do_not_become_provider_zero",
+        "tests/test_issue465_source_retention_audit.py::test_partial_iol_is_visible_with_unknown_availability_instead_of_provider_zero"
+      ]
+    },
+    {
+      "attack": "HTTP429",
+      "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Preservar status/global breaker",
+      "fix": "Preserve global/endpoint breaker and EXIT reservation before and during wire faults.",
+      "id": "R22",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "HTTP429 classification -> native budget.finish durable circuit",
+      "original_code_path": "BD/BUD",
+      "original_gap": "Provider real",
+      "original_observed": "Guard/estado durable pasan tests",
+      "original_test": "N F01 before/during EXIT",
+      "original_verdict": "PASS nativo",
+      "rca": "Preservar status/global breaker",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Live HTTP429 cadence/authority and host recovery unverified.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_429_preserves_semantics_and_durable_floor_across_restart",
+        "tests/test_rc6_ppi_global_budget.py::test_global_and_endpoint_breaker_crosses_engine_and_policy_boundaries"
+      ]
+    },
+    {
+      "attack": "HTTP408/5xx",
+      "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Retry bounded/threshold/cooldown",
+      "fix": "Keep bounded retry/threshold/cooldown and sanitized native HTTP semantics.",
+      "id": "R23",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native 408/5xx finish and circuit cooldown",
+      "original_code_path": "BD/BUD",
+      "original_gap": "Service recovery real",
+      "original_observed": "Breaker endpoint/global observado",
+      "original_test": "N repeated 408/5xx",
+      "original_verdict": "PASS nativo",
+      "rca": "Retry bounded/threshold/cooldown",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real service recovery and transport timing unverified.",
+      "test_nodes": [
+        "tests/test_rc6_ppi_global_budget.py::test_repeated_408_5xx_opens_both_affected_endpoint_and_global",
+        "tests/test_issue465_budget_adversarial.py::test_native_sdk_current_error_code_keeps_exact_sanitized_http_reason"
+      ]
+    },
+    {
+      "attack": "JSON malformado",
+      "code_paths": [
+        "cf_intraday_scalping.py",
+        "bd_ppi_readonly_guard.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Fallar sin convertir a precio v\u00e1lido",
+      "fix": "Malformed/empty JSON/input cannot become a valid quote or usable provider-zero.",
+      "id": "R24",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native normalization/capability reprobe malformed payload",
+      "original_code_path": "BD/CF",
+      "original_gap": "Payload real adverso",
+      "original_observed": "Native malformed/pending cases pasan",
+      "original_test": "N F02",
+      "original_verdict": "PASS nativo",
+      "rca": "Fallar sin convertir a precio v\u00e1lido",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Fixtures replace read-only boundary; real malformed provider response unverified.",
+      "test_nodes": [
+        "tests/test_issue465_capability_cache.py::test_empty_stale_malformed_reprobe_cannot_recover_or_hammer",
+        "tests/test_rc6_ppi_global_budget.py::test_instrument_gap_is_scoped_and_empty_body_never_becomes_provider_zero"
+      ]
+    },
+    {
+      "attack": "LKG stale",
+      "code_paths": [
+        "rc6_shadow_runtime/source_authority.py",
+        "rc6_shadow_runtime/families.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No rescatar last viejo silencioso",
+      "fix": "No silent rescue from stale LKG after new invalid native evidence.",
+      "id": "R25",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "New invalid native source invalidates previous receipt",
+      "original_code_path": "SR/source_authority",
+      "original_gap": "Frescura real",
+      "original_observed": "Nueva evidencia stale invalida rescue",
+      "original_test": "P source matrix",
+      "original_verdict": "PASS local",
+      "rca": "No rescatar last viejo silencioso",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real provider freshness/feed sequencing unverified.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_family_runtime.py::test_new_invalid_book_invalidates_previous_receipt_and_non_equity_has_no_scanner",
+        "tests/test_rc6_final_family_source_policy.py::test_resolver_latest_invalid_path_cannot_resurrect_old_values_or_suppress_other_path"
+      ]
+    },
+    {
+      "attack": "PPI/IOL conflicto",
+      "code_paths": [
+        "rc6_shadow_runtime/source_authority.py",
+        "rc6_dynamic_universe/sources.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "PPI preferida, review, no entry complementaria",
+      "fix": "Preserve primary PPI contract/clocks; conflicting complement is review, not entry authority.",
+      "id": "R26",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Primary/complement conflict reconciliation",
+      "original_code_path": "SR/source_authority",
+      "original_gap": "Feed actual",
+      "original_observed": "PPI elegido/review/entry false",
+      "original_test": "P source matrix",
+      "original_verdict": "PASS local",
+      "rca": "PPI preferida, review, no entry complementaria",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual current PPI/IOL conflicts unverified.",
+      "test_nodes": [
+        "tests/test_rc6_final_family_source_policy.py::test_newer_complement_preserves_ppi_contract_and_conflict_is_review_not_selection",
+        "tests/test_issue465_source_retention_audit.py::test_ppi_iol_disagreement_preserves_primary_path_units_clocks_and_conflict"
+      ]
+    },
+    {
+      "attack": "alias/moneda/mercado",
+      "code_paths": [
+        "be_paper_engine.py",
+        "bm_exit_supervisor.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Identidad 5 partes end-to-end",
+      "final_integration_dependencies": [
+        "tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity"
+      ],
+      "fix": "Preserve symbol/family/settlement/currency/market identity without alias collapse.",
+      "id": "R27",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native five-part exit book/cache/ledger and specialized future supervisor after restart",
+      "original_code_path": "BE452\u2013466/BV/catalog",
+      "original_gap": "Ra\u00edz heredada",
+      "original_observed": "Resolver separa; latest_quote 3 partes oculta stop exacto",
+      "original_test": "P spot+future stop",
+      "original_verdict": "FAIL U08",
+      "rca": "Identidad 5 partes end-to-end",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Final finance U08 guard validates exact stop/exit book after restart amid wrong-identity newer quotes. Native fixture proof does not verify live provider aliases.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_full_identity_native_book_cache_does_not_collapse_same_ticker",
+        "tests/test_production_paper_v1634.py::test_libro_spot_separa_lados_moneda_plazo_y_rechaza_historia_reescrita",
+        "tests/test_rc6_final_family_source_policy.py::test_reconciliation_rejects_incompatible_complement_identity_and_normalizes_aliases",
+        "tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity"
+      ]
+    },
+    {
+      "attack": "Instrument not found temporal",
+      "code_paths": [
+        "cf_intraday_scalping.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Reprobe D+1/TTL sin BUY inmediato",
+      "fix": "D+1/TTL reprobe stays read-only and fresh native warmup is required before candidate authority.",
+      "id": "R28",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Long-lived worker TTL/reprobe/recovery warmup",
+      "original_code_path": "CF worker/cache",
+      "original_gap": "U03 variante",
+      "original_observed": "#463 no reintenta; #466 warmup pendiente 0 fills",
+      "original_test": "P OLD y actual; N: 20 variantes",
+      "original_verdict": "PASS nominal",
+      "rca": "Reprobe D+1/TTL sin BUY inmediato",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual broker instrument discovery/recovery timing unknown.",
+      "test_nodes": [
+        "tests/test_issue465_capability_cache.py::test_valid_next_session_exits_negative_requires_new_native_points",
+        "tests/test_issue465_capability_cache.py::test_old_confirmed_history_cannot_supply_recovery_warmup_or_candidate",
+        "tests/test_issue465_capability_cache.py::test_reprobe_never_invokes_signal_or_promotion"
+      ]
+    },
+    {
+      "attack": "cinco OPENED consumen EXIT",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "lower 0/5; EXIT 5/5",
+      "fix": "Preserve EXIT floor from five OPENED consumers.",
+      "id": "R29",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "GlobalPPIBudget acquire/start EXIT demand reservation",
+      "original_code_path": "BUD acquire/start",
+      "original_gap": "S\u00f3lo cap compatible",
+      "original_observed": "Contadores 10/5/5/5; reserva intacta",
+      "original_test": "P OLD/actual",
+      "original_verdict": "PASS fix original",
+      "rca": "lower 0/5; EXIT 5/5",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real approved caps and active identities unverified; U05 compatibility/fairness closure separate.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_auditor_exact_five_opened_cannot_steal_last_exit_capacity",
+        "tests/test_rc6_ppi_global_budget.py::test_exit_reserve_cannot_be_consumed_by_discovery"
+      ]
+    },
+    {
+      "attack": "current stale/book fresh",
+      "code_paths": [
+        "bv_paper_runtime.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Exit depende de book nativo",
+      "fix": "Fresh native exit book remains independent of stale current/scanner state.",
+      "id": "R30",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "collect_exit_books independent native book path",
+      "original_code_path": "BV collect_exit_books",
+      "original_gap": "U08 lookup downstream",
+      "original_observed": "Cinco posiciones salieron en caso nativo",
+      "original_test": "N F01 stale-scanner",
+      "original_verdict": "PASS acotado",
+      "rca": "Exit depende de book nativo",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Synthetic position/reader boundary only; current live scanner/books unverified.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_five_real_positions_stale_scanner_current_fresh_exit_book_independent",
+        "tests/test_issue465_budget_adversarial.py::test_exact_native_exit_caller_survives_all_five_opened_book_denials"
+      ]
+    },
+    {
+      "attack": "engines/discovery burst",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_MULTIPROCESS_RESERVATION",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Reserva global no robada",
+      "fix": "Lower-priority engines/discovery cannot spend promised EXIT floor.",
+      "id": "R31",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native multiprocess burst admission",
+      "original_code_path": "BUD",
+      "original_gap": "U07 future/U01 flight",
+      "original_observed": "4 procesos:lower 30 denied,EXIT 5 complete",
+      "original_test": "P stress",
+      "original_verdict": "PASS caso spot",
+      "rca": "Reserva global no robada",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Synthetic process/cap tests; live service under actual cap/latency and U01/U05 fairness are separate.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_three_real_processes_exit_scanner_scalping_burst_cannot_steal_floor",
+        "tests/test_issue465_stress.py::test_multiprocess_burst_cannot_spend_exit_floor"
+      ]
+    },
+    {
+      "attack": "retries adicionales",
+      "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Cada send consume/respeta lease",
+      "fix": "Every native retry/send remains subject to current budget/lease and off-wire denial.",
+      "id": "R32",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Actual guarded scanner HTTP retry and per-send leases",
+      "original_code_path": "BD148\u2013158,267\u2013321",
+      "original_gap": "Slow-owner EXIT",
+      "original_observed": "Retry scanner no evade floor; backpressure no retry",
+      "original_test": "N F01",
+      "original_verdict": "PASS parcial",
+      "rca": "Cada send consume/respeta lease",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Real slow-owner wire latency remains external; U01 convergence separately covers priority.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_actual_http_scanner_retry_cannot_evade_exit_floor",
+        "tests/test_rc6_ppi_global_budget.py::test_actual_adapter_and_retry_are_budgeted_once_and_denial_never_sends"
+      ]
+    },
+    {
+      "attack": "rollback reloj budget",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No extender autoridad/enviar incierto",
+      "fix": "Rollback cannot extend authority or erase prior EXIT promise.",
+      "id": "R33",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Clock rollback/authority acquisition",
+      "original_code_path": "BUD clock/authority",
+      "original_gap": "CF rollback distinto",
+      "original_observed": "Rechazo off-wire en tests",
+      "original_test": "N F01",
+      "original_verdict": "PASS nativo",
+      "rca": "No extender autoridad/enviar incierto",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Host time custody unverified; intraday recovery rollback U03 has separate convergence coverage.",
+      "test_nodes": [
+        "tests/test_rc6_ppi_global_budget.py::test_clock_rollback_and_expired_capacity_deny_off_wire",
+        "tests/test_issue465_budget_adversarial.py::test_replacement_policy_clock_rollback_does_not_discard_original_promise"
+      ]
+    },
+    {
+      "attack": "fingerprint/policy expiry",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No liberar promesa viva ni usar expiry",
+      "fix": "Preserve older live reservation union; policy expiry/fingerprint cannot grant fresh authority.",
+      "id": "R34",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Live policy fingerprint/expiry replacement and cached book freshness",
+      "original_code_path": "BUD/DU promotion",
+      "original_gap": "Activo real desconocido",
+      "original_observed": "Uni\u00f3n conservadora, denial mid-window",
+      "original_test": "N F01 replacement/expiry",
+      "original_verdict": "PASS nativo",
+      "rca": "No liberar promesa viva ni usar expiry",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Current approved policy/provider capacity unverified.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_expired_authority_keeps_unelapsed_promise_but_cannot_emit",
+        "tests/test_issue465_budget_adversarial.py::test_changed_policy_fingerprint_forces_new_native_book_probe"
+      ]
+    },
+    {
+      "attack": "lease hu\u00e9rfano/restart",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_PROCESS_KILL_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No duplicar wire ni borrar deuda",
+      "fix": "Orphan/restart cannot duplicate wire or erase durable live debt.",
+      "id": "R35",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native process wire mutex/death/durable lease",
+      "original_code_path": "BUD lease/wire",
+      "original_gap": "Crash host f\u00edsico",
+      "original_observed": "Kill antes/despu\u00e9s start conservador",
+      "original_test": "N F01 process kill",
+      "original_verdict": "PASS nativo",
+      "rca": "No duplicar wire ni borrar deuda",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "SIGKILL process tests do not simulate physical host/power loss.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_process_wire_mutex_prevents_live_overlap_and_preserves_crash_lease",
+        "tests/test_issue465_budget_adversarial.py::test_process_kill_during_book_flight_fails_closed_until_durable_lease_expires"
+      ]
+    },
+    {
+      "attack": "SQLite BUSY",
+      "code_paths": [
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SQLITE_CONTENTION",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Espera bounded/failclosed/recovery",
+      "fix": "SQLite BUSY remains typed bounded denial and lease reservation survives recovery.",
+      "id": "R36",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native SQLite writer contention acquisition/recovery",
+      "original_code_path": "BUD/LIFE",
+      "original_gap": "p99 host",
+      "original_observed": "3 denials\u22480,153 s;release\u21925 EXIT",
+      "original_test": "P lock; N BUSY",
+      "original_verdict": "PASS local",
+      "rca": "Espera bounded/failclosed/recovery",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual host p99/IO pressure unverified; injected/controlled locks bound local waiting.",
+      "test_nodes": [
+        "tests/test_issue465_budget_adversarial.py::test_db_locked_is_bounded_and_no_wire_while_uncertain",
+        "tests/test_rc6_ppi_global_budget.py::test_admission_waits_bounded_for_a_changing_native_sqlite_writer"
+      ]
+    },
+    {
+      "attack": "dos SHADOW writers/reader",
+      "code_paths": [
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py"
+      ],
+      "coverage": "NATIVE_LOCK_CONFLICT",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No cortes mezclados",
+      "fix": "No mixed-cut read; conflicting exclusive producer/shared reader lock is nonblocking/failclosed.",
+      "id": "R37",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Evidence writer/reader lock -> committed generation reader",
+      "original_code_path": "SR/persistence",
+      "original_gap": "Hostile lock inode",
+      "original_observed": "DENIED_NONBLOCKING para conflicto",
+      "original_test": "P atomic_faults",
+      "original_verdict": "PASS local",
+      "rca": "No cortes mezclados",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Controlled native locks; hostile concurrent inode races and every real host writer interleaving unverified.",
+      "test_nodes": [
+        "tests/test_rc6_shadow_runtime_wiring.py::test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input",
+        "tests/test_issue465_generations.py::test_shared_reader_lock_is_nonblocking_and_does_not_create_files"
+      ]
+    },
+    {
+      "attack": "disco lleno entre writes",
+      "code_paths": [
+        "rc6_shadow_runtime/persistence.py"
+      ],
+      "coverage": "NATIVE_PUBLICATION_FAULT_INJECTION",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "S\u00f3lo corte viejo/nuevo completo",
+      "fix": "Only complete old/new cuts survive commit failures; uncommitted staging is never current.",
+      "id": "R38",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Generation publication fsync/replace/CURRENT order",
+      "original_code_path": "SR/persistence",
+      "original_gap": "Power-cut FS real",
+      "original_observed": "7/7 fronteras coherentes; ENOSPC test",
+      "original_test": "P/N generation",
+      "original_verdict": "PASS atomicidad",
+      "rca": "S\u00f3lo corte viejo/nuevo completo",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "ENOSPC syscall fault and process kill are local; physical disk/power-cut behavior unverified.",
+      "test_nodes": [
+        "tests/test_issue465_generations.py::test_every_commit_failure_boundary_exposes_only_one_valid_cut",
+        "tests/test_issue465_generations.py::test_enospc_from_real_fsync_does_not_change_current",
+        "tests/test_issue465_generations.py::test_real_sigkill_at_every_boundary_never_exposes_staging_as_current"
+      ]
+    },
+    {
+      "attack": "symlink/hardlink/traversal",
+      "code_paths": [
+        "rc6_shadow_runtime/persistence.py",
+        "scripts/porota_predeploy_binding.py",
+        "porota_mode_manager.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No escapar ra\u00edz ni usar alias",
+      "fix": "Symlink/hardlink/traversal/FIFO cannot select source outside the configured root.",
+      "id": "R39",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Strict external generation, ZIP basename/path and launcher source guards",
+      "original_code_path": "SR/persistence/retention",
+      "original_gap": "Races inode no exhaustivas",
+      "original_observed": "Rechazo member/generation/FIFO/path",
+      "original_test": "N: suite 115",
+      "original_verdict": "PASS acotado",
+      "rca": "No escapar ra\u00edz ni usar alias",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Bounded native path guards; hostile simultaneous inode races and whole-host custody remain external.",
+      "test_nodes": [
+        "tests/test_issue465_generations.py::test_hostile_aliases_fail_closed_without_modifying_external_inputs",
+        "tests/test_rc6_convergence_sre_binding.py::test_zip_paths_duplicates_and_ambiguous_frozen_payload_are_rejected",
+        "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked"
+      ]
+    },
+    {
+      "attack": "SHA/tree artifact",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py",
+        "scripts/porota_predeploy_binding.py"
+      ],
+      "coverage": "NATIVE_GIT_ARCHIVE_PROOF",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Binding externo exacto",
+      "fix": "Exact SHA/tree is anchored in clean Git and external execution tuple, not internal self-assertion.",
+      "id": "R40",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Clean Git manifest -> bundle/config/layers/frozen origin proof",
+      "original_code_path": "PROV/DEPLOY",
+      "original_gap": "Imports ejecutados/host no",
+      "original_observed": "ZIP/source/bundle/tar/config/layers/app coinciden con SHA/tree",
+      "original_test": "P sobre artifact11315198085; \u00a713",
+      "original_verdict": "PASS bytes/est\u00e1tico",
+      "rca": "Binding externo exacto",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual new final uploaded ZIP and Docker import receipts remain required from canonical final CI.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_sre_binding.py::test_full_frozen_payload_source_bundle_image_and_native_host_receipts_are_verified",
+        "tests/test_issue465_provenance.py::test_explicit_candidate_authority_cannot_disagree_with_checkout"
+      ]
+    },
+    {
+      "attack": "image mismatch",
+      "code_paths": [
+        ".github/workflows/porota-deploy-v2-promote.yml",
+        "scripts/porota_published_artifact_evidence.py"
+      ],
+      "coverage": "NATIVE_SHELL_DOCKER_ARGV_SURROGATE",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Expected==loaded antes de tag",
+      "fix": "Equality guard must execute before any source installation/tag; raw tar hash alone is insufficient.",
+      "id": "R41",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Actual extracted pre-tag shell and downloaded-image CLI call site",
+      "original_code_path": "DEPLOY388\u2013404",
+      "original_gap": "No mismatch real desplegado",
+      "original_observed": "Predicados aceptan IDs distintos",
+      "original_test": "P RF-02 fixture",
+      "original_verdict": "FAIL U12",
+      "rca": "Expected==loaded antes de tag",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "No actual mismatched Docker image was loaded locally; final CI and future host guard enforce actual expected==loaded IDs.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_sre_binding.py::test_actual_promotion_id_guards_run_before_any_tag_even_with_valid_tar",
+        "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id"
+      ]
+    },
+    {
+      "attack": "rutas reales POST/SDK",
+      "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "rc6_ppi_global_budget.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Bloquear Order/Confirm/Cancel/Budget/Movements",
+      "fix": "Order/Confirm/Cancel/Budget/Movements real routes stay blocked independent of budget mode.",
+      "id": "R42",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native HTTP SDK allowlist before send",
+      "original_code_path": "BD/call graph",
+      "original_gap": "Host no probado",
+      "original_observed": "Allowlist rechaza antes de red",
+      "original_test": "P negativas; C AST",
+      "original_verdict": "PASS c\u00f3digo",
+      "rca": "Bloquear Order/Confirm/Cancel/Budget/Movements",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual production transport/host not exercised; native intercepted HTTP guard rejects before network.",
+      "test_nodes": [
+        "tests/test_rc6_ppi_global_budget.py::test_budget_cannot_weaken_original_real_route_guard",
+        "tests/test_rc6_ppi_capacity_benchmark.py::test_existing_http_guard_real_routes_blocked_before_adapter"
+      ]
+    },
+    {
+      "attack": "fills parciales+restart",
+      "code_paths": [
+        "cd_spot_ledger.py",
+        "rc6_paper_family_lifecycle.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Ledger/cash idempotente",
+      "fix": "Partial fill/restart replay preserves original cash, costs and remaining quantity without duplicated sales.",
+      "id": "R43",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Partial PAPER sales -> native restart/idempotent specialized replay",
+      "original_code_path": "PKG/LIFE",
+      "original_gap": "Master 151 fills no",
+      "original_observed": "3 fills conservados; variation/close retry iguales",
+      "original_test": "P finance/risk",
+      "original_verdict": "PASS sint\u00e9tico",
+      "rca": "Ledger/cash idempotente",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Synthetic ledgers/fills; actual master151 and current host financial history unverified.",
+      "test_nodes": [
+        "tests/test_production_paper_v1634.py::test_parcial_reintento_reinicio_y_concurrencia_no_revenden",
+        "tests/test_rc6_future_programming_complete.py::test_open_mark_variation_close_replay_survives_restart_and_cash_reconciles"
+      ]
+    },
+    {
+      "attack": "futuros mark stale / carry",
+      "code_paths": [
+        "be_paper_engine.py",
+        "rc6_paper_family_lifecycle.py",
+        "bw_daily_risk.py"
+      ],
+      "coverage": "NATIVE_SYNTHETIC_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "No usar dato no ejecutable para cerrar",
+      "fix": "Stale/nonexecutable future marks cannot close or create zero-risk admission authority.",
+      "id": "R44",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Specialized stale future mark/close risk cut",
+      "original_code_path": "BE/LIFE/DailyRisk",
+      "original_gap": "Alarma/SLO real",
+      "original_observed": "Guard stale mantiene ACTIVE/carry",
+      "original_test": "C/N future",
+      "original_verdict": "PARTIAL",
+      "rca": "No usar dato no ejecutable para cerrar",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Actual carry alarm/SLO and provider executable marks unverified.",
+      "test_nodes": [
+        "tests/test_rc6_future_programming_complete.py::test_future_stale_and_rollback_books_never_mutate_ledger",
+        "tests/test_rc6_future_programming_complete.py::test_daily_risk_fresh_stale_missing_marks_and_opening_block"
+      ]
+    },
+    {
+      "attack": "stress 10\u00d7/5\u00d7",
+      "code_paths": [
+        "scripts/rc6_issue465_stress.py",
+        "rc6_shadow_runtime/worker.py",
+        "bm_exit_supervisor.py"
+      ],
+      "coverage": "SYNTHETIC_STRESS_BOUNDED_NOT_HOST_SLO",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Degradar expl\u00edcito; exits vivos",
+      "fix": "Explicit SHADOW failclosed degradation cannot invent successful completion or block factual exit owner.",
+      "id": "R45",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Native synthetic10x/5x pipeline -> factual PAPER exit owner",
+      "original_code_path": "SR full pipeline",
+      "original_gap": "Host SLO; ciclo grande incompleto",
+      "original_observed": "12 k/60 k,~893 MiB,SHADOW fail;5 exits 0,0518 s",
+      "original_test": "P stress propio",
+      "original_verdict": "PARTIAL",
+      "rca": "Degradar expl\u00edcito; exits vivos",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Synthetic12k catalog/60k observations and local exit ledgers; actual host SLO/provider OPEN capacity/complete large cycle remain independently unverified.",
+      "test_nodes": [
+        "tests/test_issue465_stress.py::test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_exits",
+        "tests/test_issue465_stress.py::test_slow_disk_or_shadow_quota_failure_cannot_block_actual_exit_supervisor"
+      ]
+    },
+    {
+      "attack": "source byte + outer rehash",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py",
+        "scripts/porota_published_artifact_evidence.py"
+      ],
+      "coverage": "NATIVE_GIT_BYTE_TAMPER",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Manifiesto Git detecta cambio de byte",
+      "fix": "One-byte source drift cannot be blessed by rebound outer hashes.",
+      "id": "R67",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "validate_bundle and saved ordered-layer /app replay",
+      "original_code_path": "PROV validate_bundle",
+      "original_gap": "Artifact subido se verifica por separado",
+      "original_observed": "BUNDLE_SOURCE_BYTE_MISMATCH",
+      "original_test": "P RF attack",
+      "original_verdict": "PASS",
+      "rca": "Manifiesto Git detecta cambio de byte",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Final actual published artifact replay is separately required.",
+      "test_nodes": [
+        "tests/test_issue465_provenance.py::test_bundle_byte_tamper_with_honest_outer_rehash_rejected",
+        "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects"
+      ]
+    },
+    {
+      "attack": "source manifest rehasheado",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py"
+      ],
+      "coverage": "NATIVE_GIT_ANCHOR",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Git independiente ancla manifest",
+      "fix": "Rehashed source manifest must still match independently frozen Git blobs.",
+      "id": "R68",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "verify_source_manifest independent Git anchor",
+      "original_code_path": "PROV verify_source_manifest",
+      "original_gap": "Se asume confianza en Git",
+      "original_observed": "SOURCE_MANIFEST_GIT_MISMATCH",
+      "original_test": "P RF attack",
+      "original_verdict": "PASS",
+      "rca": "Git independiente ancla manifest",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Assumes trusted frozen Git source; manifest never authenticates itself.",
+      "test_nodes": [
+        "tests/test_issue465_provenance.py::test_manifest_cannot_self_certify_changed_hash_by_recomputing_own_digest"
+      ]
+    },
+    {
+      "attack": "layers repetidas / orden",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py",
+        "scripts/porota_published_artifact_evidence.py"
+      ],
+      "coverage": "NATIVE_ARCHIVE_LAYER_FIXTURE",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Blob \u00fanico reutilizable; orden / DiffID exactos",
+      "fix": "Logical reuse is allowed; changed order/blob/DiffID remains rejected.",
+      "id": "R69",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "validate_image_archive ordered references and replay whiteouts",
+      "original_code_path": "validador de imagen",
+      "original_gap": "Runtime Docker externo",
+      "original_observed": "Referencia l\u00f3gica repetida PASS; mutaci\u00f3n / orden RED",
+      "original_test": "P RF fixtures",
+      "original_verdict": "PASS fixtures",
+      "rca": "Blob \u00fanico reutilizable; orden / DiffID exactos",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Native byte archives/OCI whiteouts execute locally; Docker runtime image behavior is final CI evidence.",
+      "test_nodes": [
+        "tests/test_issue465_provenance.py::test_saved_image_ordered_repeated_blob_references_are_verified",
+        "tests/test_issue465_provenance.py::test_repeated_references_never_hide_order_missing_or_physical_member_attacks",
+        "tests/test_rc6_convergence_sre_published_evidence.py::test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order"
+      ]
+    },
+    {
+      "attack": "duplicate physical archive",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py",
+        "scripts/porota_predeploy_binding.py"
+      ],
+      "coverage": "NATIVE_ARCHIVE_AMBIGUITY_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Rechazar ambig\u00fcedad de path f\u00edsico",
+      "fix": "Reject duplicate physical members/unsafe archive paths, not legitimate logical blob references.",
+      "id": "R70",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Physical image archive/ZIP path uniqueness",
+      "original_code_path": "validadores de archivos",
+      "original_gap": "Sin extracci\u00f3n en host",
+      "original_observed": "DUPLICATE/UNSAFE_IMAGE_ARCHIVE_PATH",
+      "original_test": "P RF fixtures",
+      "original_verdict": "PASS",
+      "rca": "Rechazar ambig\u00fcedad de path f\u00edsico",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "No extraction against production host performed.",
+      "test_nodes": [
+        "tests/test_issue465_provenance.py::test_repeated_references_never_hide_order_missing_or_physical_member_attacks",
+        "tests/test_rc6_convergence_sre_binding.py::test_zip_paths_duplicates_and_ambiguous_frozen_payload_are_rejected"
+      ]
+    },
+    {
+      "attack": "contrato descriptor / CRC",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py"
+      ],
+      "coverage": "NATIVE_DESCRIPTOR_GZIP_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Digest / size / mediaType / envelope exactos",
+      "fix": "Digest/size/mediaType/raw config/DiffID and complete gzip CRC/EOF remain exact.",
+      "id": "R71",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Config/layer descriptor, gzip CRC/footer/envelope and stored digest proof",
+      "original_code_path": "validadores image / gzip",
+      "original_gap": "No se cuenta por par\u00e1metro",
+      "original_observed": "Cada corrupci\u00f3n rechazada",
+      "original_test": "P RF fixtures agrupadas",
+      "original_verdict": "PASS",
+      "rca": "Digest / size / mediaType / envelope exactos",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Grouped parameter cases are executions of shared predicates, not independent invented market scenarios.",
+      "test_nodes": [
+        "tests/test_issue465_provenance.py::test_nested_layer_gzip_reaches_crc_and_actual_eof",
+        "tests/test_issue465_provenance.py::test_layer_sources_descriptors_cannot_disagree_with_verified_stored_blobs",
+        "tests/test_issue465_provenance.py::test_content_addressed_save_bytes_cannot_be_rebound_by_only_the_diffid",
+        "tests/test_issue465_provenance.py::test_bundle_gzip_envelope_corruption_rejected_even_with_updated_outer_digest"
+      ]
+    },
+    {
+      "attack": "permisos no ejecutables writable",
+      "code_paths": [
+        "scripts/porota_artifact_provenance.py",
+        "scripts/porota_validate_deploy_artifact.py"
+      ],
+      "coverage": "NATIVE_COMPLETE_MODE_GUARD",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Modos canonizados",
+      "fix": "Git100644/100755 maps exactly644/755; writable/special/noncanonical bits cannot pass with rebound hashes.",
+      "id": "R72",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "Full canonical Git modes on source/image/bundle/generated metadata",
+      "original_code_path": "PROV mode check",
+      "original_gap": "Hash externo rebindeado",
+      "original_observed": "0644 \u2192 0666 aceptado en bundle e imagen",
+      "original_test": "P RF03",
+      "original_verdict": "FAIL U25",
+      "rca": "Modos canonizados",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Physical canonical final clean checkout and actual exported image modes remain required in final CI.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_sre_modes.py::test_checkout_complete_mode_changes_are_rejected",
+        "tests/test_rc6_convergence_sre_modes.py::test_image_complete_mode_changes_are_rejected",
+        "tests/test_rc6_convergence_sre_modes.py::test_bundle_complete_mode_changes_reject_even_with_rebound_outer_digest",
+        "tests/test_rc6_convergence_sre_modes.py::test_generated_bundle_metadata_is_exactly_0644"
+      ]
+    },
+    {
+      "attack": "artifact hom\u00f3nimo de otro run",
+      "code_paths": [
+        "scripts/porota_predeploy_binding.py",
+        ".github/workflows/porota-deploy-v2-promote.yml"
+      ],
+      "coverage": "NATIVE_EXTERNAL_TUPLE_FIXTURE",
+      "economic_edge": "NO_DEMOSTRADO",
+      "execution_status": "RESOLVE_FROM_FINAL_FROZEN_JUNIT",
+      "expected": "Head / workflow autorizados vinculantes",
+      "fix": "Homonymous/newer/wrong-origin artifacts cannot replace approved exact run/head/workflow/attempt tuple.",
+      "id": "R73",
+      "market_execution": "NO_VERIFICADO",
+      "native_caller": "parse_merge_approval -> external workflow/run/attempt/artifact API binding",
+      "original_code_path": "DEPLOY locator",
+      "original_gap": "Self-binding posterior existe",
+      "original_observed": "Elegido el m\u00e1s nuevo, con head incorrecto",
+      "original_test": "P RF01",
+      "original_verdict": "FAIL U11",
+      "rca": "Head / workflow autorizados vinculantes",
+      "real_routes": "NOT_CALLED",
+      "remaining_uncertainty": "Metadata API boundary is an explicit fixture; final approval and successful exact current GitHub execution/artifact remain external requirements.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_sre_binding.py::test_approved_origin_rejects_adversarial_inputs",
+        "tests/test_rc6_convergence_sre_binding.py::test_payload_cannot_replace_external_origin_with_self_asserted_json",
+        "tests/test_rc6_convergence_sre_binding.py::test_every_superseded_input_is_denied_from_exact_handoff_identity"
+      ]
+    }
+  ],
+  "scenario_count": 52,
+  "schema": "rc6.convergence-scenario-guards.sre.v1",
+  "validator_regression_evidence": {
+    "claim_boundary": "Original input and all15Git source refs stay intact; closure/JUnit input files are synthetic validator fixtures, never proof of55requirements or market execution.",
+    "cli_dependency_sha256": "3307953ba4c4593f73204d6fb21990f68af5544f7a8457c66ee6c7a32623f8b4",
+    "junit_sha256": "0eb9db7a27cdaee2b3d3d91d11f10365021f5aff1ab63aef3011c7f0fd66d9ab",
+    "mode": "NATIVE_GIT_CLI_AND_LOCAL_BARE_ORIGIN_FIXTURES",
+    "output_alias_after_fix": "ALL3_NATIVE_ALIASES_REJECTED_AND_UNRELATED_RECEIPT_BYTES_PRESERVED",
+    "output_alias_negative_before_fix": {
+      "hardlink": "CLI_RETURNED_0_AND_OVERWROTE_UNRELATED_EXISTING_RECEIPT",
+      "parent_symlink": "CLI_RETURNED_0_AND_OVERWROTE_UNRELATED_EXISTING_RECEIPT"
+    },
+    "testsuites": [
+      {
+        "errors": "0",
+        "failures": "0",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "76",
+        "time": "18.061",
+        "timestamp": "2026-10-05T03:41:56.404618+00:00"
+      }
+    ],
+    "workflow_syntax": {
+      "bash_blocks": 36,
+      "embedded_python": 23,
+      "owned_new_python": 2,
+      "status": "GREEN",
+      "workflows": 2
+    }
+  }
+}
