@@ -5316,6 +5316,214 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-big.log": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-native-big-result.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-run-wrapper.py": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper-before.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper-final.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper.log": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-native-normal4-result.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-normal4.log": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-run-wrapper-first-syntax-red.py.source": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-run-wrapper.py": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-source.index.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-before.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-final.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-first-syntax-red.log": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper.log": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-b26f4d93/receipt-custody.json": {
+      "reason": "Preserve original whole b26 diagnostic bytes,1553 source blobs/modes and zero overlays, actual158-distribution environment deviation, normal4 exact restores and BIG90 failure before fsync/CURRENT. The first wrapper syntax error is infrastructure evidence, not product RED; no diagnostic receipt certifies the full horizon, BIG isolation or final157 environment.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/native-capacity-retention-green.xml": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -5356,6 +5564,42 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-harness-progress-f8895434.json": {
+      "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-harness-progress-f8895434.log": {
+      "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-harness-progress-f8895434.xml": {
+      "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-harness-progress-runner-f8895434.py": {
+      "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25"
       ]
     },
     "docs/audits/convergence/evidence/native-integrated-source512-b26f4d93.json": {
