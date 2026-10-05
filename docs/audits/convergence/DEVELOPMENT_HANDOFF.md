@@ -274,3 +274,16 @@ también el primer frame de sqlite_snapshot. Los valores ausentes permanecen
 null; no cambian los umbrales GC, las cuotas ni los deadlines. La ejecución de
 este instrumento sobre la nueva fuente integrada sigue pendiente. No se
 atribuye todavía la falla del BIG a GC ni se extrapola el control aislado.
+
+La remediación del scope histórico de primera admisión conserva count10 en
+la ronda lenta original. El guard nuevo primero confirma ENTRY_BLOCKED por
+DAILY_RISK_STALE_MARKS y ausencia de entrada; después inserta una fila adversaria
+PRIMARY explícitamente NO_ENTRY_AUTHORITY en la DB aislada. Los helpers nativos
+observan once identidades, la activación deniega almacenamiento bajo8MiB y el
+runtime mantiene scope histórico10, current desconocido, policy book60 y LOWER
+suspendido. Crecimiento, intercambio de identidad con count10 y ronda lenta
+pasaron3/3 sobre whole OWN7e66/frozen157. La corrida anterior22/23 y la anterior
+64/65 invalidada por .pytest_cache se conservan como alcances separados.
+El inventario de esta integración explica638/638 paths evolucionados y conserva
+55 requisitos,80 escenarios,90 variantes y6 controles. Estos números son
+inventario documental; la ejecución final del SHA integrado sigue pendiente.

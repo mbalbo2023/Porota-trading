@@ -214,7 +214,9 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
         "bf_production_paper_observer.py",
+        "bv_paper_runtime.py",
         "cu_history_store_v2_hf6.py",
         "cv_history_store_adapter_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -222,10 +224,13 @@
         "rc6_audit_evidence/package.py",
         "rc6_audit_evidence/sqlite_scratch.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/entry_signals.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/preopen.py",
         "rc6_shadow_runtime/source_reads.py",
         "rc6_shadow_runtime/stages.py",
@@ -421,24 +426,49 @@
         "rc6_shadow_runtime/stages.py",
         "rc6_shadow_runtime/entry_signals.py",
         "rc6_shadow_runtime/families.py",
-        "rc6_shadow_runtime/lab.py"
+        "rc6_shadow_runtime/lab.py",
+        "rc6_ppi_global_budget.py",
+        "rc6_dynamic_universe/promotion.py",
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_shadow_runtime/persistence.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "evidence_receipt": "docs/audits/convergence/evidence/native-source-sqlite-metadata-original-107a.json",
-      "fix": "Use verified bounded private NoAtime copies for all six native consumers; retain original absolute path/device/inode keys, business fingerprints at an equal512 quota, original deadlines, seed/cursors/completed scopes and fail-closed concurrent-writer handling.",
+      "fix": "Use verified bounded private NoAtime copies for all six native consumers; retain original absolute path/device/inode keys, business fingerprints at an equal512 quota, original deadlines, seed/cursors/completed scopes and fail-closed concurrent-writer handling. Route both primary budget helpers through the same bounded private source transport; include cleanup in a new standalone0.15-second custody limit and inherit every earlier absolute producer deadline. Preserve exact all-family counts, reserve arithmetic and successful capacity fingerprints. Frozen first-admission identity evidence is historical only and cannot substitute for current verification or release EXIT debt. Require O_NONBLOCK as well as NoAtime/NoFollow before source fstat; verify the original deadline after complete SQLite close and private-scratch cleanup while preserving existing consumer errors; allow only the exact TIME_BUDGET_EXHAUSTED token in the diagnostic taxonomy.",
       "id": "NEW_SOURCE_SQLITE_SIDECAR_METADATA_MUTATION",
       "linked_requirement_ids": [
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
       ],
-      "native_caller": "read_runtime, ShadowRuntime._metadata and native stages/entry_signals/families/lab -> source_connection -> readonly_copy; source SQLite is never opened by these readers.",
+      "native_caller": "read_runtime, ShadowRuntime._metadata and native stages/entry_signals/families/lab -> source_connection -> readonly_copy; source SQLite is never opened by these readers. RuntimeCapacityController.state(APPROVED) and RuntimePPIBudget._current/start/observe -> primary count and five-key digests -> the same source_connection; ProductionMarketReader and bv native EXIT round reset ephemeral first-admission scope on entry and finally, including aborted rounds.",
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/source_read_custody_512_evidence.json",
       "ownership_scope": "ROOT_INTEGRATION_SUPPLEMENTAL_SOURCE_MAPPING",
-      "rca": "The original107 native read_runtime and worker metadata readers opened mode=ro on original SQLite files, preserving main/WAL bytes while changing main access time and SHM access/change/modification times. The actual normal4 source-custody check therefore failed.",
-      "remaining_uncertainty": "The original two-reader metadata reproduction and the later native consumer/transport guards retain separate scopes. No financial cash/ledger byte modification, continuity with8192 configurations, full live-host scalability or final frozen artifact execution is claimed.",
+      "rca": "The original107 native read_runtime and worker metadata readers opened mode=ro on original SQLite files, preserving main/WAL bytes while changing main access time and SHM access/change/modification times. The actual normal4 source-custody check therefore failed. A separate exact whole-b26 native budget probe also reproduced main atime changes in the successful primary count and identity-digest helpers, with the real five OPEN plus five ACTIVE count preserved; that probe does not claim a new budget SHM mutation. Additional external guards on whole f889 reproduced successful returns after close/cleanup exhausted the same absolute consumer budget and actual source MAIN/WAL replacement by FIFO blocking at os.open. The first missing-flag interception failure is preserved as infrastructure evidence. Its separate real-descriptor trial on the original whole f889/frozen157 source confirms native success without the required O_NONBLOCK guard; the supplemental original receipt is independent of the invalid interceptor.",
+      "remaining_uncertainty": "The original two-reader metadata reproduction and the later native consumer/transport guards retain separate scopes. No financial cash/ledger byte modification, continuity with8192 configurations, full live-host scalability or final frozen artifact execution is claimed. The original219 budget tests at OWN416 passed in frozen157, but its scoped interoperability result was43/44 with one unchanged late-round count assertion failing. The subsequent affected-case native trial at OWN b8/frozen157 has22 passes of23, including the unchanged original late-round count10, concurrency, clock, subset and schema controls, with intact whole-source custody. The new growth fixture was blocked by correct DAILY_RISK_STALE_MARKS; its entry-blocked/adversarial-ledger replacement remains pending. The earlier64/65 trial was invalidated by .pytest_cache creation and is preserved without source-closure acceptance; no final integrated/Gov interoperability pass is inferred. The bounded-open/complete-cleanup source patch passed127 exact-whole OWN825/frozen157 cases:12 new,89 source/migration/family/lab/entry/wiring,10 history,15 disk-scratch and1 secret-taxonomy control, with all1545 source bytes/modes/Git blobs intact and48 imports from that archive. This is not a run of the integrated SHA. These transport fixes do not close the large-tick0.25-second capture failure, whose isolated reduced-heap controls completed and do not reproduce the planner holdings.",
+      "supporting_budget_source_mapping": "docs/audits/convergence/BUDGET_PRIMARY_SOURCE_CUSTODY.json",
+      "supporting_capture_deadline_mapping": "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/checkpoint.json",
       "test_nodes": [
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
         "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
         "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
@@ -446,7 +476,13 @@
         "tests/test_rc6_native_source_reads.py::test_native_source_guard_rejects_alias_before_capture_or_worker_resolve",
         "tests/test_rc6_native_source_reads.py::test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
         "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
-        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected"
+        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "INTEGRATION"
     },
@@ -706,8 +742,19 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -738,8 +785,19 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -770,8 +828,19 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -802,8 +871,19 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -2200,11 +2280,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2256,11 +2341,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2312,11 +2402,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2368,11 +2463,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2424,11 +2524,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2480,11 +2585,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2536,11 +2646,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2593,11 +2708,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2649,11 +2769,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2705,11 +2830,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2762,11 +2892,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2818,11 +2953,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -2906,11 +3046,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3002,11 +3147,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3059,11 +3209,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3116,11 +3271,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3173,11 +3333,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3230,11 +3395,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3287,11 +3457,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3346,11 +3521,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3403,11 +3583,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3506,11 +3691,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3609,11 +3799,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3668,11 +3863,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3725,11 +3925,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3787,6 +3992,22 @@
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
@@ -3864,17 +4085,28 @@
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
         "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
-        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3928,11 +4160,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -3986,11 +4223,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4045,11 +4287,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4153,11 +4400,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4212,11 +4464,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4273,11 +4530,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4331,11 +4593,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4391,11 +4658,16 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4452,6 +4724,22 @@
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
@@ -4529,17 +4817,28 @@
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
         "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
-        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "iol_shadow_collector_rc6.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -4773,7 +5072,12 @@
     "bd_ppi_readonly_guard.py": {
       "reason": "Retain native read-only PAPER callers while measuring whole EXIT rounds, binding capacity inputs and surfacing child/fresh-generation health.",
       "requirement_ids": [
-        "U01"
+        "U01",
+        "U04",
+        "U05",
+        "U13",
+        "U14",
+        "U24"
       ]
     },
     "be_paper_engine.py": {
@@ -4820,8 +5124,13 @@
       "reason": "Retain native read-only PAPER callers while measuring whole EXIT rounds, binding capacity inputs and surfacing child/fresh-generation health.",
       "requirement_ids": [
         "U01",
+        "U04",
+        "U05",
         "U07",
-        "U08"
+        "U08",
+        "U13",
+        "U14",
+        "U24"
       ]
     },
     "bw_daily_risk.py": {
@@ -4984,6 +5293,16 @@
         "U13",
         "U24",
         "U28"
+      ]
+    },
+    "docs/audits/convergence/BUDGET_PRIMARY_SOURCE_CUSTODY.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
       ]
     },
     "docs/audits/convergence/DEVELOPMENT_HANDOFF.md": {
@@ -5686,6 +6005,38 @@
         "U26"
       ]
     },
+    "docs/audits/convergence/evidence/native-capture-components-f8895434-157/capture_probe.py": {
+      "reason": "Preserve exact diagnostic component capture bytes on whole f889/frozen157: two isolated successful captures with unchanged0.25-second deadlines and ten-field source custody, native family holdings in one case but no planner heap, and no collection during either capture. This narrows the RCA without closing the failed complete BIG tick or justifying removed byte/quota guards.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capture-components-f8895434-157/receipt-custody.json": {
+      "reason": "Preserve exact diagnostic component capture bytes on whole f889/frozen157: two isolated successful captures with unchanged0.25-second deadlines and ten-field source custody, native family holdings in one case but no planner heap, and no collection during either capture. This narrows the RCA without closing the failed complete BIG tick or justifying removed byte/quota guards.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capture-components-f8895434-157/result.json": {
+      "reason": "Preserve exact diagnostic component capture bytes on whole f889/frozen157: two isolated successful captures with unchanged0.25-second deadlines and ten-field source custody, native family holdings in one case but no planner heap, and no collection during either capture. This narrows the RCA without closing the failed complete BIG tick or justifying removed byte/quota guards.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capture-components-f8895434-157/run.log": {
+      "reason": "Preserve exact diagnostic component capture bytes on whole f889/frozen157: two isolated successful captures with unchanged0.25-second deadlines and ten-field source custody, native family holdings in one case but no planner heap, and no collection during either capture. This narrows the RCA without closing the failed complete BIG tick or justifying removed byte/quota guards.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
     "docs/audits/convergence/evidence/native-harness-progress-f8895434.json": {
       "reason": "Preserve the exact one-case native canonical control at complete f889 source,157 distributions and unchanged1557 bytes/modes, including actual progress received before real fsync and five PAPER exits within its interval. This small caller is not full governed, large capacity, image or horizon acceptance.",
       "requirement_ids": [
@@ -5786,6 +6137,110 @@
         "U15",
         "U18",
         "U28"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/entry-preflight.json": {
+      "reason": "Preserve independent exact signed-zero and scalar-domain replay on all1587 f383 Git bytes/modes, strict157 preflight, native V1/V2 decoders and zero alien imports/network. Twelve decodes are codec variants, not independent financial scenarios, governed suites or final artifact execution.",
+      "requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/native-receipt.json": {
+      "reason": "Preserve independent exact signed-zero and scalar-domain replay on all1587 f383 Git bytes/modes, strict157 preflight, native V1/V2 decoders and zero alien imports/network. Twelve decodes are codec variants, not independent financial scenarios, governed suites or final artifact execution.",
+      "requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/receipt-custody.json": {
+      "reason": "Preserve independent exact signed-zero and scalar-domain replay on all1587 f383 Git bytes/modes, strict157 preflight, native V1/V2 decoders and zero alien imports/network. Twelve decodes are codec variants, not independent financial scenarios, governed suites or final artifact execution.",
+      "requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/runner.py": {
+      "reason": "Preserve independent exact signed-zero and scalar-domain replay on all1587 f383 Git bytes/modes, strict157 preflight, native V1/V2 decoders and zero alien imports/network. Twelve decodes are codec variants, not independent financial scenarios, governed suites or final artifact execution.",
+      "requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-signedzero-codec-f383e814-157/source.index.json": {
+      "reason": "Preserve independent exact signed-zero and scalar-domain replay on all1587 f383 Git bytes/modes, strict157 preflight, native V1/V2 decoders and zero alien imports/network. Twelve decodes are codec variants, not independent financial scenarios, governed suites or final artifact execution.",
+      "requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/entry-preflight.json": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original-guard-receipt.json": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original-native-guards.xml": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/original.log": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/receipt-custody.json": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/run_original_guards.py": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/test_rc6_source_capture_deadlines.py.source": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-source-capture-original-f8895434-157/wrapper-before.json": {
+      "reason": "Preserve original twelve-case external native guard replay on whole f889/frozen157 without product overlays: late-close/cleanup success returns and actual MAIN/WAL FIFO blocking counterexamples, typed-reason controls and the first missing-flag interceptor infrastructure failure. Preserve original driver bytes as .py.source to avoid executing old-source counterexamples as current candidate tests; corrected original/control execution is separately required.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24"
       ]
     },
     "docs/audits/convergence/evidence/native-source-sqlite-metadata-original-107a.json": {
@@ -7131,6 +7586,356 @@
       ]
     },
     "docs/audits/rc6-convergence-persistence-evidence/signed_zero_original_red.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/README.md": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/checkpoint.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_entry-preflight.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-focal.log.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-guard-receipt.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_fix-native-focal.xml.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_run_fix_guards.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_source.index.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/fixed_825d43d7_wrapper-before.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture.log.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture_probe.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/isolated_capture_receipt.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_entry_preflight.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12.junit.xml.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12.log.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_12_receipt.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_guard_driver.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_native_runner.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_entry-preflight.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original-guard-receipt.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original-native-guards.xml.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_original.log.gz": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_run_original_flag_guard.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_real_fd_f889_wrapper-before.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/source_capture_deadline/original_wrapper_before.json": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U14",
@@ -9235,6 +10040,10 @@
         "AUD-468-12",
         "AUD-468-18",
         "AUD-468-21",
+        "U04",
+        "U05",
+        "U13",
+        "U14",
         "U24"
       ]
     },
@@ -9262,7 +10071,11 @@
       "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
       "requirement_ids": [
         "U02",
-        "U05"
+        "U04",
+        "U05",
+        "U13",
+        "U14",
+        "U24"
       ]
     },
     "rc6_dynamic_universe/routing.py": {
@@ -9281,6 +10094,7 @@
       "requirement_ids": [
         "AUD-468-04",
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9357,8 +10171,12 @@
         "AUD-468-04",
         "U01",
         "U02",
+        "U04",
         "U05",
-        "U07"
+        "U07",
+        "U13",
+        "U14",
+        "U24"
       ]
     },
     "rc6_ppi_iol_reconciliation_rc6.py": {
@@ -9394,6 +10212,7 @@
       "requirement_ids": [
         "AUD-468-19",
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9412,6 +10231,7 @@
       "requirement_ids": [
         "AUD-468-04",
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9428,6 +10248,7 @@
       "requirement_ids": [
         "AUD-468-19",
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9448,12 +10269,14 @@
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U04",
+        "U05",
         "U13",
         "U14",
         "U15",
         "U17",
         "U20",
         "U21",
+        "U24",
         "U28",
         "UX470-I01",
         "UX470-I02",
@@ -9522,6 +10345,7 @@
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9531,6 +10355,7 @@
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U04",
+        "U05",
         "U13",
         "U14",
         "U24"
@@ -9540,6 +10365,7 @@
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U04",
+        "U05",
         "U13",
         "U14",
         "U15",
@@ -10033,6 +10859,21 @@
         "U27"
       ]
     },
+    "tests/probes/rc6_budget_primary_custody_probe.py": {
+      "reason": "Replay exact native primary PAPER count and five-key identity-digest helpers from complete independently pinned Git sources, preserve source ten-field custody and original all-family mathematical controls, and distinguish original main-atime RED from later private-copy scope. This probe is not a new independent scenario count or final runtime/artifact authority.",
+      "requirement_ids": [
+        "U05",
+        "U24"
+      ]
+    },
+    "tests/probes/rc6_budget_source_custody_pytest_runner.py": {
+      "reason": "Bind scoped native custody guards to a whole committed Git archive, exact157 distribution metadata, external private fixtures, own import bytes and disabled cache/autoload; reject altered source closure and preserve all original native financial/count assertions. Scoped receipts are not final governed, image or horizon execution.",
+      "requirement_ids": [
+        "U05",
+        "U24",
+        "U29"
+      ]
+    },
     "tests/probes/rc6_convergence_finance_probe.py": {
       "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
       "requirement_ids": [
@@ -10279,6 +11120,16 @@
       "requirement_ids": [
         "U02",
         "U05"
+      ]
+    },
+    "tests/test_rc6_budget_source_custody.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U05",
+        "U13",
+        "U14",
+        "U24"
       ]
     },
     "tests/test_rc6_capacity_retention_activation.py": {
@@ -10791,6 +11642,16 @@
         "AUD-468-12",
         "AUD-468-13",
         "AUD-468-18",
+        "U24"
+      ]
+    },
+    "tests/test_rc6_source_capture_deadlines.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U04",
+        "U05",
+        "U13",
+        "U14",
         "U24"
       ]
     },
@@ -11644,9 +12505,14 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -11678,6 +12544,22 @@
       "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -11740,17 +12622,34 @@
         "tests/test_rc6_native_source_reads.py::test_native_source_guard_rejects_alias_before_capture_or_worker_resolve",
         "tests/test_rc6_native_source_reads.py::test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
         "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
-        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected"
+        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "SRE"
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "disposition": "MATERIAL_EXIT_ROUND_INTEROP_PENDING_NATIVE_REMEDIATION",
       "fix": "Preflight rechaza demanda completa incompatible, incluido tracking>64. Cold bloqueo nunca bypass. Warm EXIT conserva exacta authority/caps/cadence/expiry/debt; LOWER no renueva ni cambia prioridad original entre acquire y wire. Static retention preflight y consulta canonical READ_ONLY antes de nueva autorizaci\u00f3n; fila/pages/UNKNOWN bloquean sin wire.64/5s READY se reemplaza por tracking fixture64/60s/32MiB; demanda28/5s nunca cabe20k/h. RO occupancy distinguishes binding/stored/legallyexpired; no GC credit for active token or pages. Orphan companions are checked before ABSENT, with cold zero-wire/empty-positive controls.",
       "id": "U05",
       "native_caller": "ProductionMarketReader -> PpiGlobalBudget acquire/START/finish + BV full EXIT round; individual SQL and modeled-wire probes are identified in the owning map.",
@@ -11763,7 +12662,7 @@
       },
       "owner_mapping": "docs/audits/convergence/RC6_BUDGET_F01_CONVERGENCE.json",
       "rca": "Demanda30 truncada a cap15/global10; orden estable monopolizaba cap5 para10. Cold BLOCKED/ledgerunknown devolv\u00eda permiso unleased, y START pod\u00eda saltar cambios de policy/ledger. Rate/cadence factibles no implicaban que la demanda cr\u00edtica retenida una hora cupiera en20k/cuota, ni verificaban ocupaci\u00f3n legacy en una activaci\u00f3n fr\u00eda.",
-      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.",
+      "remaining_uncertainty": "READY l\u00f3gico no equivale a aprobaci\u00f3n operacional OPEN; OFF/SHADOW preservan baseline original; cadencia completa NO_VERIFICADO; Rechazar activaci\u00f3n nueva no borra posici\u00f3n/intent ni eleva limits; Piso sint\u00e9tico5 representa barrido, no SLA full30/ventana; 20k/history receipts est\u00e1n sembrados mediante SQL como deuda offline sint\u00e9tica expl\u00edcita, no como provider factual.; El caso75/225 usa benchmark SDK/controller nativos con HTTP fake; no prueba quota actual de cuenta/PPI.; Reserva de512 bytes/receipt m\u00e1s cache y metadata conservadora; f\u00edsico realmente full se bloquea y deuda s\u00f3lo se libera por aging legal.; READY est\u00e1tico se combina con occupancy READ_ONLY; ambos siguen siendo controles de software, no autorizaci\u00f3n OPEN.; Absent main with journal/WAL/SHM/degraded/lock companion is UNKNOWN/BLOCKED; no automatic deletion or reconstruction.; The unchanged original slow-round required identity count failed in the first expired-source bound trial and passed with count10 in the later exact-whole b8/frozen157 affected-case trial. The latter has22/23 passes with one correct financial ENTRY block in the new growth fixture; a separately labelled adversarial PRIMARY ledger growth control and final integrated/Gov execution remain required. Original219 passing tests do not establish this later scope by themselves. The corrected growth, same-count identity swap and unchanged original slow-round controls passed3/3 on exact whole OWN7e66/frozen157,1557 intact Git blobs/modes, without alien imports or network. Growth first confirms the financial ENTRY block at count10, then a separately labelled PRIMARY ledger adversarial row yields count11 and native storage activation denial while preserving historical10, unknown current scope, saved60-book demand and suspended LOWER. This is not entry authority and not a full integrated/Gov result; overlapping executions are not added as new coverage.",
       "test_nodes": [
         "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions",
         "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap",
@@ -11777,6 +12676,22 @@
         "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
         "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
         "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
@@ -11785,7 +12700,21 @@
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_cannot_renew_expired_admission_through_baseline_fallback",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt",
-        "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send"
+        "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send",
+        "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
+        "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
+        "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
+        "tests/test_rc6_native_source_reads.py::test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_completed_scopes_after_transport_change",
+        "tests/test_rc6_native_source_reads.py::test_native_source_guard_rejects_alias_before_capture_or_worker_resolve",
+        "tests/test_rc6_native_source_reads.py::test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
+        "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
+        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "BUDGET"
     },
@@ -12107,8 +13036,13 @@
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "porota_mode_manager.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -12144,6 +13078,22 @@
       "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -12228,15 +13178,26 @@
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
-        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "SRE"
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -12279,6 +13240,22 @@
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
@@ -12356,7 +13333,13 @@
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
         "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
-        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -12854,7 +13837,9 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
         "bf_production_paper_observer.py",
+        "bv_paper_runtime.py",
         "cu_history_store_v2_hf6.py",
         "cv_history_store_adapter_hf6.py",
         "ea_history_close_series_hf2.py",
@@ -12862,10 +13847,13 @@
         "rc6_audit_evidence/package.py",
         "rc6_audit_evidence/sqlite_scratch.py",
         "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/entry_signals.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/preopen.py",
         "rc6_shadow_runtime/source_reads.py",
         "rc6_shadow_runtime/stages.py",
@@ -12890,6 +13878,22 @@
       "test_nodes": [
         "tests/test_issue465_historical_package.py::test_dirty_source_transaction_does_not_publish",
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_canonical_init_rejects_legacy_before_source_sqlite_wal_or_metadata_mutation",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_initialized_writer_cannot_open_a_replaced_inode_without_copy_preflight",
         "tests/test_rc6_history_initialization_copy.py::test_NEW_native_initializer_preflight_is_once_per_store_not_each_append_or_query",
@@ -12922,6 +13926,12 @@
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
         "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves",
@@ -13704,8 +14714,13 @@
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "porota_mode_manager.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -15795,9 +16810,14 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -15840,6 +16860,22 @@
       "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -15902,15 +16938,26 @@
         "tests/test_rc6_native_source_reads.py::test_native_source_guard_rejects_alias_before_capture_or_worker_resolve",
         "tests/test_rc6_native_source_reads.py::test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
         "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
-        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected"
+        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "SRE"
     },
     {
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "porota_mode_manager.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -15957,6 +17004,22 @@
       "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
@@ -16041,7 +17104,13 @@
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_keeps_gc_policy_and_reports_aggregates_only",
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_observes_each_fresh_member_read_and_same_cut_across_requests",
         "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_preserves_native_contract_failure_and_clears_role_context",
-        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers"
+        "tests/test_rc6_projection_browser_diagnostic.py::test_v2_trace_roles_remain_separate_in_parallel_native_readers",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "SRE"
     },
@@ -16498,9 +17567,14 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
         "ops/policy/rc6-disk-housekeeping-v1.json",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/live.py",
+        "rc6_dynamic_universe/promotion.py",
         "rc6_dynamic_universe/runtime.py",
+        "rc6_ppi_global_budget.py",
         "rc6_shadow_runtime/archive_components.py",
         "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/entry_signals.py",
@@ -16554,6 +17628,22 @@
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_component_archive.py::test_archive_cannot_share_or_contain_the_independent_generation_authority",
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
@@ -16631,7 +17721,13 @@
         "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
         "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors",
         "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
-        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -16830,8 +17926,19 @@
     },
     {
       "code_paths": [
+        "bd_ppi_readonly_guard.py",
+        "bv_paper_runtime.py",
+        "rc6_audit_evidence/sqlite_snapshot.py",
         "rc6_dynamic_universe/promotion.py",
+        "rc6_dynamic_universe/runtime.py",
         "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/entry_signals.py",
+        "rc6_shadow_runtime/families.py",
+        "rc6_shadow_runtime/lab.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/source_reads.py",
+        "rc6_shadow_runtime/stages.py",
+        "rc6_shadow_runtime/worker.py",
         "tests/test_issue465_budget_adversarial.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -16872,6 +17979,22 @@
         "tests/test_rc6_budget_receipt_retention.py::test_readonly_aging_credit_never_releases_an_inflight_token_or_invents_free_pages",
         "tests/test_rc6_budget_receipt_retention.py::test_recent_used_exit_debt_is_not_mistaken_for_spare_retained_capacity",
         "tests/test_rc6_budget_receipt_retention.py::test_static_exit_retention_capacity_never_invents_room_for_own_critical_demand",
+        "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
+        "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
+        "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
+        "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
+        "tests/test_rc6_budget_source_custody.py::test_ledger_alias_is_unknown_without_source_sqlite_or_repair",
+        "tests/test_rc6_budget_source_custody.py::test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success",
+        "tests/test_rc6_budget_source_custody.py::test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math",
+        "tests/test_rc6_budget_source_custody.py::test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire",
+        "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
+        "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
+        "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
+        "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
+        "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
         "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration",
         "tests/test_rc6_convergence_budget_liveness.py::test_intentional_cold_baseline_keeps_original_native_reads_and_no_sidecar",
@@ -16880,7 +18003,21 @@
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_cannot_renew_expired_admission_through_baseline_fallback",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_native_start_revalidates_original_lower_scope_and_preserves_used_debt",
-        "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send"
+        "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send",
+        "tests/test_rc6_native_source_reads.py::test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody",
+        "tests/test_rc6_native_source_reads.py::test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source",
+        "tests/test_rc6_native_source_reads.py::test_expired_capture_deadline_never_opens_sqlite_or_changes_source",
+        "tests/test_rc6_native_source_reads.py::test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_completed_scopes_after_transport_change",
+        "tests/test_rc6_native_source_reads.py::test_native_source_guard_rejects_alias_before_capture_or_worker_resolve",
+        "tests/test_rc6_native_source_reads.py::test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars",
+        "tests/test_rc6_native_source_reads.py::test_native_writer_change_during_capture_remains_fail_closed_without_a_source_reader",
+        "tests/test_rc6_native_source_reads.py::test_original_identity_replacement_between_stat_and_copy_is_rejected",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
+        "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
+        "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
+        "tests/test_rc6_source_capture_deadlines.py::test_missing_nonblocking_open_support_fails_closed_without_opening_source",
+        "tests/test_rc6_source_capture_deadlines.py::test_source_open_race_to_fifo_is_bounded_and_rejected_before_read",
+        "tests/test_rc6_source_capture_deadlines.py::test_unknown_time_message_never_extends_the_safe_taxonomy"
       ],
       "workstream": "BUDGET"
     },
