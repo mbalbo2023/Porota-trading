@@ -147,7 +147,7 @@ def portfolio_capacity(broker, currency, at, *, candidate_risk=ZERO,
     realized_loss = realized_losing_fills_today(broker, currency, at, connection=c)
     open_risk = open_stop_risk(broker, currency, at, connection=c)
     from rc6_paper_family_lifecycle import future_positions, future_position_contract
-    for position in future_positions(broker.store, currency, connection=c):
+    for position in future_positions(broker.store, currency, connection=c, as_of=at):
         if aware_datetime(position['opened_at']) > at:
             continue
         contract = future_position_contract(position)
@@ -163,8 +163,9 @@ def portfolio_capacity(broker, currency, at, *, candidate_risk=ZERO,
         if stop is None:
             open_risk += contract.notional(entry, qty) + cost
             continue
-        stop_fill = (decimal_value(stop, 'stop futuro', positive=True)
-                     * (Decimal('1') - broker.slippage)).quantize(Decimal('0.0001'))
+        stop_fill = contract.executable_fill(
+            decimal_value(stop, 'stop futuro', positive=True) * (Decimal('1') - broker.slippage),
+            side="SELL")
         modeled_exit_cost = broker._future_cost(stop_fill, qty, contract)
         reserved = full_trade_stop_risk(
             entry_price=entry, modeled_stop_fill=stop_fill, quantity=qty,

@@ -38,6 +38,12 @@ A3_DLR_SOURCE_REF = (
     "A3_DOLAR_PRODUCT_CURRENT+A3_FUTURES_OPTIONS_CALENDAR_2026+"
     "POROTA_PAPER_FULL_NOTIONAL_RESERVE:v1"
 )
+A3_DLR_PRICE_TICK_SOURCE = (
+    "A3:Guia de Producto FyO DOLAR [VIGENTE]:p4:2.b:"
+    "sha256:11c8a2ac9cc2b050bee36c70c8c5f95e8007bc21ec1d6d41984bbdf99ee0c506"
+)
+# This is the documented retrieval instant, not a guessed publication date.
+A3_DLR_PRICE_TICK_KNOWN_AT = "2026-10-04T23:01:53+00:00"
 PAPER_OPEN = time(10, 0)
 PAPER_CLOSE = time(15, 0)
 PAPER_NO_ENTRY_MINUTES = 30
@@ -73,6 +79,10 @@ def standard_dlr_terms(ticker):
     return {
         "expires_at": expiry.isoformat(),
         "underlying": "DOLAR_A3500",
+        "price_tick": "0.5",
+        "price_tick_source": A3_DLR_PRICE_TICK_SOURCE,
+        "price_tick_known_at": A3_DLR_PRICE_TICK_KNOWN_AT,
+        "price_tick_effective_at": None,
     }
 
 
@@ -102,6 +112,9 @@ def standard_dlr_future_evidence(row):
         "quotation_basis": "ARS_PER_USD",
         "settlement_type": "FINANCIAL_CASH_SETTLEMENT",
         "series_policy": "STANDARD_MONTHLY_DLR_2026_ONLY",
+        "price_tick_historical_effectivity": "NO_VERIFICADO",
+        "settlement_price_rule": "REQUIRES_DESIGNATED_SOURCE_RULE_PER_SERIES_AND_DATE",
+        "broker_calendar_halts_limits": "NO_VERIFICADO",
         "paper_margin_policy": "CONSERVATIVE_NOTIONAL_RATE",
         "paper_margin_rate": "1",
         "broker_margin_requirement": "NO_VERIFICADO_DYNAMIC",

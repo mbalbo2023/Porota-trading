@@ -14,11 +14,76 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,
-                                     decimal_value)
+                                     decimal_value, register_exact_time_sql,
+                                     utc_microseconds)
 
 
 PAPER_ONLY = True
 REAL_ROUTES_USED = ()
+
+
+def _number_text(value):
+    result = decimal_value(value, "intent amount")
+    if not result:
+        return "0"
+    text = format(result, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _json_default(value):
+    if isinstance(value, Decimal):
+        return _number_text(value)
+    if isinstance(value, datetime):
+        return aware_datetime(value).astimezone(timezone.utc).isoformat(timespec="microseconds")
+    raise TypeError("unsupported intent detail")
+
+
+def _canonical_json(value):
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False, allow_nan=False, default=_json_default)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("PAPER_LIFECYCLE_DETAIL_INVALID") from exc
+
+
+def intent_fingerprint(*, lifecycle_id, family, instrument, currency,
+                       to_state, amount, occurred_at, detail):
+    """Full request semantics, derived from immutable events without migration."""
+    return hashlib.sha256(_canonical_json({
+        "lifecycle_id": str(lifecycle_id), "family": str(family).upper(),
+        "instrument": str(instrument), "currency": cash_currency(currency),
+        "to_state": str(to_state).upper(), "amount": _number_text(amount),
+        "occurred_at_us": utc_microseconds(occurred_at), "detail": detail or {},
+    }).encode()).hexdigest()
+
+
+def _future_request(contract, *, operation, occurred_at, book_at, detail, **values):
+    return {"operation": operation, "contract": _contract_snapshot(contract),
+            "occurred_at_us": utc_microseconds(occurred_at),
+            "book_at_us": utc_microseconds(book_at), "detail": detail or {},
+            **{key: _number_text(value) if isinstance(value, Decimal) else value
+               for key, value in values.items()}}
+
+
+def _assert_future_request(prior_detail, request, error):
+    observed = prior_detail.get("paper_request_v1")
+    if observed is not None and _canonical_json(observed) != _canonical_json(request):
+        raise ValueError(error)
+
+
+_OPEN_SYSTEM_FIELDS = frozenset({
+    "mode", "execution", "side", "quantity", "entry_price", "entry_cost",
+    "cash_multiplier", "margin_reserved", "expires_at", "paper_margin_policy",
+    "paper_margin_rate", "real_routes_used", "financial_contract",
+    "contract_snapshot_sha256", "opening_book_at", "price_kind",
+    "execution_price_terms", "paper_request_v1",
+})
+_CLOSE_SYSTEM_FIELDS = frozenset({
+    "mode", "execution", "metadata_source", "exit_price", "final_variation",
+    "gross_realized_pnl", "net_realized_pnl", "margin_released", "exit_cost",
+    "reason", "book_at", "real_routes_used", "price_kind", "price_source",
+    "price_rule", "paper_request_v1",
+})
 
 TRANSITIONS = {
     "FCI": {
@@ -135,8 +200,9 @@ class FamilyPaperExecutor:
             family="FCI", instrument=terms.symbol, currency=terms.currency,
             to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
             detail={"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
-                    "subscription_amount": str(subscribed),
-                    "metadata_source": terms.metadata_source})
+                    "subscription_amount": _number_text(subscribed),
+                    "metadata_source": terms.metadata_source,
+                    "fund_terms": json.loads(_canonical_json(asdict(terms)))})
 
     def future_event(self, contract, *, lifecycle_id, event_id, to_state,
                      amount="0", occurred_at=None, detail=None, connection=None):
@@ -166,7 +232,7 @@ class FamilyPaperExecutor:
         expiry = aware_datetime(contract.expires_at, "vencimiento futuro")
         if stamp >= expiry:
             raise ValueError("FUTURE_EXPIRED")
-        price = decimal_value(entry_price, "precio entrada", positive=True)
+        price = contract.price(entry_price, price_kind="FILL")
         qty = contract.quantity(quantity)
         cost = decimal_value(entry_cost, "costo entrada", nonnegative=True)
         reserve = contract.cash_required(price, qty)
@@ -178,19 +244,34 @@ class FamilyPaperExecutor:
             if existing:
                 row = dict(existing)
                 _future_row_matches_contract(row, contract)
+                if occurred_at is None:
+                    stamp = aware_datetime(row["opened_at"])
+                    native_book = aware_datetime(book_at or json.loads(
+                        row["metadata_json"])["opening_book_at"])
                 expected = (contract.symbol, contract.currency, contract.market,
-                            contract.settlement, str(qty), str(price))
+                            contract.settlement, qty, price)
                 observed = (row["symbol"], row["currency"], row["market"],
-                            row["settlement"], row["quantity"], row["entry_price"])
+                            row["settlement"], Decimal(row["quantity"]), Decimal(row["entry_price"]))
                 if expected != observed:
                     raise ValueError("FUTURES_LIFECYCLE_ID_COLLISION")
                 if (Decimal(row["entry_cost"]) != cost
                         or aware_datetime(row["opened_at"]) != stamp):
                     raise ValueError("FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
                 prior = connection.execute(
-                    "SELECT 1 FROM paper_family_lifecycle_events WHERE event_id=?",
+                    "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
                     (str(event_id),)).fetchone()
-                if not prior:
+                if not prior or prior["lifecycle_id"] != str(lifecycle_id) or prior["to_state"] != "OPEN":
+                    raise ValueError("FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
+                prior_detail = json.loads(prior["detail_json"])
+                request = _future_request(
+                    contract, operation="OPEN", occurred_at=stamp, book_at=native_book,
+                    detail=detail, entry_price=price, quantity=qty, entry_cost=cost, side="LONG")
+                _assert_future_request(prior_detail, request, "FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
+                if (utc_microseconds(prior_detail.get("opening_book_at")) != utc_microseconds(native_book)
+                        or ("paper_request_v1" not in prior_detail
+                            and _canonical_json(detail or {}) != _canonical_json({
+                                key: value for key, value in prior_detail.items()
+                                if key not in _OPEN_SYSTEM_FIELDS}))):
                     raise ValueError("FUTURES_OPEN_IDEMPOTENCY_MISMATCH")
                 return _future_result(row, idempotent=True)
 
@@ -223,6 +304,11 @@ class FamilyPaperExecutor:
                 "financial_contract": _contract_snapshot(contract),
                 "contract_snapshot_sha256": _contract_digest(contract),
                 "opening_book_at": native_book.isoformat(),
+                "price_kind": "FILL",
+                "execution_price_terms": json.loads(_canonical_json(contract.execution_price_terms())),
+                "paper_request_v1": _future_request(
+                    contract, operation="OPEN", occurred_at=stamp, book_at=native_book,
+                    detail=detail, entry_price=price, quantity=qty, entry_cost=cost, side="LONG"),
             }
             self.future_event(
                 contract, lifecycle_id=lifecycle_id, event_id=event_id,
@@ -253,33 +339,59 @@ class FamilyPaperExecutor:
 
     def mark_future(self, contract, *, lifecycle_id, event_id, mark_price,
                     book_at, occurred_at=None, settlement=False, detail=None,
-                    max_mark_age_seconds=120):
+                    max_mark_age_seconds=120, price_kind=None, price_source=None,
+                    price_rule=None):
         """Persist a fresh mark; settlement=True applies explicit daily variation."""
         _validate_future_contract(contract)
         stamp = aware_datetime(occurred_at or _now())
         source_at = aware_datetime(book_at, "book futuro")
-        if source_at > stamp:
-            raise ValueError("FUTURES_BOOK_TIME_FUTURE")
-        if (stamp - source_at).total_seconds() > max_mark_age_seconds:
-            raise ValueError("FUTURES_BOOK_STALE")
-        price = decimal_value(mark_price, "mark futuro", positive=True)
+        kind = str(price_kind or ("PAPER_SETTLEMENT" if settlement else "BOOK_MARK")).upper()
+        if kind not in ({"PAPER_SETTLEMENT", "OFFICIAL_SETTLEMENT"} if settlement else
+                        {"BOOK_MARK", "OFFICIAL_MARK"}):
+            raise ValueError("FUTURES_MARK_PRICE_KIND_INVALID")
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            register_exact_time_sql(connection)
             prior_mark = connection.execute(
                 "SELECT * FROM paper_future_marks WHERE event_id=? OR "
-                "(lifecycle_id=? AND book_at=? AND is_settlement=?)",
-                (str(event_id), str(lifecycle_id), source_at.isoformat(), int(settlement))).fetchone()
+                "(lifecycle_id=? AND rc6_instant_us(book_at)=? AND is_settlement=?)",
+                (str(event_id), str(lifecycle_id), utc_microseconds(source_at), int(settlement))).fetchone()
+            if prior_mark and occurred_at is None:
+                stamp = aware_datetime(prior_mark["observed_at"])
+            if source_at > stamp:
+                raise ValueError("FUTURES_BOOK_TIME_FUTURE")
+            if (stamp - source_at).total_seconds() > max_mark_age_seconds:
+                raise ValueError("FUTURES_BOOK_STALE")
+            price = contract.price(mark_price, price_kind=kind, source=price_source,
+                                   rule=price_rule, at=stamp)
+            request = _future_request(
+                contract, operation="MARK", occurred_at=stamp, book_at=source_at,
+                detail=detail, mark_price=price, settlement=bool(settlement),
+                price_kind=kind, price_source=price_source, price_rule=price_rule)
             if prior_mark:
+                prior_position = connection.execute(
+                    "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
+                    (str(lifecycle_id),)).fetchone()
+                if not prior_position or prior_mark["lifecycle_id"] != str(lifecycle_id):
+                    raise ValueError("FUTURES_MARK_EVENT_COLLISION")
+                row = dict(prior_position)
+                _future_row_matches_contract(row, contract)
                 if (prior_mark["lifecycle_id"] != str(lifecycle_id)
                         or Decimal(prior_mark["mark_price"]) != price
-                        or prior_mark["book_at"] != source_at.isoformat()
+                        or aware_datetime(prior_mark["book_at"]) != source_at
+                        or aware_datetime(prior_mark["observed_at"]) != stamp
                         or bool(prior_mark["is_settlement"]) != bool(settlement)):
                     raise ValueError("FUTURES_MARK_EVENT_COLLISION")
-                row = dict(connection.execute(
-                    "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
-                    (str(lifecycle_id),)).fetchone())
-                _future_row_matches_contract(row, contract)
+                prior_detail = json.loads(prior_mark["detail_json"])
+                _assert_future_request(prior_detail, request, "FUTURES_MARK_EVENT_COLLISION")
+                if ("paper_request_v1" not in prior_detail
+                        and _canonical_json(prior_detail) != _canonical_json(detail or {})):
+                    raise ValueError("FUTURES_MARK_EVENT_COLLISION")
                 return _future_result(row, idempotent=True)
+            if connection.execute(
+                    "SELECT 1 FROM paper_family_lifecycle_events WHERE event_id=?",
+                    (str(event_id),)).fetchone():
+                raise ValueError("FUTURES_MARK_EVENT_COLLISION")
             row = connection.execute(
                 "SELECT * FROM paper_future_positions WHERE lifecycle_id=?",
                 (str(lifecycle_id),)).fetchone()
@@ -306,7 +418,9 @@ class FamilyPaperExecutor:
                     detail={"settlement_price": str(price),
                             "variation_pnl": str(variation),
                             "book_at": source_at.isoformat(),
-                            "source": str((detail or {}).get("source") or "EXPLICIT_SETTLEMENT"),
+                            "source": str(price_source or (detail or {}).get("source") or "EXPLICIT_PAPER_SETTLEMENT"),
+                            "price_kind": kind, "price_rule": price_rule,
+                            "paper_request_v1": request,
                             "real_routes_used": []},
                     connection=connection)
                 collateral = decimal_value(row["margin_reserved"], "garantía", positive=True) + realized
@@ -328,7 +442,9 @@ class FamilyPaperExecutor:
               VALUES(?,?,?,?,?,?,?,?)""",
               (str(event_id), str(lifecycle_id), str(price), source_at.isoformat(),
                stamp.isoformat(), 1 if settlement else 0, str(unrealized),
-               json.dumps(detail or {}, ensure_ascii=False, sort_keys=True)))
+               _canonical_json({**(detail or {}), "price_kind": kind,
+                                "price_source": price_source, "price_rule": price_rule,
+                                "paper_request_v1": request})))
             connection.execute("""UPDATE paper_future_positions
               SET settlement_base_price=?,last_mark_price=?,variation_realized=?,
                   unrealized_pnl=?,last_mark_at=?,last_book_at=?,metadata_json=?
@@ -347,16 +463,15 @@ class FamilyPaperExecutor:
 
     def close_future(self, contract, *, lifecycle_id, event_id, exit_price,
                      book_at, occurred_at=None, reason="EXIT", expiry=False,
-                     exit_cost="0", detail=None, max_mark_age_seconds=120):
+                     exit_cost="0", detail=None, max_mark_age_seconds=120,
+                     price_kind="FILL", price_source=None, price_rule=None):
         """Release PAPER collateral and realize the final marked variation."""
         _validate_future_contract(contract)
         stamp = aware_datetime(occurred_at or _now())
         source_at = aware_datetime(book_at, "book futuro")
-        if source_at > stamp:
-            raise ValueError("FUTURES_BOOK_TIME_FUTURE")
-        if (stamp - source_at).total_seconds() > max_mark_age_seconds:
-            raise ValueError("FUTURES_BOOK_STALE")
-        price = decimal_value(exit_price, "precio salida", positive=True)
+        kind = str(price_kind).upper()
+        if kind != "FILL" and not (expiry and kind in {"OFFICIAL_SETTLEMENT", "PAPER_SETTLEMENT"}):
+            raise ValueError("FUTURES_EXIT_PRICE_KIND_INVALID")
         cost = decimal_value(exit_cost, "costo salida", nonnegative=True)
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -369,6 +484,19 @@ class FamilyPaperExecutor:
             if not row:
                 raise ValueError("FUTURES_ACTIVE_POSITION_REQUIRED")
             row = dict(row)
+            if prior and occurred_at is None:
+                stamp = aware_datetime(prior["occurred_at"])
+            if source_at > stamp:
+                raise ValueError("FUTURES_BOOK_TIME_FUTURE")
+            if (stamp - source_at).total_seconds() > max_mark_age_seconds:
+                raise ValueError("FUTURES_BOOK_STALE")
+            price = contract.price(exit_price, price_kind=kind, source=price_source,
+                                   rule=price_rule, at=stamp)
+            request = _future_request(
+                contract, operation="CLOSE", occurred_at=stamp, book_at=source_at,
+                detail=detail, exit_price=price, exit_cost=cost, reason=str(reason),
+                expiry=bool(expiry), price_kind=kind, price_source=price_source,
+                price_rule=price_rule)
             if prior:
                 _future_row_matches_contract(row, contract)
                 prior_detail = json.loads(prior["detail_json"])
@@ -376,9 +504,19 @@ class FamilyPaperExecutor:
                         or prior["to_state"] != ("EXPIRY" if expiry else "CLOSE")
                         or Decimal(prior_detail.get("exit_price", "-1")) != price
                         or Decimal(prior_detail.get("exit_cost", "-1")) != cost
-                        or prior_detail.get("book_at") != source_at.isoformat()):
+                        or aware_datetime(prior_detail.get("book_at")) != source_at
+                        or aware_datetime(prior["occurred_at"]) != stamp
+                        or prior_detail.get("reason") != str(reason)):
+                    raise ValueError("FUTURES_CLOSE_EVENT_COLLISION")
+                _assert_future_request(prior_detail, request, "FUTURES_CLOSE_EVENT_COLLISION")
+                if ("paper_request_v1" not in prior_detail and _canonical_json(detail or {}) !=
+                        _canonical_json({key: value for key, value in prior_detail.items()
+                                         if key not in _CLOSE_SYSTEM_FIELDS})):
                     raise ValueError("FUTURES_CLOSE_EVENT_COLLISION")
                 return _future_result(row, idempotent=True)
+            if connection.execute("SELECT 1 FROM paper_future_marks WHERE event_id=?",
+                                  (str(event_id),)).fetchone():
+                raise ValueError("FUTURES_CLOSE_EVENT_COLLISION")
             if row["status"] != "ACTIVE":
                 raise ValueError("FUTURES_ACTIVE_POSITION_REQUIRED")
             _future_row_matches_contract(row, contract)
@@ -407,6 +545,8 @@ class FamilyPaperExecutor:
                         "net_realized_pnl": str(net_realized),
                         "margin_released": str(reserve), "exit_cost": str(cost),
                         "reason": str(reason), "book_at": source_at.isoformat(),
+                        "price_kind": kind, "price_source": price_source,
+                        "price_rule": price_rule, "paper_request_v1": request,
                         "real_routes_used": []},
                 connection=connection)
             connection.execute("""INSERT INTO paper_future_marks
@@ -547,22 +687,44 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 family=family, instrument=instrument, currency=currency,
                 to_state=to_state, amount=amount, occurred_at=occurred_at,
                 detail=detail, connection=owned)
-    stamp = aware_datetime(occurred_at or _now()).isoformat()
     existing_event = connection.execute(
         "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
         (str(event_id),),
     ).fetchone()
-    if existing_event:
-        row = dict(existing_event)
-        if row["lifecycle_id"] != str(lifecycle_id):
-            raise ValueError("PAPER_LIFECYCLE_EVENT_ID_COLLISION")
-        return {"idempotent": True, "state": row["to_state"],
-                "real_routes_used": [], "paper_only": True}
-
+    # Retrying an implicitly timestamped request reuses its original instant.
+    # Supplying another explicit instant remains a conflicting intention.
+    stamp = aware_datetime(occurred_at or (existing_event["occurred_at"]
+                                         if existing_event else _now())).isoformat()
+    currency = cash_currency(currency)
+    delta = decimal_value(amount, "PAPER_LIFECYCLE_AMOUNT_INVALID")
+    if detail is not None and not isinstance(detail, dict):
+        raise ValueError("PAPER_LIFECYCLE_DETAIL_INVALID")
+    payload = _canonical_json(detail or {})
     current = connection.execute(
         "SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?",
         (str(lifecycle_id),),
     ).fetchone()
+    if existing_event:
+        row = dict(existing_event)
+        original = connection.execute(
+            "SELECT instrument,currency FROM paper_family_lifecycle WHERE lifecycle_id=?",
+            (row["lifecycle_id"],)).fetchone()
+        if not original:
+            raise ValueError("PAPER_LIFECYCLE_EVENT_ID_COLLISION")
+        requested = intent_fingerprint(
+            lifecycle_id=lifecycle_id, family=family, instrument=instrument,
+            currency=currency, to_state=to_state, amount=delta,
+            occurred_at=stamp, detail=json.loads(payload))
+        stored = intent_fingerprint(
+            lifecycle_id=row["lifecycle_id"], family=row["family"],
+            instrument=original["instrument"], currency=original["currency"],
+            to_state=row["to_state"], amount=row["amount"],
+            occurred_at=row["occurred_at"], detail=json.loads(row["detail_json"]))
+        if requested != stored:
+            raise ValueError("PAPER_LIFECYCLE_EVENT_ID_COLLISION")
+        return {"idempotent": True, "state": row["to_state"],
+                "real_routes_used": [], "paper_only": True}
+
     from_state = current["state"] if current else None
     if current and (current["family"] != family
                     or current["instrument"] != str(instrument)
@@ -571,15 +733,10 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
     if to_state not in TRANSITIONS[family].get(from_state, set()):
         raise ValueError(f"PAPER_LIFECYCLE_INVALID_TRANSITION:{from_state}->{to_state}")
 
-    try:
-        delta = Decimal(str(amount))
-        previous = Decimal(str(current["ledger_total"])) if current else Decimal("0")
-    except InvalidOperation as exc:
-        raise ValueError("PAPER_LIFECYCLE_AMOUNT_INVALID") from exc
-    if not delta.is_finite():
-        raise ValueError("PAPER_LIFECYCLE_AMOUNT_INVALID")
+    previous = decimal_value(current["ledger_total"], "PAPER_LIFECYCLE_AMOUNT_INVALID") if current else Decimal("0")
+    if current and aware_datetime(current["updated_at"]) > aware_datetime(stamp):
+        raise ValueError("PAPER_LIFECYCLE_CLOCK_ROLLBACK")
     total = previous + delta
-    payload = json.dumps(detail or {}, ensure_ascii=False, sort_keys=True)
     connection.execute("""INSERT INTO paper_family_lifecycle
       (lifecycle_id,family,instrument,currency,state,updated_at,ledger_total,metadata_json)
       VALUES(?,?,?,?,?,?,?,?)
@@ -626,6 +783,13 @@ def _validate_future_contract(contract):
             or contract.underlying != terms["underlying"]
             or aware_datetime(contract.expires_at) != aware_datetime(terms["expires_at"])):
         raise ValueError("FUTURES_EXACT_STANDARD_DLR_REQUIRED")
+    if (contract.price_tick is not None and (
+            contract.price_tick != Decimal(terms["price_tick"])
+            or contract.price_tick_source != terms["price_tick_source"]
+            or (contract.price_tick_known_at is not None and
+                aware_datetime(contract.price_tick_known_at) != aware_datetime(terms["price_tick_known_at"]))
+            or contract.price_tick_effective_at is not None)):
+        raise ValueError("FUTURES_STANDARD_DLR_PRICE_RULE_MISMATCH")
 
 
 def _contract_snapshot(contract):
@@ -644,11 +808,15 @@ def future_position_contract(row):
     snapshot = metadata.get("financial_contract")
     if not isinstance(snapshot, dict):
         raise ValueError("FUTURES_DURABLE_CONTRACT_REQUIRED")
+    # Validate exactly the bytes/fields captured at OPEN before adding defaults
+    # introduced by a later dataclass version. No stored digest is rewritten.
+    raw_digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True,
+                                          separators=(",", ":")).encode()).hexdigest()
+    if metadata.get("contract_snapshot_sha256") != raw_digest:
+        raise ValueError("FUTURES_CONTRACT_SNAPSHOT_DIGEST_MISMATCH")
     from bs_instrument_contracts import contract_from_metadata
     contract = contract_from_metadata(row["symbol"], "FUTUROS", snapshot)
     _validate_future_contract(contract)
-    if metadata.get("contract_snapshot_sha256") != _contract_digest(contract):
-        raise ValueError("FUTURES_CONTRACT_SNAPSHOT_DIGEST_MISMATCH")
     if (contract.key != (row["symbol"], "FUTUROS", row["market"], row["currency"], row["settlement"])
             or contract.cash_multiplier != Decimal(row["cash_multiplier"])
             or aware_datetime(contract.expires_at) != aware_datetime(row["expires_at"])):
@@ -657,8 +825,13 @@ def future_position_contract(row):
 
 
 def _future_row_matches_contract(row, contract):
-    if _contract_digest(future_position_contract(row)) != _contract_digest(contract):
+    stored = future_position_contract(row)
+    price_fields = {"price_tick", "price_tick_source", "price_tick_known_at", "price_tick_effective_at"}
+    stored_terms = {key: value for key, value in _contract_snapshot(stored).items() if key not in price_fields}
+    requested_terms = {key: value for key, value in _contract_snapshot(contract).items() if key not in price_fields}
+    if stored_terms != requested_terms:
         raise ValueError("FUTURES_CONTRACT_POSITION_MISMATCH")
+    _validate_future_contract(contract)
     observed = (row["symbol"], row["currency"], row["market"], row["settlement"],
                 decimal_value(row["cash_multiplier"], "multiplicador", positive=True))
     expected = (contract.symbol, contract.currency, contract.market, contract.settlement,
@@ -683,33 +856,42 @@ def _future_result(row, *, idempotent):
     }
 
 
-def future_cash_effect(store, currency, at, *, connection=None):
+def future_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     """Cash movement only: collateral reserve/release, variation and fees."""
     point = aware_datetime(at)
     if connection is None:
         ensure_initialized(store)
         with store.connect() as owned:
-            return future_cash_effect(store, currency, point, connection=owned)
+            return future_cash_effect(store, currency, point, connection=owned, exclusive=exclusive)
     required = {"paper_family_lifecycle_events", "paper_family_lifecycle"}
     tables = {row[0] for row in connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     if not required.issubset(tables):
         raise RuntimeError("FUTURES_PARENT_SCHEMA_REQUIRED")
+    register_exact_time_sql(connection)
+    operator = "<" if exclusive else "<="
     rows = connection.execute("""SELECT amount FROM paper_family_lifecycle_events
       WHERE family='FUTUROS' AND EXISTS(
         SELECT 1 FROM paper_family_lifecycle l
         WHERE l.lifecycle_id=paper_family_lifecycle_events.lifecycle_id
           AND l.currency=?
-      ) AND julianday(occurred_at)<=julianday(?)""",
-      (cash_currency(currency), point.isoformat())).fetchall()
-    return sum((Decimal(str(row[0])) for row in rows), Decimal("0"))
+      ) AND rc6_instant_us(occurred_at)""" + operator + "?",
+      (cash_currency(currency), utc_microseconds(point)))
+    return sum((decimal_value(row[0], "flujo futuro") for row in rows), Decimal("0"))
 
 
-def future_positions(store, currency=None, *, connection=None, active_only=False):
+def future_positions(store, currency=None, *, connection=None, active_only=False,
+                     as_of=None, exclusive=False, lifecycle_ids=None):
+    """Canonical rows; an explicit cut reconstructs state from visible events.
+
+    `lifecycle_ids` lets paginated readers project just their SQL-selected page.
+    A current CLOSED row cannot remove an ACTIVE position from a historical cut.
+    """
     if connection is None:
         ensure_initialized(store)
         with store.connect() as owned:
-            return future_positions(store, currency, connection=owned, active_only=active_only)
+            return future_positions(store, currency, connection=owned, active_only=active_only,
+                                    as_of=as_of, exclusive=exclusive, lifecycle_ids=lifecycle_ids)
     if not connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_future_positions'"
             ).fetchone():
@@ -717,12 +899,116 @@ def future_positions(store, currency=None, *, connection=None, active_only=False
     where, params = [], []
     if currency is not None:
         where.append("currency=?"); params.append(cash_currency(currency))
-    if active_only:
+    if lifecycle_ids is not None:
+        identifiers = tuple(dict.fromkeys(str(value) for value in lifecycle_ids))
+        if not identifiers:
+            return []
+        if len(identifiers) > 500:
+            raise ValueError("FUTURES_PROJECTION_ID_BUDGET_EXHAUSTED")
+        where.append("lifecycle_id IN (" + ",".join("?" for _ in identifiers) + ")")
+        params.extend(identifiers)
+    if active_only and as_of is None:
         where.append("status='ACTIVE'")
     clause = (" WHERE " + " AND ".join(where)) if where else ""
-    return [dict(row) for row in connection.execute(
+    rows = [dict(row) for row in connection.execute(
         "SELECT * FROM paper_future_positions" + clause + " ORDER BY opened_at,lifecycle_id",
         tuple(params)).fetchall()]
+    if as_of is None:
+        return rows
+    point = aware_datetime(as_of)
+    register_exact_time_sql(connection)
+    projected = []
+    for row in rows:
+        opened = aware_datetime(row["opened_at"])
+        if opened > point or (exclusive and opened == point):
+            continue
+        projected_row = _future_position_at(row, point, connection=connection, exclusive=exclusive)
+        if not active_only or projected_row["status"] == "ACTIVE":
+            projected.append(projected_row)
+    return sorted(projected, key=lambda row: (utc_microseconds(row["opened_at"]), row["lifecycle_id"]))
+
+
+def _future_position_at(row, point, *, connection, exclusive=False):
+    contract = future_position_contract(row)
+    operator = "<" if exclusive else "<="
+    cutoff = utc_microseconds(point)
+    events = [dict(event) for event in connection.execute(
+        "SELECT rowid AS event_sequence,* FROM paper_family_lifecycle_events WHERE lifecycle_id=? "
+        "AND rc6_instant_us(occurred_at)" + operator + "? "
+        "ORDER BY rc6_instant_us(occurred_at),event_sequence,event_id",
+        (row["lifecycle_id"], cutoff))]
+    opening = next((event for event in events if event["to_state"] == "OPEN"), None)
+    if not opening:
+        raise ValueError("FUTURES_OPEN_EVENT_REQUIRED")
+    metadata = json.loads(opening["detail_json"])
+    original_metadata = json.loads(row["metadata_json"])
+    if (metadata.get("financial_contract") != original_metadata.get("financial_contract")
+            or metadata.get("contract_snapshot_sha256") != original_metadata.get("contract_snapshot_sha256")):
+        raise ValueError("FUTURES_OPEN_CONTRACT_EVENT_MISMATCH")
+    for field in ("entry_price", "entry_cost", "quantity", "margin_reserved"):
+        if decimal_value(metadata.get(field), field) != decimal_value(row[field], field):
+            raise ValueError("FUTURES_OPEN_POSITION_EVENT_MISMATCH")
+    for event in events:
+        detail = json.loads(event["detail_json"])
+        native = detail.get("book_at", detail.get("opening_book_at"))
+        if native is not None and aware_datetime(native) > aware_datetime(event["occurred_at"]):
+            raise ValueError("FUTURES_EVENT_SOURCE_CLOCK_INVALID")
+    terminal = next((event for event in reversed(events) if event["to_state"] in {"CLOSE", "EXPIRY"}), None)
+    variations = [event for event in events if event["to_state"] == "DAILY_VARIATION"]
+    variation = sum((decimal_value(event["amount"], "variación futura") for event in variations), Decimal("0"))
+    base_price = (json.loads(variations[-1]["detail_json"])["settlement_price"]
+                  if variations else row["entry_price"])
+    marks = connection.execute(
+        "SELECT rowid AS mark_sequence,* FROM paper_future_marks WHERE lifecycle_id=? "
+        "AND rc6_instant_us(observed_at)" + operator + "? "
+        "AND rc6_instant_us(book_at)" + operator + "? "
+        "ORDER BY rc6_instant_us(observed_at) DESC,mark_sequence DESC,event_id DESC LIMIT 1",
+        (row["lifecycle_id"], cutoff, cutoff)).fetchone()
+    entry = decimal_value(row["entry_price"], "entrada futura", positive=True)
+    entry_cost = decimal_value(row["entry_cost"], "costo entrada", nonnegative=True)
+    qty = contract.quantity(row["quantity"])
+    mark_price = decimal_value(marks["mark_price"], "mark futuro", positive=True) if marks else entry
+    book_at = marks["book_at"] if marks else metadata.get("opening_book_at")
+    observed_at = marks["observed_at"] if marks else row["opened_at"]
+    if not marks and (not row["last_book_at"] or not original_metadata.get("opening_book_at")):
+        book_at = None
+    if book_at is not None and aware_datetime(book_at) > aware_datetime(observed_at):
+        raise ValueError("FUTURES_MARK_SOURCE_CLOCK_INVALID")
+    if marks:
+        mark_detail = json.loads(marks["detail_json"])
+        metadata["last_mark_source"] = (mark_detail.get("price_source") or mark_detail.get("source")
+                                        or "PPI_BOOK")
+        metadata["last_mark_settlement"] = bool(marks["is_settlement"])
+        metadata["last_mark_price_kind"] = mark_detail.get("price_kind") or (
+            "PAPER_SETTLEMENT" if marks["is_settlement"] else "BOOK_MARK")
+    result = {**row, "status": "ACTIVE", "closed_at": None, "close_reason": None,
+              "exit_cost": "0", "variation_realized": str(variation),
+              "daily_variation_cash": str(variation), "close_variation_cash": "0",
+              "settlement_base_price": str(base_price), "last_mark_price": str(mark_price),
+              "last_book_at": book_at, "last_mark_at": observed_at,
+              "unrealized_pnl": str(contract.pnl(entry, mark_price, qty) - variation),
+              "realized_pnl": str(variation - entry_cost),
+              "collateral": row["margin_reserved"],
+              "exposure": str(contract.notional(mark_price, qty)),
+              "as_of": point.isoformat(), "exclusive": bool(exclusive),
+              "reserve_kind": "CONSERVATIVE_PAPER_RESERVE_NOT_BROKER_MARGIN"}
+    if terminal:
+        detail = json.loads(terminal["detail_json"])
+        final_variation = decimal_value(detail["final_variation"], "variación cierre")
+        exit_cost = decimal_value(detail["exit_cost"], "costo salida", nonnegative=True)
+        gross = variation + final_variation
+        net = gross - entry_cost - exit_cost
+        metadata.update(realized_pnl=str(net), terminal_state=terminal["to_state"])
+        result.update(status="CLOSED", closed_at=terminal["occurred_at"],
+                      close_reason=detail["reason"], exit_cost=str(exit_cost),
+                      variation_realized=str(gross), gross_realized_pnl=str(gross),
+                      close_variation_cash=str(final_variation), realized_pnl=str(net),
+                      unrealized_pnl="0", collateral="0", exposure="0",
+                      last_mark_price=detail["exit_price"], last_mark_at=terminal["occurred_at"],
+                      last_book_at=detail["book_at"])
+    result["cash_effect"] = str(sum((decimal_value(event["amount"], "flujo futuro") for event in events), Decimal("0")))
+    result["metadata_json"] = _canonical_json(metadata)
+    return result
 
 
 def future_risk_snapshot(store, currency, at, *, connection=None,
@@ -740,63 +1026,29 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
     realized = unrealized = collateral = exposure = Decimal("0")
     stale = carry = False
     active_count, mark_timestamps = 0, []
-    for row in future_positions(store, currency, connection=connection):
+    for row in future_positions(store, currency, connection=connection, as_of=point, exclusive=exclusive):
         opened = aware_datetime(row["opened_at"])
         if opened > point or (exclusive and opened == point):
             continue
-        future_position_contract(row)
-        operator = '<' if exclusive else '<='
-        events = [dict(event) for event in connection.execute(
-            "SELECT * FROM paper_family_lifecycle_events WHERE lifecycle_id=? "
-            f"AND julianday(occurred_at){operator}julianday(?) ORDER BY julianday(occurred_at),rowid",
-            (row["lifecycle_id"], point.isoformat()))]
-        terminal = next((event for event in reversed(events)
-                         if event["to_state"] in {"CLOSE", "EXPIRY"}), None)
-        closed = aware_datetime(terminal["occurred_at"]) if terminal else None
+        closed = aware_datetime(row["closed_at"]) if row["closed_at"] else None
         if opened.astimezone(__import__("zoneinfo").ZoneInfo(
                 "America/Argentina/Buenos_Aires")).date() < local_day and (
                 closed is None or closed.astimezone(__import__("zoneinfo").ZoneInfo(
                     "America/Argentina/Buenos_Aires")).date() >= local_day):
             carry = True
-        entry_cost = decimal_value(row["entry_cost"], "costo entrada", nonnegative=True)
-        variation = sum((decimal_value(event["amount"], "variación realizada")
-                         for event in events if event["to_state"] == "DAILY_VARIATION"), Decimal("0"))
-        if terminal:
-            detail = json.loads(terminal["detail_json"])
-            realized += (variation - entry_cost
-                         + decimal_value(detail["final_variation"], "variación cierre")
-                         - decimal_value(detail["exit_cost"], "costo salida", nonnegative=True))
+        realized += decimal_value(row["realized_pnl"], "PnL futuro realizado")
+        if row["status"] == "CLOSED":
             continue
         active_count += 1
         collateral += decimal_value(row["margin_reserved"], "garantía", positive=True)
-        realized += variation - entry_cost
-        marks = connection.execute(
-            "SELECT * FROM paper_future_marks WHERE lifecycle_id=? "
-            f"AND julianday(observed_at){operator}julianday(?) "
-            "ORDER BY julianday(observed_at) DESC,rowid DESC LIMIT 1",
-            (row["lifecycle_id"], point.isoformat())).fetchone()
-        if marks:
-            mark_at = aware_datetime(marks["book_at"], "book futuro")
-            mark_price = decimal_value(marks["mark_price"], "mark futuro", positive=True)
-            marked_at = aware_datetime(marks["observed_at"])
-        else:
-            opening_book_at = json.loads(row["metadata_json"]).get("opening_book_at")
-            mark_at = aware_datetime(opening_book_at) if opening_book_at else None
-            if not row["last_book_at"]:
-                mark_at = None
-            # OPEN supplies the first native book, not a fabricated future mark.
-            if mark_at is not None and mark_at > opened:
-                mark_at = None
-            mark_price = decimal_value(row["entry_price"], "entrada futura", positive=True)
-            marked_at = opened
+        mark_at = aware_datetime(row["last_book_at"], "book futuro") if row["last_book_at"] else None
+        marked_at = aware_datetime(row["last_mark_at"])
         if (mark_at is None or mark_at > marked_at
                 or not 0 <= (point - mark_at).total_seconds() <= max_mark_age_seconds):
             stale = True
         mark_timestamps.append(mark_at.isoformat() if mark_at else None)
-        qty = decimal_value(row["quantity"], "cantidad futura", positive=True)
-        multiplier = decimal_value(row["cash_multiplier"], "multiplicador", positive=True)
-        unrealized += (mark_price - Decimal(row["entry_price"])) * qty * multiplier - variation
-        exposure += mark_price * qty * multiplier
+        unrealized += decimal_value(row["unrealized_pnl"], "PnL futuro no realizado")
+        exposure += decimal_value(row["exposure"], "exposición futura", positive=True)
     return {
         "realized": realized,
         "unrealized": unrealized,
@@ -806,5 +1058,5 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
         "active_count": active_count,
         "exposure": exposure,
         "mark_timestamps": mark_timestamps,
-        "cash_effect": future_cash_effect(store, currency, point, connection=connection),
+        "cash_effect": future_cash_effect(store, currency, point, connection=connection, exclusive=exclusive),
     }
