@@ -64,13 +64,37 @@ overflow, MAX_BINDINGS without coalescing, nonfinite/fault cleanup, nested
 capture success/failure and static/mutable-header freezing. Canonical dispatch
 counts verify only call structure; they are not CPU/RSS measurements.
 
-SOURCE review and AST comparison precede an exact clean commit and independent
-Finance review. Native focal execution requires a coordinated CPU slot and a
-whole Git archive, the literal frozen Python 3.11 interpreter with its exact
-157 locked versions, unchanged source hashes/modes/blob IDs and raw JUnit.
-No Native test, big publisher run or auxiliary decode replay has been executed
-for this proposal. A fresh integrated uninstrumented full PREOPEN/OPEN caller
-must still meet the original 90-second deadline, 2-GiB RSS and original
-live/archive/scratch quotas. The retention horizon, complete UX/browser bounds,
-immutable artifact/runtime gates and the cause of the prior TIMED SIGSEGV
-remain separate pending obligations.
+SOURCE and independent Finance review closed without a material blocker on
+`d51b4577d2a41443c8fb453b768d5e2c88448e8d`, tree
+`ceaa55e1852308fc46c4178928eae18d36aea962`. Before that commit, Finance
+identified an unqualified `PACK_TARGET` name in the new frozen oracle. It was
+corrected to `packed.PACK_TARGET` before any Native execution. The original
+WIP and its classification remain preserved as a static preparation defect,
+not a product RED.
+
+The authorized five-module focal on the complete Git archive passed
+**271/271** cases: 74 volatile bindings, 84 small containers, 43 allocations,
+48 packed storage and 22 funnel storage codec. JUnit has zero failures,
+errors, skips or duplicate nodes. PID 220202 used the literal
+`/workspace/venv_rc6_frozen311/bin/python` (Python 3.11.16); preflight verified
+157 lock names and versions before any fixtures. This is not a byte proof of
+installed distributions. All 1,940 Git file hashes, modes and blob IDs remained
+identical, with zero overlays, 97 source imports and zero alien imports.
+Network and protected source-SQLite attempts were both zero; DATA400 was not
+an input and no DATA400 before/after metadata snapshot is claimed. The
+11.271-second focal duration includes setup and is not publisher performance.
+
+The exact original wrapper, log, preflight, JUnit, receipt, source index,
+tested sources, original plan, locks, frozen baseline and pre-Native oracle
+correction are stored losslessly in
+[the Native dossier](packed_volatile_scalars/DOSSIER.json). Its JUnit SHA256 is
+`24be2472dc3d1ae1056cf283535b354372ebbb2c80377ed6ad02154f62bdcbcb`;
+receipt SHA256 is
+`334f07896f4bcb30398b2502f04e3ba2aa89e99c596e64558001036a5b3a128f`.
+No Native publisher run or auxiliary decode replay was executed for this
+change. A fresh integrated uninstrumented full PREOPEN/OPEN caller must still
+meet the original 90-second deadline, 2-GiB RSS and original live/archive/
+scratch quotas. No branch frequency, saving or publisher CPU result is claimed.
+The retention horizon, complete UX/browser bounds, immutable artifact/runtime
+gates and the cause of the prior TIMED SIGSEGV remain separate pending
+obligations.
