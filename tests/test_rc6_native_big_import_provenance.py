@@ -289,17 +289,32 @@ class _ActualSubprocessView:
 def test_late_proof_allocation_is_covered_by_actual_reaped_children_peak():
     from scripts import rc6_issue465_stress as stress
     late = (
-        "import json,resource\n"
+        "import json,os,resource,sys\n"
+        # Linux may retain the pre-exec parent's high-water mark. Fork only
+        # after entering this small fresh interpreter to give the allocation
+        # witness a baseline from its actual current address space. The outer
+        # process reaps it; the observed RUSAGE_CHILDREN maximum is deliberately
+        # a descendants-inclusive aggregate, never worker-only wait4.
+        "allocation_pid=os.fork()\n"
+        "if allocation_pid:\n"
+        "    waited,status=os.waitpid(allocation_pid,0)\n"
+        "    assert waited==allocation_pid\n"
+        "    raise SystemExit(os.waitstatus_to_exitcode(status))\n"
         "before=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
         "proof_payload=bytearray(96*1024**2)\n"
         "after=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024\n"
-        "print(json.dumps({'reported_before_proof':before,'after_proof':after}))\n"
+        "print(json.dumps({'reported_before_proof':before,'after_proof':after,\n"
+        "    'allocation_pid':os.getpid(),'supervised_parent_pid':os.getppid(),\n"
+        "    'scope':'ACTUAL_POSTEXEC_FORK_LATE96MIB_ALLOCATION_NOT_CANONICAL_WORKER'}),flush=True)\n"
+        "os._exit(0)\n"
     )
     process=subprocess.Popen([sys.executable,'-I','-B','-c',late],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
     try:
         stdout,stderr=process.communicate(timeout=15)
         assert process.returncode==0,stderr
         peaks=json.loads(stdout)
+        assert peaks['supervised_parent_pid']==process.pid and peaks['allocation_pid']!=process.pid
+        assert peaks['scope']=='ACTUAL_POSTEXEC_FORK_LATE96MIB_ALLOCATION_NOT_CANONICAL_WORKER'
         assert peaks['after_proof']>peaks['reported_before_proof']+64*1024**2
         result=stress._reaped_child_lifetime_rss(_ActualSubprocessView(process))
         assert result['worker_reaped_before_observation'] is True

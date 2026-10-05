@@ -90,10 +90,24 @@
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import", "kind": "ACTUAL_CLI_PARTIAL_BINDING_REJECTION"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture", "kind": "CONTROLLED_INVALID_INDEX_BINDING_FAILS_BEFORE_ENVIRONMENT_OR_FIXTURE_NOT_RAW_GIT_SUCCESS"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup", "kind": "ACTUAL_TARGET_ENTRY_PID_BINDING_REJECTION_NO_PRODUCT_IMPORT_OR_FIXTURE"},
-    {"node": "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak", "kind": "ACTUAL_FRESH_CHILD_LATE96MIB_ALLOCATION_AND_PARENT_REAPED_CHILDREN_RUSAGE_NOT_WORKER_ONLY_WAIT4"},
+    {"node": "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak", "kind": "ACTUAL_POSTEXEC_FORK_LATE96MIB_ALLOCATION_WITH_EXACT_PID_CHAIN_AND_DESCENDANTS_INCLUSIVE_PARENT_RUSAGE_NOT_WORKER_ONLY_WAIT4"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss", "kind": "ACTUAL_LIVE_CHILD_REFUSES_RUSAGE_CHILDREN_LIFETIME_CLAIM"},
     {"node": "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation", "kind": "DECLARATIVE_AST_CONTRACT_NOT_NATIVE_IMPORT_PROOF"}
   ],
+  "late_rss_guard_fixture_autocorrection": {
+    "old_source_sha": "4087e58035d6b081b89091a1b292552d0e82d540",
+    "receipt_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "4b173abf1646f33ae1cfc37ba53d7cae7665ff16f0b8b34c5c9613e838ad8984",
+    "classification": "EXACT_SCOPED_18PASS_1_GUARD_FIXTURE_FAILURE_NOT_PRODUCT_RED",
+    "reported_before_bytes": 61800448,
+    "after_allocation_bytes": 114135040,
+    "delta_bytes": 52334592,
+    "rca": "Linux high-water RSS retained from the pre-exec parent made a fixed96MiB allocation increase the reported maximum by less than the guard's64MiB witness margin. This was the fixture assertion, not a product resource-limit failure.",
+    "fix": "Fork after entry into a small fresh exec interpreter, preserve actual96MiB physical allocation and64MiB minimum late-increase assertion, bind actual allocationPID to its intermediate parent, reap both, and keep aggregate descendants-inclusive RUSAGE scope explicit.",
+    "product_rss_threshold_or_provenance_changed": false,
+    "old_raw_preserved": true,
+    "corrected_guard_executed": false
+  },
   "phase": {
     "ast_compile_only": "PASS_WITHOUT_IMPORT_OR_EXECUTION",
     "product_imports_executed": 0,
