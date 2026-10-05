@@ -9,16 +9,22 @@ import sqlite3
 from scripts.rc6_issue465_stress import source_custody_snapshot, source_file_custody
 
 
+STAT_ATTRIBUTES = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+                   "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+
+
 def oracle(path: Path):
     """Independent physical stat/hash observation without opening SQLite."""
-    before = path.stat()
+    physical = path.stat()
+    before = {name: getattr(physical, name) for name in STAT_ATTRIBUTES}
     descriptor = os.open(path, os.O_RDONLY | os.O_NOATIME | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         with os.fdopen(descriptor, "rb", closefd=False) as stream:
             hashed = hashlib.file_digest(stream, "sha256").hexdigest()
     finally:
         os.close(descriptor)
-    after = path.stat()
+    physical = path.stat()
+    after = {name: getattr(physical, name) for name in STAT_ATTRIBUTES}
     assert before == after
     return before, hashed
 
@@ -43,13 +49,10 @@ def test_real_primary_wal_shm_snapshots_bind_eleven_stats_and_sha_without_source
             actual = snapshot[suffix]
             assert set(actual) == {"st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
                                    "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns", "sha256"}
-            assert actual["st_blocks"] == physical.st_blocks
-            assert actual["st_size"] == physical.st_size
+            assert actual["st_blocks"] == physical["st_blocks"]
+            assert actual["st_size"] == physical["st_size"]
             assert actual["sha256"] == hashed
-            assert (actual["st_dev"], actual["st_ino"], actual["st_uid"], actual["st_gid"], actual["st_mode"], actual["st_nlink"],
-                    actual["st_atime_ns"], actual["st_mtime_ns"], actual["st_ctime_ns"]) == (
-                    physical.st_dev, physical.st_ino, physical.st_uid, physical.st_gid, physical.st_mode, physical.st_nlink,
-                    physical.st_atime_ns, physical.st_mtime_ns, physical.st_ctime_ns)
+            assert {name: actual[name] for name in STAT_ATTRIBUTES} == physical
     finally:
         connection.close()
 
@@ -67,13 +70,13 @@ def test_same_sparse_bytes_and_logical_size_keep_actual_allocated_blocks_distinc
         os.fsync(descriptor)
         physical_after, digest_after = oracle(source)
         snapshot_after = source_file_custody(source)
-        assert physical_after.st_blocks > physical_before.st_blocks
+        assert physical_after["st_blocks"] > physical_before["st_blocks"]
         assert digest_before == digest_after
-        assert physical_before.st_size == physical_after.st_size == 128 * 1024
+        assert physical_before["st_size"] == physical_after["st_size"] == 128 * 1024
         assert snapshot_before["sha256"] == snapshot_after["sha256"] == digest_before
         assert snapshot_before["st_size"] == snapshot_after["st_size"]
-        assert snapshot_before["st_blocks"] == physical_before.st_blocks
-        assert snapshot_after["st_blocks"] == physical_after.st_blocks
+        assert snapshot_before["st_blocks"] == physical_before["st_blocks"]
+        assert snapshot_after["st_blocks"] == physical_after["st_blocks"]
         # Allocation can also change ctime; no prior ten-field bypass is claimed.
         assert snapshot_before != snapshot_after
     finally:

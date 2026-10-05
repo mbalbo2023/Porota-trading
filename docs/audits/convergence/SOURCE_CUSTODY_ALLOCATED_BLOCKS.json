@@ -51,12 +51,20 @@
   "schema": "rc6.source-custody-allocated-blocks-correction.v1",
   "self_commit_sha": null,
   "sha256_is_additional_not_counted_as_stat": true,
+  "source_only_review_correction": {
+    "cause": "Equality of os.stat_result compares its base tuple and omits extension attributes such as st_blocks and nanosecond clocks.",
+    "earlier_source_only_commit": "639a0a2b59b0f25035c7c36b57535820daec17f1",
+    "fix": "The independent physical oracle now captures every one of the eleven named attributes from a single stat observation into dictionaries, and compares those explicit dictionaries before/after reading and across snapshot observations.",
+    "helper_body_unchanged": true,
+    "native_runs_on_weaker_oracle": 0,
+    "status": "CORRECTED_BEFORE_ANY_NATIVE_FIXTURE_OR_EXECUTION"
+  },
   "source_only_validation": {
     "AST_and_compile_without_import_or_execution": "PASS",
     "native_cases_executed": 0,
     "path_sha256": {
       "scripts/rc6_issue465_stress.py": "1643c3d58ab69b8ccdfed8b2818bb5ceb03adae77fa85f9cd702b36a3fdf4492",
-      "tests/test_rc6_source_custody_allocated_blocks.py": "ee05149d32521c6a207a7dcda4bcbc4de699e155c75e9e82dd36f35878fd3805"
+      "tests/test_rc6_source_custody_allocated_blocks.py": "c9037142d184ea8941a657be7058a0b71bb1b8acfd95359c4400c54b544e6df0"
     }
   },
   "source_reads_write_no_SQL_and_provider_routes": "NOT_CALLED",
