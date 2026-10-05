@@ -230,3 +230,31 @@ def test_native_writer_transaction_receipts_always_recheck_sources_custody_polic
             files.record_failure(as_of=native.as_of.isoformat(), error=ValueError("SHADOW_SYNTHETIC_FAILURE"))
         with pytest.raises(ValueError, match="SHADOW_|RETENTION_"):
             files._wire_generation(checkpoint=False, deadline=time.monotonic()-1 if attack == "deadline" else None)
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure(tmp_path, monkeypatch, failure):
+    import threading
+    from rc6_shadow_runtime import serialization
+    monkeypatch.setattr(serialization, "THRESHOLD", 1)
+    native = native_fixture(tmp_path, count=3)
+    barrier = threading.Barrier(2)
+    original = persistence.verify_storage_wire
+    hashes = {role: native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES}
+    observed = []
+    def checked(value, **kwargs):
+        observed.append(value["logical_sha256"])
+        barrier.wait(timeout=1)
+        if failure and value["logical_sha256"] == hashes["checkpoint"]:
+            raise ValueError("SHADOW_SYNTHETIC_WIRE_FAILURE")
+        return original(value, **kwargs)
+    monkeypatch.setattr(persistence, "verify_storage_wire", checked)
+    if failure:
+        with pytest.raises(ValueError, match="SYNTHETIC_WIRE_FAILURE"):
+            read_committed_projection(native.root, deadline=time.monotonic()+2)
+    else:
+        page = read_committed_projection(native.root, deadline=time.monotonic()+2)
+        assert page["pointer"] == native.cut["pointer"]
+        assert set(page["export_contract"]["verified_payloads"]) == set(persistence.GENERATION_ROLES)
+    assert sorted(observed) == sorted([hashes["report"], hashes["checkpoint"]])
+    assert not any(thread.name.startswith(("rc6-shadow-sha", "rc6-shadow-wire")) for thread in threading.enumerate())

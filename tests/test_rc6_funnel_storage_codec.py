@@ -124,3 +124,26 @@ def test_bulk_shape_counts_every_scalar_and_enforces_depth_at_leaf_boundary(monk
     monkeypatch.setattr(serialization, "MAX_NODES", 0)
     with pytest.raises(ValueError, match="COMPLEXITY"):
         serialization._shape(None)
+
+
+@pytest.mark.parametrize("attack", [None, "logical_digest", "crc", "deadline", "expansion", "base64"])
+def test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker(attack):
+    import threading
+    import time
+    packed = encode(payload())
+    if attack == "logical_digest": packed["logical_sha256"] = "0"*64
+    elif attack == "crc":
+        raw = bytearray(base64.b64decode(packed["payload"])); raw[-8] ^= 1
+        packed["payload"] = base64.b64encode(raw).decode()
+    elif attack == "expansion": packed["logical_bytes"] = 1
+    elif attack == "base64": packed["payload"] = "!"
+    seal(packed)
+    arguments = dict(durable_limit=32*1024**2, expansion_limit=64*1024**2,
+                     deadline=time.monotonic()-1 if attack == "deadline" else None)
+    if attack is None:
+        expected = serialization.verify_storage_wire(packed, **arguments)
+        assert serialization.verify_storage_wire(packed, **arguments, _pipeline_hash=True) == expected
+    else:
+        with pytest.raises(ValueError, match="SHADOW_"):
+            serialization.verify_storage_wire(packed, **arguments, _pipeline_hash=True)
+    assert not any(thread.name.startswith("rc6-shadow-sha") for thread in threading.enumerate())

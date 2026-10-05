@@ -5,6 +5,7 @@ Standalone preopen freezes and failure diagnostics have separate explicit roles.
 No reader reconstructs a snapshot from file mtimes or independently written JSON.
 """
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import errno
 import fcntl
@@ -547,7 +548,7 @@ class EvidenceFiles:
             return bundle[LOGICAL_ROLES[name]] if bundle else None
         return self._independent(name)
 
-    def _wire_generation(self, *, deadline=None, checkpoint=False, allow_degraded=False):
+    def _wire_generation(self, *, deadline=None, checkpoint=False, allow_degraded=False, _pipeline_wire=False):
         """Verify sealed bytes/CRC/codec plus typed producer headers.
 
         This explicitly does not claim to recompute the large native report's
@@ -582,7 +583,7 @@ class EvidenceFiles:
         if (manifest.get("source_watermark", {}).get("as_of") != manifest.get("as_of")
                 or digest(manifest.get("safety")) != digest(SAFETY)):
             raise ValueError("SHADOW_GENERATION_SAFETY_MISMATCH")
-        verified, result, pending_receipts = {}, {"manifest": manifest, "pointer": pointer}, {}
+        verified, result, pending_receipts, pending_wire = {}, {"manifest": manifest, "pointer": pointer}, {}, []
         for role, name in GENERATION_ROLES.items():
             guard()
             record = manifest["files"][role]
@@ -621,8 +622,13 @@ class EvidenceFiles:
                     proof = {"payload_digest": stored["logical_sha256"], "logical_bytes": stored["logical_bytes"],
                              "storage_schema": stored["schema"]}
                 else:
-                    proof = verify_storage_wire(stored, durable_limit=self.payload_limit,
-                                                expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
+                    if _pipeline_wire:
+                        proof = {"payload_digest": stored.get("logical_sha256"), "logical_bytes": stored.get("logical_bytes"),
+                                 "storage_schema": stored.get("schema")}
+                        pending_wire.append((stored, proof))
+                    else:
+                        proof = verify_storage_wire(stored, durable_limit=self.payload_limit,
+                                                    expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline)
                     value = None
             else:
                 value, proof = self._payload(name, member, details=True)
@@ -637,6 +643,17 @@ class EvidenceFiles:
             if self.lock is not None and role != "status":
                 pending_receipts[receipt_key] = deepcopy(verified[role])
             if role == "status" or (role == "checkpoint" and checkpoint): result[role] = value
+        if pending_wire:
+            # Two independent roles and one bounded SHA stream per role. All
+            # work is joined before exposing a cut; no data/proof is cached.
+            with ThreadPoolExecutor(max_workers=min(2, len(pending_wire)), thread_name_prefix="rc6-shadow-wire") as executor:
+                futures = [executor.submit(verify_storage_wire, stored, durable_limit=self.payload_limit,
+                                           expansion_limit=EXPANDED_PAYLOAD_LIMIT, deadline=deadline, _pipeline_hash=True)
+                           for stored, _ in pending_wire]
+                for (_, proof), future in zip(pending_wire, futures):
+                    if future.result() != proof:
+                        raise ValueError("SHADOW_EVIDENCE_DIGEST_MISMATCH")
+            guard()
         status = result["status"]
         if (status.get("report_digest") != verified["report"]["payload_digest"]
                 or status.get("checkpoint_digest") != verified["checkpoint"]["payload_digest"]
@@ -921,7 +938,7 @@ def read_committed_projection(root, *, filters=None, offset=0, limit=10, deadlin
     from .projection import open_projection, query_projection, EXPORT_SCHEMA as PROJECTION_EXPORT, LEVEL
     files = EvidenceFiles(root)
     with files._reader():
-        bundle = files._wire_generation(deadline=deadline)
+        bundle = files._wire_generation(deadline=deadline, _pipeline_wire=True)
         connection, header = open_projection(bundle.pop("projection_bytes"))
         try:
             expected = {role: bundle["manifest"]["files"][role]["payload_digest"] for role in ROLES}

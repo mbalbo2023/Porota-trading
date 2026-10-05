@@ -9,6 +9,8 @@ import io
 import json
 import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 
 SCHEMA = "rc6.lossless-json-storage.v1"
 CODEC = "GZIP_CANONICAL_ASCII_JSON_V1"
@@ -213,7 +215,7 @@ class PreparedStorage:
         return result, logical_hash
 
 
-def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=None):
+def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=None, _pipeline_hash=False):
     if (set(value) != {"schema", "codec", "payload", "logical_bytes", "logical_sha256", "storage_sha256"}
             or value["codec"] != CODEC or not isinstance(value["payload"], str)
             or type(value["logical_bytes"]) is not int or not 0 <= value["logical_bytes"] <= expansion_limit
@@ -241,6 +243,13 @@ def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=No
     if accumulator.hexdigest() != value["storage_sha256"]:
         raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
     accumulator, size, output = hashlib.sha256(), 0, io.BytesIO() if retain else None
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rc6-shadow-sha") if _pipeline_hash and not retain else None
+    pending_hashes = deque()
+    hash_parts, hash_size = [], 0
+    def hashed(raw):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise ValueError("SHADOW_PROJECTION_QUERY_DEADLINE")
+        accumulator.update(raw)
     try:
         cursor, pending = 0, b""
         stream = zlib.decompressobj(wbits=31)
@@ -259,20 +268,41 @@ def _storage_bytes(value, *, durable_limit, expansion_limit, retain, deadline=No
             size += len(raw)
             if size > expansion_limit or size > value["logical_bytes"]:
                 raise ValueError("SHADOW_STORAGE_EXPANSION_CAPACITY_REACHED")
-            accumulator.update(raw)
+            if executor is None:
+                accumulator.update(raw)
+            else:
+                if raw:
+                    hash_parts.append(raw); hash_size += len(raw)
+                if hash_size >= 1024**2 or len(hash_parts) >= 64:
+                    # Batch tiny framing members without changing stream
+                    # order; no more than two two-MiB batches are in flight.
+                    combined = hash_parts[0] if len(hash_parts) == 1 else b"".join(hash_parts)
+                    pending_hashes.append(executor.submit(hashed, combined))
+                    hash_parts.clear(); hash_size = 0
+                    if len(pending_hashes) >= 2:
+                        pending_hashes.popleft().result()
             if output is not None: output.write(raw)
+        if hash_parts:
+            pending_hashes.append(executor.submit(hashed, b"".join(hash_parts)))
+            hash_parts.clear()
+        while pending_hashes:
+            pending_hashes.popleft().result()
     except (OSError, EOFError, zlib.error) as error:
         raise ValueError("SHADOW_STORAGE_GZIP_INVALID") from error
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=True)
     if size != value["logical_bytes"] or accumulator.hexdigest() != value["logical_sha256"]:
         raise ValueError("SHADOW_STORAGE_LOGICAL_DIGEST_MISMATCH")
     return output.getvalue() if output is not None else None
 
 
-def verify_storage_wire(value, *, durable_limit, expansion_limit, deadline=None):
+def verify_storage_wire(value, *, durable_limit, expansion_limit, deadline=None, _pipeline_hash=False):
     """CRC+canonical-byte SHA without materializing expanded logical JSON."""
     if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         raise ValueError("SHADOW_STORAGE_CONTRACT_INVALID")
-    _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=False, deadline=deadline)
+    _storage_bytes(value, durable_limit=durable_limit, expansion_limit=expansion_limit, retain=False, deadline=deadline,
+                   _pipeline_hash=_pipeline_hash)
     return {"payload_digest": value["logical_sha256"], "logical_bytes": value["logical_bytes"], "storage_schema": SCHEMA}
 
 
