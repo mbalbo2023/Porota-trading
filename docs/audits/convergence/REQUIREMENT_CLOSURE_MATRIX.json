@@ -74,6 +74,30 @@
     },
     {
       "code_paths": [
+        "Dockerfile",
+        "ops/policy/rc6-supply-chain-v1.json",
+        "requirements.build.lock.txt",
+        "requirements.lock.txt",
+        "scripts/porota_dependency_repro_audit.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/convergence/sre-u29-native-metadata-guard.json",
+      "fix": "Count every native distribution record and reject duplicate normalized names before approving the hash-locked installed closure.",
+      "id": "NEW_INSTALLED_DISTRIBUTION_METADATA_DUPLICATE",
+      "linked_requirement_ids": [
+        "U29"
+      ],
+      "native_caller": "importlib.metadata.distributions -> installed_distribution_audit -> supply-chain closure approval.",
+      "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
+      "rca": "The native metadata auditor collapsed duplicate or normalized-equivalent distributions into a dictionary, approving157 unique names despite158 installed metadata records.",
+      "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure"
+      ],
+      "workstream": "SRE"
+    },
+    {
+      "code_paths": [
         "cv_history_store_adapter_hf6.py",
         "cu_history_store_v2_hf6.py",
         "ea_history_close_series_hf2.py"
@@ -1916,6 +1940,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1953,6 +1978,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -1990,6 +2016,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2027,6 +2054,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2064,6 +2092,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2101,6 +2130,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2138,6 +2168,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2176,6 +2207,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2213,6 +2245,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2250,6 +2283,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2288,6 +2322,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2325,6 +2360,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2356,12 +2392,15 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -2371,6 +2410,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2416,6 +2456,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2454,6 +2495,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2492,6 +2534,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2530,6 +2573,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2568,6 +2612,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2606,6 +2651,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2646,6 +2692,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2684,6 +2731,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2717,6 +2765,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
@@ -2728,6 +2777,8 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -2737,6 +2788,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2770,6 +2822,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
@@ -2781,6 +2834,8 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -2790,6 +2845,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2830,6 +2886,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2868,6 +2925,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2899,7 +2957,17 @@
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_513_files_never_deleted_without_ack_and_shadow_degrades",
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
@@ -2914,6 +2982,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2953,6 +3022,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -2992,6 +3062,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3032,6 +3103,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3062,6 +3134,13 @@
       "rca": "ACK autoafirmado/URI inexistente",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
       ],
@@ -3072,6 +3151,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3112,6 +3192,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3154,6 +3235,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3193,6 +3275,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3234,6 +3317,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3264,7 +3348,17 @@
       "rca": "caller real sin archivo",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
@@ -3279,6 +3373,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
@@ -3309,6 +3404,16 @@
       "rca": "ACK ledger post-rotaci\u00f3n",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
       ],
@@ -3682,6 +3787,26 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/ORIGINAL_BUDGET_C27_REPLAY.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/ORIGINAL_BUDGET_C27_REPLAY.md": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
     "docs/audits/convergence/ORIGINAL_INPUT_DIGESTS.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -3853,6 +3978,66 @@
         "AUD-468-20",
         "AUD-468-21",
         "U24"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_A_F01_F02.md": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_C_FINANCE_FUTURES_HISTORY.md": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_D_E_RISK_DATA.md": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/u01-original-driver.py.source": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
+      ]
+    },
+    "docs/audits/convergence/evidence/original-budget-c27/u07-original-driver.py.source": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U01",
+        "U02",
+        "U05",
+        "U07",
+        "U27"
       ]
     },
     "docs/audits/convergence/evidence/original-closure-rebinding-green.xml": {
@@ -4167,6 +4352,42 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/sre-large-open-health-59481b3e.json": {
+      "reason": "Preserve raw native child-health, full wire/projection and typed configuration validation of the intermediate large OPEN cut, with source/custody unchanged and final operational configuration explicitly pending.",
+      "requirement_ids": [
+        "U13"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-large-open-health-probe-59481b3e.txt": {
+      "reason": "Preserve the exact independent read-only intermediate large OPEN health probe; this is no substitute for final canonical factory/launcher health.",
+      "requirement_ids": [
+        "U13"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-u29-native-metadata-baseline-auditor.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-u29-native-metadata-duplicate-green.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-u29-native-metadata-duplicate-red.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/scenario-guards-sre.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -4181,6 +4402,230 @@
         "U11",
         "U25",
         "U29"
+      ]
+    },
+    "docs/audits/convergence/sre-large-open-health.json": {
+      "reason": "Preserve the measured native four-role OPEN health composition below two seconds for exact intermediate59481b3e; explicit fixture configuration differs from the operational factory, whose final frozen health gate remains pending.",
+      "requirement_ids": [
+        "U13"
+      ]
+    },
+    "docs/audits/convergence/sre-u29-native-metadata-guard.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/README.md": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/U14-full-tick-horizon.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/U15-bounded-archive-cycles.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive.run.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/checkpoint_native_evidence.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/horizon.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/horizon.run.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/native_large_18e_two_ticks_complete.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/native_normal1200_732b_four_ticks_archive_measurement.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/native_normal1200_archive_measurement_probe.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/rejected_eager_wire_start_diagnostic.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/targeted.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/targeted.run.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
       ]
     },
     "docs/audits/rc6_convergence_finance/acceptance_review.md": {
@@ -4820,6 +5265,45 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-gate-wrapper-59481b3e.py": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives-with-custody.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -5028,6 +5512,292 @@
         "UX470-I05"
       ]
     },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-red-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-red-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-red-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-source-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-source-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-browser-source-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-first-cut-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-post-custody-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-post-custody-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-preflight-diagnostic-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-producer-18e9716d.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-source-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-source-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-reader-source-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-source-index-59481b3e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-source-index-88df8503.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/native-large-source-index-af71ff9e.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
     "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
@@ -5042,6 +5812,149 @@
       ]
     },
     "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-rca.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-native-product-red-local-receipt.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-0f810c16.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-index-0f810c16.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-source-0f810c16.json": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-annual-history-concept.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-en-vivo-posiciones.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-en-vivo.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-home.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-riesgo-exposicion.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-riesgo-liquidez.html": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/original-red-riesgo-posiciones.html": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -5133,6 +6046,45 @@
       ]
     },
     "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json": {
       "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
       "requirement_ids": [
         "AUD-468-14",
@@ -5330,6 +6282,21 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/ORIGINAL_AUD20_AUD21_REVIEW.md": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/canonical_initialization_native.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -5435,6 +6402,111 @@
         "U24"
       ]
     },
+    "rc6_audit_evidence/history_convergence/original_data912_c27dfd9_replay.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_issue468/adversarial_candidate.json.source": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_issue468/adversarial_harness.py.source": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_issue468/adversarial_prod.json.source": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_issue468/history_audit.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_issue468/member_inventory.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/original_prior_evidence_binding.json": {
+      "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
+      "requirement_ids": [
+        "AUD-468-06",
+        "AUD-468-07",
+        "AUD-468-09",
+        "AUD-468-10",
+        "AUD-468-11",
+        "AUD-468-12",
+        "AUD-468-18",
+        "AUD-468-20",
+        "AUD-468-21",
+        "U24"
+      ]
+    },
     "rc6_audit_evidence/history_convergence/owned_exact_node_matrix.json": {
       "reason": "Preserve production contract/history callers and preopen fail-closed semantics; full identity, explicit series bases, source clocks, reentrant attempt ledgers and private coherent snapshots replace ambiguous or mutable source behavior.",
       "requirement_ids": [
@@ -5463,6 +6535,13 @@
         "AUD-468-20",
         "AUD-468-21",
         "U24"
+      ]
+    },
+    "rc6_audit_evidence/history_convergence/probes/original_data912_archive_probe.py": {
+      "reason": "Replay original Data912 and15 declared native history-store controls against the intact c27 archive, restrict SQLite to explicit isolated fixtures before opening and preserve dated coverage as historical observability evidence rather than a current READY contract.",
+      "requirement_ids": [
+        "AUD-468-20",
+        "AUD-468-21"
       ]
     },
     "rc6_audit_evidence/history_convergence/red_baseline.json": {
@@ -5683,6 +6762,15 @@
         "U27"
       ]
     },
+    "rc6_shadow_runtime/archive_namespace.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18",
+        "U28"
+      ]
+    },
     "rc6_shadow_runtime/entry_signals.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -5711,10 +6799,17 @@
     "rc6_shadow_runtime/persistence.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
+        "U04",
+        "U13",
         "U14",
+        "U15",
         "U17",
         "U20",
-        "U21"
+        "U21",
+        "U28",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03"
       ]
     },
     "rc6_shadow_runtime/preopen.py": {
@@ -5747,9 +6842,11 @@
     "rc6_shadow_runtime/retention.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
+        "U14",
         "U15",
         "U18",
-        "U19"
+        "U19",
+        "U28"
       ]
     },
     "rc6_shadow_runtime/serialization.py": {
@@ -5763,14 +6860,21 @@
         "U19",
         "U20",
         "U21",
-        "U26"
+        "U26",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03"
       ]
     },
     "rc6_shadow_runtime/worker.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
+        "U04",
+        "U13",
         "U14",
-        "U16"
+        "U15",
+        "U16",
+        "U28"
       ]
     },
     "rc6_signal_contracts.py": {
@@ -6126,6 +7230,23 @@
         "AUD-468-21"
       ]
     },
+    "tests/ci_rc6_exact_archive_gate.py": {
+      "reason": "Run read-only UX probes in an intact Git archive with no overlays, repository import and network boundaries, full source/custody before-after checks even on failure, and preserved partial failure traces. This wrapper is evidence infrastructure, not a positive browser receipt.",
+      "requirement_ids": [
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
+        "UX470-I05"
+      ]
+    },
+    "tests/ci_rc6_original_ux_product_red.py": {
+      "reason": "Replay original native same-cut position visibility and annual concept/source-cut-identity omissions from the exact supplied seed; preserve the two original clauses without relabeling AUD16 as Greeks or inventing a financial authority failure.",
+      "requirement_ids": [
+        "AUD-468-16",
+        "UX470-I04"
+      ]
+    },
     "tests/ci_rc6_projection_large_browser.py": {
       "reason": "Execute the independent read-only browser gate for the canonical12000/60000 monofamily OPEN producer cut, with four-role custody and the complete route/alias/resolution/focus/pagination checks. Native small/PRE cuts are rejected; source review is not a positive browser execution.",
       "requirement_ids": [
@@ -6169,6 +7290,14 @@
       "reason": "Preserve exact supplied original economics driver bytes for the independent pinned-archive binding-admission replay; no new scenario or assertion replacement.",
       "requirement_ids": [
         "U06"
+      ]
+    },
+    "tests/probes/rc6_budget_original_c27_replay.py": {
+      "reason": "Replay the unchanged original budget/advisory probes and declared native slow/fast/global-demand callers against intact c27, with exact source/import/network/SQLite boundaries and explicit synthetic/modeled evidence scope.",
+      "requirement_ids": [
+        "U01",
+        "U07",
+        "U27"
       ]
     },
     "tests/probes/rc6_convergence_finance_probe.py": {
@@ -6410,6 +7539,15 @@
         "AUD-468-04"
       ]
     },
+    "tests/test_rc6_archive_namespace.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U18",
+        "U28"
+      ]
+    },
     "tests/test_rc6_budget_receipt_retention.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -6494,6 +7632,8 @@
     "tests/test_rc6_convergence_persistence.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
+        "U04",
+        "U13",
         "U14",
         "U15",
         "U16",
@@ -6502,7 +7642,8 @@
         "U19",
         "U20",
         "U21",
-        "U26"
+        "U26",
+        "U28"
       ]
     },
     "tests/test_rc6_convergence_provenance.py": {
@@ -6682,7 +7823,10 @@
       "requirement_ids": [
         "U17",
         "U20",
-        "U21"
+        "U21",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03"
       ]
     },
     "tests/test_rc6_future_programming_complete.py": {
@@ -7387,7 +8531,7 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "Historia actual, candles, snapshots, decisiones y fills pod\u00edan confluir por ticker o freshness del panel. Revisi\u00f3n/retry/currency/base y captura at\u00f3mica requieren clocks y fuentes propios.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; Clocks fuente/known_at se verifican al signal, costos al admission, capture al recorded y commit posterior. Freshness del panel no prueba input usado por el motor.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; Clocks fuente/known_at se verifican al signal, costos al admission, capture al recorded y commit posterior. Freshness del panel no prueba input usado por el motor.; RED nativo original demuestra la subcl\u00e1usula conceptual de presentaci\u00f3n history; no atribuye lookahead binding ni reproduce todas las cinco superficies por s\u00ed solo. Calendar date no es cut de conocimiento.",
       "test_nodes": [
         "tests/test_rc6_analysis_bounded_render.py::test_analysis_identity_selector_is_family_scoped",
         "tests/test_rc6_dashboard_convergence.py::test_historical_revisions_currency_basis_and_retry_clocks_are_causal",
@@ -7681,6 +8825,8 @@
     {
       "code_paths": [
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -7698,6 +8844,9 @@
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
       "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched.",
       "test_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
@@ -7971,6 +9120,8 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
@@ -7989,6 +9140,9 @@
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
       "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_sre_health.py::test_actual_dead_process_rejects_fresh_scanner_and_fresh_generation",
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
@@ -8016,14 +9170,16 @@
     {
       "code_paths": [
         "rc6_dynamic_universe/live.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
+        "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Default8192/128MiB m\u00e1s horizonte y pico recursivo medidos; freeze exact-close failclosed.",
+      "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
+      "fix": "Generation lifecycle/ACK/recovery and8192/128MiB live bounds implemented; canonical private512MiB archive wired and fingerprinted; native normal1200 archive sustainability requires further lossless storage correction and nine-hour proof.",
       "id": "U14",
       "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
       "original_requirement": {
@@ -8035,9 +9191,19 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.; Material native acceptance remains RED: normal1200 nine-hour archive cost exceeds512MiB (U14), and large native browser requests can exceed the unchanged one-second deadline (UX). Intermediate green structural guards do not close these gates.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
@@ -8049,9 +9215,12 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
-        "rc6_shadow_runtime/serialization.py"
+        "rc6_shadow_runtime/serialization.py",
+        "rc6_shadow_runtime/worker.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Checkpoint externo, cadena de receipts reales, compact s\u00f3lo tras inclusi\u00f3n/verificaci\u00f3n; retry ACK viejo tras avance no rewinds.",
@@ -8068,6 +9237,16 @@
       "rca": "ACKs durables se acumulaban dentro de livequota.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
       ],
@@ -8126,18 +9305,22 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py"
@@ -8157,6 +9340,13 @@
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
       ],
@@ -8249,6 +9439,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
@@ -8260,6 +9451,8 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -8438,7 +9631,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Natural caller producing duplicate reports was not demonstrated; public-API duplicate cardinality and failclosed guards are demonstrated; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts",
         "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
@@ -8483,6 +9676,10 @@
         ".github/workflows/porota-deploy-v2-promote.yml",
         "ops/policy/rc6-disk-housekeeping-v1.json",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/retention.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_deploy_scoped_cleanup.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
@@ -8501,6 +9698,16 @@
       "rca": "Unificar documentaci\u00f3n de disco con autorizaci\u00f3n din\u00e1mica+2 GiB.",
       "remaining_uncertainty": "Formula image tar+exact unpacked image+2*bundle+2GiB residual; zero arbitrary pretransfer floor. No global prune, foreign-container inspection, DB/shared-cache mutation.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
         "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
         "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
@@ -8555,6 +9762,7 @@
         "tests/test_rc6_convergence_provenance.py::test_new_integration_findings_require_unique_ids_real_guards_and_original_parent",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_installed_closure_distinguishes_extra_transitives_and_build_tools",
+        "tests/test_rc6_convergence_sre_supply_cleanup.py::test_native_distribution_metadata_duplicates_cannot_hide_behind_normalized_closure",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_real_checked_in_supply_chain_policy_and_platform_lock_are_green",
         "tests/test_rc6_convergence_sre_supply_cleanup.py::test_supply_chain_drift_fails_closed"
       ],
@@ -8562,7 +9770,9 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
+        "rc6_shadow_runtime/serialization.py",
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/projection.py",
@@ -8570,7 +9780,7 @@
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I01",
       "native_caller": "rc6_shadow_runtime.persistence.shadow_evidence_root; rc6_shadow_runtime.persistence.read_committed_generation; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
@@ -8583,16 +9793,24 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "La UX aislada derivaba db+'.shadow', diferente de artifact_root(db)/dynamic-shadow del writer; esto ocultaba generaciones reales. El reader deb\u00eda verificar V2 y todos sus roles, sin fallback por mtime.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.; 47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.; Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending.; Material native acceptance remains RED: normal1200 nine-hour archive cost exceeds512MiB (U14), and large native browser requests can exceed the unchanged one-second deadline (UX). Intermediate green structural guards do not close these gates.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
         "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -8607,7 +9825,9 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
+        "rc6_shadow_runtime/serialization.py",
         "rc6_trader_dashboard/components.py",
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/projected_generation.py",
@@ -8616,7 +9836,7 @@
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I02",
       "native_caller": "rc6_dynamic_universe.promotion.DEFAULT_POLICY; capacity_policy; engines[*].exit_capacity_contract; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
@@ -8629,16 +9849,19 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "Labels y campos del adapter no coincid\u00edan con OFF_BASELINE/SHADOW_BASELINE, baseline_limits y slots_by_endpoint. Una recomendaci\u00f3n SHADOW no representa capacidad OPEN factual.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; APPROVED_DYNAMIC declara config aprobada; OPEN requiere evidencia factual fresca, demanda EXIT cubierta y contrato verificado del productor.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; APPROVED_DYNAMIC declara config aprobada; OPEN requiere evidencia factual fresca, demanda EXIT cubierta y contrato verificado del productor.; Material native acceptance remains RED: normal1200 nine-hour archive cost exceeds512MiB (U14), and large native browser requests can exceed the unchanged one-second deadline (UX). Intermediate green structural guards do not close these gates.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
         "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -8649,7 +9872,9 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
+        "rc6_shadow_runtime/serialization.py",
         "rc6_trader_dashboard/datasets.py",
         "rc6_trader_dashboard/projected_generation.py",
         "rc6_trader_dashboard/projection.py",
@@ -8660,7 +9885,7 @@
         "tests/ci_rc6_projection_large_reader.py",
         "tests/test_rc6_dashboard_projection.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I03",
       "native_caller": "rc6.runtime-entry-signals.v1; rc6.runtime-shadow-lab.v2; rc6.prospective-operational-funnel.v1; RC6_SHADOW_FAMILY_RUNTIME_V2; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
@@ -8673,18 +9898,26 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "La UX buscaba rows/families/evaluations/registry y funnel.counts; el productor nativo publica experiments/cohorts/registries, entries y cohortes por moneda/canal. Los datasets presentes aparentaban vac\u00edo y los counts ten\u00edan scopes distintos.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.; 47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.; Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending.; Material native acceptance remains RED: normal1200 nine-hour archive cost exceeds512MiB (U14), and large native browser requests can exceed the unchanged one-second deadline (UX). Intermediate green structural guards do not close these gates.",
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_cohort_selection_is_exact_and_cards_match_widget",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_pagination_preserves_selection_and_full_population",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
         "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -8730,6 +9963,8 @@
         "rc6_trader_dashboard/generation.py",
         "rc6_trader_dashboard/projected_generation.py",
         "scripts/rc6_dashboard_route_inventory.py",
+        "tests/ci_rc6_exact_archive_gate.py",
+        "tests/ci_rc6_original_ux_product_red.py",
         "tests/ci_rc6_projection_large_browser.py",
         "tests/ci_rc6_projection_large_reader.py",
         "tests/ci_trader_terminal_browser.py",
@@ -8739,7 +9974,7 @@
         "tests/test_rc6_projection_large_browser.py",
         "tests/test_rc6_projection_source_guard.py"
       ],
-      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Consume verified same-cut native producer contracts and explicit family semantics in every approved route.",
       "id": "UX470-I05",
       "native_caller": "PaperBroker.on_quote; FamilyPaperExecutor; ShadowRuntime.from_environment.tick; read_committed_generation V2; SRE source/mount/image SHA-tree guard; read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody",
@@ -8752,7 +9987,7 @@
       },
       "owner_mapping": "docs/dashboard/evidence/rc6-convergence-ux/id-test-mapping.json",
       "rca": "GREEN de #470 y su truth matrix aislada usaban un contrato sint\u00e9tico; no probaban el productor\u2192reader\u2192UI real ni igualdad del hook, paquete e imagen. Un checkpoint l\u00f3gico grande tambi\u00e9n exige lectura verificada acotada y medici\u00f3n real.",
-      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.; El artefacto nativo completo 12000/60000 y render/consulta \u22641 s, salida \u22644 MiB siguen pendientes; fixture peque\u00f1o y SQL aislado no los cierran.; El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica cat\u00e1logos mixtos generales.",
+      "remaining_uncertainty": "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.; El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.; El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica cat\u00e1logos mixtos generales.; Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; m\u00e1ximo0.993331s. Browser posterior RED y diagn\u00f3stico1.118113s: la aceptaci\u00f3n grande permanece abierta. InputDB60000, returned20000/truncated expl\u00edcito; no claim60000 procesados.; af71ff9e es checkout intermedio ra\u00edz3d+commits exactos40f/ab; no modifica la rama ra\u00edz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN.; 47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.; Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending.; Material native acceptance remains RED: normal1200 nine-hour archive cost exceeds512MiB (U14), and large native browser requests can exceed the unchanged one-second deadline (UX). Intermediate green structural guards do not close these gates.",
       "test_nodes": [
         "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
@@ -8761,6 +9996,11 @@
         "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
         "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
         "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
         "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
         "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
@@ -8862,6 +10102,8 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
@@ -10936,6 +12178,8 @@
     {
       "code_paths": [
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
@@ -10964,6 +12208,9 @@
       "rca": "Propagar/validar las seis variables y paths de dynamic capacity desde launcher can\u00f3nico.",
       "remaining_uncertainty": "Container argv captured at actual launcher call sites; no production container launched.",
       "test_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
         "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
         "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary",
@@ -10991,6 +12238,8 @@
       "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "porota_mode_manager.py",
+        "rc6_shadow_runtime/persistence.py",
+        "rc6_shadow_runtime/worker.py",
         "scripts/rc6_shadow_health_gate.py",
         "scripts/rc6_sqlite_scratch_guard.py"
       ],
@@ -11020,6 +12269,9 @@
       "rca": "Gate de salud can\u00f3nico contempla child SHADOW y \u00faltima generaci\u00f3n v\u00e1lida/fresca.",
       "remaining_uncertainty": "Real V2 worker/reader on isolated fixture; health record fixture and actual dead PID subprocess. Parent-owned supervisor producer tested separately. No PPI calls/source writes. PREOPEN/CLOSED nonoperational; provider OPEN capacity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_sre_health.py::test_actual_dead_process_rejects_fresh_scanner_and_fresh_generation",
         "tests/test_rc6_convergence_sre_health.py::test_adversarial_health_or_generation_drift_rejects",
         "tests/test_rc6_convergence_sre_health.py::test_fresh_scanner_and_generation_cannot_hide_shadow_child_failure",
@@ -11123,12 +12375,15 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -11171,6 +12426,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_projection_verifies_both_roles_concurrently_and_joins_before_success_or_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
         "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
@@ -11182,6 +12438,8 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
+        "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys"
       ],
       "workstream": "PERSISTENCE"
@@ -11216,7 +12474,7 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Natural caller producing duplicate reports was not demonstrated; public-API duplicate cardinality and failclosed guards are demonstrated; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts",
         "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
@@ -11266,6 +12524,7 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py"
@@ -11296,6 +12555,13 @@
       "rca": "ACK autoproclamado autorizaba deletion sin bytes archivados.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_convergence_persistence.py::test_u18_invalid_inaccessible_or_replayed_receipt_never_authorizes_deletion",
         "tests/test_rc6_convergence_persistence.py::test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rotation"
       ],
@@ -11342,14 +12608,16 @@
     {
       "code_paths": [
         "rc6_dynamic_universe/live.py",
+        "rc6_shadow_runtime/archive_namespace.py",
         "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
+        "rc6_shadow_runtime/retention.py",
         "rc6_shadow_runtime/serialization.py",
         "rc6_shadow_runtime/worker.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
-      "fix": "Default8192/128MiB m\u00e1s horizonte y pico recursivo medidos; freeze exact-close failclosed.",
+      "fix": "Generation lifecycle/ACK/recovery and8192/128MiB live bounds implemented; canonical private512MiB archive wired and fingerprinted; native normal1200 archive sustainability requires further lossless storage correction and nine-hour proof.",
       "id": "R62",
       "linked_requirement": "U14",
       "native_caller": "ShadowRuntime.tick / EvidenceFiles.commit_generation+read_generation / EvidenceRetention APIs, synthetic PAPER/offline actual syscall faults",
@@ -11372,9 +12640,19 @@
       },
       "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
-      "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
+      "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
         "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
@@ -11386,9 +12664,12 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/archive_namespace.py",
+        "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
-        "rc6_shadow_runtime/serialization.py"
+        "rc6_shadow_runtime/serialization.py",
+        "rc6_shadow_runtime/worker.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Checkpoint externo, cadena de receipts reales, compact s\u00f3lo tras inclusi\u00f3n/verificaci\u00f3n; retry ACK viejo tras avance no rewinds.",
@@ -11416,6 +12697,16 @@
       "rca": "ACKs durables se acumulaban dentro de livequota.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
+        "tests/test_rc6_archive_namespace.py::test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated",
+        "tests/test_rc6_archive_namespace.py::test_invalid_policy_is_rejected_before_opening_namespace",
+        "tests/test_rc6_archive_namespace.py::test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace",
+        "tests/test_rc6_archive_namespace.py::test_namespace_mutation_during_admission_is_rejected",
+        "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
+        "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_convergence_persistence.py::test_archive_environment_policy_rejects_malformed_or_increased_bounds_before_creating_outputs",
+        "tests/test_rc6_convergence_persistence.py::test_archive_resolver_rejects_input_output_overlap_and_all_root_ancestor_aliases",
+        "tests/test_rc6_convergence_persistence.py::test_native_environment_factory_configures_private_archive_and_fingerprint_recovery_tracks_effective_path_and_quota",
         "tests/test_rc6_convergence_persistence.py::test_u15_sigkill_before_ack_then_new_archive_regenerates_old_ack_without_rewinding_chain",
         "tests/test_rc6_convergence_persistence.py::test_u15_two_thousand_commits_archive_rotate_restart_and_bounded_checkpoint_preserve_receipt_chain"
       ],
@@ -12031,6 +13322,6 @@
   ],
   "schema": "rc6.convergence-closure.v1",
   "software_scope": "PAPER_SHADOW_OFFLINE; no runtime, real provider capacity or economic edge attestation",
-  "status": "DEVELOPED_REQUIRES_FINAL_FROZEN_EXECUTION",
+  "status": "IN_PROGRESS_WITH_MATERIAL_RESOURCE_BLOCKERS",
   "unexplained_paths": []
 }
