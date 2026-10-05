@@ -15,6 +15,13 @@ import stat
 import subprocess
 import xml.etree.ElementTree as ET
 
+try:
+    from scripts import rc6_convergence_provenance as convergence
+except ModuleNotFoundError as error:
+    if error.name != "scripts":
+        raise
+    import rc6_convergence_provenance as convergence
+
 MATRIX = "docs/audits/ISSUE465_REAUDIT.json"
 REPORT = "docs/audits/ISSUE465_REAUDIT_ORIGINAL_REPORT.md"
 REQUIRED = {"F-01", "F-02", "F-03", "F-04", "F-05", "E", "F", "G", "FULL-REGRESSION"} | {
@@ -31,6 +38,7 @@ ORIGINAL_AUTHORITY = {
     "rejected_head": "caf9bc94b4a1f436ad01a84a9e9e9e7a4a9e9423",
     "rejected_tree": "f1712a72cb49435c4403145bb38d98c4006f8f07",
 }
+CONVERGENCE_BASELINE = "c27dfd963c4fe83465c0f2105347e974fbbe6356"
 
 
 class AuditGateError(ValueError):
@@ -50,10 +58,11 @@ def _pairs(items):
     return result
 
 
-def load(path):
+def load(path, *, raw=False):
     require(path.is_file() and not path.is_symlink(), "MISSING_OR_ALIASED_INPUT")
     require(path.stat().st_size <= 4 * 1024**2, "INPUT_SIZE_BOUND")
-    return json.loads(path.read_bytes(), object_pairs_hook=_pairs)
+    data = path.read_bytes()
+    return data if raw else json.loads(data, object_pairs_hook=_pairs)
 
 
 def git(root, *args):
@@ -70,10 +79,91 @@ def _safe_node(value):
     return path, function
 
 
+def _source_record(root, revision, path):
+    record = git(root, "ls-tree", revision, "--", path)
+    metadata, separator, name = record.partition("\t")
+    fields = metadata.split()
+    require(separator and name == path and len(fields) == 3 and fields[1] == "blob"
+            and fields[0] in {"100644", "100755"}, "FRONT_SOURCE_RECORD_INVALID")
+    return {"blob": fields[2], "git_mode": fields[0]}
+
+
+def _original_convergence_authority(root, candidate_sha, matrix_blob):
+    # The earlier seven frozen front records and all of their coverage remain
+    # immutable authority. A successor cannot rewrite the rejected audit.
+    for path in (MATRIX, REPORT):
+        require(_source_record(root, candidate_sha, path) == _source_record(root, CONVERGENCE_BASELINE, path),
+                "CONVERGENCE_LEGACY_AUTHORITY_CHANGED:" + path)
+        require(git(root, "hash-object", "--no-filters", "--", path)
+                == _source_record(root, candidate_sha, path)["blob"],
+                "CONVERGENCE_LEGACY_AUTHORITY_DIRTY:" + path)
+    require(matrix_blob == _source_record(root, CONVERGENCE_BASELINE, MATRIX)["blob"],
+            "CONVERGENCE_LOADED_MATRIX_NOT_ORIGINAL")
+
+
+def _verified_successor(root, junit, governed, candidate_sha):
+    """Recompute the full convergence proof; never accept a supplied status file."""
+    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
+    require(bool(git(root, "ls-tree", candidate_sha, "--", manifest)),
+            "FRONT_BYTES_CHANGED_AFTER_FREEZE_WITHOUT_CONVERGENCE")
+    try:
+        result = convergence.verify(root, candidate_sha, junit)
+    except (convergence.ConvergenceError, KeyError, TypeError, OSError, ET.ParseError,
+            subprocess.SubprocessError) as error:
+        raise AuditGateError("CONVERGENCE_SUCCESSOR_NOT_VERIFIED") from error
+    require(result.get("schema") == "rc6.final-input-provenance.v1"
+            and result.get("software_status") == "EXECUTED_NATIVE_GREEN",
+            "CONVERGENCE_SUCCESSOR_NOT_EXECUTED")
+    require(result.get("candidate_sha") == candidate_sha
+            and result.get("candidate_tree") == git(root, "rev-parse", candidate_sha+"^{tree}"),
+            "CONVERGENCE_SUCCESSOR_SOURCE_MISMATCH")
+    execution = result.get("test_execution", {})
+    require(execution.get("junit_sha256") == junit.sha256
+            and execution.get("executed_unique_cases") == governed["executed"],
+            "CONVERGENCE_SUCCESSOR_EXECUTION_MISMATCH")
+    require(any(row.get("pr") == 466 and row.get("head_sha") == CONVERGENCE_BASELINE
+                for row in result.get("sources", [])), "CONVERGENCE_BASELINE_MISMATCH")
+    return result
+
+
+def _guarded_front_path(root, path, frozen, current, successor):
+    """Require exact old provenance plus executed native guards for this path."""
+    require(_source_record(root, CONVERGENCE_BASELINE, path) == frozen,
+            "FRONT_NOT_PRESERVED_AT_CONVERGENCE_BASELINE:" + path)
+    records = [row for row in successor.get("paths", []) if row.get("path") == path]
+    require(len(records) == 1, "CONVERGENCE_FRONT_PATH_MISSING_OR_DUPLICATE:" + path)
+    row = records[0]
+    require(row.get("final_blob") == current["blob"] and row.get("git_mode") == current["git_mode"]
+            and row.get("source_blobs", {}).get("466") == frozen["blob"]
+            and row.get("source_git_modes", {}).get("466") == frozen["git_mode"],
+            "CONVERGENCE_FRONT_SOURCE_MISMATCH:" + path)
+    require(row.get("preservation") == "EVOLVED_WITH_NATIVE_GUARDS"
+            and isinstance(row.get("evolution_reason"), str) and row["evolution_reason"].strip()
+            and bool(row.get("requirement_ids")) and bool(row.get("guard_nodes")),
+            "CONVERGENCE_FRONT_EVOLUTION_UNGUARDED:" + path)
+    requirements = {item["id"]: item for item in successor["requirements"]}
+    executions = {}
+    for identifier in row["requirement_ids"]:
+        require(identifier in requirements, "CONVERGENCE_FRONT_REQUIREMENT_INVALID:" + path)
+        requirement = requirements[identifier]
+        require(requirement.get("software_status") == "EXECUTED_NATIVE_GREEN",
+                "CONVERGENCE_FRONT_REQUIREMENT_NOT_EXECUTED:" + path)
+        for receipt in requirement.get("execution_receipts", []):
+            count = receipt.get("executed_cases")
+            require(type(count) is int and count > 0, "CONVERGENCE_FRONT_GUARD_NOT_EXECUTED:" + path)
+            executions[receipt["node"]] = count
+    require(all(node in executions for node in row["guard_nodes"]),
+            "CONVERGENCE_FRONT_GUARD_RECEIPT_MISSING:" + path)
+    return {"path": path, "frozen": frozen, "candidate": current,
+            "requirement_ids": row["requirement_ids"], "guard_nodes": row["guard_nodes"]}
+
+
 def verify(root: Path, junit: Path, governed: Path) -> dict:
     root = root.resolve(strict=True)
     matrix_path = root / MATRIX
-    matrix = load(matrix_path)
+    matrix_data = load(matrix_path, raw=True)
+    matrix_blob = hashlib.sha1(b"blob " + str(len(matrix_data)).encode() + b"\0" + matrix_data).hexdigest()
+    matrix = json.loads(matrix_data, object_pairs_hook=_pairs)
     require(matrix.get("schema") == "rc6.issue465-reaudit.v1", "MATRIX_SCHEMA")
     authority = matrix.get("authority", {})
     require(all(authority.get(key) == value for key, value in ORIGINAL_AUTHORITY.items()),
@@ -105,7 +195,11 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
     require(proof.get("exclusions") == matrix.get("governed_exclusions"), "EXCLUSION_POLICY_DRIFT")
     require(junit.is_file() and not junit.is_symlink() and junit.stat().st_size < 16*1024**2,
             "JUNIT_INPUT_BOUND")
-    tree = ET.parse(junit)
+    try:
+        junit_receipt = convergence.capture_junit(junit)
+    except (convergence.ConvergenceError, OSError) as error:
+        raise AuditGateError("JUNIT_INPUT_INVALID") from error
+    tree = ET.fromstring(junit_receipt.data)
     cases = list(tree.iter("testcase"))
     require(len(cases) == proof["executed"], "JUNIT_EXECUTED_MISMATCH")
     require(all(case.find(kind) is None for case in cases for kind in ("failure", "error", "skipped")),
@@ -158,6 +252,12 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
     streams = matrix.get("workstreams", [])
     require(isinstance(streams, list) and {item.get("id") for item in streams} == set("ABCDEFG") and
             len(streams) == 7, "INCOMPLETE_WORKSTREAM_PROVENANCE")
+    sha = git(root, "rev-parse", "HEAD")
+    manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
+    if git(root, "ls-tree", sha, "--", manifest):
+        _original_convergence_authority(root, sha, matrix_blob)
+    successor = None
+    evolved_fronts = []
     for stream in streams:
         require(stream.get("write_owner") == "RELEASED", "FRONT_WRITE_OWNER_NOT_RELEASED")
         head, tree_sha = stream.get("head", ""), stream.get("tree", "")
@@ -169,28 +269,36 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
         for path in paths:
             require(isinstance(path, str) and path and not path.startswith("/") and ".." not in Path(path).parts,
                     "UNSAFE_FRONT_PATH")
-            frozen_blob = git(root, "rev-parse", head+":"+path)
-            require(frozen_blob == git(root, "rev-parse", "HEAD:"+path),
-                    "FRONT_BYTES_CHANGED_AFTER_FREEZE:"+path)
+            frozen = _source_record(root, head, path)
+            current = _source_record(root, sha, path)
+            if frozen != current:
+                if successor is None:
+                    successor = _verified_successor(root, junit_receipt, proof, sha)
+                evolved_fronts.append({"workstream": stream["id"],
+                    **_guarded_front_path(root, path, frozen, current, successor)})
             source = root / path
             info = source.lstat()
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "FROZEN_DISK_ALIAS")
             for parent in source.parents:
                 if parent == root: break
                 require(not parent.is_symlink(), "FROZEN_DISK_PARENT_ALIAS")
-            require(git(root, "hash-object", "--no-filters", "--", path) == frozen_blob,
+            require(git(root, "hash-object", "--no-filters", "--", path) == current["blob"],
                     "FROZEN_DISK_BYTE_MISMATCH:"+path)
-            mode = git(root, "ls-tree", head, "--", path).split()[0]
-            require(bool(info.st_mode & 0o111) == (mode == "100755"), "FROZEN_DISK_MODE_MISMATCH")
-    sha = git(root, "rev-parse", "HEAD")
-    candidate_tree = git(root, "rev-parse", "HEAD^{tree}")
+            require(stat.S_IMODE(info.st_mode) == (0o755 if current["git_mode"] == "100755" else 0o644),
+                    "FROZEN_DISK_MODE_MISMATCH")
+    require(git(root, "rev-parse", "HEAD") == sha, "CANDIDATE_CHANGED_DURING_VERIFICATION")
+    candidate_tree = git(root, "rev-parse", sha+"^{tree}")
     return {"schema": "rc6.issue465-audit-gate.v1", "status": "GREEN",
             "candidate_sha": sha, "candidate_tree": candidate_tree,
-            "matrix_sha256": hashlib.sha256(matrix_path.read_bytes()).hexdigest(),
+            "matrix_sha256": hashlib.sha256(matrix_data).hexdigest(),
             "original_report_sha256": authority["original_report_sha256"],
             "governed_executed": proof["executed"], "required_test_functions_executed": len(tested_nodes),
             "findings": {row["id"]: row["state"] for row in rows},
             "workstream_heads": {stream["id"]: stream["head"] for stream in streams},
+            "front_preservation": "GUARDED_CONVERGENCE_SUCCESSOR" if successor else "EXACT_FROZEN_FRONTS",
+            "evolved_fronts": evolved_fronts,
+            "convergence_baseline": CONVERGENCE_BASELINE if successor else None,
+            "convergence_junit_sha256": successor["test_execution"]["junit_sha256"] if successor else None,
             "safety": safety, "independent_reaudit": "PENDING",
             "external_evidence": "NO_VERIFICADO"}
 

@@ -178,3 +178,123 @@ def test_malformed_governed_types_cannot_claim_green(evidence, field, value):
     persist()
     with pytest.raises(AuditGateError, match="GOVERNED"):
         verify(root, junit, governed)
+
+
+@pytest.fixture
+def controlled_successor(evidence, monkeypatch):
+    """Private verifier-result fixture; it does not attest real test execution."""
+    root, junit, governed, _, proof, _ = evidence
+    manifest = root / gate.convergence.INPUT_ROOT / gate.convergence.MANIFEST
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text('{"controlled_verifier_fixture": true}\n')
+    def commit():
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=Offline fixture",
+                        "-c", "user.email=offline@example.invalid", "commit", "-qm", "controlled successor"], check=True)
+        return gate.git(root, "rev-parse", "HEAD")
+    baseline = commit()
+    monkeypatch.setattr(gate, "CONVERGENCE_BASELINE", baseline)
+    path = "tests/test_evidence.py"
+    frozen = gate._source_record(root, baseline, path)
+    (root / path).write_text("def test_evidence():\n    assert 2 + 2 == 4\n")
+    current_sha = commit()
+    current = gate._source_record(root, "HEAD", path)
+    node = path + "::test_evidence"
+    result = {"schema": "rc6.final-input-provenance.v1", "software_status": "EXECUTED_NATIVE_GREEN",
+        "candidate_sha": current_sha, "candidate_tree": gate.git(root, "rev-parse", "HEAD^{tree}"),
+        "test_execution": {"junit_sha256": hashlib.sha256(junit.read_bytes()).hexdigest(),
+                           "executed_unique_cases": proof["executed"]},
+        "sources": [{"pr": 466, "head_sha": baseline}],
+        "requirements": [{"id": "U11", "software_status": "EXECUTED_NATIVE_GREEN",
+                          "execution_receipts": [{"node": node, "executed_cases": 1}]}],
+        "paths": [{"path": path, "final_blob": current["blob"], "git_mode": current["git_mode"],
+            "source_blobs": {"466": frozen["blob"]}, "source_git_modes": {"466": frozen["git_mode"]},
+            "preservation": "EVOLVED_WITH_NATIVE_GUARDS", "evolution_reason": "controlled native-parser fixture",
+            "requirement_ids": ["U11"], "guard_nodes": [node]}]}
+    calls = []
+    def recompute(actual_root, sha, xml):
+        calls.append((actual_root, sha, xml))
+        return result
+    monkeypatch.setattr(gate.convergence, "verify", recompute)
+    return root, junit, governed, result, calls, commit
+
+
+def test_guarded_successor_recomputes_proof_and_preserves_original_fronts(controlled_successor):
+    root, junit, governed, successor, calls, _ = controlled_successor
+    result = verify(root, junit, governed)
+    assert result["status"] == "GREEN"
+    assert result["front_preservation"] == "GUARDED_CONVERGENCE_SUCCESSOR"
+    assert len(calls) == 1 and calls[0][:2] == (root, result["candidate_sha"])
+    assert type(calls[0][2]) is gate.convergence.JunitReceipt
+    assert calls[0][2].data == junit.read_bytes()
+    assert len(result["evolved_fronts"]) == 7  # seven toy streams share one fixture path
+    assert result["convergence_junit_sha256"] == successor["test_execution"]["junit_sha256"]
+    assert result["independent_reaudit"] == "PENDING"
+    assert result["safety"]["deploy"] is False
+
+
+@pytest.mark.parametrize("attack", ["inventory_only", "wrong_sha", "wrong_tree", "wrong_junit",
+    "wrong_count", "wrong_baseline", "missing_path", "duplicate_path", "wrong_source_blob",
+    "wrong_source_mode", "wrong_final_blob", "wrong_final_mode", "empty_reason", "empty_requirement",
+    "invalid_requirement", "empty_guards", "unbound_guard", "unexecuted_requirement", "zero_cases",
+    "bool_cases", "no_execution_receipt", "legacy_matrix_rewrite", "legacy_report_rewrite",
+    "dirty_bytes", "dirty_executable_mode", "private_mode", "writable_mode"])
+def test_guarded_successor_cannot_bypass_source_authority_or_execution(controlled_successor, attack):
+    root, junit, governed, successor, _, commit = controlled_successor
+    row = successor["paths"][0]
+    requirement = successor["requirements"][0]
+    if attack == "inventory_only": successor["software_status"] = "INVENTORY_NOT_EXECUTED"
+    elif attack == "wrong_sha": successor["candidate_sha"] = "a" * 40
+    elif attack == "wrong_tree": successor["candidate_tree"] = "a" * 40
+    elif attack == "wrong_junit": successor["test_execution"]["junit_sha256"] = "a" * 64
+    elif attack == "wrong_count": successor["test_execution"]["executed_unique_cases"] = 2
+    elif attack == "wrong_baseline": successor["sources"][0]["head_sha"] = "a" * 40
+    elif attack == "missing_path": successor["paths"] = []
+    elif attack == "duplicate_path": successor["paths"].append(deepcopy(row))
+    elif attack == "wrong_source_blob": row["source_blobs"]["466"] = "a" * 40
+    elif attack == "wrong_source_mode": row["source_git_modes"]["466"] = "100755"
+    elif attack == "wrong_final_blob": row["final_blob"] = "a" * 40
+    elif attack == "wrong_final_mode": row["git_mode"] = "100755"
+    elif attack == "empty_reason": row["evolution_reason"] = " "
+    elif attack == "empty_requirement": row["requirement_ids"] = []
+    elif attack == "invalid_requirement": row["requirement_ids"] = ["UNRELATED"]
+    elif attack == "empty_guards": row["guard_nodes"] = []
+    elif attack == "unbound_guard": row["guard_nodes"] = ["tests/test_evidence.py::test_missing"]
+    elif attack == "unexecuted_requirement": requirement["software_status"] = "NOT_EXECUTED"
+    elif attack == "zero_cases": requirement["execution_receipts"][0]["executed_cases"] = 0
+    elif attack == "bool_cases": requirement["execution_receipts"][0]["executed_cases"] = True
+    elif attack == "no_execution_receipt": requirement["execution_receipts"] = []
+    elif attack == "legacy_matrix_rewrite":
+        (root / MATRIX).write_text((root / MATRIX).read_text() + "\n")
+        successor["candidate_sha"] = commit()
+    elif attack == "legacy_report_rewrite": (root / REPORT).write_bytes(b"rewritten authority\n")
+    elif attack == "dirty_bytes": (root / row["path"]).write_text("def test_evidence():\n    assert False\n")
+    elif attack == "dirty_executable_mode": (root / row["path"]).chmod(0o755)
+    elif attack == "private_mode": (root / row["path"]).chmod(0o600)
+    elif attack == "writable_mode": (root / row["path"]).chmod(0o666)
+    with pytest.raises(AuditGateError):
+        verify(root, junit, governed)
+
+
+def test_mode_only_successor_requires_the_same_guarded_evolution(controlled_successor):
+    root, junit, governed, successor, _, commit = controlled_successor
+    path = successor["paths"][0]["path"]
+    (root / path).write_bytes(subprocess.check_output([
+        "git", "-C", str(root), "show", gate.CONVERGENCE_BASELINE + ":" + path]))
+    (root / path).chmod(0o755)
+    successor["candidate_sha"] = commit()
+    successor["candidate_tree"] = gate.git(root, "rev-parse", "HEAD^{tree}")
+    successor["paths"][0]["git_mode"] = "100755"
+    successor["paths"][0]["final_blob"] = gate._source_record(root, "HEAD", path)["blob"]
+    result = verify(root, junit, governed)
+    assert result["status"] == "GREEN"
+    assert all(row["candidate"]["git_mode"] == "100755" for row in result["evolved_fronts"])
+
+
+def test_failure_of_full_native_provenance_is_blocking(controlled_successor, monkeypatch):
+    root, junit, governed, _, _, _ = controlled_successor
+    def reject(*args):
+        raise gate.convergence.ConvergenceError("controlled invalid original input")
+    monkeypatch.setattr(gate.convergence, "verify", reject)
+    with pytest.raises(AuditGateError, match="CONVERGENCE_SUCCESSOR_NOT_VERIFIED"):
+        verify(root, junit, governed)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+from dataclasses import dataclass
 import hashlib
 import io
 import json
@@ -130,10 +131,52 @@ def original_front_variants(f01_f02, f03_f05):
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class JunitReceipt:
+    """One immutable bounded byte snapshot shared by the native validators."""
+    data: bytes
+
+    def __post_init__(self):
+        require(type(self.data) is bytes and 0 < len(self.data) <= 16 * 1024**2,
+                "JUNIT_INPUT_INVALID")
+
+    @property
+    def sha256(self):
+        return hashlib.sha256(self.data).hexdigest()
+
+
+def capture_junit(junit):
+    if type(junit) is JunitReceipt:
+        return junit
+    require(isinstance(junit, Path), "JUNIT_INPUT_INVALID")
+    try:
+        descriptor = os.open(junit, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as error:
+        raise ConvergenceError("JUNIT_INPUT_INVALID") from error
+    try:
+        before = os.fstat(descriptor)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and 0 < before.st_size <= 16 * 1024**2, "JUNIT_INPUT_INVALID")
+        parts, size = [], 0
+        while True:
+            part = os.read(descriptor, min(64 * 1024, 16 * 1024**2 + 1 - size))
+            if not part:
+                break
+            parts.append(part)
+            size += len(part)
+            require(size <= 16 * 1024**2, "JUNIT_INPUT_INVALID")
+        after, location = os.fstat(descriptor), junit.lstat()
+        fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        require(all(getattr(before, field) == getattr(after, field) == getattr(location, field)
+                    for field in fields) and size == before.st_size, "JUNIT_CHANGED_DURING_CAPTURE")
+        return JunitReceipt(b"".join(parts))
+    finally:
+        os.close(descriptor)
+
+
 def executed_cases(junit):
-    require(junit.is_file() and not junit.is_symlink() and junit.stat().st_size <= 16 * 1024**2,
-            "JUNIT_INPUT_INVALID")
-    document = ET.parse(junit)
+    receipt = capture_junit(junit)
+    document = ET.fromstring(receipt.data)
     suites = list(document.iter("testsuite"))
     require(len(suites) == 1, "JUNIT_GOVERNED_SUITE_SHAPE")
     cases = list(document.iter("testcase"))
@@ -210,6 +253,8 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     require(re.fullmatch(r"[0-9a-f]{40}", candidate_sha) is not None, "CANDIDATE_SHA_INVALID")
     require(git(root, "rev-parse", "HEAD") == candidate_sha, "CANDIDATE_CHECKOUT_MISMATCH")
     require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
+    candidate_tree = git(root, "rev-parse", candidate_sha + "^{tree}")
+    junit_receipt = capture_junit(junit) if junit is not None else None
     final_tree = tree(root, candidate_sha)
     digest_index = read_json(committed_input(root, candidate_sha, "ORIGINAL_INPUT_DIGESTS.json"))
     require(set(digest_index["files"]) == set(ORIGINAL_DIGESTS), "ORIGINAL_INPUT_SET_CHANGED")
@@ -273,7 +318,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
         parsed = ast.parse(source, filename=filename)
         declared_guards.update(filename + "::" + node.name for node in parsed.body
                                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)))
-    executed, count = executed_cases(junit) if junit is not None else (None, None)
+    executed, count = executed_cases(junit_receipt) if junit_receipt is not None else (None, None)
     requirements = guard_rows(matrix["requirements"], REQUIREMENTS, final_tree, executed, declared_guards)
     scenarios = guard_rows(matrix["scenarios"], scenario_ids, final_tree, executed, declared_guards)
     front_variants = guard_rows(front_rows, FRONT_VARIANTS, final_tree, executed, declared_guards)
@@ -346,15 +391,17 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                       "preservation": "EVOLVED_WITH_NATIVE_GUARDS" if changed_expected or evolved_delta or new_or_changed_source and originals else
                           "ADDITIONAL_WITH_NATIVE_GUARDS" if new_or_changed_source else
                           "EXACT_INPUT_BYTES" if expected else "EXACT_BASELINE_OR_SOURCE_BYTES"})
+    require(git(root, "rev-parse", "HEAD") == candidate_sha, "CANDIDATE_CHANGED_DURING_VERIFICATION")
+    require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
     return {"schema": "rc6.final-input-provenance.v1", "candidate_sha": candidate_sha,
-            "candidate_tree": git(root, "rev-parse", "HEAD^{tree}"), "product": manifest["product"],
+            "candidate_tree": candidate_tree, "product": manifest["product"],
             "sources": source_reports, "source_union_paths": len(expected_sources),
             "expected_source_paths_preserved": len(expected_sources), "final_path_count": len(paths), "paths": paths,
             "requirements": requirements, "scenarios": scenarios, "original_scenarios": original_scenarios,
             "front_variants": front_variants,
             "restored_controls": restored_controls, "preserved_test_modules_344": legacy_tests,
             "additional_findings": additional_findings,
-            "test_execution": {"junit_sha256": hashlib.sha256(junit.read_bytes()).hexdigest() if junit else None,
+            "test_execution": {"junit_sha256": junit_receipt.sha256 if junit_receipt is not None else None,
                                "executed_unique_cases": count, "distinct_attack_ids": 80,
                                "distinct_requirement_ids": 55, "overlapping_suite_counts_added": False},
             "software_status": "INVENTORY_NOT_EXECUTED" if junit is None else "EXECUTED_NATIVE_GREEN",

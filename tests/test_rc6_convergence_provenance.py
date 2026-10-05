@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from scripts import rc6_convergence_provenance as provenance
+from scripts import rc6_issue465_audit_gate as audit465
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -180,6 +181,117 @@ def test_native_inventory_without_junit_cannot_claim_executed_guards(candidate):
     assert report["software_status"] == "INVENTORY_NOT_EXECUTED"
     assert report["test_execution"]["executed_unique_cases"] is None
     assert all(row["software_status"] == "NOT_EXECUTED" for row in report["requirements"])
+
+
+def prior_audit_parser_fixture(root, xml):
+    matrix = json.loads((root / audit465.MATRIX).read_bytes())
+    document = ET.parse(xml)
+    suite = document.find('.//testsuite')
+    existing = {(case.get('classname'), case.get('name')) for case in suite}
+    for finding in matrix['findings']:
+        for clause in finding['coverage']:
+            for binding in clause['tests']:
+                path, function = binding['node'].split('::')
+                classname = path[:-3].replace('/', '.')
+                for index in range(binding.get('minimum_cases', 1)):
+                    name = function + '[controlled-parser-' + str(index) + ']'
+                    if (classname, name) not in existing:
+                        ET.SubElement(suite, 'testcase', classname=classname, name=name, time='0')
+                        existing.add((classname, name))
+    count = len(list(suite))
+    suite.set('tests', str(count))
+    document.write(xml, encoding='utf-8', xml_declaration=True)
+    governed = root.parent / 'controlled-prior-audit-governed.json'
+    write_json(governed, {'scope': 'repository-root automatic pytest discovery', 'status': 'GREEN',
+        'pytest_exit_code': 0, 'executed': count, 'discovered': count, 'failures': 0, 'errors': 0,
+        'skipped': 0, 'xfail': 0, 'exclusions': matrix['governed_exclusions']})
+    return governed
+
+
+def test_prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit(candidate):
+    """Real original Git/authority and both validators; XML is a parser fixture."""
+    root, xml, _ = candidate
+    governed = prior_audit_parser_fixture(root, xml)
+    result = audit465.verify(root, xml, governed)
+    assert result['status'] == 'GREEN'
+    assert result['front_preservation'] == 'GUARDED_CONVERGENCE_SUCCESSOR'
+    assert result['convergence_baseline'] == 'c27dfd963c4fe83465c0f2105347e974fbbe6356'
+    assert len(result['workstream_heads']) == 7
+    assert result['evolved_fronts']
+    assert result['convergence_junit_sha256'] == hashlib.sha256(xml.read_bytes()).hexdigest()
+    assert result['safety']['deploy'] is False and result['independent_reaudit'] == 'PENDING'
+
+
+def test_rewritten_legacy_matrix_cannot_hide_evolved_fronts_behind_unchanged_paths(candidate):
+    root, xml, _ = candidate
+    governed = prior_audit_parser_fixture(root, xml)
+    path = root / audit465.MATRIX
+    matrix = json.loads(path.read_bytes())
+    for stream in matrix['workstreams']:
+        unchanged = [name for name in stream['paths']
+            if audit465._source_record(root, stream['head'], name)
+            == audit465._source_record(root, 'HEAD', name)]
+        assert unchanged
+        stream['paths'] = unchanged[:1]
+    write_json(path, matrix)
+    commit(root)
+    with pytest.raises(audit465.AuditGateError, match='CONVERGENCE_LEGACY_AUTHORITY_CHANGED'):
+        audit465.verify(root, xml, governed)
+
+
+def test_single_junit_snapshot_binds_parsed_cases_and_digest_despite_later_file_substitution(candidate, monkeypatch):
+    root, xml, _ = candidate
+    original = xml.read_bytes()
+    parse = provenance.executed_cases
+    def substitute(receipt):
+        assert type(receipt) is provenance.JunitReceipt
+        xml.write_bytes(original.replace(GUARD.split('::')[1].encode(), b'test_unexecuted_substitute'))
+        return parse(receipt)
+    monkeypatch.setattr(provenance, 'executed_cases', substitute)
+    result = provenance.verify(root, native_git(root, 'rev-parse', 'HEAD'), xml)
+    assert xml.read_bytes() != original
+    assert result['test_execution']['junit_sha256'] == hashlib.sha256(original).hexdigest()
+    assert result['software_status'] == 'EXECUTED_NATIVE_GREEN'
+
+
+@pytest.mark.parametrize('change', ['head', 'dirty'])
+def test_candidate_cannot_change_during_native_convergence_inventory(candidate, monkeypatch, change):
+    root, xml, _ = candidate
+    sha = native_git(root, 'rev-parse', 'HEAD')
+    original_tree = provenance.tree
+    calls = []
+    def mutate(actual_root, revision):
+        result = original_tree(actual_root, revision)
+        if calls and not any(calls):
+            (root / 'AGENTS.md').write_bytes((root / 'AGENTS.md').read_bytes() + b'\ncontrolled late source mutation\n')
+            if change == 'head':
+                commit(root)
+            calls.append(True)
+        else:
+            calls.append(False)
+        return result
+    monkeypatch.setattr(provenance, 'tree', mutate)
+    reason = 'CANDIDATE_CHANGED_DURING_VERIFICATION' if change == 'head' else 'TRACKED_CHECKOUT_CHANGED'
+    with pytest.raises(provenance.ConvergenceError, match=reason):
+        provenance.verify(root, sha, xml)
+    assert any(calls)
+
+
+@pytest.mark.parametrize('kind', ['fifo', 'directory', 'symlink', 'hardlink', 'oversize'])
+def test_junit_capture_rejects_nonregular_aliased_or_oversize_inputs_without_blocking(tmp_path, kind):
+    source = tmp_path / 'junit-input'
+    if kind == 'fifo': os.mkfifo(source)
+    elif kind == 'directory': source.mkdir()
+    elif kind in {'symlink', 'hardlink'}:
+        target = tmp_path / 'other.xml'; target.write_bytes(b'<testsuites/>')
+        if kind == 'symlink': source.symlink_to(target)
+        else: os.link(target, source)
+    else:
+        with source.open('wb') as output: output.truncate(16 * 1024**2 + 1)
+    result = subprocess.run([sys.executable, '-c',
+        'from pathlib import Path; import sys; from scripts.rc6_convergence_provenance import capture_junit; capture_junit(Path(sys.argv[1]))', str(source)],
+        cwd=REPO, capture_output=True, text=True, timeout=3)
+    assert result.returncode != 0 and 'JUNIT_INPUT_INVALID' in result.stderr
 
 
 @pytest.mark.parametrize("wrong_head", [False, True])
