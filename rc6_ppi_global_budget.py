@@ -123,6 +123,32 @@ class BudgetBackpressure(RuntimeError):
     """An off-wire scheduling rejection, never a provider capability result."""
 
 
+def _frozen_admission_summary(value):
+    """Bounded historical evidence only; never a current service authority."""
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or value.get("basis") != "FROZEN_AT_FIRST_ADMISSION"
+            or not isinstance(value.get("identity_count"), int) or isinstance(value["identity_count"], bool)
+            or not 0 <= value["identity_count"] <= BOOK_CACHE_LIMIT
+            or any(not isinstance(value.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", value[field])
+                for field in ("identity_scope_digest", "configuration_fingerprint", "recommendation_digest"))
+            or not isinstance(value.get("reserved_open_positions_count"), int)
+            or isinstance(value["reserved_open_positions_count"], bool)
+            or not value["identity_count"] <= value["reserved_open_positions_count"] <= BOOK_CACHE_LIMIT
+            or not isinstance(value.get("reserved_exit_demand"), dict)
+            or set(value["reserved_exit_demand"]) != set(ENDPOINTS)
+            or any(not isinstance(value.get(field), str) for field in ("captured_at", "expires_at"))):
+        raise ValueError("PPI_EXIT_ROUND_MEASUREMENT_INVALID")
+    if stamp(value["captured_at"]) >= stamp(value["expires_at"]):
+        raise ValueError("PPI_EXIT_ROUND_MEASUREMENT_INVALID")
+    for demand in value["reserved_exit_demand"].values():
+        _int(demand)
+    return {field: deepcopy(value[field]) for field in (
+        "basis", "identity_count", "identity_scope_digest", "captured_at",
+        "configuration_fingerprint", "recommendation_digest", "expires_at",
+        "reserved_open_positions_count", "reserved_exit_demand")}
+
+
 def _int(value, minimum=0):
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ValueError("PPI_BUDGET_INTEGER_INVALID")
@@ -1195,7 +1221,7 @@ class GlobalPPIBudget:
         self._sync_directory()
 
     def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0,
-                           required_identity_digests=None):
+                           required_identity_digests=None, frozen_admission_scope=None):
         """Publish round debt; only a verified complete fresh round releases it.
 
         This producer API never edits requests, leases, circuits or capacity.
@@ -1229,9 +1255,18 @@ class GlobalPPIBudget:
                     or any(not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key)
                         for key in required_identity_digests)):
                 return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
+            # This projection records a previously verified admission. It is
+            # never substituted for the current identity set in the service
+            # or debt-release decision below.
+            try:
+                frozen = _frozen_admission_summary(frozen_admission_scope)
+            except (ValueError, TypeError, InvalidOperation):
+                return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
             with closing(self._connect()) as c, c:
                 self._begin_write(c)
                 now = self._clock(c)
+                if frozen is not None and stamp(frozen["captured_at"]).timestamp() > now:
+                    raise ValueError("PPI_EXIT_ROUND_MEASUREMENT_INVALID")
                 service = self._get(c, "critical_exit_service", {})
                 covered = {key for key, record in service.items() if record.get("status") == "SERVED"
                     and 0 <= now - record.get("last_served_at", 0) <= deadline_seconds}
@@ -1255,7 +1290,12 @@ class GlobalPPIBudget:
                 round_state = {"status": "DEGRADED" if reason else "COMPLETE", "recorded_at": now,
                     "elapsed_seconds": elapsed_seconds, "deadline_seconds": deadline_seconds,
                     "failures": failures, "required_identities_count": len(required_identity_digests)
-                        if required_identity_digests is not None else None,
+                        if required_identity_digests is not None else frozen["identity_count"] if frozen else None,
+                    "fresh_required_count": len(required_identity_digests) if required_identity_digests is not None else None,
+                    "required_scope_verified_current": required_identity_digests is not None,
+                    "required_scope_basis": "CURRENT_VERIFIED_PAPER_LEDGER" if required_identity_digests is not None
+                        else "FROZEN_AT_FIRST_ADMISSION" if frozen else "UNVERIFIED",
+                    "frozen_admission_scope": frozen,
                     "covered_identities_count": len(covered & required_identity_digests)
                         if required_identity_digests is not None else 0,
                     "reason": reason}
@@ -1473,6 +1513,8 @@ class RuntimePPIBudget:
         self.activation_contract = None
         self._admission_scopes = {}
         self._scope_lock = threading.Lock()
+        self._exit_round_scope = None
+        self._exit_round_reads = 0
 
     def _opened(self, unverified, *, deadline=None):
         return supervisable_position_count(self.database, unverified, deadline=deadline)
@@ -1609,13 +1651,70 @@ class RuntimePPIBudget:
                     del self._admission_scopes[next(iter(self._admission_scopes))]
         return result
 
+    def discard_exit_round_scope(self):
+        """Forget admission evidence between producer rounds; no I/O or lease edit."""
+        with self._scope_lock:
+            self._exit_round_scope = None
+
+    @contextmanager
+    def _exit_round_read(self):
+        # One temporal set (at most64 digests) belongs to the first admission.
+        # An overlapping reader cannot inherit it as its own round evidence.
+        with self._scope_lock:
+            if self._exit_round_scope is None:
+                self._exit_round_scope = {"owner": threading.get_ident(), "attempted": False,
+                    "invalidated": bool(self._exit_round_reads), "frozen": None}
+            scope = self._exit_round_scope
+            if self._exit_round_reads or scope["owner"] != threading.get_ident():
+                scope["invalidated"], scope["frozen"] = True, None
+            self._exit_round_reads += 1
+        try:
+            yield scope
+        except BaseException:
+            with self._scope_lock:
+                scope["invalidated"], scope["frozen"] = True, None
+            raise
+        finally:
+            with self._scope_lock:
+                self._exit_round_reads -= 1
+
+    def _freeze_exit_admission(self, scope, budget):
+        with self._scope_lock:
+            if scope is not self._exit_round_scope or scope["attempted"] or scope["invalidated"]:
+                return
+            scope["attempted"] = True
+            if (budget is None or budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE")
+                    or (self.activation_contract or {}).get("status") != "READY"):
+                return
+            policy = deepcopy(budget.policy)
+            if stamp(self.clock()) >= stamp(policy["expires_at"]):
+                return
+            identities = _supervisable_identity_digests(self.database)
+            captured_at = stamp(self.clock())
+            # The policy count can include SHADOW demand. Only the native
+            # five-key set proves the identity count; reserve must cover it.
+            if (identities is None or len(identities) > policy["open_positions_count"]
+                    or captured_at >= stamp(policy["expires_at"])):
+                return
+            scope["frozen"] = {"identities": frozenset(identities), "summary": {
+                "basis": "FROZEN_AT_FIRST_ADMISSION", "identity_count": len(identities),
+                "identity_scope_digest": digest(sorted(identities)), "captured_at": captured_at.isoformat(),
+                "configuration_fingerprint": policy["configuration_fingerprint"],
+                "recommendation_digest": policy["recommendation_digest"], "expires_at": policy["expires_at"],
+                "reserved_open_positions_count": policy["open_positions_count"],
+                "reserved_exit_demand": deepcopy(policy["exit_demand"])}}
+
     def coalesced_book(self, identity, fetch, *, consumer, priority):
-        budget = self._current(priority=priority)
-        # Invalid/missing/expired approval uses the original factual read path.
-        # It never continues a dynamic cache or changes baseline cadence.
-        if budget is None or budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
-            return fetch()
-        return budget.coalesced_book(identity, fetch, consumer=consumer, priority=priority)
+        exit_reader = consumer == "EXIT_READER" and priority == "EXIT_CRITICAL"
+        with self._exit_round_read() if exit_reader else nullcontext(None) as scope:
+            budget = self._current(priority=priority)
+            if exit_reader:
+                self._freeze_exit_admission(scope, budget)
+            # Invalid/missing/expired approval uses the original factual path.
+            # It never continues a dynamic cache or changes baseline cadence.
+            if budget is None or budget.policy.get("authority", "").startswith("SAFE_FACTUAL_BASELINE"):
+                return fetch()
+            return budget.coalesced_book(identity, fetch, consumer=consumer, priority=priority)
 
     def start(self, lease):
         if lease:
@@ -1660,6 +1759,22 @@ class RuntimePPIBudget:
     def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0):
         """Explicit producer write, distinct from runtime_budget_snapshot."""
         entered = time.monotonic()
+        # Serialize the temporal admission evidence with this observation.
+        # Existing HTTP bodies remain owned by their original wire leases.
+        with self._scope_lock:
+            scope = self._exit_round_scope
+            frozen = deepcopy(scope["frozen"]["summary"]) if (scope and scope["frozen"]
+                and not scope["invalidated"] and scope["owner"] == threading.get_ident()
+                and not self._exit_round_reads) else None
+            concurrent = bool(self._exit_round_reads) or bool(scope and scope["invalidated"])
+            try:
+                return self._observe_exit_round(elapsed_seconds=elapsed_seconds,
+                    deadline_seconds=deadline_seconds, failures=failures, entered=entered,
+                    frozen=frozen, concurrent=concurrent)
+            finally:
+                self._exit_round_scope = None
+
+    def _observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures, entered, frozen, concurrent):
         try:
             measured = all(not isinstance(value, bool) and isinstance(value, (int, float))
                 and isfinite(value) and value >= 0 for value in (elapsed_seconds, deadline_seconds))
@@ -1674,13 +1789,13 @@ class RuntimePPIBudget:
                 return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
             identities = _supervisable_identity_digests(self.database, deadline=deadline)
             state = self.controller.state(self.clock(), deadline=deadline)
-            if (state.get("status") != "APPROVED_DYNAMIC"
+            if (concurrent or state.get("status") != "APPROVED_DYNAMIC"
                     or (self.activation_contract or {}).get("status") != "READY"):
                 identities = None
             observed_elapsed = elapsed_seconds + (time.monotonic() - entered) if measured else elapsed_seconds
             return budget.observe_exit_round(elapsed_seconds=observed_elapsed,
                 deadline_seconds=deadline_seconds, failures=failures,
-                required_identity_digests=identities)
+                required_identity_digests=identities, frozen_admission_scope=frozen)
         except (BudgetBackpressure, OSError, ValueError, TypeError, sqlite3.Error):
             return {"status": "DEGRADED", "lower_suspended": True,
                 "reason": "PPI_EXIT_ROUND_STATE_UNAVAILABLE"}
@@ -1845,6 +1960,28 @@ def runtime_budget_snapshot(database, *, as_of=None):
                 if reason is not None and (not isinstance(reason, str) or not re.fullmatch(r"PPI_[A-Z0-9_]{1,95}", reason)):
                     raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
                 round_summary["reason"] = reason
+                # Old committed rounds have no admission projection. New
+                # evidence distinguishes a historical count from fresh scope.
+                if "required_scope_verified_current" in round_record:
+                    verified = round_record["required_scope_verified_current"]
+                    fresh = round_record.get("fresh_required_count")
+                    basis = round_record.get("required_scope_basis")
+                    frozen = _frozen_admission_summary(round_record.get("frozen_admission_scope"))
+                    if (not isinstance(verified, bool)
+                            or basis not in {"CURRENT_VERIFIED_PAPER_LEDGER", "FROZEN_AT_FIRST_ADMISSION", "UNVERIFIED"}
+                            or (fresh is not None and (isinstance(fresh, bool) or not isinstance(fresh, int)
+                                or not 0 <= fresh <= BOOK_CACHE_LIMIT))
+                            or verified != (fresh is not None)
+                            or (verified and (basis != "CURRENT_VERIFIED_PAPER_LEDGER"
+                                or round_summary["required_identities_count"] != fresh))
+                            or (not verified and basis == "CURRENT_VERIFIED_PAPER_LEDGER")
+                            or (basis == "FROZEN_AT_FIRST_ADMISSION" and (frozen is None
+                                or round_summary["required_identities_count"] != frozen["identity_count"]))
+                            or (basis == "UNVERIFIED" and round_summary["required_identities_count"] is not None)
+                            or (frozen is not None and stamp(frozen["captured_at"]).timestamp() > round_summary["recorded_at"])):
+                        raise ValueError("PPI_BUDGET_OBSERVATION_BOUNDS_INVALID")
+                    round_summary.update(required_scope_verified_current=verified, fresh_required_count=fresh,
+                        required_scope_basis=basis, frozen_admission_scope=frozen)
             suspended = round_guard_active or any(p.get("status") == "DEGRADED" or p.get("until", 0) > at.timestamp() for p in pressure.values())
             degraded = round_guard_active or any(p.get("status") == "DEGRADED" for p in pressure.values())
             totals = dict.fromkeys(("requested", "allowed", "used", "dropped"), 0)

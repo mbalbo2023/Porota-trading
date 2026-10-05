@@ -5,11 +5,14 @@ evidence, never host/PPI latency measurements or an OPEN capacity approval.
 """
 from contextlib import closing, contextmanager
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import gc
 import os
 from pathlib import Path
 import sqlite3
 import time
+import threading
 from urllib.parse import unquote
 
 import pytest
@@ -22,6 +25,7 @@ from rc6_shadow_runtime import source_reads
 from scripts.rc6_issue465_stress import source_custody_snapshot
 from tests.test_rc6_exit_reader_cadence import native_mixed_store, reviewed_native_capacity
 from tests.test_rc6_ppi_capacity_benchmark import wire
+from tests.test_issue465_budget_adversarial import scoped_book
 
 
 @pytest.fixture
@@ -264,3 +268,241 @@ def test_observer_includes_its_own_capture_time_and_never_borrows_another_round(
     assert result["reason"] == "PPI_EXIT_ROUND_DEADLINE_EXCEEDED"
     assert budget.metrics()["exit_service"]["lower_suspended"]
     assert source_custody_snapshot(store.path) == before
+
+
+@pytest.mark.parametrize("scenario", ("verified", "no_admission", "unverified_source", "discarded", "read_error", "foreign_observer"))
+def test_late_native_round_keeps_only_its_verified_first_admission_count(native_ledger, wire, monkeypatch, scenario):
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    budget = runtime._current(priority="EXIT_CRITICAL")
+    original_policy = deepcopy(budget.policy)
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    try:
+        reader.login_once()
+        if scenario == "unverified_source":
+            # A warm budget retains its old EXIT floor; a missing native
+            # source cannot create first-admission evidence from that policy.
+            held = store.path.with_suffix(".held-offline-fixture")
+            store.path.rename(held)
+            try:
+                assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+            finally:
+                held.rename(store.path)
+        elif scenario == "read_error":
+            wire[2]["status"] = 503
+            with pytest.raises(Exception):
+                scoped_book(reader, identity, "EXIT_CRITICAL")
+        elif scenario != "no_admission":
+            assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+        if scenario == "discarded":
+            reader.discard_exit_round_scope()
+        before = source_custody_snapshot(store.path)
+        with closing(sqlite3.connect(runtime.path)) as c:
+            receipts = c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall()
+        # No producer deadline remains. Even diagnostics must not capture a
+        # new PRIMARY snapshot just to recover the historical display count.
+        monkeypatch.setattr(source_reads, "readonly_copy", lambda *a, **kw: pytest.fail("Late round captured source"))
+        if scenario == "foreign_observer":
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                observed = pool.submit(reader.observe_exit_round, elapsed_seconds=6, deadline_seconds=5).result(5)
+        else:
+            observed = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
+        assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+        assert observed["fresh_required_count"] is None
+        assert observed["required_scope_verified_current"] is False
+        assert observed["required_identities_count"] == (10 if scenario == "verified" else None)
+        assert observed["required_scope_basis"] == ("FROZEN_AT_FIRST_ADMISSION" if scenario == "verified" else "UNVERIFIED")
+        if scenario == "verified":
+            frozen = observed["frozen_admission_scope"]
+            assert frozen["identity_count"] == frozen["reserved_open_positions_count"] == 10
+            assert frozen["reserved_exit_demand"]["book"] == 60
+            assert frozen["configuration_fingerprint"] == original_policy["configuration_fingerprint"]
+            assert frozen["recommendation_digest"] == original_policy["recommendation_digest"]
+            assert frozen["expires_at"] == original_policy["expires_at"]
+        else:
+            assert observed["frozen_admission_scope"] is None
+        snapshot = budgets.runtime_budget_snapshot(store.path, as_of=clock.now())
+        assert snapshot["status"] == "DEGRADED"
+        assert snapshot["exit_service"]["round"] == {k: v for k, v in observed.items() if k != "lower_suspended"}
+        assert source_custody_snapshot(store.path) == before
+        assert budget.policy == original_policy
+        with closing(sqlite3.connect(runtime.path)) as c:
+            assert c.execute("SELECT * FROM budget_requests ORDER BY lease").fetchall() == receipts
+        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
+        # Consumed, discarded, failed and foreign scopes never leak into the
+        # following producer round, even while the old policy still says10.
+        following = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
+        assert following["required_identities_count"] is None
+        assert following["frozen_admission_scope"] is None and following["lower_suspended"]
+    finally:
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+def add_native_synthetic_future(store):
+    """One more native fixture series; no provider or historical entry claim."""
+    from rc6_paper_family_lifecycle import FamilyPaperExecutor, future_position_contract
+    from rc6_ppi_future_contract_policy import standard_dlr_terms
+    original = future_position_contract(store.active_future_positions()[-1])
+    terms = standard_dlr_terms("DLR/ENE27")
+    contract = replace(original, symbol="DLR/ENE27", expires_at=terms["expires_at"])
+    FamilyPaperExecutor(store).open_future(contract, lifecycle_id="FUT-FIRST-ADMISSION-CHANGE",
+        event_id="OPEN-FUT-FIRST-ADMISSION-CHANGE", entry_price="1500", quantity="1", entry_cost="100",
+        occurred_at="2026-08-24T14:00:00+00:00", detail={
+            "provider_entry_history_status": "NO_VERIFICADO", "real_orders_sent": 0,
+            "historical_grid_effectivity": "OFFLINE_SYNTHETIC", "entry_authority": False})
+
+
+def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(native_ledger):
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    # Use the actual durable five-key contracts, including their settlement;
+    # an advisory list is never the required primary scope.
+    positions, invalid = store.exit_positions()
+    assert not invalid
+    positions += [{**p, "asset_class": "FUTUROS"} for p in store.active_future_positions()]
+    identities = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]) for p in positions]
+    try:
+        reader.login_once()
+        for identity in identities:
+            assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+        add_native_synthetic_future(store)
+        assert budgets.supervisable_position_count(store.path) == 11
+        observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+        assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+        assert observed["reason"] == "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED"
+        assert observed["frozen_admission_scope"]["identity_count"] == 10
+        assert observed["required_identities_count"] == observed["fresh_required_count"] == 11
+        assert observed["required_scope_verified_current"] is True
+        assert observed["covered_identities_count"] == 10
+        assert runtime.budget.policy["exit_demand"]["book"] == 66
+        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
+        # The next generation genuinely captures11; it cannot resurrect the
+        # ten identities of a previous observation after finally consumed it.
+        reader.discard_exit_round_scope()
+        assert scoped_book(reader, identities[0], "EXIT_CRITICAL")["bids"]
+        late = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
+        assert late["required_identities_count"] == 11
+        assert late["fresh_required_count"] is None and not late["required_scope_verified_current"]
+        assert late["status"] == "DEGRADED" and late["lower_suspended"]
+    finally:
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+def test_same_native_count_with_changed_identity_never_clears_from_frozen_scope(native_ledger):
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    positions, invalid = store.exit_positions()
+    assert not invalid
+    positions += [{**p, "asset_class": "FUTUROS"} for p in store.active_future_positions()]
+    identities = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]) for p in positions]
+    try:
+        reader.login_once()
+        for identity in identities:
+            assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+        # Adversarial SQL writer over the isolated native fixture. This is an
+        # identity drift attack, not a financial fill or a provider contract.
+        with store.connect() as c, c:
+            c.execute("UPDATE paper_positions SET symbol='OFFLINE_IDENTITY_DRIFT' WHERE symbol='EXIT4' AND status='OPEN'")
+        assert budgets.supervisable_position_count(store.path) == 10
+        observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+        assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+        assert observed["reason"] == "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED"
+        assert observed["frozen_admission_scope"]["identity_count"] == 10
+        assert observed["required_identities_count"] == observed["fresh_required_count"] == 10
+        assert observed["required_scope_verified_current"] is True
+        assert observed["covered_identities_count"] == 9
+        assert runtime.budget.policy["exit_demand"]["book"] == 60
+        assert not runtime.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
+    finally:
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+@pytest.mark.parametrize("discard_while_active", (False, True))
+def test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire(native_ledger, wire, monkeypatch, discard_while_active):
+    import requests
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    entered, release, second = threading.Event(), threading.Event(), threading.Event()
+    original_send = requests.adapters.HTTPAdapter.send
+    original_freeze = runtime._freeze_exit_admission
+    def blocked_body(adapter, request, **kwargs):
+        if request.url.split("?", 1)[0].lower().endswith("/book"):
+            entered.set()
+            assert release.wait(5)
+        return original_send(adapter, request, **kwargs)
+    def traced_freeze(scope, budget):
+        result = original_freeze(scope, budget)
+        if entered.is_set():
+            second.set()
+        return result
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", blocked_body)
+    monkeypatch.setattr(runtime, "_freeze_exit_admission", traced_freeze)
+    try:
+        reader.login_once()
+        before = len(wire[1])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+            assert entered.wait(5)
+            if discard_while_active:
+                reader.discard_exit_round_scope()
+            following = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+            try:
+                assert second.wait(5)
+                observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+                assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+                assert observed["required_identities_count"] is None
+                assert observed["frozen_admission_scope"] is None
+                assert observed["fresh_required_count"] is None
+                assert not observed["required_scope_verified_current"]
+            finally:
+                release.set()
+            assert first.result(5)["bids"] and following.result(5)["bids"]
+        assert len(wire[1]) - before == 1
+        assert runtime.budget.metrics()["global"]["used"] == 1
+        assert runtime.budget.metrics()["exit_service"]["lower_suspended"]
+        assert runtime.budget.policy["exit_demand"]["book"] == 60
+    finally:
+        release.set()
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+def test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader(native_ledger):
+    from datetime import timedelta
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    try:
+        reader.login_once()
+        assert scoped_book(reader, ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"), "EXIT_CRITICAL")["bids"]
+        valid = reader.observe_exit_round(elapsed_seconds=6, deadline_seconds=5)
+        impossible = deepcopy(valid["frozen_admission_scope"])
+        impossible["captured_at"] = (clock.now() + timedelta(microseconds=1)).isoformat()
+        rejected = runtime.budget.observe_exit_round(elapsed_seconds=6, deadline_seconds=5,
+            required_identity_digests=None, frozen_admission_scope=impossible)
+        assert rejected["status"] == "DEGRADED" and rejected["lower_suspended"]
+        assert "required_identities_count" not in rejected
+        # Mutate only a synthetic writer-owned sidecar receipt to exercise the
+        # independent read projection; no primary or production DB is changed.
+        with closing(sqlite3.connect(runtime.path)) as c, c:
+            record = runtime.budget._get(c, "critical_exit_round")
+            record["frozen_admission_scope"] = impossible
+            runtime.budget._put(c, "critical_exit_round", record)
+        assert budgets.runtime_budget_snapshot(store.path, as_of=clock.now())["status"] == "UNVERIFIED"
+        assert runtime.budget.metrics()["exit_service"]["lower_suspended"]
+    finally:
+        reader.discard_exit_round_scope()
+        reader.close()
