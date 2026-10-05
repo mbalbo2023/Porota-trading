@@ -16,8 +16,17 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T03:54:23.588Z-night-watch-uuentfh2z9",
+    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-05T03:54:23.588Z",
+    "expires_at": "2026-10-05T04:14:23.588Z"
+  },
+  "pending_action": {
+    "type": "PERSIST_WAITING_OWNER_REVALIDATION",
+    "started_at": "2026-10-05T03:54:23.588Z",
+    "external_mutations": "NONE"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
