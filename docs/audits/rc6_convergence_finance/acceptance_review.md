@@ -141,16 +141,29 @@ tests financieros, sin modificar producción ni relajar aserciones existentes:
 | R74 | Costo ledger, cantidad opening y costo fill inconsistentes, con todos los hashes públicos y el pin recalculados, reciben LEDGER_COST_RECONCILIATION u OPENING_QUANTITY_MISMATCH; el paquete original válido conserva net3 ARS | QA contable sintético; no tarifa de cuenta autenticada |
 | R78 | Relabel coordinado ARS→USD_MEP y manifest coherente: el pin original recibe MANIFEST_DIGEST. Un pin nuevo permite RECOMPUTED, conservando el commitment opaco sin autenticarlo | TRUST_LIMIT explícito: source_authentication permanece EXTERNAL_EVIDENCE_PENDING; no prueba FX, moneda real ni edge |
 
-El [receipt de preservación RED](closure_preservation_red_7175d956_receipt.json)
-y su [JUnit](closure_preservation_red_7175d956_tests.xml) registran19 variantes
-sobre core integrado7175d956: los cinco controles nuevos pasan, más doce
-controles anteriores; dos guards U08 existentes fallan por la ausencia de
-paper_future_exit_intents al abrir/reiniciar un PaperBroker directo con
-require_supervisor=False y luego supervise_futures. Se reportó al dueño del
-core para corregir bootstrap; no se añadió DDL al fixture para ocultarlo.
-Archivos productivos iguales antes/después, coincidentes con el commit
-registrado, sin intentos de red. Esta partición es intermedia y explícitamente
-RED para preservación; no sustituye el rerun final congelado pendiente.
+El [receipt de procedencia inválida](closure_preservation_red_7175d956_receipt.json)
+y su [JUnit original](closure_preservation_red_7175d956_tests.xml) se conservan
+con HARNESS_MIXED_CHECKOUT_INVALID_FOR_PRODUCTIVE_CLAIMS. Inicialmente registró
+dos fallos U08 y se atribuyeron prematuramente a bootstrap productivo. La
+comprobación independiente del integrador pasó ambos sin cambios de código.
+La [reproducción de imports](closure_mixed_checkout_proof.txt) identificó el
+error: al colectar ambos tests propios, su helper histórico antepuso ownroot
+a sys.path y el BM importado tardíamente vino del checkout financiero antiguo,
+mientras BE ya estaba cargado del core integrado. BM old blob a82bba59 difiere
+del root30f5153e. Verificar sólo módulos principales no validaba esa ejecución
+como evidencia del árbol integrado. El diagnóstico quedó autocorregido;
+no hubo bug productivo de schema ni se necesitó añadir DDL o cambiar fixtures.
+
+El [receipt nativo corregido](closure_native_green_98153a8f_receipt.json) y su
+[JUnit](closure_native_green_98153a8f_tests.xml) registran19/19 sin
+fallos/errores/skips, sobre git archive del commit exacto
+98153a8fdf2856f533bfc82d0aedb72879b16e9e y tree
+349b514dfd893d057f9ccc90cdfd9dc32ffd3845. Los1246 archivos de la copia son
+iguales antes/después; los37 módulos del repositorio cargados pertenecen
+exclusivamente a ella, incluido BM correcto, con cero módulos de otro
+checkout y cero intentos de red. Este commit es intermedio y se etiqueta
+EXACT_ARCHIVE_INTERMEDIATE_COMMIT_NOT_FINAL_FROZEN_RELEASE_ARTIFACT:
+no sustituye el rerun final congelado pendiente.
 
 Los parámetros R74 prueban tres inconsistencias del mismo control; no se
 cuentan como escenarios económicos independientes. El índice de receipts

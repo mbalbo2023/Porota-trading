@@ -14,7 +14,7 @@
   "field_authority_matrix": "field_authority_matrix.md",
   "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
   "finance_head": "a0961dee37906a5be94ab3d263466de3d6c59475",
-  "generated_at": "2026-10-05T05:04:54.297909+00:00",
+  "generated_at": "2026-10-05T05:17:46.824598+00:00",
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -1018,7 +1018,10 @@
   "real_routes_used": [],
   "receipt_hash_policy": "No self-hash. The consolidated JSON is bound by the separate evidence_manifest.json; embedded receipt hashes cover only independent receipt files.",
   "receipt_hashes": {
-    "closure_preservation_red_7175d956_receipt.json": "f4569efc1579a77dba9653a555819cbdcc094abbe790c69945bf14b2c5675a3d",
+    "closure_mixed_checkout_proof.txt": "a70261015cb1313ed0a4f84cf01f7ac1a448dc78fe801950a786288a2c3ca2e9",
+    "closure_native_green_98153a8f_receipt.json": "1ea97725f90fecae2ab36a888e9b75c01e8b4a1cf6c14a585249a46df4aac867",
+    "closure_native_green_98153a8f_tests.xml": "82437f2490fecc45736acef8a6af4b178bfd62ff4894ca419d9eca6943a54f0f",
+    "closure_preservation_red_7175d956_receipt.json": "06060fc161381b85e9016cc8f8966fc2f1cec1f6f56a435ee3acbbab9b5e131e",
     "closure_preservation_red_7175d956_tests.xml": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e",
     "core_finance_review_receipt.json": "eb1f6ff3194e2b081017b6ad0688fcb7cf150d152bcc336ece748d88b7e4ff00",
     "core_finance_review_tests.xml": "9b50b0ea3a8ee7ff269ed9f8ae17f26e9ee2054a6bc4fc0f518a649c095be267",
@@ -1035,7 +1038,7 @@
     "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",
     "retention_ack_resume_red_2fb29369.json": "22456a596d375a93125ffd8b535c72027810d76fad6270458a9f8a4556a13d49"
   },
-  "reference_root_sha": "7175d9565040715551d5a10677b56689b183e26f",
+  "reference_root_sha": "98153a8fdf2856f533bfc82d0aedb72879b16e9e",
   "requirements": [
     {
       "aliases": [
@@ -1319,10 +1322,10 @@
       ],
       "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
       "rca": "A raw snapshot digest is only integrity of its declared fields. A changed DLR multiplier must still fail exact contract semantics even if the snapshot digest and position dimension are coherently rewritten.",
-      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipt_scope": "Native 19/19 execution on exact intermediate archive98153a8f, all imported repository modules and 1246 source files bound to that copy. Earlier mixed-checkout harness output is explicitly invalid for productive claims. Final release freeze and rerun remain pending.",
       "receipts": [
-        "closure_preservation_red_7175d956_receipt.json",
-        "closure_preservation_red_7175d956_tests.xml"
+        "closure_native_green_98153a8f_receipt.json",
+        "closure_native_green_98153a8f_tests.xml"
       ]
     },
     {
@@ -1345,10 +1348,10 @@
       ],
       "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
       "rca": "Valid public row/file digests and a newly supplied manifest pin do not make inconsistent entry cost, opening quantity or fill charge a reconciled ledger.",
-      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipt_scope": "Native 19/19 execution on exact intermediate archive98153a8f, all imported repository modules and 1246 source files bound to that copy. Earlier mixed-checkout harness output is explicitly invalid for productive claims. Final release freeze and rerun remain pending.",
       "receipts": [
-        "closure_preservation_red_7175d956_receipt.json",
-        "closure_preservation_red_7175d956_tests.xml"
+        "closure_native_green_98153a8f_receipt.json",
+        "closure_native_green_98153a8f_tests.xml"
       ]
     },
     {
@@ -1371,10 +1374,10 @@
       ],
       "parameter_policy": "Base pytest node IDs only; parametrized cases do not count as independent economic scenarios.",
       "rca": "The original external pin detects a coordinated currency relabel. If the writer also controls the supplied pin, a coherent supported-currency relabel can be recomputed; this establishes arithmetic only and must retain external source authentication pending.",
-      "receipt_scope": "The five newly added financial guard variants passed. The nineteen-case preservation run retained two U08 failures from missing paper_future_exit_intents bootstrap, reported to the integrator; not a complete suite acceptance or final frozen receipt.",
+      "receipt_scope": "Native 19/19 execution on exact intermediate archive98153a8f, all imported repository modules and 1246 source files bound to that copy. Earlier mixed-checkout harness output is explicitly invalid for productive claims. Final release freeze and rerun remain pending.",
       "receipts": [
-        "closure_preservation_red_7175d956_receipt.json",
-        "closure_preservation_red_7175d956_tests.xml"
+        "closure_native_green_98153a8f_receipt.json",
+        "closure_native_green_98153a8f_tests.xml"
       ]
     }
   ],

@@ -4,20 +4,32 @@
   "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
   "files": {
     "docs/audits/rc6_convergence_finance/acceptance_review.md": {
-      "bytes": 16974,
-      "sha256": "9f7dd832b88bf83ed808706031f5f2f46f5700fa424f529a90af21aa9971c0f7"
+      "bytes": 17832,
+      "sha256": "4ef82993238babeb78eb9e701520b10bfe5d4e7be24b16ab9f1be6603511e891"
+    },
+    "docs/audits/rc6_convergence_finance/closure_mixed_checkout_proof.txt": {
+      "bytes": 1780,
+      "sha256": "a70261015cb1313ed0a4f84cf01f7ac1a448dc78fe801950a786288a2c3ca2e9"
+    },
+    "docs/audits/rc6_convergence_finance/closure_native_green_98153a8f_receipt.json": {
+      "bytes": 296766,
+      "sha256": "1ea97725f90fecae2ab36a888e9b75c01e8b4a1cf6c14a585249a46df4aac867"
+    },
+    "docs/audits/rc6_convergence_finance/closure_native_green_98153a8f_tests.xml": {
+      "bytes": 3733,
+      "sha256": "82437f2490fecc45736acef8a6af4b178bfd62ff4894ca419d9eca6943a54f0f"
     },
     "docs/audits/rc6_convergence_finance/closure_preservation_red_7175d956_receipt.json": {
-      "bytes": 4014,
-      "sha256": "f4569efc1579a77dba9653a555819cbdcc094abbe790c69945bf14b2c5675a3d"
+      "bytes": 5200,
+      "sha256": "06060fc161381b85e9016cc8f8966fc2f1cec1f6f56a435ee3acbbab9b5e131e"
     },
     "docs/audits/rc6_convergence_finance/closure_preservation_red_7175d956_tests.xml": {
       "bytes": 14572,
       "sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e"
     },
     "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
-      "bytes": 78702,
-      "sha256": "bc7a5b7578890862f4ad01a9c755a3de2f2335f3e3ee473f99c2ecfce3d1fdc9"
+      "bytes": 79067,
+      "sha256": "0e591e13ab0e84370fde63179cd417d719303b73120e0dbb0df9bc8feb0d49aa"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -108,5 +120,5 @@
   "producer": "FINANCE_REVIEW_AGENT_OFFLINE",
   "schema": "rc6.finance-evidence-manifest.v1",
   "scope": "SYNTHETIC_CODE_ACCEPTANCE_ONLY",
-  "updated_at": "2026-10-05T05:05:33.152945+00:00"
+  "updated_at": "2026-10-05T05:17:46.831653+00:00"
 }
