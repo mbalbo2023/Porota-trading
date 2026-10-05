@@ -746,7 +746,7 @@ class EvidenceFiles:
                 wire = _encode({"digest": payload_digests[role], "payload": representation})
                 if len(wire) > self.payload_limit:
                     raise ValueError("SHADOW_PAYLOAD_LIMIT")
-                encoded[role] = gzip.compress(wire, mtime=0) if name.endswith(".gz") else wire
+                encoded[role] = gzip.compress(wire, mtime=0, compresslevel=1) if name.endswith(".gz") else wire
             manifest = {"schema": GENERATION_SCHEMA, **metadata, "as_of": values["report"]["as_of"],
                 "safety": deepcopy(SAFETY),
                 "previous_generation_id": pointer.get("generation_id"),

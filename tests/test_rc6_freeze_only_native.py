@@ -58,3 +58,23 @@ def test_unknown_and_malformed_previous_use_the_complete_original_contract():
     for value in (None, {}, {"schema": "future", "configuration_fingerprint": "x", "planned_at": "x", "instruments": {}},
                   {"schema": "ws-perf-03-orchestrator-v1", "opaque": True}):
         assert _plan_previous(value) is value
+
+
+def test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state(tmp_path):
+    database = tmp_path / "source.db"
+    fixture_database(database, catalog_count=31)
+    inputs = read_runtime(database, as_of=PRE, query_budget_seconds=2)
+    context = session_context(PRE)
+    pre = build_preopen_inputs(database, None, as_of=PRE, session_open=context["opening"], cutoff=context["cutoff"])
+    bundle = {**inputs, **pre, "as_of": PRE.isoformat(), "session_open": context["opening"].isoformat(),
+        "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": PRE.isoformat(), "observations": []}
+    initial = run_shadow(bundle)
+    bundle.update(frozen=initial["frozen"], rankings=initial["frozen"]["SCALPING"]["payload"], as_of=AT.isoformat())
+    before_freeze, before_previous = deepcopy(bundle["frozen"]), deepcopy(initial)
+    result = run_shadow(bundle, previous=initial)
+    for plan in result["engines"].values():
+        plan["telemetry"][0]["rank_components"].clear()
+        plan["telemetry"][0]["provenance"].clear()
+        first = next(iter(plan["instruments"].values()))
+        first["attempts"].append([AT.isoformat(), AT.isoformat(), False])
+    assert bundle["frozen"] == before_freeze and initial == before_previous

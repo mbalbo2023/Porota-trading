@@ -69,21 +69,41 @@ def _shape(value, *, memo=None):
             if count > MAX_NODES or depth+height > MAX_DEPTH:
                 raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
             return count, height
-        active.add(key); count, height = 1, 0
+        active.add(key)
         try:
             if isinstance(node, dict):
                 if any(not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
                 values = node.values()
             else: values = node
-            for item in values:
-                child_count, child_height = visit(item, depth+1)
-                count += child_count; height = max(height, child_height+1)
-                if count > MAX_NODES: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+            if type(node) in (dict, list, tuple):
+                # Count all children as leaves once, then add each container's
+                # descendants. Every alias occurrence contributes its full
+                # logical expansion; scalar loops do not need recursive calls.
+                count, height = 1+len(node), int(bool(node))
+                if count > MAX_NODES or node and depth+1 > MAX_DEPTH:
+                    raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+                for item in values:
+                    if isinstance(item, (dict, list, tuple)):
+                        child_count, child_height = visit(item, depth+1)
+                        count += child_count-1
+                        if child_height+1 > height: height = child_height+1
+                        if count > MAX_NODES: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+            else:
+                # Container subclasses may override len/iteration; preserve
+                # the original complete walk instead of trusting their size.
+                count, height = 1, 0
+                for item in values:
+                    child_count, child_height = visit(item, depth+1)
+                    count += child_count
+                    if child_height+1 > height: height = child_height+1
+                    if count > MAX_NODES: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
         finally:
             active.remove(key)
         if count >= 32 and len(memo) < 131072: memo[key] = count, height
         return count, height
-    return visit(value)[0]
+    count = visit(value)[0]
+    if count > MAX_NODES: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
+    return count
 
 
 def _sha(value):

@@ -111,3 +111,14 @@ def test_shape_memo_counts_logical_alias_expansion_and_rejects_cycles(monkeypatc
     cyclic = []; cyclic.append(cyclic)
     with pytest.raises(ValueError, match="COMPLEXITY"):
         serialization._shape(cyclic)
+
+
+def test_bulk_shape_counts_every_scalar_and_enforces_depth_at_leaf_boundary(monkeypatch):
+    assert serialization._shape({"values": [None, False, 0, "x", {"leaf": 1}]}) == 8
+    monkeypatch.setattr(serialization, "MAX_DEPTH", 2)
+    assert serialization._shape({"values": [None]}) == 3
+    with pytest.raises(ValueError, match="COMPLEXITY"):
+        serialization._shape({"values": [{"leaf": 1}]})
+    monkeypatch.setattr(serialization, "MAX_NODES", 0)
+    with pytest.raises(ValueError, match="COMPLEXITY"):
+        serialization._shape(None)

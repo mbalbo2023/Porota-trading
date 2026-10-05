@@ -55,6 +55,19 @@ full verification. A derived, SHA256-bound zlib dictionary of at most 32 KiB
 compresses repeated row metadata. Wrong dictionaries, CRC and length violations
 fail closed. In-memory SQLite temporaries remain in memory.
 
+Public native outputs remain independent from input freezes and prior state.
+Scalar complexity accounting counts every logical leaf and each alias expansion
+while recursing only into containers; node/depth/cycle guards retain their
+original bounds. Inner and outer generation gzip explicitly use compression
+level 1, with unchanged logical hashes and CRC verification.
+
+The fourth role changes the 512-entry geometry to soft pressure at 33.5 minutes
+and hard pressure at 42 minutes (84 complete cuts at 30-second cadence). The
+historical exact three-role replay at 40.5/50.5 minutes remains separately tied
+to b82666db; it is not presented as the new four-role footprint. The 8192-entry
+ten-hour regression uses five static identities and explicitly does not certify
+ten hours of storage at 12000-identity population.
+
 The worker uses the canonical read bridge's 0.5-second default query budget,
 replacing its private 0.35-second override. The positive finite budget is bounded
 at the existing 2-second API ceiling and participates in the configuration

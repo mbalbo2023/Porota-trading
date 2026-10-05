@@ -537,8 +537,11 @@ def test_u18_old_receipt_rewrite_cannot_leave_its_sealed_chain_and_authorize_rot
     assert read_committed_generation(root)["report"]["number"] == 3
 
 
-def test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_nine_hours_plus_restart(tmp_path):
-    small = tmp_path / "old-boundary"; small.mkdir()
+def test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart(tmp_path):
+    # The exact three-role 40.5/50.5-minute replay is separately preserved on
+    # b82666db. The derived fourth member consumes one additional durable slot
+    # per generation; do not attribute the old footprint to this new schema.
+    small = tmp_path / "four-role-boundary"; small.mkdir()
     store, _ = make_store(small, count=1)
     worker = ShadowRuntime(store.path, source_roots=[], maximum_files=512)
     soft, commits, hard = None, 0, None
@@ -549,7 +552,7 @@ def test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_n
                 soft = index * .5
         except RetentionPressure as error:
             hard = {"minutes": index * .5, "reason": error.reason}; break
-    assert soft == 40.5 and commits == 101 and hard["minutes"] == 50.5
+    assert soft == 33.5 and commits == 84 and hard["minutes"] == 42.0
     full = tmp_path / "new-horizon"; full.mkdir()
     store, assets = make_store(full, count=5)
     for asset in assets: store.add_quote(quote(asset, PRE))
@@ -574,7 +577,10 @@ def test_u14_old_512_entry_boundary_is_reproduced_and_default_full_tick_covers_n
     final = read_committed_generation(worker.root)
     assert final["pointer"]["sequence"] == 1201 and final["report"]["checkpoint_reused"]
     assert database_before == hashlib.sha256(Path(store.path).read_bytes()).hexdigest()
-    save_proof("U14-full-tick-horizon", {"old_soft_minutes": soft, "old_hard": hard,
+    save_proof("U14-full-tick-horizon", {"four_role_512_soft_minutes": soft, "four_role_512_hard": hard,
+        "four_role_512_commits": commits, "historical_three_role_soft_minutes": 40.5,
+        "historical_three_role_hard_minutes": 50.5,
+        "historical_three_role_source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
         "tick_seconds": 30, "elapsed_runtime_hours": 10, "commits": 1201, "restarts": 2,
         "fixture_catalog_identities": 5, "fixture_observations_static": True,
         "maximum_projected_files": max_files, "maximum_projected_bytes": max_bytes,
