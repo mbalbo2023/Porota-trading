@@ -1916,6 +1916,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -1952,6 +1953,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -1988,6 +1990,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2024,6 +2027,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2060,6 +2064,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2096,6 +2101,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2132,6 +2138,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2169,6 +2176,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2205,6 +2213,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2241,6 +2250,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2278,6 +2288,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2314,6 +2325,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2344,6 +2356,9 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
@@ -2356,6 +2371,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2385,6 +2401,9 @@
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2",
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
@@ -2397,6 +2416,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2434,6 +2454,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2471,6 +2492,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2508,6 +2530,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2545,6 +2568,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2582,6 +2606,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2610,7 +2635,9 @@
       "rca": "texto arbitrario en error IOL",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
+        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -2619,6 +2646,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2656,6 +2684,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2687,8 +2716,14 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -2702,6 +2737,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2733,8 +2769,14 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -2748,6 +2790,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2776,7 +2819,9 @@
       "rca": "report duplicado",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
+        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -2785,6 +2830,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2822,6 +2868,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2852,11 +2899,13 @@
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
         "tests/test_issue465_source_retention_policy.py::test_513_files_never_deleted_without_ack_and_shadow_degrades",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
-        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -2865,6 +2914,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2903,6 +2953,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2941,6 +2992,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -2980,6 +3032,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3019,6 +3072,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3058,6 +3112,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3099,6 +3154,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3137,6 +3193,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3177,6 +3234,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3206,11 +3264,13 @@
       "rca": "caller real sin archivo",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Local durable custody does not authenticate against same UID rewriting both roots; no WORM/host/deploy certification; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
-        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -3219,6 +3279,7 @@
         "iol_shadow_collector_rc6.py",
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/sources.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/retention.py",
@@ -3994,7 +4055,127 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-Dockerfile.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-dependency-auditor.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-calculator.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-checkpoint.md": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-policy.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-policy-yaml.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-requirements-lock.txt": {
+      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U12",
+        "U13",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-requirements.txt": {
+      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
+      "requirement_ids": [
+        "U04",
+        "U11",
+        "U12",
+        "U13",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/current-native-readonly-replay.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/prior-current-closure-cpython311.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/prior-current-closure-cpython312.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/prior-real-pip-hash-negative-input.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/sre-baseline-bounds/prior-real-pip-hash-negative.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/scenario-guards-sre.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/sre-baseline-bounds.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
         "U11",
@@ -4233,6 +4414,28 @@
         "U23"
       ]
     },
+    "docs/audits/rc6_convergence_finance/original_snapshot_sources_c27_replay_receipt.json": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/original_snapshot_sources_replay_review.md": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
+      ]
+    },
     "docs/audits/rc6_convergence_finance/persistence_independent_review.md": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -4245,6 +4448,17 @@
         "U20",
         "U21",
         "U26"
+      ]
+    },
+    "docs/audits/rc6_convergence_finance/probes/original_snapshot_sources_archive_probe.py": {
+      "reason": "Record exact financial fixes, RED/GREEN receipts and external field authority separately from unauthenticated master/OOS/live commercial facts.",
+      "requirement_ids": [
+        "AUD-468-19",
+        "U06",
+        "U09",
+        "U10",
+        "U22",
+        "U23"
       ]
     },
     "docs/audits/rc6_convergence_finance/projection_index_derivation_review.md": {
@@ -5393,7 +5607,8 @@
       "requirement_ids": [
         "U16",
         "U21",
-        "U26"
+        "U26",
+        "U27"
       ]
     },
     "rc6_paper_family_lifecycle.py": {
@@ -5477,15 +5692,8 @@
     "rc6_shadow_runtime/families.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
-        "U14",
-        "U15",
-        "U16",
-        "U17",
-        "U18",
-        "U19",
-        "U20",
-        "U21",
-        "U26"
+        "AUD-468-04",
+        "U14"
       ]
     },
     "rc6_shadow_runtime/funnel.py": {
@@ -6219,7 +6427,9 @@
     "tests/test_rc6_committed_projection.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
+        "AUD-468-04",
         "AUD-468-19",
+        "U14",
         "U17",
         "U20",
         "U21",
@@ -6434,6 +6644,15 @@
         "AUD-468-04"
       ]
     },
+    "tests/test_rc6_dynamic_sources.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "U16",
+        "U21",
+        "U26",
+        "U27"
+      ]
+    },
     "tests/test_rc6_exit_reader_cadence.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -6584,6 +6803,13 @@
         "UX470-I05"
       ]
     },
+    "tests/test_rc6_shadow_family_runtime.py": {
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "requirement_ids": [
+        "AUD-468-04",
+        "U14"
+      ]
+    },
     "tests/test_rc6_shadow_lab_atomic_capture.py": {
       "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
       "requirement_ids": [
@@ -6716,7 +6942,8 @@
         "rc6_dynamic_universe/live.py",
         "rc6_dynamic_universe/orchestrator.py",
         "rc6_dynamic_universe/runtime.py",
-        "rc6_ppi_global_budget.py"
+        "rc6_ppi_global_budget.py",
+        "rc6_shadow_runtime/families.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Preserve full catalog discovery and bounded HOT/WARM; activate only reviewed factual capacity and service complete all-family EXIT demand first.",
@@ -6734,13 +6961,15 @@
       "test_nodes": [
         "tests/test_rc6_approved_factual_callers.py::test_approved_full_key_policy_reaches_native_scanner_and_scalping",
         "tests/test_rc6_approved_factual_callers.py::test_disabled_factual_scalping_batch_is_byte_equivalent",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_budget_liveness.py::test_u05_impossible_exit_envelope_blocks_every_identity_in_three_windows",
         "tests/test_rc6_dynamic_orchestrator.py::test_dense_hot_and_fair_discovery_have_different_cadence_and_measured_coverage",
         "tests/test_rc6_dynamic_orchestrator.py::test_runtime_ready_view_keeps_every_ready_family_and_does_not_mutate_catalog",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
-        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
       ],
       "workstream": "CORE"
     },
@@ -7787,6 +8016,7 @@
     {
       "code_paths": [
         "rc6_dynamic_universe/live.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/serialization.py",
@@ -7807,11 +8037,13 @@
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
-        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -7864,7 +8096,9 @@
       "rca": "Texto arbitrario en errores de source se copiaba downstream.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
+        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -7892,6 +8126,9 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
@@ -7975,6 +8212,9 @@
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2",
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
@@ -8008,8 +8248,14 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -8194,12 +8440,15 @@
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
+        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
     {
       "code_paths": [
+        "rc6_dynamic_universe/sources.py",
         "rc6_ppi_iol_reconciliation_rc6.py",
         "rc6_source_consolidation.py"
       ],
@@ -8218,6 +8467,8 @@
       "rca": "Flag shadow_promotion=True para BYMA/IOL-only pod\u00eda confundirse con autoridad aunque selecci\u00f3n/entry eran false.",
       "remaining_uncertainty": "Consumers ejecutables s\u00f3lo productores/asserts; UX confirm\u00f3 que no consume flag; No se reescriben artefactos hist\u00f3ricos; Disponibilidad proveedor/account/deployment no verificada",
       "test_nodes": [
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged",
         "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_advisory_complement_requires_same_five_part_primary_identity",
         "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_advisory_ready_keeps_separate_primary_selection_and_zero_entry_authority",
         "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_complement_only_ready_is_advisory_and_never_primary_eligibility",
@@ -8337,6 +8588,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
         "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
         "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
@@ -8382,6 +8634,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
         "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
@@ -8425,6 +8678,7 @@
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_cohort_pagination_and_filters_keep_selected_denominators_over_all_matches",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_cohort_selection_is_exact_and_cards_match_widget",
         "tests/test_rc6_dashboard_convergence.py::test_native_funnel_pagination_preserves_selection_and_full_population",
@@ -10824,6 +11078,9 @@
       "test_nodes": [
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_legacy_v1_real_historical_writer_only_bootstraps_forward_to_v2",
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
@@ -10866,6 +11123,9 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u17_consistent_full_root_rewrite_requires_the_separate_custody_anchor",
         "tests/test_rc6_convergence_persistence.py::test_u17_production_limit_declarations_must_agree_across_roles",
         "tests/test_rc6_convergence_persistence.py::test_u17_writer_and_fully_rehashed_cross_role_safety_fail_closed",
@@ -10910,8 +11170,14 @@
         "tests/test_rc6_committed_projection.py::test_any_wire_member_corruption_blocks_projected_consumer",
         "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
         "tests/test_rc6_committed_projection.py::test_native_four_role_cut_projects_exact_counts_last_page_and_preserves_source_custody",
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
+        "tests/test_rc6_committed_projection.py::test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_once",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_always_recheck_sources_custody_policy_and_failure",
+        "tests/test_rc6_committed_projection.py::test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_return_a_cached_graph",
         "tests/test_rc6_convergence_persistence.py::test_u21_canonical_semantics_reject_correct_digest_but_false_audit_in_writer_and_reader",
         "tests/test_rc6_convergence_persistence.py::test_u21_zero_reports_cannot_hide_a_ghost_snapshot_and_per_report_links_are_checked",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
@@ -10952,7 +11218,9 @@
       "rca": "Duplicados exactos/conflictivos contaban como report diferente.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts"
+        "tests/test_rc6_convergence_persistence.py::test_u26_duplicate_exact_conflicting_report_and_duplicate_row_do_not_inflate_counts",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -10990,7 +11258,9 @@
       "rca": "Texto arbitrario en errores de source se copiaba downstream.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
-        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text"
+        "tests/test_rc6_convergence_persistence.py::test_u16_real_collector_cache_checkpoint_and_full_tick_members_never_retain_error_text",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_checks_native_reports_without_copy_and_rechecks_alias_mutation",
+        "tests/test_rc6_dynamic_sources.py::test_source_taxonomy_validator_matches_sanitization_and_keeps_input_unchanged"
       ],
       "workstream": "PERSISTENCE"
     },
@@ -11072,6 +11342,7 @@
     {
       "code_paths": [
         "rc6_dynamic_universe/live.py",
+        "rc6_shadow_runtime/families.py",
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/projection.py",
         "rc6_shadow_runtime/serialization.py",
@@ -11103,11 +11374,13 @@
       "rca": "Cadencia30s y cuota512 sin lifecycle cubr\u00edan s\u00f3lo50.5min.",
       "remaining_uncertainty": "Integrated exact candidate replay remains pending; Four-role complete horizon/archive replay remains pending; historical three-role evidence is separately preserved; 12000/60000 two-cycle publication <=90s/2GiB remains pending; A static five-identity horizon does not certify a 12000-identity ten-hour live footprint; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO.",
       "test_nodes": [
+        "tests/test_rc6_committed_projection.py::test_native_projection_encoder_template_preserves_every_byte_index_digest_and_page",
         "tests/test_rc6_convergence_persistence.py::test_u14_four_role_512_boundary_and_default_full_tick_cover_nine_hours_plus_restart",
         "tests/test_rc6_freeze_only_native.py::test_freeze_only_preserves_all_native_rankings_policy_identity_order_and_clocks",
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
-        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract"
+        "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads"
       ],
       "workstream": "PERSISTENCE"
     },
