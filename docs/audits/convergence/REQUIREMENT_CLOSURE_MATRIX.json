@@ -10251,6 +10251,30 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/CUSTODY.json": {
+      "reason": "Preserve the exact authorized proposal and actual receipt for removal of 17 regenerable Git source copies only. Actual statvfs reclaimed 1,200,381,952 bytes; 1,366 protected entries and access times remained unchanged. Source TARs, RAW, indexes, DATA, worktrees and siblings were retained. Copy-time eleven-stat equality and exact original SHA/bytes do not assert earlier custody, runtime cleanup, Native performance, image acceptance or deploy authorization.",
+      "requirement_ids": [
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/rc6-ux-exact-source-scratch-cleanup-receipt-20261005.json": {
+      "reason": "Preserve the exact authorized proposal and actual receipt for removal of 17 regenerable Git source copies only. Actual statvfs reclaimed 1,200,381,952 bytes; 1,366 protected entries and access times remained unchanged. Source TARs, RAW, indexes, DATA, worktrees and siblings were retained. Copy-time eleven-stat equality and exact original SHA/bytes do not assert earlier custody, runtime cleanup, Native performance, image acceptance or deploy authorization.",
+      "requirement_ids": [
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/rc6-ux-exact-source-scratch-removal-proposal-20261005.json": {
+      "reason": "Preserve the exact authorized proposal and actual receipt for removal of 17 regenerable Git source copies only. Actual statvfs reclaimed 1,200,381,952 bytes; 1,366 protected entries and access times remained unchanged. Source TARs, RAW, indexes, DATA, worktrees and siblings were retained. Copy-time eleven-stat equality and exact original SHA/bytes do not assert earlier custody, runtime cleanup, Native performance, image acceptance or deploy authorization.",
+      "requirement_ids": [
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/sre-archive-admission/namespace-focal.xml": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [

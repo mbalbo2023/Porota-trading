@@ -635,3 +635,11 @@ SHA6c0f5db5f8b22ed864e53f3b3fc5156203191308921940102305a097f7d3b17e y
 Se preservan los pins Git/TAR/índice que permiten regenerar esas copias;
 los inodes temporales originales no se presentan como recreados. BIG sigue
 RED; horizonte1201,Gov final,Chrome,artefacto ydeploy no se acreditan.
+
+La propuesta autorizada y el recibo original de esa limpieza también se
+preservan byte por byte en `evidence/source-scratch-cleanup-20261005/`.
+Su `CUSTODY.json`, SHA256
+`0c88a711ee610bc3e8843dd44363acac6767a47427770157227d659439707122`,
+verifica los bytes originales y los once atributos de cada fuente durante
+la copia. Esa comprobación corresponde al momento de preservación; no
+reemplaza el alcance de la ejecución documentada en el recibo.
