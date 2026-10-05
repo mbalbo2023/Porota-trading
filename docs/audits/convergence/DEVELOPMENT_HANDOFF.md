@@ -272,8 +272,8 @@ Ese resultado no constituye una ejecución del SHA integrado ni del artefacto.
 El observador GC opcional del stress prefiere el frame real _read y conserva
 también el primer frame de sqlite_snapshot. Los valores ausentes permanecen
 null; no cambian los umbrales GC, las cuotas ni los deadlines. La ejecución de
-este instrumento sobre la nueva fuente integrada sigue pendiente. No se
-atribuye todavía la falla del BIG a GC ni se extrapola el control aislado.
+este instrumento sobre whole d9 está documentada más abajo. No se atribuye
+la falla anterior de captura de0.25s a GC ni se extrapola el control aislado.
 
 La remediación del scope histórico de primera admisión conserva count10 en
 la ronda lenta original. El guard nuevo primero confirma ENTRY_BLOCKED por
@@ -284,7 +284,7 @@ runtime mantiene scope histórico10, current desconocido, policy book60 y LOWER
 suspendido. Crecimiento, intercambio de identidad con count10 y ronda lenta
 pasaron3/3 sobre whole OWN7e66/frozen157. La corrida anterior22/23 y la anterior
 64/65 invalidada por .pytest_cache se conservan como alcances separados.
-El inventario de esta integración explica638/638 paths evolucionados y conserva
+El inventario anterior d9 explicó638/638 paths evolucionados y conserva
 55 requisitos,80 escenarios,90 variantes y6 controles. Estos números son
 inventario documental; la ejecución final del SHA integrado sigue pendiente.
 
@@ -306,5 +306,17 @@ del checkpoint en PackedStorage sin completar. Veintinueve pares completos
 de GC generación2 consumieron16.453s; el máximo fue2.216s. Los timers parciales
 del último progreso no son el tiempo total. Memoria1,289,154,560B, bytes y diez
 stats de fuente quedaron dentro de sus límites; la aceptación grande sigue RED.
-La optimización de asignaciones se desarrolla en branch aislada conservando
-capturas/chunks/literales/canonical bytes exactos, plazos, GC y cuotas originales.
+La optimización de asignaciones está integrada con capturas/chunks/literales/
+canonical bytes exactos, plazos, GC y cuotas originales. Su evidencia OWN
+conserva162/162 casos sobre0b380438 y35/35 sobre93489456 después de restaurar
+la denegación MAX_BINDINGS del nuevo buffer. Son ejecuciones distintas y
+solapadas; no se suman como cobertura independiente. El ahorro CPU/RSS y el
+ciclo BIG90 sin instrumentación sobre la integración siguen sin medición.
+
+La separación de los drivers de navegador está integrada desde OWN881efed5:
+Playwright queda en el driver; los handlers nativos se ejecutan en un child
+con157 distribuciones verificadas antes del fixture y con fuente Git completa.
+El IPC conserva respuesta fresca, custodia,4MiB y los plazos originales; sus
+guards funcionales311/312 están en ejecución separada. La preparación fuente
+no constituye aceptación de esos guards ni de las294 rutas/resoluciones,
+aliases/foco/accesibilidad o del corte BIG OPEN final.
