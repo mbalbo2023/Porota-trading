@@ -71,11 +71,28 @@ class LiveHealthFixture:
             def spawn(actual, **kwargs):
                 return subprocess.Popen(actual, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                         env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), **kwargs)
+            deadline = monotonic() + 20
             self.children = ChildProcesses({"dynamic_shadow": command}, startup_grace_seconds=0, spawn=spawn)
             self.children.poll()
             self.process = self.children.processes.get("dynamic_shadow")
             require(self.process is not None, "NATIVE_HEALTH_CHILD_SPAWN_FAILED")
-            deadline, pending = monotonic() + 20, bytearray()
+            # The canonical supervisor has now recorded the real RUNNING
+            # start. Release the private child only after that record, so its
+            # genuine tick cannot race ahead of the parent's started_at.
+            descriptor, control = self.process.stdin.fileno(), b"START_REAL_NATIVE_TICK\n"
+            os.set_blocking(descriptor, False)
+            with selectors.DefaultSelector() as selector:
+                selector.register(descriptor, selectors.EVENT_WRITE)
+                while True:
+                    remaining = deadline - monotonic()
+                    require(remaining > 0 and selector.select(remaining), "NATIVE_HEALTH_CHILD_START_DEADLINE")
+                    try:
+                        written = os.write(descriptor, control)
+                    except BlockingIOError:
+                        continue
+                    require(written == len(control), "NATIVE_HEALTH_SUPERVISOR_START_WRITE_REJECTED")
+                    break
+            pending = bytearray()
             with selectors.DefaultSelector() as selector:
                 selector.register(self.process.stdout, selectors.EVENT_READ)
                 while b"\n" not in pending:

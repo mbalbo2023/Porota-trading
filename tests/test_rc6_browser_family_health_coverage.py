@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from bs4 import BeautifulSoup
 import pytest
 
-from tests.rc6_browser_ipc import GateFailure, ProductClient, source_inventory
+from tests.rc6_browser_ipc import GateFailure, ProductClient, parse_frame, source_inventory
 from tests.rc6_browser_coverage import observe_health, verified_scope
 from tests.test_rc6_browser_product_ipc import complete_archive
 
@@ -187,3 +187,19 @@ def test_health_cli_runs_real_private_shadow_and_reports_joined_custody_proof(co
     producer = receipt["product_proof"]["offline_live_health_fixture"]
     assert producer["producer_exitcode"] == 0 and producer["producer_reaped"]
     assert not producer["producer_cleanup_forced"] and not receipt["runtime_live_after_fixture_cleanup"]
+
+
+@pytest.mark.parametrize("control", (b"", b"INVALID_START\n"), ids=("eof", "invalid_start"))
+def test_real_health_child_rejects_start_control_before_any_native_tick_or_database(complete_archive, tmp_path, control):
+    """Actual157/source child, negative protocol stage; no financial authority."""
+    root, index, _ = complete_archive
+    database = tmp_path / "must-not-create.db"
+    before = source_inventory(root)
+    result = subprocess.run([sys.executable, "-I", "-B", str(root / "tests/ci_rc6_browser_product.py"),
+        "--expected-python", sys.executable, "--expected-python-version", f"{sys.version_info.major}.{sys.version_info.minor}",
+        "--index", str(index), "--require-complete-index", "--health-worker-database", str(database)],
+        input=control, capture_output=True, timeout=20)
+    response = parse_frame(result.stdout)
+    assert result.returncode == 1 and response["ok"] is False
+    assert response["error"]["gate"] == "NATIVE_HEALTH_SUPERVISOR_START_REQUIRED"
+    assert not database.exists() and source_inventory(root) == before

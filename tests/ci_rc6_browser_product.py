@@ -268,6 +268,7 @@ def serve_health_worker(args):
                 python_version=args.expected_python_version)
             before, source = source_start(ROOT, args.index)
             require(source and source["pin_complete"], "WHOLE_COMPLETE_RAW_SOURCE_INDEX_REQUIRED")
+            require(sys.stdin.buffer.readline(32) == b"START_REAL_NATIVE_TICK\n", "NATIVE_HEALTH_SUPERVISOR_START_REQUIRED")
             network, source_calls = [], []
             def blocked(*_args, **_kwargs):
                 network.append("BLOCKED")
