@@ -259,3 +259,18 @@ no certifica mercado OPEN. Capacidad factual PPI OPEN, términos comerciales de
 cuenta, master de veinte ruedas y edge OOS siguen NO_VERIFICADO/NO_DEMOSTRADO
 hasta recibir evidencia independiente. Los componentes dependientes permanecen
 cerrados; un deploy no produce esa evidencia.
+
+Actualización de integración 2026-10-05: se preservaron sin cambios los RAW
+de los dos controles aislados de captura f889/157, los doce controles de codec
+signed-zero f383/157 y los doce casos originales de captura f889/157. El caso
+original de ausencia de O_NONBLOCK tenía un interceptor inválido; su suplemento
+con descriptor real confirmó por separado el fallo del producto original.
+El dossier del owner conserva ambos alcances y la corrección OWN825/157 con
+127/127 casos, fuente completa sin overlay, imports propios y modos/SHA intactos.
+Ese resultado no constituye una ejecución del SHA integrado ni del artefacto.
+
+El observador GC opcional del stress prefiere el frame real _read y conserva
+también el primer frame de sqlite_snapshot. Los valores ausentes permanecen
+null; no cambian los umbrales GC, las cuotas ni los deadlines. La ejecución de
+este instrumento sobre la nueva fuente integrada sigue pendiente. No se
+atribuye todavía la falla del BIG a GC ni se extrapola el control aislado.

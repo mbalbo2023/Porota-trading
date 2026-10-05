@@ -188,20 +188,29 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
                      "collected": info.get("collected"), "uncollectable": info.get("uncollectable")}
             frame = sys._getframe(1)
             try:
+                capture = None
+                first_capture = None
                 for _ in range(32):
                     if frame is None:
                         break
                     if frame.f_globals.get("__name__") == "rc6_audit_evidence.sqlite_snapshot":
                         progress = frame.f_locals
-                        event["source_capture"] = {"function": frame.f_code.co_name,
+                        candidate = {"function": frame.f_code.co_name,
                             "line": frame.f_lineno, "consumed_bytes": progress.get("consumed"),
                             "copy_pass": progress.get("destination") is not None}
                         deadline = progress.get("deadline")
                         if type(deadline) in (int, float):
-                            event["source_capture"]["remaining_seconds"] = deadline-at
-                        gc_diagnostic["source_capture_events"] += 1
-                        break
+                            candidate["remaining_seconds"] = deadline-at
+                        if first_capture is None:
+                            first_capture = candidate
+                        if frame.f_code.co_name == "_read":
+                            capture = candidate
+                            break
                     frame = frame.f_back
+                if first_capture is not None:
+                    event["source_capture"] = capture if capture is not None else first_capture
+                    event["source_capture_first_frame"] = first_capture
+                    gc_diagnostic["source_capture_events"] += 1
                 raw = (json.dumps(event, sort_keys=True, allow_nan=False)+"\n").encode()
                 if os.write(descriptor, raw) != len(raw):
                     gc_diagnostic["write_errors"] += 1
