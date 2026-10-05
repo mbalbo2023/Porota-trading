@@ -261,7 +261,9 @@
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
         "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
-        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-88df8503.json"
       ],
       "pending_gates": [
         "Browser grande:40f mejora reader(max0.811644s), pero af71ff9e intermedio falla1.181601s en1280/trading/equity-spot tras49views1440GREEN. Corregir costo, ejecutar49×6/22/interacciones sin aumentar1s.",
@@ -275,6 +277,9 @@
         "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN.",
         "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
         "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
+      ],
+      "diagnostic_probes": [
+        "tests/ci_rc6_projection_browser_diagnostic.py: NOGATE_ONLY; acceptance_complete=false"
       ]
     },
     {

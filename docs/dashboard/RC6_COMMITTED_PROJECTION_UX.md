@@ -146,6 +146,17 @@ idénticos, con cero aperturas SQLite fuente y cero red. El receipt
 `native-large-request-overlap-local-receipt.json` conserva ese nuevo RED y los
 anteriores. Esta mejora medida todavía no completa el gate grande.
 
+La pasada posterior de componentes es exclusivamente NOGATE y conserva
+`acceptance_complete=false`. Sus wrappers devuelven valores nativos sin cambiar
+plazos, selección, bytes o estado de GC. Registró 26 renders antes de otro
+rechazo a 1,004927 s. En ese render, wire ocupó 0,997868 s y la verificación
+report de 292783805 bytes llegó al deadline; la copia SQLite tardó 0,135536 s.
+No hubo una colección GC en ese render ni throttling cgroup en toda la pasada.
+Las mediciones CPU de etapas se solapan y no se suman. El receipt
+`native-browser-components-diagnostic-local-receipt.json` liga probe y fuente
+exactos y conserva los 1391 archivos y 15 miembros sin cambios. Este diagnóstico
+no atribuye el pico a una causa de hardware ni certifica una mejora temporal.
+
 El gate grande sigue abierto hasta obtener navegación y render completos dentro
 de ≤4 MiB por solicitud y ≤1 s. Los tiempos del fixture pequeño y el deadline
 de falla no prueban esa capacidad. La validación

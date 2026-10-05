@@ -1,0 +1,174 @@
+{
+  "acceptance_complete": false,
+  "archive_sha256": "2dda37ed73a24562f539158d0562f655eb0118b2c4f49cd97bf6ad0518fc059a",
+  "candidate_tree_sha": "c16aaead8646e66f7c0f9419e8424b9a83c886f9",
+  "canonical_checks_completed": 25,
+  "cgroup_throttled_microseconds_during_all_observed_renders": 0,
+  "diagnostic_maximum_seconds": 60,
+  "diagnostic_stopped_on_first_native_browser_failure": true,
+  "failed_render": {
+    "cgroup_delta_all_container_processes": {
+      "burst_usec": 0,
+      "nice_usec": 0,
+      "nr_bursts": 0,
+      "nr_periods": 10,
+      "nr_throttled": 0,
+      "system_usec": 120353,
+      "throttled_usec": 0,
+      "usage_usec": 1618896,
+      "user_usec": 1498544
+    },
+    "elapsed_seconds": 1.0049044049992517,
+    "error_class": null,
+    "filters": {},
+    "gc_after": [
+      {
+        "collected": 4066,
+        "collections": 185,
+        "uncollectable": 0
+      },
+      {
+        "collected": 1112,
+        "collections": 16,
+        "uncollectable": 0
+      },
+      {
+        "collected": 0,
+        "collections": 1,
+        "uncollectable": 0
+      }
+    ],
+    "gc_before": [
+      {
+        "collected": 4066,
+        "collections": 185,
+        "uncollectable": 0
+      },
+      {
+        "collected": 1112,
+        "collections": 16,
+        "uncollectable": 0
+      },
+      {
+        "collected": 0,
+        "collections": 1,
+        "uncollectable": 0
+      }
+    ],
+    "index": 25,
+    "path": "/instrumentos/evidencia",
+    "process_cpu_seconds": 1.6096543029999992
+  },
+  "gc_elapsed_seconds_during_entire_diagnostic": 0.06223389299339033,
+  "gc_events_during_failed_render": 0,
+  "independent_review_scope": "FINANCE_SOURCE_AND_TRACE_READ_ONLY; NO_EXECUTION_OR_GREEN_CLAIM",
+  "native_custody_members_unchanged": 15,
+  "network_attempts": 0,
+  "ppi_watch_touched": false,
+  "prior_acceptance_red_preserved": "native-large-request-overlap-local-receipt.json",
+  "product_source_overlays": [],
+  "raw_evidence": "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-88df8503.json",
+  "raw_evidence_sha256": "3b1199cc4c27966f4d6585be4975ecab495fe69d627c1a6d16bdb4446a77ead0",
+  "renders_observed": 26,
+  "root_final_freeze_claim": false,
+  "runner_path": "tests/ci_rc6_projection_browser_diagnostic.py",
+  "runner_scope": "EXTERNAL_DIAGNOSTIC_PROBE_ON_EXACT_UNMODIFIED_ARCHIVE_88DF",
+  "runner_sha256": "fce5ec2865a424eea1cc088149d8231dabc8dfe3e663b60476769807fe5f92ff",
+  "runtime_instrumentation": "TIMING_WRAPPERS_AND_GC_CALLBACK_ONLY; ORIGINAL_NATIVE_RETURNS_DEADLINE_AND_GC_STATE_UNCHANGED",
+  "runtime_touched": false,
+  "schema": "rc6.dashboard-native-browser-components-local-receipt.v1",
+  "source_proof_pass": true,
+  "source_sha": "88df85033ca38c280f403b0716bf8b556b4d3c04",
+  "source_sqlite_attempts": 0,
+  "stage_comparison": [
+    {
+      "failed_render_stages": [
+        {
+          "elapsed_seconds": 0.13553611899988027,
+          "error_class": null,
+          "label": "source_capture_enter",
+          "process_cpu_seconds_overlap_not_additive": 0.2447268780000016,
+          "render": 25,
+          "thread_cpu_seconds": 0.11660368999999982,
+          "thread_id": 140215496369984
+        }
+      ],
+      "label": "source_capture_enter",
+      "previous_median_elapsed_seconds": 0.07754268300050171,
+      "previous_median_thread_cpu_seconds": 0.06604119299999978,
+      "previous_native_render_samples": 25,
+      "role": null
+    },
+    {
+      "failed_render_stages": [
+        {
+          "elapsed_seconds": 0.9978677799990692,
+          "error_class": "ValueError",
+          "label": "wire_generation",
+          "process_cpu_seconds_overlap_not_additive": 1.6022251519999955,
+          "render": 25,
+          "thread_cpu_seconds": 0.300009078,
+          "thread_id": 140215461947072
+        }
+      ],
+      "label": "wire_generation",
+      "previous_median_elapsed_seconds": 0.6034560730004159,
+      "previous_median_thread_cpu_seconds": 0.185518915,
+      "previous_native_render_samples": 25,
+      "role": null
+    },
+    {
+      "failed_render_stages": [
+        {
+          "elapsed_seconds": 0.6878973259990744,
+          "error_class": "ValueError",
+          "label": "storage",
+          "logical_bytes": 292783805,
+          "logical_sha256": "eff2b6e3a4c102a7f907aa31f526e75b9e41bfae451ca25eb151165635a8233e",
+          "process_cpu_seconds_overlap_not_additive": 1.1781004330000044,
+          "render": 25,
+          "retain": false,
+          "role": "report",
+          "thread_cpu_seconds": 0.48031162400000005,
+          "thread_id": 140215453554368
+        }
+      ],
+      "label": "storage",
+      "previous_median_elapsed_seconds": 0.40919325800132356,
+      "previous_median_thread_cpu_seconds": 0.32926514,
+      "previous_native_render_samples": 25,
+      "role": "report"
+    },
+    {
+      "failed_render_stages": [
+        {
+          "elapsed_seconds": 0.3033938180014957,
+          "error_class": null,
+          "label": "storage",
+          "logical_bytes": 105216231,
+          "logical_sha256": "056c9d0b8aa68b9b46869133712ae5f8c2062d0443988bdda2ad7c7df04d8772",
+          "process_cpu_seconds_overlap_not_additive": 0.7073861200000024,
+          "render": 25,
+          "retain": false,
+          "role": "checkpoint",
+          "thread_cpu_seconds": 0.197713228,
+          "thread_id": 140215445161664
+        }
+      ],
+      "label": "storage",
+      "previous_median_elapsed_seconds": 0.25236402999871643,
+      "previous_median_thread_cpu_seconds": 0.2212384,
+      "previous_native_render_samples": 25,
+      "role": "checkpoint"
+    }
+  ],
+  "status": "DIAGNOSTIC_ONLY_NATIVE_OR_BROWSER_FAILURE_RETAINED",
+  "supported_findings": [
+    "The slow render was dominated by fresh wire verification, including a report CRC/SHA operation that reached the original deadline.",
+    "This failing render had no GC collection; no cgroup throttling was observed during the diagnostic.",
+    "All container CPU in the failing render was1618896us versus1609654us for this process; other processes used roughly9ms in that interval.",
+    "Per-stage process CPU overlaps and must not be added; the exclusive thread CPU omits SHA workers on separate threads.",
+    "The trace does not establish a cause for hardware/scheduling variance and does not measure an acceptance improvement."
+  ],
+  "tracked_source_files_unchanged": 1391
+}
