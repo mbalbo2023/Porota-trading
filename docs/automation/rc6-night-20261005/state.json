@@ -16,8 +16,23 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "2026-10-05T06:53:28.292Z-nj6stm0t84cx7ajh4oqdbq",
+    "owner": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-05T06:53:28.292Z",
+    "expires_at": "2026-10-05T07:13:28.292Z",
+    "base_commit": "27b570e36e9c7aeb89e655c3dd175037d105653f",
+    "purpose": "REVALIDATE_OWNER_AND_CANDIDATE"
+  },
+  "pending_action": {
+    "type": "REVALIDATE_OWNER_AND_CANDIDATE",
+    "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "candidate_prs_found": 0,
+    "owner_comment_id": 5986480121,
+    "latest_coordination_comment_id": 5986721421,
+    "started_at": "2026-10-05T06:53:28.292Z"
+  },
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
