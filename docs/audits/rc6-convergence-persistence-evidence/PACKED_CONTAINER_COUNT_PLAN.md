@@ -43,9 +43,14 @@ The dispatch-count control verifies only the structural removal of calls on
 scalar leaves. It does not assert a time or memory saving. Existing allocation,
 capacity, nonfinite, depth, node, key, static/mutable-header, dual-codec,
 adversarial-wire, and native writer/reader/projection guards remain required.
-Native execution is pending a coordinated CPU slot on a whole Git archive,
+The coordinated focal subsequently passed 113/113 cases on the exact whole
+Git archive of `ad5e10715467c27f9673643c7253e711c48d0934`: 1,845 source files,
 the literal frozen Python 3.11 interpreter and its exact 157 distributions,
-with complete source hashes/modes/import closure, network denial, and raw JUnit.
+unchanged complete source hashes/modes/blob IDs, 94 imports from that archive,
+zero alien imports or network/source-SQLite attempts, and no skipped cases.
+Its original raw JUnit, receipt, driver, lock preflight, log, and full source
+index are preserved losslessly in `packed_container_count/DOSSIER.json`.
+The native result belongs to `ad5e1071`, not this later documentation commit.
 A later integrated uninstrumented BIG90 run decides whether the full caller
 fits the original deadline and RSS/quota constraints. This source change is
 not evidence of that completion, a nine-hour retention horizon, an immutable
