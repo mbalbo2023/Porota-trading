@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from contextlib import closing
+import gc
 
 from be_paper_engine import PaperStore, Quote, D
 from bs_instrument_contracts import InstrumentContract
@@ -54,7 +56,7 @@ def native_decision(at, *, key="d1", action="HOLD", score=".41", strategy="SPOT_
 
 def insert_decision(store, payload, *, corrupt=False):
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("INSERT INTO decision_evidence_snapshots VALUES(?,?,?,?,?)", (payload["decision_key"],
             payload["captured_at"], payload["schema"], "bad" if corrupt else hashlib.sha256(raw.encode()).hexdigest(), raw))
 
@@ -65,10 +67,13 @@ def insert_book(store, value):
         value["observed_at"], currency=value["currency"], market=value["market"],
         metadata_source=value["metadata_source"], book_at=value["book_at"], trade_at=value["trade_at"], last_kind="TRADE")
     store.add_quote(q)
+    # Finalize native writer/UDF cycles before the coherent-copy reader.
+    gc.collect()
 
 
 def boot(tmp_path, *, config=None):
     store = PaperStore(str(tmp_path / "source.db"))
+    gc.collect()
     first, checkpoint = entry.evaluate_runtime_entry_signals(store.path, as_of=FREEZE,
         registry_config=config or {"horizons": [60]})
     assert first["status"] == "START_AT_CURRENT_TAIL"
@@ -86,7 +91,8 @@ def test_same_snapshot_registry_native_baseline_and_causal_candidates(tmp_path, 
         calls.append((snapshot, list(evaluators)))
         return original(snapshot, evaluators, decision_at=decision_at)
     monkeypatch.setattr(entry, "evaluate_same_snapshot", capture)
-    before = sqlite3.connect(store.path).execute("SELECT count(*) FROM paper_decisions").fetchone()[0]
+    with closing(sqlite3.connect(store.path)) as connection:
+        before = connection.execute("SELECT count(*) FROM paper_decisions").fetchone()[0]
     report, checkpoint = entry.evaluate_runtime_entry_signals(store.path, as_of=at+timedelta(seconds=5), previous=checkpoint,
         registry_config={"horizons": [60]})
     variants = report["experiments"][0]["variants"]
@@ -99,7 +105,7 @@ def test_same_snapshot_registry_native_baseline_and_causal_candidates(tmp_path, 
     assert variants["microstructure:v1"]["decision"]["accepted"] is True
     assert all(v["decision"]["entry_authority"] is False for v in variants.values())
     assert report["score_is_probability"] is False and report["provider_requests"] == 0
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         assert c.execute("SELECT count(*) FROM paper_decisions").fetchone()[0] == before
         assert c.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
 
@@ -294,11 +300,11 @@ def test_hash_source_safety_restart_and_budgets_are_fail_closed(tmp_path, monkey
     with pytest.raises(ValueError, match="HASH"):
         entry.evaluate_runtime_entry_signals(store.path, as_of=at+timedelta(seconds=5), previous=cp, registry_config={"horizons": [60]})
     assert cp["cursors"]["decision_evidence_snapshots"] == 0
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("UPDATE observer_state SET real_orders_sent=1")
     with pytest.raises(ValueError, match="SAFETY"):
         entry.evaluate_runtime_entry_signals(store.path, as_of=at+timedelta(seconds=5), previous=cp, registry_config={"horizons": [60]})
-    with store.connect() as c: c.execute("UPDATE observer_state SET real_orders_sent=0")
+    with closing(store.connect()) as c, c: c.execute("UPDATE observer_state SET real_orders_sent=0")
     with pytest.raises(ValueError, match="FUTURE"):
         entry.evaluate_runtime_entry_signals(store.path, as_of=FREEZE-timedelta(seconds=1), previous=cp, registry_config={"horizons": [60]})
     changed, reset = entry.evaluate_runtime_entry_signals(store.path, as_of=at+timedelta(seconds=5), previous=cp, registry_config={"horizons": [61]})

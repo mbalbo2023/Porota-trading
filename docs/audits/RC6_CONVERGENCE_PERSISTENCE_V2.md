@@ -92,9 +92,12 @@ OPEN capacity.
 
 ## Retention and verified archive
 
-The canonical writer's default live quota is 8,192 recursive entries and
-128 MiB. The strict generic `RetentionPolicy` default remains 512 entries for
-explicit small-budget consumers/tests. The writer reports 30-second cadence,
+The canonical writer and generic `RetentionPolicy` retain the original fixed
+live quota of 512 recursive entries and 128 MiB. The former 8,192-entry writer
+default was contingent on a complete wheel/recovery proof that was not
+demonstrated and is revoked. Historical receipts using that setting remain
+descriptive evidence of their own configuration, not current acceptance. The
+writer reports 30-second cadence,
 a nine-hour contracted horizon, remaining file/byte horizon estimates and archive
 configuration. Bytes, recursive entries, directory metadata and staging peak
 remain bounded. Estimates depend on cut size; they do not certify arbitrary
@@ -104,10 +107,16 @@ CURRENT and supplied pins are protected. The canonical writer supplies its prior
 generation pin. Unarchived evidence, freezes and unknown files are never removed
 to satisfy pressure. Exhaustion fails SHADOW closed and preserves factual paths.
 
-An archive is used only when an explicit private `archive_root` is configured
-(`POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT` for the worker). Its independent defaults
-are 512 MiB and 32,768 files; the archive has its own exclusive lock and quota.
-No external service or production destination is inferred. The local archiver:
+The canonical environment factory selects the private sibling
+`artifact_root(database)/dynamic-shadow-archive`, with an optional exact
+`POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT` override validated by the resolver. Explicit
+offline constructors may omit archival. Independent limits remain 512 MiB and
+32,768 entries, including allocated blocks, directories and temporary peak;
+the archive has its own exclusive lock and quota. The factory emits component
+V3 recipes preserving every original member byte, and restores old TAR V2
+receipts through their original codec. See
+`rc6-convergence-persistence-evidence/ARCHIVE_V3_CHECKPOINT.md` for the
+component, page-dependency, expiry and recovery contract. The legacy V2 archiver:
 
 1. Produces a private deterministic gzip/tar of the four exact generation
    members, fsyncs it and verifies actual object bytes, members, manifest and
@@ -139,9 +148,12 @@ its exact ACK without rewinding the checkpoint. Rewritten older receipts cannot
 authorize rotation, even when their object and both receipt copies agree.
 
 Archive exhaustion stops further archival/rotation and preserves the latest
-committed cut and unarchived generations. Archive objects/receipts are not deleted
-automatically. A finite quota intentionally requires lifecycle planning; growing
-a second ledger without a bound is not accepted.
+committed cut and unarchived generations. TAR V2 objects/receipts are retained.
+V3 expires only the verified contiguous receipt prefix outside the nine-hour
+wheel plus one-hour recovery margin, preserving all live/pinned cuts and
+transitive page bases under a durable GC intent/checkpoint. Full-horizon
+sustainability for the configured workload remains a measured acceptance gate;
+small fixtures or four cuts do not establish it.
 
 ## Validation and limits
 

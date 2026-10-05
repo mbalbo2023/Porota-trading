@@ -2,6 +2,7 @@
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -23,7 +24,7 @@ def clock(seconds):
 
 def source(tmp_path):
     path = tmp_path/"paper.sqlite"
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.executescript("""
           CREATE TABLE observer_state(id INTEGER PRIMARY KEY,mode TEXT,real_orders_sent INTEGER);
@@ -48,7 +49,7 @@ def quote(at, bid="100", *, last=None, book_at=None, trade_at=None, size="1000")
 
 
 def add_quote(path, book):
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         columns = ",".join(book)
         connection.execute(f"INSERT INTO market_snapshots({columns}) VALUES({','.join('?' for _ in book)})", tuple(book.values()))
 
@@ -79,7 +80,7 @@ def add_entry(path, *, paper_id="PAPER-new", opened=clock(390), score=".7", vola
         "quote_used": book, "runtime": {**lineage, "clock_mode": "NATIVE" if native else "EVENT_TIME_SIMULATION_UNVERIFIED",
         "strategy_id": "SPOT_MOMENTUM_BASELINE", "configuration_fingerprint": "factual-config"},
         "inputs_used": position_features}
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         columns = ",".join(position)
         connection.execute(f"INSERT INTO paper_positions({columns}) VALUES({','.join('?' for _ in position)})", tuple(position.values()))
         if evidence:
@@ -103,7 +104,7 @@ def warm(path, checkpoint=None):
 
 
 def dump(path):
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         return digest(list(connection.iterdump()))
 
 
@@ -221,7 +222,7 @@ def test_tampered_immutable_evidence_is_not_registered(tmp_path):
     path = source(tmp_path)
     checkpoint = warm(path)
     add_entry(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE decision_evidence_snapshots SET payload_sha256='bad'")
     before = dump(path)
     result, checkpoint = tick(path, clock(391), checkpoint)
@@ -285,7 +286,7 @@ def test_real_orders_and_reversed_runtime_clock_fail_closed(tmp_path):
     path, position, payload, result, checkpoint = registered(tmp_path)
     with pytest.raises(ValueError, match="TIME_REVERSED"):
         tick(path, clock(330), checkpoint)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE observer_state SET real_orders_sent=1")
     with pytest.raises(ValueError, match="PAPER_SAFETY"):
         tick(path, clock(400), checkpoint)

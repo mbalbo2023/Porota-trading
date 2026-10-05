@@ -6,7 +6,7 @@
       "original_condition": "Retención sirve una rueda completa y recuperación con cadencia real sin autoagotarse.",
       "original_closure": "Caller full tick: repetir frontera soft 40,5 m/hard 50,5 m y una rueda+recovery; sin borrar evidencia no archivada.",
       "rca": "Cadencia30s y cuota512 sin lifecycle cubrían sólo50.5min.",
-      "fix": "Generation lifecycle/ACK/recovery and8192/128MiB live bounds implemented; canonical private512MiB archive wired and fingerprinted; native normal1200 archive sustainability requires further lossless storage correction and nine-hour proof.",
+      "fix": "Generation lifecycle/ACK/recovery with the original fixed512 files/128MiB live quota restored; canonical private512MiB archive V3 wired and fingerprinted; native1200 full-wheel physical capacity remains an active programming gate.",
       "fixpaths": [
         "rc6_shadow_runtime/persistence.py",
         "rc6_shadow_runtime/worker.py",
@@ -25,7 +25,9 @@
         "Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof",
         "Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed",
         "The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached",
-        "A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint"
+        "A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint",
+        "Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.",
+        "Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy."
       ],
       "external": [],
       "checkpoint_status": "OPEN_MEASURED_ARCHIVE_CAPACITY_PROGRAMMING_BLOCKER",

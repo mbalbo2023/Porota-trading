@@ -122,13 +122,11 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
     at = stamp(as_of)
     if isinstance(row_limit, bool) or not isinstance(row_limit, int) or not 1 <= row_limit <= 2000:
         raise ValueError("INVALID_PROSPECTIVE_READ_BUDGET")
-    path = Path(database).resolve(strict=True)
-    stat = path.stat()
-    key = digest([str(path), stat.st_dev, stat.st_ino])
-    c = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    c.row_factory = sqlite3.Row
+    from .source_reads import original_source_path, source_connection
     deadline = monotonic() + QUERY_SECONDS
-    try:
+    path = original_source_path(database)
+    with source_connection(path, deadline=deadline) as (c, source_info):
+        key = digest([str(path), source_info.st_dev, source_info.st_ino])
         c.execute("PRAGMA query_only=ON")
         c.execute("PRAGMA busy_timeout=5")
         c.set_progress_handler(lambda: int(monotonic() > deadline), 200)
@@ -191,8 +189,6 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
         return {"source_key": key, "tails": tails, "rows": rows, "positions": positions, "futures": futures,
                 "future_lifecycles": future_lifecycles,
                 "bootstrap": False, "truncated": truncated, "missing_tables": missing}
-    finally:
-        c.close()
 
 
 def _native_payload(row, at, *, require_signal=True):

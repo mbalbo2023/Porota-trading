@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 from time import monotonic
 from .common import identity, stamp
+from rc6_shadow_runtime.source_reads import source_connection
 
 
 def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
@@ -14,12 +15,9 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
     at = stamp(as_of)
     if not 1 <= row_limit <= 50000 or not 0 < query_budget_seconds <= 2:
         raise ValueError("INVALID_READ_BUDGET")
-    path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
-    try:
+    deadline = monotonic()+query_budget_seconds
+    with source_connection(database, deadline=deadline) as (connection, _):
         connection.execute("PRAGMA query_only=ON")
-        deadline = monotonic()+query_budget_seconds
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
         state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         if not state or state["mode"] != "PRODUCTION_PAPER" or state["real_orders_sent"] != 0:
@@ -102,5 +100,3 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
                 "observation_read_truncated": truncated,
                 "safety": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
                            "real_routes": "NOT_CALLED"}, "source_database_effect": "READ_ONLY"}
-    finally:
-        connection.close()

@@ -103,13 +103,11 @@ def _book(row):
 
 
 def _read(database, at, previous, row_limit):
-    path = Path(database).resolve(strict=True)
-    stat = path.stat()
-    source_key = digest([str(path), stat.st_dev, stat.st_ino])
-    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
+    from .source_reads import original_source_path, source_connection
     deadline = monotonic() + QUERY_SECONDS
-    try:
+    path = original_source_path(database)
+    with source_connection(path, deadline=deadline) as (connection, source_info):
+        source_key = digest([str(path), source_info.st_dev, source_info.st_ino])
         connection.execute("PRAGMA query_only=ON")
         connection.execute("PRAGMA busy_timeout=5")
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 200)
@@ -151,9 +149,6 @@ def _read(database, at, previous, row_limit):
             rows[table] = [dict(row) for row in batch[:row_limit]]
             truncated |= len(batch) > row_limit
         return source_key, tails, rows, 0, truncated
-    finally:
-        connection.rollback()
-        connection.close()
 
 
 def _known_input_policy(policy, admission):

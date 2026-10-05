@@ -284,6 +284,30 @@ def test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_
     assert ShadowRuntime(store.path, evidence_root=tmp_path / "offline", source_roots=[]).files.archive_format == "TAR_V2"
 
 
+def test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration(tmp_path):
+    store, _ = make_store(tmp_path, count=1)
+    current = ShadowRuntime.from_environment(store.path, evidence_root=tmp_path / "native", source_roots=[])
+    assert current.files.maximum_files == 512
+    assert current.files.maximum_bytes == 128 * 1024**2
+    assert current.files.archive_maximum_bytes == 512 * 1024**2
+    former = ShadowRuntime.from_environment(store.path, evidence_root=current.root, source_roots=[], maximum_files=8192)
+    assert former.configuration_fingerprint(PRE) != current.configuration_fingerprint(PRE)
+    root = tmp_path / "unarchived"
+    with EvidenceFiles(root) as files:
+        assert files.maximum_files == 512
+        previous = None
+        for number in range(1, 93):
+            try:
+                previous = publish(files, number)
+            except RetentionPressure:
+                break
+        else:
+            pytest.fail("ORIGINAL_NATIVE_FILE_QUOTA_WAS_NOT_ENFORCED")
+        assert previous is not None and 80 <= previous["pointer"]["sequence"] <= 85
+        assert files.read_generation()["pointer"] == previous["pointer"]
+    assert read_committed_generation(root)["pointer"] == previous["pointer"]
+
+
 def test_archive_cannot_share_or_contain_the_independent_generation_authority(tmp_path):
     root = tmp_path / "shadow"
     for archive in (tmp_path / "shadow.authority", tmp_path / "shadow.authority" / "nested"):

@@ -30,7 +30,7 @@ GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v2"
 LEGACY_GENERATION_SCHEMA = "rc6.shadow-evidence-generation.v1"
 EXPORT_SCHEMA = "rc6.shadow-committed-cut.v2"
 LINEAGE_SCHEMA = "rc6.shadow-lineage-authority.v2"
-DEFAULT_MAXIMUM_FILES = 8192
+DEFAULT_MAXIMUM_FILES = 512
 EXPANDED_PAYLOAD_LIMIT = 512 * 1024**2
 SAFETY = {"mode": "SHADOW", "real_orders_sent": 0, "real_routes": "NOT_CALLED",
           "provider_requests": 0, "source_database_effect": "READ_ONLY",

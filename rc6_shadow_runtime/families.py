@@ -194,14 +194,12 @@ def _field(name, rows, *, at, ttl=QUOTE_TTL_SECONDS, static=False, signed=False,
 
 
 def _read(database, at):
-    path = Path(database).resolve(strict=True)
-    connection = sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)
-    connection.row_factory = sqlite3.Row
+    from .source_reads import source_connection
     result = {"metadata": [], "quotes": [], "cash": [], "truncated": [], "errors": []}
-    try:
+    deadline = monotonic()+QUERY_BUDGET_SECONDS
+    with source_connection(database, deadline=deadline) as (connection, _):
         connection.execute("PRAGMA query_only=ON")
         connection.execute("BEGIN")
-        deadline = monotonic()+QUERY_BUDGET_SECONDS
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
         state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         if not state or state["mode"] != "PRODUCTION_PAPER" or state["real_orders_sent"] != 0:
@@ -247,8 +245,6 @@ def _read(database, at):
                         continue
                 result[kind].append(row)
         return result
-    finally:
-        connection.close()
 
 
 def _source_rows(sources):

@@ -22,6 +22,7 @@ from rc6_dynamic_universe.sources import source_observations, source_reason_code
 from .persistence import (EvidenceFiles, failure_reason, shadow_evidence_root,
                           shadow_archive_root, shadow_archive_maximum_bytes,
                           DEFAULT_MAXIMUM_FILES, GENERATION_SCHEMA)
+from .source_reads import original_source_path, source_connection
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-FIX-AUDIT-08-RUNTIME-v4"
@@ -80,7 +81,7 @@ class ShadowRuntime:
                 or not math.isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
             raise ValueError("INVALID_READ_BUDGET")
         self.query_budget_seconds = float(query_budget_seconds)
-        self.database = Path(database).resolve(strict=True)
+        self.database = original_source_path(database)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root) if evidence_root is not None else shadow_evidence_root(self.database)
         # Explicit construction supports isolated offline fixtures without an
@@ -152,11 +153,9 @@ class ShadowRuntime:
             "operational_funnel": "rc6.prospective-operational-funnel.v1"})
 
     def _metadata(self, at, since):
-        c = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=.005)
-        c.row_factory = sqlite3.Row
-        try:
+        end = time.monotonic() + .15
+        with source_connection(self.database, deadline=end) as (c, source_info):
             c.execute("PRAGMA query_only=ON")
-            end = time.monotonic() + .15
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             dataset = None
@@ -164,7 +163,7 @@ class ShadowRuntime:
                 row = c.execute("SELECT dataset_id FROM paper_workspace WHERE id=1").fetchone()
                 dataset = row[0] if row else None
             source_id = digest({"dataset": dataset, "path": str(self.database),
-                "inode": self.database.stat().st_ino, "device": self.database.stat().st_dev})
+                "inode": source_info.st_ino, "device": source_info.st_dev})
             failures = []
             if "paper_events" in tables:
                 for r in c.execute("""SELECT event_at,event_type,detail FROM paper_events
@@ -186,8 +185,6 @@ class ShadowRuntime:
                         "endpoint": "intraday", "useful": False, "native_reason": source_reason_code(code),
                         "source_clock_basis": "native error occurrence; no market quote", "fields": {}})
             return source_id, failures
-        finally:
-            c.close()
 
     def _sources(self):
         reports, errors = {}, []
