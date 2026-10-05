@@ -2,6 +2,28 @@
   "additional_findings": [
     {
       "code_paths": [
+        "rc6_shadow_runtime/archive_components.py",
+        "rc6_shadow_runtime/retention.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_fix_evidence.json",
+      "fix": "Enumerate archive, CAS, GC and live retention namespaces through stable NoAtime descriptors while retaining typed capacity denial and all byte, identity, mode and ownership checks.",
+      "id": "NEW_ARCHIVE_DIRECTORY_ATIME_MUTATION",
+      "linked_requirement_ids": [
+        "U04",
+        "U18"
+      ],
+      "native_caller": "EvidenceRetention.restore_generation and archive_generation -> checkpoint repair / component verification / retention inventories.",
+      "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
+      "rca": "A failed native archive writer retry rejected an original corrupt dependency but plain directory enumeration changed the archive root access time; the read-only restore caller preserved it.",
+      "remaining_uncertainty": "Exact original7e native RED and41 scoped guard passes are preserved; final frozen source execution, full physical horizon and same-image execution remain separate gates.",
+      "test_nodes": [
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody"
+      ],
+      "workstream": "PERSISTENCE"
+    },
+    {
+      "code_paths": [
         "rc6_dynamic_universe/promotion.py",
         "rc6_ppi_global_budget.py"
       ],
@@ -22,6 +44,30 @@
         "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration"
       ],
       "workstream": "BUDGET"
+    },
+    {
+      "code_paths": [
+        "scripts/rc6_convergence_provenance.py",
+        "scripts/rc6_issue465_audit_gate.py",
+        "scripts/porota_artifact_provenance.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/convergence/evidence/git-replace-original-helper-probe.json",
+      "fix": "Read actual Git objects with --no-replace-objects, reject replacement refs before and after FIP/Gate validation, and compare the final gate tree to its initial immutable capture.",
+      "id": "NEW_GIT_REPLACEMENT_OBJECT_AUTHORITY",
+      "linked_requirement_ids": [
+        "U11",
+        "U25"
+      ],
+      "native_caller": "Canonical Git/FIP/Issue465/source-manifest provenance helpers and exact final receipt consumers.",
+      "owner_mapping": "docs/audits/RC6_CONVERGENCE_SRE_OFFLINE.json",
+      "rca": "Native Git replacement refs let all three original provenance helpers read a different commit/tree/blob while retaining the requested SHA label, as reproduced on two private replacement directions.",
+      "remaining_uncertainty": "The original107 helper-only reproduction retains two RED and two positive controls with exact AST/Git hashes; no full original Gate/FIP bypass, native financial execution or final artifact execution is claimed.",
+      "test_nodes": [
+        "tests/test_rc6_convergence_provenance.py::test_git_authority_helpers_read_original_objects_despite_native_replacement",
+        "tests/test_rc6_convergence_provenance.py::test_native_product_tree_replacement_cannot_replace_original_pinned_tree"
+      ],
+      "workstream": "SRE"
     },
     {
       "code_paths": [
@@ -271,6 +317,29 @@
     },
     {
       "code_paths": [
+        "rc6_shadow_runtime/serialization.py"
+      ],
+      "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
+      "evidence_receipt": "docs/audits/rc6-convergence-persistence-evidence/signed_zero_fix_evidence.json",
+      "fix": "Use typed float.hex atom keys while retaining every unchanged canonical byte/hash, bool/int domain and duplicate/nonfinite check.",
+      "id": "NEW_SIGNED_ZERO_SUBTREE_COLLAPSE",
+      "linked_requirement_ids": [
+        "U13",
+        "U17",
+        "U21"
+      ],
+      "native_caller": "Native serialization V1/V2 encode/decode and EvidenceFiles.commit_generation -> read_committed_generation full logical semantics.",
+      "owner_mapping": "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json",
+      "rca": "Full-reader local JSON subtree interning used Python float equality, collapsing negative and positive zero in otherwise valid V1/V2 data and failing its unchanged canonical logical digest.",
+      "remaining_uncertainty": "Eight original native failures/four non-shared controls and70 scoped passes are preserved; final frozen source, physical resource and same-image execution remain separate obligations.",
+      "test_nodes": [
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests"
+      ],
+      "workstream": "PERSISTENCE"
+    },
+    {
+      "code_paths": [
         ".github/workflows/porota-deploy-v2-promote.yml",
         "scripts/porota_predeploy_binding.py"
       ],
@@ -343,6 +412,7 @@
         "tests/test_rc6_convergence_provenance.py::test_duplicate_junit_case_cannot_inflate_guard_execution_evidence",
         "tests/test_rc6_convergence_provenance.py::test_duplicate_original_index_keys_cannot_override_the_original_integrity_contract",
         "tests/test_rc6_convergence_provenance.py::test_executed_mapped_guards_do_not_close_pending_material_programming_gates",
+        "tests/test_rc6_convergence_provenance.py::test_git_authority_helpers_read_original_objects_despite_native_replacement",
         "tests/test_rc6_convergence_provenance.py::test_junit_capture_rejects_nonregular_aliased_or_oversize_inputs_without_blocking",
         "tests/test_rc6_convergence_provenance.py::test_junit_summary_must_equal_actual_case_outcomes",
         "tests/test_rc6_convergence_provenance.py::test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance",
@@ -2575,11 +2645,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -2639,6 +2711,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -2653,11 +2726,13 @@
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -3044,11 +3119,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -3126,11 +3203,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -3296,6 +3375,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -3329,11 +3409,13 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -3538,6 +3620,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -3813,6 +3896,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -3846,11 +3930,13 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -3916,6 +4002,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -3946,11 +4033,13 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -4474,7 +4563,47 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/finance-signed-zero-codec-dc59c2fb-receipt.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/generated-evidence-links-2446246d-red.txt": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/git-authority-material-finaleligibility-107a-wip.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/git-authority-material-finaleligibility-107a-wip.xml": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/git-replace-original-helper-probe.json": {
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/git-replace-original-helper-probe.py": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
         "U11",
@@ -5309,6 +5438,104 @@
         "U26"
       ]
     },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_7e9425e2_red.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_final_guard.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_final_native.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_fix_evidence.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_fixed_native.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_inputs.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_original_probe.py": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
     "docs/audits/rc6-convergence-persistence-evidence/archive_v3_final_native.junit.xml": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -5506,6 +5733,62 @@
       ]
     },
     "docs/audits/rc6-convergence-persistence-evidence/requirement-matrix-wip.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/signed_zero_fix_evidence.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/signed_zero_fixed.junit.xml": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/signed_zero_original_native_inputs.json": {
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "requirement_ids": [
+        "U14",
+        "U15",
+        "U16",
+        "U17",
+        "U18",
+        "U19",
+        "U20",
+        "U21",
+        "U26"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/signed_zero_original_red.junit.xml": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
         "U14",
@@ -9928,6 +10211,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10219,6 +10503,7 @@
         "tests/test_rc6_convergence_provenance.py::test_duplicate_junit_case_cannot_inflate_guard_execution_evidence",
         "tests/test_rc6_convergence_provenance.py::test_duplicate_original_index_keys_cannot_override_the_original_integrity_contract",
         "tests/test_rc6_convergence_provenance.py::test_executed_mapped_guards_do_not_close_pending_material_programming_gates",
+        "tests/test_rc6_convergence_provenance.py::test_git_authority_helpers_read_original_objects_despite_native_replacement",
         "tests/test_rc6_convergence_provenance.py::test_junit_capture_rejects_nonregular_aliased_or_oversize_inputs_without_blocking",
         "tests/test_rc6_convergence_provenance.py::test_junit_summary_must_equal_actual_case_outcomes",
         "tests/test_rc6_convergence_provenance.py::test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance",
@@ -10330,6 +10615,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10376,11 +10662,13 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -10440,6 +10728,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10473,11 +10762,13 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -10529,6 +10820,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10559,11 +10851,13 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -10637,11 +10931,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -10689,6 +10985,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10782,6 +11079,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -10796,11 +11094,13 @@
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -10854,11 +11154,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -11052,6 +11354,7 @@
         "tests/test_rc6_convergence_provenance.py::test_duplicate_junit_case_cannot_inflate_guard_execution_evidence",
         "tests/test_rc6_convergence_provenance.py::test_duplicate_original_index_keys_cannot_override_the_original_integrity_contract",
         "tests/test_rc6_convergence_provenance.py::test_executed_mapped_guards_do_not_close_pending_material_programming_gates",
+        "tests/test_rc6_convergence_provenance.py::test_git_authority_helpers_read_original_objects_despite_native_replacement",
         "tests/test_rc6_convergence_provenance.py::test_junit_capture_rejects_nonregular_aliased_or_oversize_inputs_without_blocking",
         "tests/test_rc6_convergence_provenance.py::test_junit_summary_must_equal_actual_case_outcomes",
         "tests/test_rc6_convergence_provenance.py::test_late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance",
@@ -11203,6 +11506,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -13790,6 +14094,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -13885,6 +14190,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -13931,11 +14237,13 @@
         "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
         "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset",
         "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -14000,6 +14308,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -14014,11 +14323,13 @@
         "tests/test_rc6_convergence_persistence.py::test_u20_old_current_and_missing_current_cannot_create_a_duplicate_sequence",
         "tests/test_rc6_convergence_persistence.py::test_u20_sigkill_during_publication_seal_rejects_readers_and_recovers_forward_even_after_pointer_restore",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -14074,11 +14385,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -14143,11 +14456,13 @@
         "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker",
         "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
         "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -14292,6 +14607,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -14413,6 +14729,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -14446,11 +14763,13 @@
         "tests/test_rc6_freeze_only_native.py::test_native_complete_previous_and_consumed_previous_match_every_output_and_resume",
         "tests/test_rc6_freeze_only_native.py::test_public_native_planner_output_mutation_preserves_input_freeze_and_prior_state",
         "tests/test_rc6_freeze_only_native.py::test_unknown_and_malformed_previous_use_the_complete_original_contract",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
@@ -14513,6 +14832,7 @@
         "tests/test_rc6_component_archive.py::test_archive_physical_and_logical_peak_admission_denies_before_ack_or_source_rotation",
         "tests/test_rc6_component_archive.py::test_canonical_factory_selects_component_format_binds_fingerprint_and_keeps_explicit_legacy",
         "tests/test_rc6_component_archive.py::test_component_ack_retry_after_another_archive_does_not_rewind_receipt_high_water",
+        "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
         "tests/test_rc6_component_archive.py::test_legacy_restore_cannot_borrow_hash_proof_from_an_object_replaced_between_reads",
         "tests/test_rc6_component_archive.py::test_native_archive_build_intent_recovers_exact_original_bytes_after_each_interruption",
         "tests/test_rc6_component_archive.py::test_native_legacy_tar_receipt_bytes_remain_readable_after_new_component_publication",
@@ -14543,11 +14863,13 @@
         "tests/test_rc6_exact_page_storage.py::test_page_stream_and_original_target_are_verified",
         "tests/test_rc6_exact_page_storage.py::test_real_sqlite_images_preserve_exact_microsecond_revision_and_unicode",
         "tests/test_rc6_exact_page_storage.py::test_source_member_hash_still_rejects_coordinated_pack_and_index_rebinding",
+        "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types",
         "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
         "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema",
         "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
         "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire",
         "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+        "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests",
         "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
         "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
         "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",

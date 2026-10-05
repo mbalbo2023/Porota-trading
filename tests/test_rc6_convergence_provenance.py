@@ -529,11 +529,41 @@ def test_committed_symlink_cannot_become_supported_git_source(candidate):
     assert_rejected(candidate, "UNSUPPORTED_GIT_SOURCE_TYPE")
 
 
-def test_native_product_tree_replacement_cannot_replace_original_pinned_tree(candidate):
+@pytest.mark.parametrize('target', ['product', 'candidate', 'source'])
+def test_native_product_tree_replacement_cannot_replace_original_pinned_tree(candidate, target):
     root = candidate[0]
     manifest = json.loads((root / provenance.INPUT_ROOT / provenance.MANIFEST).read_text())
-    native_git(root, "replace", manifest["product"]["sha"], native_git(root, "rev-parse", "HEAD"))
-    assert_rejected(candidate, "PRODUCT_TREE_CHANGED")
+    replacement = native_git(root, 'rev-parse', 'HEAD')
+    if target == 'candidate':
+        original, replacement = replacement, manifest['product']['sha']
+    else:
+        original = manifest['product']['sha'] if target == 'product' else manifest['sources'][0]['head_sha']
+    native_git(root, "replace", original, replacement)
+    assert_rejected(candidate, "GIT_REPLACE_REFS_FORBIDDEN")
+    with pytest.raises(audit465.AuditGateError, match='^GIT_REPLACE_REFS_FORBIDDEN$'):
+        audit465.verify(root, candidate[1], root / 'missing-governed.json')
+
+
+def test_git_authority_helpers_read_original_objects_despite_native_replacement(tmp_path):
+    from scripts import porota_artifact_provenance as artifact
+    root = tmp_path / 'private-git-authority'
+    root.mkdir()
+    native_git(root, 'init', '-q')
+    native_git(root, 'config', 'user.name', 'Controlled Git authority fixture')
+    native_git(root, 'config', 'user.email', 'fixture@example.invalid')
+    source = root / 'authority.txt'
+    source.write_text('Original bytes\n')
+    original = commit(root)
+    original_tree = native_git(root, 'rev-parse', original + '^{tree}')
+    source.write_text('Replacement bytes\n')
+    replacement = commit(root)
+    replacement_tree = native_git(root, 'rev-parse', replacement + '^{tree}')
+    native_git(root, 'replace', original, replacement)
+    assert original_tree != replacement_tree
+    assert native_git(root, 'rev-parse', original + '^{tree}') == replacement_tree
+    assert provenance.git(root, 'rev-parse', original + '^{tree}') == original_tree
+    assert audit465.git(root, 'rev-parse', original + '^{tree}') == original_tree
+    assert artifact._git(root, 'rev-parse', original + '^{tree}').decode().strip() == original_tree
 
 
 def test_losing_an_original_git_source_path_is_detected_after_a_clean_commit(candidate):

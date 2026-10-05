@@ -310,6 +310,28 @@ jobs:
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --json-out /tmp/porota-host-policy-v2.json
 
+      - name: Final convergence input and guard provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_convergence_provenance.py \
+            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
+            --junit /tmp/porota-governed-tests.xml \
+            --out /tmp/porota-final-input-provenance.json --fetch-source-refs
+          python - <<'PY_FINAL_MATERIAL'
+          import json, os
+          from pathlib import Path
+          proof = json.loads(Path('/tmp/porota-final-input-provenance.json').read_bytes())
+          assert proof['schema'] == 'rc6.final-input-provenance.v1'
+          assert proof['candidate_sha'] == os.environ['CANDIDATE_SHA']
+          assert proof['candidate_tree'] == os.environ['CANDIDATE_TREE']
+          assert proof['software_status'] == 'EXECUTED_NATIVE_GREEN'
+          assert proof['final_candidate_eligible'] is True, 'FINAL_MATERIAL_PROGRAMMING_GATES_NOT_CLOSED'
+          assert proof['material_programming_gates_closed'] is True
+          assert proof['pending_material_programming_gates'] == []
+          print('POROTA_FINAL_MATERIAL_PROGRAMMING_GATES=GREEN')
+          PY_FINAL_MATERIAL
+
       - name: Build candidate exactly once
         shell: bash
         run: |
@@ -404,6 +426,34 @@ jobs:
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
 
+      - name: Exact image native codec and archive control
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ACTUAL_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+          docker run --rm --pull never --network none --read-only \
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true \
+            --no-healthcheck \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432,uid=1000,gid=1000,mode=1777 \
+            --entrypoint python "$ACTUAL_IMAGE_ID" \
+            -m scripts.rc6_archive_v3_image_smoke \
+            --source-manifest /app/POROTA_SOURCE_PROVENANCE.json \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --image-id "$ACTUAL_IMAGE_ID" > /tmp/porota-runtime-codec-smoke.json
+          python - "$ACTUAL_IMAGE_ID" <<'PY_CODEC_IMAGE'
+          import os, sys
+          from pathlib import Path
+          from scripts.porota_artifact_provenance import verify_source_manifest
+          from scripts.rc6_archive_v3_image_smoke import loads, sha, validate_report
+          manifest_path = Path('POROTA_SOURCE_PROVENANCE.json')
+          source = verify_source_manifest(Path('.'), manifest_path, os.environ['CANDIDATE_SHA'], os.environ['CANDIDATE_TREE'])
+          raw = Path('/tmp/porota-runtime-codec-smoke.json').read_bytes()
+          validate_report(loads(raw), candidate_sha=os.environ['CANDIDATE_SHA'], tree_sha=os.environ['CANDIDATE_TREE'],
+                          image_id=sys.argv[1], source_manifest_sha256=sha(manifest_path.read_bytes()),
+                          source_sha256={row['path']: row['sha256'] for row in source['files']})
+          print('POROTA_EXACT_IMAGE_NATIVE_CODEC_ARCHIVE=GREEN|' + sys.argv[1])
+          PY_CODEC_IMAGE
+
       - name: Exact image runtime smoke contract
         shell: bash
         run: |
@@ -461,8 +511,13 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
             --json-out /tmp/porota-image-tar-byte-provenance.json
           python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" "$IMAGE_SIZE_BYTES" <<'PY'
-          import json,os,sys
+          import hashlib,json,os,sys
+          from pathlib import Path
+          from scripts.rc6_archive_v3_image_smoke import SCHEMA, FIXTURE_SHA256, loads
           candidate,tree,image_id,image_tar_sha,image_config_sha,image_size_bytes=sys.argv[1:]
+          rows={row['path']:row for row in json.loads(Path('POROTA_SOURCE_PROVENANCE.json').read_bytes())['files']}
+          codec_raw=Path('/tmp/porota-runtime-codec-smoke.json').read_bytes()
+          assert loads(codec_raw)['image_id_argument'] == image_id
           payload={
             "schema_version":1,
             "candidate_sha":candidate,
@@ -477,6 +532,14 @@ jobs:
             "build_once":True,
             "source_manifest_sha256":os.environ['SOURCE_MANIFEST_SHA256'],
             "source_byte_provenance_required":True,
+            "final_input_provenance_sha256":hashlib.sha256(Path('/tmp/porota-final-input-provenance.json').read_bytes()).hexdigest(),
+            "runtime_codec_smoke":{
+                "schema":SCHEMA,
+                "receipt_sha256":hashlib.sha256(codec_raw).hexdigest(),
+                "script_sha256":rows['scripts/rc6_archive_v3_image_smoke.py']['sha256'],
+                "fixtures_sha256":{name:rows[name]['sha256'] for name in FIXTURE_SHA256},
+                "image_id":image_id,
+            },
             "execution_origin":json.load(open("/tmp/porota-predeploy-origin.json",encoding="utf-8")),
           }
           open("/tmp/porota-frozen-candidate.json","w",encoding="utf-8").write(
@@ -494,15 +557,6 @@ jobs:
             --manifest /tmp/porota-deploy-bundle-v2-manifest.json \
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
-
-      - name: Final convergence input and guard provenance
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python scripts/rc6_convergence_provenance.py \
-            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
-            --junit /tmp/porota-governed-tests.xml \
-            --out /tmp/porota-final-input-provenance.json --fetch-source-refs
 
       - name: Upload predeploy evidence
         id: frozen_primary
@@ -532,6 +586,7 @@ jobs:
             /tmp/porota-predeploy-image.tar.gz
             /tmp/porota-frozen-candidate.json
             /tmp/porota-final-input-provenance.json
+            /tmp/porota-runtime-codec-smoke.json
             /tmp/porota-governed-tests.xml
             /tmp/porota-governed-tests.json
             /tmp/porota-test-collection.txt
@@ -562,7 +617,9 @@ jobs:
           name: porota-predeploy-v2-evidence-only-${{ env.CANDIDATE_SHA }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 7
-          path: /tmp/porota-predeploy-published-evidence/*.json
+          path: |
+            /tmp/porota-predeploy-published-evidence/*.json
+            /tmp/porota-predeploy-published-evidence/*.xml
 
       - name: Enforce secondary evidence API size and origin
         if: success()
@@ -630,5 +687,6 @@ jobs:
           rm -rf /tmp/porota-predeploy-published-evidence
           rm -f /tmp/porota-installed-dependencies.txt /tmp/porota-predeploy-origin.json
           rm -f /tmp/porota-final-input-provenance.json
+          rm -f /tmp/porota-runtime-codec-smoke.json
           rm -f /tmp/porota-convergence-input-inventory.json
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

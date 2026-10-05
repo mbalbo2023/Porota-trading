@@ -1,0 +1,25 @@
+{
+  "assertion_scope": "Native private Git replacement rejection and controlled receipt parsers; not full governed source, financial or image execution",
+  "base_sha": "107a83197a5f80e299fbe63c9b5ef27f853945be",
+  "base_tree": "85c4e08f0bbd9b48a83e577d0f0c8ae7b6d760dd",
+  "candidate_frozen_acceptance": false,
+  "junit_path": "docs/audits/convergence/evidence/git-authority-material-finaleligibility-107a-wip.xml",
+  "junit_sha256": "f611bb4cee868c8f0834e6c34d9f03e5e04b7b5e33595d801dabd2294cbd3570",
+  "scope": "INTERMEDIATE_WORKING_TREE_DIAGNOSTIC_ONLY",
+  "source_files_after_sha256": {
+    "scripts/porota_artifact_provenance.py": "266ce536cb98bba30bba9fb3f78cbd60f51bbe606d346ef4b3f9529e3f5c9a54",
+    "scripts/rc6_convergence_provenance.py": "abb9c092ab70265aa701aa42ea6fd19d381dfb0c63d0195d3023ccfcb48fd301",
+    "scripts/rc6_issue465_audit_gate.py": "2285434317c22e4f29abcdf662e857b99128eb533431f6ba437775120467acdc",
+    "tests/test_rc6_convergence_provenance.py": "1c21003120ec2a457d367c83540f3dda1c3770bb26994f95c2d644627c821b09"
+  },
+  "suite": {
+    "errors": "0",
+    "failures": "0",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "7",
+    "time": "6.927",
+    "timestamp": "2026-10-05T12:40:13.561454+00:00"
+  }
+}

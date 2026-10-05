@@ -116,7 +116,7 @@ def is_bundle_path(path: str) -> bool:
 def _git(repo_root: Path, *args: str, data: bytes | None = None) -> bytes:
     try:
         return subprocess.check_output(
-            ["git", "-C", str(repo_root), *args], input=data, stderr=subprocess.PIPE
+            ["git", "--no-replace-objects", "-C", str(repo_root), *args], input=data, stderr=subprocess.PIPE
         )
     except subprocess.CalledProcessError as exc:
         raise ProvenanceError("GIT_SOURCE_AUTHORITY_UNAVAILABLE") from exc

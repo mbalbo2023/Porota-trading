@@ -52,6 +52,8 @@ TEST_344_ADAPTATIONS = {
 }
 DENIED_ARTIFACTS = {11315198085, 11317509383, 11293625514}
 DISCOVERED_CONVERGENCE_FINDINGS = frozenset({
+    "NEW_ARCHIVE_DIRECTORY_ATIME_MUTATION",
+    "NEW_SIGNED_ZERO_SUBTREE_COLLAPSE", "NEW_GIT_REPLACEMENT_OBJECT_AUTHORITY",
     "NEW_EXIT_RETAINED_RECEIPT_ACTIVATION", "NEW_HISTORY_EXACT_REVISION_LOOKUP",
     "NEW_HISTORY_SEMANTIC_METADATA_REVISION", "NEW_INSTALLED_DISTRIBUTION_METADATA_DUPLICATE",
     "NEW_LEGACY_INIT_PRE_WAL_MUTATION", "NEW_OBSERVER_HISTORY_DIAGNOSTIC",
@@ -80,7 +82,7 @@ def require(condition, reason):
 
 
 def git(root, *arguments, binary=False):
-    result = subprocess.run(["git", "-C", str(root), *arguments], check=False,
+    result = subprocess.run(["git", "--no-replace-objects", "-C", str(root), *arguments], check=False,
                             capture_output=True, timeout=90)
     require(result.returncode == 0, "GIT_SOURCE_UNAVAILABLE:" + arguments[0])
     return result.stdout if binary else result.stdout.decode().strip()
@@ -311,6 +313,7 @@ def preserved_legacy_tests(root, candidate_sha, source_sha, executed):
 
 def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     root = root.resolve(strict=True)
+    require(not git(root, "for-each-ref", "--format=%(refname)", "refs/replace/"), "GIT_REPLACE_REFS_FORBIDDEN")
     require(re.fullmatch(r"[0-9a-f]{40}", candidate_sha) is not None, "CANDIDATE_SHA_INVALID")
     require(git(root, "rev-parse", "HEAD") == candidate_sha, "CANDIDATE_CHECKOUT_MISMATCH")
     require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
@@ -483,6 +486,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
                           "ADDITIONAL_WITH_NATIVE_GUARDS" if new_or_changed_source else
                           "EXACT_INPUT_BYTES" if expected else "EXACT_BASELINE_OR_SOURCE_BYTES"})
     require(git(root, "rev-parse", "HEAD") == candidate_sha, "CANDIDATE_CHANGED_DURING_VERIFICATION")
+    require(not git(root, "for-each-ref", "--format=%(refname)", "refs/replace/"), "GIT_REPLACE_REFS_FORBIDDEN")
     require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
     return {"schema": "rc6.final-input-provenance.v1", "candidate_sha": candidate_sha,
             "candidate_tree": candidate_tree, "product": manifest["product"],

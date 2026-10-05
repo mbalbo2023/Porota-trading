@@ -67,7 +67,7 @@ def load(path, *, raw=False):
 
 
 def git(root, *args):
-    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
+    result = subprocess.run(["git", "--no-replace-objects", "-C", str(root), *args], capture_output=True,
                             text=True, timeout=20, check=False)
     require(result.returncode == 0, "GIT_PROVENANCE_UNAVAILABLE")
     return result.stdout.strip()
@@ -161,6 +161,7 @@ def _guarded_front_path(root, path, frozen, current, successor):
 
 def verify(root: Path, junit: Path, governed: Path) -> dict:
     root = root.resolve(strict=True)
+    require(not git(root, "for-each-ref", "--format=%(refname)", "refs/replace/"), "GIT_REPLACE_REFS_FORBIDDEN")
     sha = git(root, "rev-parse", "HEAD")
     candidate_tree = git(root, "rev-parse", sha + "^{tree}")
     manifest = convergence.INPUT_ROOT + "/" + convergence.MANIFEST
@@ -344,9 +345,10 @@ def verify(root: Path, junit: Path, governed: Path) -> dict:
             require(stat.S_IMODE(info.st_mode) == (0o755 if current["git_mode"] == "100755" else 0o644),
                     "FROZEN_DISK_MODE_MISMATCH")
     require(git(root, "rev-parse", "HEAD") == sha, "CANDIDATE_CHANGED_DURING_VERIFICATION")
+    require(not git(root, "for-each-ref", "--format=%(refname)", "refs/replace/"), "GIT_REPLACE_REFS_FORBIDDEN")
     if convergence_handoff:
         require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
-    candidate_tree = git(root, "rev-parse", sha+"^{tree}")
+    require(git(root, "rev-parse", sha+"^{tree}") == candidate_tree, "CANDIDATE_TREE_CHANGED_DURING_VERIFICATION")
     return {"schema": "rc6.issue465-audit-gate.v1", "status": "GREEN",
             "candidate_sha": sha, "candidate_tree": candidate_tree,
             "matrix_sha256": hashlib.sha256(matrix_data).hexdigest(),
