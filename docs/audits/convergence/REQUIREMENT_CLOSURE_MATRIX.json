@@ -5524,6 +5524,126 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/big.log": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/child-stacks.log": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/entry-preflight.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/native-big-result.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/receipt-custody.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/run-wrapper.py": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/source.index.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper-before.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper-final.json": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper.log": {
+      "reason": "Preserve exact whole f889 source,1557 Git blobs/modes with zero overlays, strict157-distribution preflight before fixture creation and the instrumented native failure in private lab SQLite capture at its unchanged0.25-second deadline. Stack/progress and source ten-field custody are diagnostic evidence; five PAPER exits after FINAL do not prove slow-fsync isolation, final large acceptance, full horizon, image or artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/native-capacity-retention-green.xml": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [

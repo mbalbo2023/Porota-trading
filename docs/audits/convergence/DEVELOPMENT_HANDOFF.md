@@ -192,6 +192,23 @@ explícita de stacks periódicos declara `diagnostic_only=true`. Estos cambios
 de instrumento y sus controles requieren ejecución posterior; registrar una
 etapa activa no acredita que terminara ni que una carga bloqueada haya pasado.
 
+El control canónico pequeño de ese instrumento en el source completo f889
+pasó1/1 con157 distribuciones y conservó los1557 blobs/modos. Recibió progreso
+antes del fsync real y completó cinco salidas PAPER dentro de su intervalo.
+No ejecutó la opción de stacks y no acredita capacidad grande.
+
+La corrida diagnóstica grande posterior sobre f889 verificó las157 versiones
+exactas antes de crear el fixture. Falló nativamente en16.330859 segundos,
+con579264512 bytes de RSS, al agotar el deadline absoluto de0.25 segundos
+del laboratorio durante la copia privada de la fuente SQLite, antes de las
+consultas del laboratorio, primer fsync y CURRENT. Conservó los1557 blobs/modos
+y los diez campos de custodia y SHA de la fuente. Sus once eventos y el stack
+real se preservan byte por byte en `evidence/native-capacity-f8895434-157/`.
+Las cinco salidas PAPER fueron posteriores a FINAL y no prueban aislamiento.
+La investigación de captura mantiene el mismo deadline, doble validación,
+cuotas y custodia; este diagnóstico no reemplaza una ejecución grande exitosa
+sin instrumentación ni el horizonte completo. La capacidad sigue BLOQUEADA.
+
 ## Artefacto y despliegue posterior
 
 Sólo después de cerrar integración se publica un PR DRAFT único y se ejecuta
