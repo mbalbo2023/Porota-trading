@@ -15,6 +15,73 @@
   "final_frozen_rerun": "REQUIRED_PENDING_PARENT_FREEZE",
   "finance_head": "a0961dee37906a5be94ab3d263466de3d6c59475",
   "generated_at": "2026-10-05T05:17:46.824598+00:00",
+  "independent_projection_index_review": {
+    "code_status": "INTERMEDIATE_EXACT_ARCHIVE_DERIVATION_GUARD; FINAL_FROZEN_RERUN_REQUIRED",
+    "consumer_guard_owner": "ux",
+    "consumer_guard_sha": "f33147a072f7fac67994b2bec46babe53a952346",
+    "documentation": "projection_index_derivation_review.md",
+    "economic_edge": "EDGE_NO_DEMOSTRADO",
+    "executed_independent_probe": "SAME_SCRIPT_SAME_NATIVE_FIXTURE_COUNT25_ASOF16_UTC_SAME_IN_MEMORY_CURRENCY_MUTATION",
+    "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+    "financial_or_economic_independence_claimed": false,
+    "fix_owner": "persistence",
+    "fix_paths": [
+      "rc6_shadow_runtime/projection.py",
+      "rc6_shadow_runtime/persistence.py",
+      "rc6_trader_dashboard/projected_generation.py",
+      "rc6_trader_dashboard/datasets.py"
+    ],
+    "fix_sha": "99bcd846dedd2d213718254ca04620b223cdf773",
+    "historical_package_R74_R78_closure_claimed": false,
+    "linked_original_requirement_ids": [
+      "U17",
+      "U21",
+      "UX470-I01",
+      "UX470-I02",
+      "UX470-I03"
+    ],
+    "native_guard_node_execution_by_this_review": false,
+    "native_guard_nodes": [
+      "tests/test_rc6_committed_projection.py::test_full_logical_projection_hash_binds_every_query_index_column",
+      "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
+      "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected"
+    ],
+    "original_requirement_counts_changed": false,
+    "parameter_independence_claimed": false,
+    "probe_path": "tests/probes/rc6_projection_index_derivation_probe.py",
+    "probe_sha256": "53758feb042b618ec628203bf8094ed9f866fabbdcf0ec3f16a4cfaee7c5b52c",
+    "rca": "Legacy logical digest bound native payload but omitted SQL WHERE/ORDER/cohort columns; in-memory currency-index mutation changed selection without a derivation mismatch.",
+    "receipts": [
+      {
+        "alien_repo_imports": 0,
+        "archive_sha256": "0dedb17c156b1c52813b513faff1daccb17c8f94676d3d2d732dcec3f0f43ea7",
+        "evidence_role": "OLD_NATIVE_PRODUCER_DERIVATION_RED",
+        "network_attempts": 0,
+        "path": "projection_index_red_e321d8ad_receipt.json",
+        "repo_imports": 83,
+        "scope": "NATIVE_PRODUCER_REPORT_THEN_TEMPORARY_IN_MEMORY_INDEX_MUTATION; NOT_A_SEALED_CUSTODY_BYPASS",
+        "sha256": "f39a1534f02778b4a72aba314a85807e045f5d263d172136f4aebcd40d03db49",
+        "source_sha": "e321d8ad3dace55893105bfc13969ae32435abea",
+        "source_tree": "21d7da4258ca204335757c73b77184c516d3d4d6",
+        "source_unchanged": true
+      },
+      {
+        "alien_repo_imports": 0,
+        "archive_sha256": "5019cf484fb2a63261edfbc134182f2f81d58dfbeba4e898eca883d8d1e6a02a",
+        "evidence_role": "INTERMEDIATE_EXACT_ARCHIVE_ADVERSARIAL_REJECTION",
+        "network_attempts": 0,
+        "path": "projection_index_green_f6e46b9d_receipt.json",
+        "repo_imports": 84,
+        "scope": "NATIVE_PRODUCER_REPORT_THEN_TEMPORARY_IN_MEMORY_INDEX_MUTATION; NOT_A_SEALED_CUSTODY_BYPASS",
+        "sha256": "c8d7e1ed4286a79086a18354e768cce689f28c47eb221886bb0484837f60146e",
+        "source_sha": "f6e46b9d918a6494afa24053c4cfc7d29b27202b",
+        "source_tree": "a290427fea4dc8d83f05c50ed1e957f0be2da1b4",
+        "source_unchanged": true
+      }
+    ],
+    "release_artifact_verified": false,
+    "wire_or_custody_bypass_demonstrated": false
+  },
   "original_66_scenarios": [
     {
       "current_execution_status": "SEE_EXACT_RECEIPTS; REFERENCED_NODE_IS_NOT_AN_EXECUTION_RECEIPT",
@@ -1033,6 +1100,8 @@
     "lab_cost_link_followup_tests.xml": "12d18ce79f086c8780f1b93793d20a8ee7baf00703a0da5cb409db90f9bea24b",
     "lab_phase_review_receipt.json": "4b21136dfa447bc56d83bcd1bac1fa2609724ad3c73135f86b908d78e5d392aa",
     "lab_phase_review_tests.xml": "e0395a5590a1a9e6d0822fbbb85f55377239e1a286b94a80a618a12e054e85d7",
+    "projection_index_green_f6e46b9d_receipt.json": "c8d7e1ed4286a79086a18354e768cce689f28c47eb221886bb0484837f60146e",
+    "projection_index_red_e321d8ad_receipt.json": "f39a1534f02778b4a72aba314a85807e045f5d263d172136f4aebcd40d03db49",
     "red_c27dfd9.json": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c",
     "retention_ack_resume_green_b82666db.json": "34b9fe26024749ea8838e05e5462b6d6eb204cf0073f16ee11186ce619305e88",
     "retention_ack_resume_green_worktree.json": "48fef4d602f667856bfd530a8fdac3580f8863f760bda9891129de3163bcf330",

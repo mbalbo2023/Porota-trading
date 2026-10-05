@@ -28,8 +28,8 @@
       "sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e"
     },
     "docs/audits/rc6_convergence_finance/consolidated_finance_evidence.json": {
-      "bytes": 79067,
-      "sha256": "0e591e13ab0e84370fde63179cd417d719303b73120e0dbb0df9bc8feb0d49aa"
+      "bytes": 82787,
+      "sha256": "0840d73de86b93889120fb4bb25fc2e0b2866b2aabc8f5e4d63a02ad00140318"
     },
     "docs/audits/rc6_convergence_finance/core_finance_review_receipt.json": {
       "bytes": 3752,
@@ -79,6 +79,18 @@
       "bytes": 3872,
       "sha256": "4b5a2d47b37fb8932f80155af7a8c35299f154ee8cfea0270a8838eb795d9464"
     },
+    "docs/audits/rc6_convergence_finance/projection_index_derivation_review.md": {
+      "bytes": 7521,
+      "sha256": "3ae7d0d04c65bc5dff49c5ad0fe4c7cd09233ed68b9a085eb717e8b465a922b7"
+    },
+    "docs/audits/rc6_convergence_finance/projection_index_green_f6e46b9d_receipt.json": {
+      "bytes": 376015,
+      "sha256": "c8d7e1ed4286a79086a18354e768cce689f28c47eb221886bb0484837f60146e"
+    },
+    "docs/audits/rc6_convergence_finance/projection_index_red_e321d8ad_receipt.json": {
+      "bytes": 347267,
+      "sha256": "f39a1534f02778b4a72aba314a85807e045f5d263d172136f4aebcd40d03db49"
+    },
     "docs/audits/rc6_convergence_finance/red_c27dfd9.json": {
       "bytes": 8423,
       "sha256": "64bf7e46d7b9ce886f2b60fd9f2bd2850f03477af66da5e23b1b43e662bc7a4c"
@@ -98,6 +110,10 @@
     "tests/probes/rc6_convergence_finance_probe.py": {
       "bytes": 10925,
       "sha256": "e014a6a7a2e6a7e3e4a4913575780b97a1c15237c4755546534e0b2083497e6e"
+    },
+    "tests/probes/rc6_projection_index_derivation_probe.py": {
+      "bytes": 7414,
+      "sha256": "53758feb042b618ec628203bf8094ed9f866fabbdcf0ec3f16a4cfaee7c5b52c"
     },
     "tests/probes/rc6_retention_ack_resume_probe.py": {
       "bytes": 6127,
