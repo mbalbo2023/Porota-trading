@@ -1,6 +1,6 @@
 {
   "schema": "rc6.native-big-runtime-provenance-source-plan.v1",
-  "status": "SOURCE_CYTHON_PREDICATE_FIX_FORWARD_WITH_THREE_PRESERVED_PRIOR_FOCAL_REDS_CURRENT_SOURCE_NOT_EXECUTED",
+  "status": "SOURCE_UNIT_RAW_METADATA_DIAGNOSTIC_WITH_FOUR_PRESERVED_PRIOR_FOCAL_REDS_HELPER_UNCHANGED_CURRENT_SOURCE_NOT_EXECUTED",
   "base": {
     "sha": "793cc7039ecfb5d9c34999cf20691245776543e6",
     "tree": "c73d2caea93a88a57564bedb7bfe72e7f5806fc8"
@@ -225,11 +225,11 @@
       "records": 35,
       "overflow": 0,
       "runtime_layout": "Exactly __name__, __doc__, __package__, __loader__, __spec__; all values None except exact name. line_trace is absent.",
-      "registered_class": "cython_function_or_method; static declared module is unavailable/None, not a string prefix.",
+      "registered_class": "cython_function_or_method; _static_type_text projects its raw module metadata to null. That projection cannot distinguish literal None from a non-str field and is not a string prefix.",
       "observed_parent_type_identity_relations": {"charset_normalizer.md":14, "charset_normalizer.cd":9},
       "scope": "Post-import layout and identities only, not retrospective creation proof."
     },
-    "actual_rca": "The unchanged helper rejected the real registered type because __module__ was not the registry name and rejected the empty runtime because line_trace was not a bool. Both original loader returns were uncontended; errors and overflow were zero. The graph supplies the exact rejected predicates without weakening unknown-origin rejection.",
+    "actual_rca": "The unchanged helper rejected the empty runtime because line_trace was not a bool. Its registered-type module metadata was projected to null; this proves no qualified matching string, but not literal raw None. Both original loader returns were uncontended; errors and overflow were zero. Exact raw class metadata at the loader return remains a gap until the current unit diagnostic runs.",
     "limits": "Separate scoped 43-case RED; no addition of focal counts, no BIG performance, horizon, Gov, image or runtime acceptance."
   },
   "preserved_unit_diagnostic_source": {
@@ -245,8 +245,9 @@
     "source_review": "ROOT_AND_FINANCE_CLOSED_SOURCE_ONLY_BEFORE_EXECUTION"
   },
   "current_cython_predicate_fix_forward": {
-    "source_only": true,
-    "native_executions": 0,
+    "source_sha": "003ebe45d13eca794661cd7675d2eee50047be43",
+    "implementation_phase": "PREPARED_SOURCE_THEN_EXECUTED_SCOPED_FOCAL_RED",
+    "native_executions": 1,
     "creation_contract": "Two passes operate on new before-to-after exact ModuleType objects inside the original verified uncontended extension-loader token. First capture actual registered class identities and type(parent attribute) is relationships; the raw declared module must be None or a bounded exact matching str. Second capture the exact empty runtime only with exactly one companion from that same token. Original bool line_trace compatibility keeps its original shape restrictions.",
     "private_bindings": "Module, parent, spec and loader references remain in the existing private synthetic_modules store; registered classes/parent attribute names/companion references and expected runtime-shape basis remain in separate private synthetic_bindings. JSON contains names and basis only. No class/module objects travel through worker JSON/queues.",
     "bounds": "Every class/parent-attribute binding, deferred runtime and registry object uses the unchanged shared 2048 admission budget. Admission failure stops retention and increments overflow, preventing full-window acceptance. Class and namespace metadata are bounded exact strings before comparison; non-str metadata never calls foreign equality, descriptors or truthiness. These are evidence bounds, not a heap limit.",
@@ -255,7 +256,44 @@
     "new_adversarial_variants": ["cython_ambiguous_companion", "cython_concurrent_loader", "cython_companion_replaced", "cython_parent_type_replaced", "cython_parent_type_added_after", "cython_preexisting", "cython_runtime_same_object_namespace_mutated"],
     "expected_unique_focal_cases": 50,
     "count_basis": "Original 43 actual cases plus seven legitimate new adversarial variants, including the unchanged original canonical 20-catalogue control. Actual collection/execution/JUnit bijection must confirm this scope. These are not new requirement IDs and are not summed with any prior run.",
-    "source_independent_review": "PENDING"
+    "source_independent_review": "ROOT_AND_FINANCE_CLOSED_BEFORE_SCOPED_NATIVE_RED"
+  },
+  "fourth_prior_focal_native_result": {
+    "source_sha": "003ebe45d13eca794661cd7675d2eee50047be43",
+    "source_tree": "9012a50f65d41404f14c31147bd3e26c898d07e0",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "75e8e2c71e4a16750d4ddfe619dca7506f6a749d9e6b81715dc3db172f395393",
+    "receipt_bytes": 269628,
+    "junit_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/native-import-provenance-focal.junit.xml",
+    "junit_sha256": "9c0b61c8ffaf1e121323c5fd98d868bc42f413244c36e047b6a5ad316508433a",
+    "junit_bytes": 29318,
+    "actual_cases": 50,
+    "passed": 42,
+    "failed": 8,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "source_unchanged": true,
+    "actual_scope": "The original Cython positive still fails and all seven new adversaries fail at their positive captured-registry precondition. Those seven are not accepted negative guards.",
+    "positive_child_stdout_path": "/workspace/rc6-budget-runtime-provenance-003e-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+    "positive_child_stdout_sha256": "3d7971e127e2f73db6d1f75ed026ad9ece528cc8773cd323d5ad0ff5b8ac0c75",
+    "positive_child_stdout_bytes": 103785,
+    "selected_child_read_all11_unchanged": true,
+    "actual_child_errors": 0,
+    "actual_child_overflow": 0,
+    "actual_shared_evidence_record_count": 58,
+    "actual_loaders": "md and cd returned uncontended with created=[]; cd reports UNVERIFIED_MISSING_OR_AMBIGUOUS_SAME_TOKEN_REGISTRY.",
+    "source_comparison": "The graph uses _static_type_text, which converts every non-str raw field to null. The new helper uses _static_type_field and requires raw None or a matching bounded str. The earlier interpretation of graph null as literal raw None was incorrect. Raw field type at the actual loader return was not recorded, so a descriptor is a hypothesis until captured.",
+    "limits": "Separate complete 50-case RED, never summed with the three prior 43-case epochs. No BIG, horizon, artifact, Gov, image, deployment or runtime acceptance."
+  },
+  "current_raw_class_metadata_unit_diagnostic": {
+    "scope": "Only the existing Cython positive physical child adds metadata capture; helper 88811374 remains byte-identical and every existing 50-case assertion is unchanged.",
+    "unchanged_helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "return_observation": "A unit-only subclass records before delegating _loader_end to the exact unchanged original method in finally. Rows identify the selected loader, actual registry slot/static class name, new-in-token state and parent type-identity count. It does not qualify modules or claim a C factory ran from post-import data.",
+    "raw_field_observation": "Distinguish literal None, bounded literal str and the exact raw object type. For exact GetSetDescriptorType only, read its built-in name/owner metadata and physical class namespace membership identities. The raw module descriptor getter is never invoked; unknown raw fields are not normalized to None or allowed.",
+    "bounds": "Loader-return rows and post-import graph rows together retain at most 2048 records with 4096-character metadata bounds. Errors and truncation remain explicit. Existing physical child stdout/stderr storage remains 4MiB per stream, not a capture_output heap bound. No observer, product/resource threshold, GC or deadline change.",
+    "expected_unique_cases": 50,
+    "new_native_executions": 0,
+    "source_review": "PENDING"
   },
   "future_focal": {
     "python": "/workspace/venv_rc6_frozen311/bin/python",

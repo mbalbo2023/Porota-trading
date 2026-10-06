@@ -461,7 +461,65 @@ def _runtime_control_child(root, private, case):
         control['baseline_loader_calls'] = list(loader_calls)
         metadata_accesses.clear()
         loader_calls.clear()
-    observer = proof.NativeImportObserver(binding, role='RUNTIME_FACTORY_CONTROL')
+    loader_return_diagnostic = {'scope':'UNIT_METADATA_AT_ORIGINAL_LOADER_RETURN_BEFORE_OBSERVER_PROCESSING',
+                                'record_limit':2048,'text_limit':4096,'records':[], 'overflow':0, 'errors':0}
+    def raw_module_metadata(cls):
+        raw = proof._static_type_field(cls, '__module__')
+        row = {'literal_none':raw is None,
+               'raw_type':{key:proof._static_type_text(type(raw), key)
+                           for key in ('__module__','__name__','__qualname__')}}
+        if type(raw) is str and len(raw) <= 4096:
+            row['literal_str'] = raw
+        elif type(raw) is types.GetSetDescriptorType:
+            descriptor_name = types.GetSetDescriptorType.__dict__['__name__'].__get__(raw, types.GetSetDescriptorType)
+            descriptor_owner = types.GetSetDescriptorType.__dict__['__objclass__'].__get__(raw, types.GetSetDescriptorType)
+            namespace = proof._static_type_field(cls, '__dict__')
+            row['getset_metadata'] = {
+                'name':descriptor_name if type(descriptor_name) is str and len(descriptor_name) <= 4096 else None,
+                'owner_is_registered_class':descriptor_owner is cls,
+                'physical_class_module_field_is_descriptor':namespace.get('__module__') is raw,
+                'getter_executed':False,
+            }
+        return row
+    class UnitCythonReturnDiagnostic(proof.NativeImportObserver):
+        def _loader_end(self, token, result, failure):
+            try:
+                if (token is not None and failure is None and token['before'] is not None
+                        and type(result) is types.ModuleType and len(sys.modules) <= 2048):
+                    parent = types.ModuleType.__getattribute__(result, '__dict__')
+                    if len(parent) > 2048:
+                        loader_return_diagnostic['overflow'] += 1
+                        return
+                    for name, module in tuple(sys.modules.items()):
+                        if (type(name) is not str or len(name) > 4096 or
+                                not (name == 'cython_runtime' or name.startswith('_cython_'))
+                                or type(module) is not types.ModuleType):
+                            continue
+                        fields = types.ModuleType.__getattribute__(module, '__dict__')
+                        if len(fields) > 2048:
+                            loader_return_diagnostic['overflow'] += 1
+                            return
+                        for key, value in fields.items():
+                            if type(key) is not str or len(key) > 4096 or not isinstance(value, type):
+                                continue
+                            if len(loader_return_diagnostic['records']) >= 2048:
+                                loader_return_diagnostic['overflow'] += 1
+                                return
+                            class_name = proof._static_type_text(value, '__name__')
+                            relations = sum(type(parent_value) is value for parent_value in parent.values())
+                            loader_return_diagnostic['records'].append({
+                                'parent_module':token['row']['module'],'module':name,'registered_field':key,
+                                'new_in_this_token':name not in token['before'],'static_class_name':class_name,
+                                'registry_key_matches_static_name':class_name is not None and key == class_name,
+                                'parent_type_identity_relations':relations,'raw_module_metadata':raw_module_metadata(value),
+                            })
+            except BaseException as error:
+                loader_return_diagnostic['errors'] += 1
+                loader_return_diagnostic['error_class'] = proof._static_type_text(type(error), '__name__')
+            finally:
+                super()._loader_end(token, result, failure)
+    observer_class = UnitCythonReturnDiagnostic if case == 'cython_extension' else proof.NativeImportObserver
+    observer = observer_class(binding, role='RUNTIME_FACTORY_CONTROL')
     before = observer.initial_receipt()
     if case in installation_cases:
         assert before['audit_hook_installation']['verified'] is True
@@ -615,7 +673,7 @@ def _runtime_control_child(root, private, case):
                     return {key:proof._static_type_text(cls, key)
                             for key in ('__module__','__name__','__qualname__')}
                 def graph_record(row):
-                    if len(graph['records']) >= graph['record_limit']:
+                    if len(graph['records']) + len(loader_return_diagnostic['records']) >= graph['record_limit']:
                         graph['overflow'] += 1
                     else:
                         graph['records'].append(row)
@@ -642,6 +700,7 @@ def _runtime_control_child(root, private, case):
                                 row['primitive_value'] = graph_text(value)
                         if isinstance(value, type):
                             row['registered_type'] = graph_type(value)
+                            row['raw_module_metadata'] = raw_module_metadata(value)
                             for parent_name, parent_fields in providers:
                                 for parent_key, parent_value in parent_fields.items():
                                     parent_key = graph_text(parent_key)
@@ -655,6 +714,8 @@ def _runtime_control_child(root, private, case):
                                                       'relation':relation})
                         graph_record(row)
                 control['actual_cython_namespace_graph'] = graph
+                control['actual_cython_loader_return_metadata'] = loader_return_diagnostic
+                control['combined_unit_metadata_record_count'] = len(graph['records']) + len(loader_return_diagnostic['records'])
             if case == 'false_cython_after':
                 # Match the actual five-field runtime layout; only identity and
                 # captured creation lineage distinguish this replacement.
