@@ -11,17 +11,12 @@
   "automation_title": "Convergencia RC6 nocturna",
   "status": "WAITING_OWNER",
   "candidate_pr": null,
-  "candidate_sha_observed": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
+  "candidate_sha_observed": "59376ba2e709fd79fc06264baaab5cca02e58b70",
   "production_sha_observed": "da697c6e6c2274579f9e4a112fabc4327475dd35",
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": {
-    "token": "rc6-hourly-2026-10-06T11:57:05.278Z-s1eqbq26bh",
-    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
-    "acquired_at": "2026-10-06T11:57:05.278Z",
-    "expires_at": "2026-10-06T12:17:05.278Z"
-  },
+  "lease": null,
   "pending_action": "WAIT_FOR_RECOVERED_CODEX_FINAL_DELIVERY_AND_OWNER_RELEASE",
   "predeploy": null,
   "deploy": null,
@@ -95,6 +90,13 @@
       "recovery_session": "CODEX_SUCCESSOR_20261006_1007UTC",
       "candidate_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
       "candidate_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8"
+    },
+    {
+      "type": "hourly_recovered_owner_progress_observed_not_released",
+      "observed_at": "2026-10-06T11:57:54.712Z",
+      "candidate_sha": "59376ba2e709fd79fc06264baaab5cca02e58b70",
+      "candidate_tree": "c94d47748ed0a1d8e766832999f82cbe83b07720",
+      "coordination_comment_id": 6014551029
     }
   ],
   "blockers": [
@@ -119,7 +121,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T11:57:05.278Z",
+  "last_observed_at": "2026-10-06T11:57:54.712Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -212,22 +214,22 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-06T10:21:29.378Z",
-    "candidate_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
-    "candidate_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
+    "observed_at": "2026-10-06T11:57:54.712Z",
+    "candidate_sha": "59376ba2e709fd79fc06264baaab5cca02e58b70",
+    "candidate_tree": "c94d47748ed0a1d8e766832999f82cbe83b07720",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
     "candidate_prs_found": 0,
     "candidate_actions_runs_found": 0,
-    "latest_coordination_comment_id": 6014000727,
+    "latest_coordination_comment_id": 6014551029,
     "integration_owner_status": "ACTIVE_RECOVERED_SAME_OWNER",
-    "owner_comment_id": 6014000727,
+    "owner_comment_id": 6014551029,
     "exact_release_observed": false,
     "material_change": true,
-    "external_mutations": "CONTROL_STATE_AND_OWNER_RECOVERY_RECEIPT_ONLY",
-    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6009858057",
-    "material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6014206404"
+    "commits_since_prior_observation": 2,
+    "files_changed_since_prior_observation": 78,
+    "external_mutations": "CONTROL_STATE_AND_PROGRESS_RECEIPT_ONLY"
   },
-  "candidate_tree_observed": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
+  "candidate_tree_observed": "c94d47748ed0a1d8e766832999f82cbe83b07720",
   "automation_disabled_at": null,
   "automation_is_enabled": true,
   "previous_final_window_result": {
@@ -272,10 +274,12 @@
     "comment_id": 6014000727,
     "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6014000727",
     "predecessor_recovery_comment_id": 6013101290,
-    "candidate_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
-    "candidate_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
-    "branch_advanced_after_recovery": false,
+    "candidate_sha": "59376ba2e709fd79fc06264baaab5cca02e58b70",
+    "candidate_tree": "c94d47748ed0a1d8e766832999f82cbe83b07720",
+    "branch_advanced_after_recovery": true,
     "receipt_id": 6014206404,
-    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6014206404"
+    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6014206404",
+    "latest_checkpoint_comment_id": 6014551029,
+    "latest_checkpoint_url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6014551029"
   }
 }
