@@ -1,6 +1,6 @@
 {
   "schema": "rc6.native-big-runtime-provenance-source-plan.v1",
-  "status": "SOURCE_FIX_FORWARD_WITH_PRESERVED_PRIOR_FOCAL_RED_CURRENT_SOURCE_NOT_EXECUTED",
+  "status": "SOURCE_TEST_DIAGNOSTIC_FORWARD_WITH_TWO_PRESERVED_PRIOR_FOCAL_REDS_CURRENT_SOURCE_NOT_EXECUTED",
   "base": {
     "sha": "793cc7039ecfb5d9c34999cf20691245776543e6",
     "tree": "c73d2caea93a88a57564bedb7bfe72e7f5806fc8"
@@ -167,6 +167,51 @@
     ],
     "current_fix_forward_native_executions": 0,
     "limits": "This is a separate scoped focal execution, not BIG performance, full horizon, final Gov, image or runtime authority. The original RED remains byte-exact; no missing child output is retroactively reconstructed."
+  },
+  "second_prior_focal_native_result": {
+    "source_sha": "1d60ec2ced05ce7793028f5a04f707cb66fa5cda",
+    "source_tree": "a21e16b7d365b202996c835eda6baebbc8b0ffb4",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "26d8d0932f61bbae545f9a02369e31a8ecb4a513f8da404a483901e6b1f2c3ce",
+    "receipt_bytes": 256403,
+    "junit_sha256": "2d9346da98245b2047e9933e1d5aeba1efb12cf79e0d3182921b4802cfffa4af",
+    "actual_cases": 43,
+    "passed": 42,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "e064392b4b0f2dc6ea816f08667d40a5d92599f0b0f90d932e8eacac69b474e6",
+    "source_unchanged": true,
+    "selected_receipt_read_all11_unchanged": true,
+    "actual_clone_negative": "PASS_WITH_ORIGINAL_FOREIGN_GLOBALS_AND_UNVERIFIED_ASSERTION",
+    "remaining_failure": {
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+      "child_stdout_path": "/workspace/rc6-budget-runtime-provenance-1d60-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+      "child_stdout_sha256": "497990a18baa7ff9543d68e3514ce95155ab0231c60b186677aa2fc151ef108f",
+      "child_stdout_bytes": 95991,
+      "child_status": "UNVERIFIED_LIMITS",
+      "errors": 0,
+      "overflow": 0,
+      "cython_and_charset_absent_at_initial_boundary": true,
+      "actual_extension_loaders": "charset_normalizer.md and charset_normalizer.cd both LOADER_RETURNED, concurrent=false, synthetic created=[]",
+      "unresolved_modules": ["cython_runtime", "_cython_3_2_9"],
+      "unresolved_reason": "ORIGIN_NOT_OBSERVABLE_NO_EXACT_EXTENSION_CREATION_LINEAGE",
+      "demonstrated_scope": "The actual selected-loader return records narrow the missing lineage to namespace/type-shape predicates. The rejected field values were not recorded; no specific predicate failure is inferred.",
+      "classification": "ACTUAL_POSITIVE_LINEAGE_GUARD_RED_WITH_PRESERVED_CHILD_JSON_PREDICATE_METADATA_GAP"
+    },
+    "limits": "A separate 43-case focal, never added to the prior 43 or counted as new requirements. No BIG, horizon, Gov, image, deployment or runtime qualification."
+  },
+  "current_unit_diagnostic_forward": {
+    "changed_scope": "Only the existing cython_extension physical unit child control and this plan. Helper e064392b and stress/runtime/quotas/GC/clocks remain byte-identical.",
+    "field": "control.actual_cython_namespace_graph",
+    "scope": "PHYSICAL_POST_IMPORT_UNIT_NAMESPACE_NOT_CREATION_OR_AUTHORITY_PROOF",
+    "evidence": "Actual module namespace keys, static type metadata, bounded selected primitives, and identity relations between registered classes and actual extension-parent attributes or their types. No repr, foreign class descriptors/equality, arbitrary namespace values or raw object addresses.",
+    "bounds": "At most 2048 graph records, exact str metadata at most 4096 characters; overflow remains explicit. These unit metadata bounds neither raise the observer shared admission/text limits nor claim bounded total interpreter heap.",
+    "acceptance": "All original positive and adverse assertions are unchanged. The graph does not classify modules or waive unknown lineage. It observes post-import layout and does not reconstruct the original creation instant.",
+    "native_executions": 0,
+    "next_focal_expected_unique_cases": 43,
+    "source_review": "PENDING"
   },
   "future_focal": {
     "python": "/workspace/venv_rc6_frozen311/bin/python",

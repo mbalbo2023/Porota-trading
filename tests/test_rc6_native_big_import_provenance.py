@@ -594,6 +594,60 @@ def _runtime_control_child(root, private, case):
             control['actual_cython_modules'] = [name for name in sys.modules
                                                if name == 'cython_runtime' or name.startswith('_cython_')]
             assert 'cython_runtime' in control['actual_cython_modules']
+            if case == 'cython_extension':
+                # Unit-only post-import observation. This does not qualify a
+                # module, reconstruct creation time, or relax observer gates.
+                graph = {'scope':'PHYSICAL_POST_IMPORT_UNIT_NAMESPACE_NOT_CREATION_OR_AUTHORITY_PROOF',
+                         'record_limit':2048,'text_limit':4096,'records':[],'overflow':0}
+                def graph_text(value):
+                    if type(value) is not str or len(value) > graph['text_limit']:
+                        graph['overflow'] += 1
+                        return None
+                    return value
+                def graph_type(cls):
+                    return {key:proof._static_type_text(cls, key)
+                            for key in ('__module__','__name__','__qualname__')}
+                def graph_record(row):
+                    if len(graph['records']) >= graph['record_limit']:
+                        graph['overflow'] += 1
+                    else:
+                        graph['records'].append(row)
+                providers = []
+                for parent_name in ('charset_normalizer.md','charset_normalizer.cd'):
+                    parent = sys.modules.get(parent_name)
+                    if type(parent) is types.ModuleType:
+                        providers.append((parent_name, types.ModuleType.__getattribute__(parent, '__dict__')))
+                for name in control['actual_cython_modules']:
+                    module = sys.modules.get(name)
+                    if type(module) is not types.ModuleType:
+                        graph_record({'module':graph_text(name),'object_type':graph_type(type(module))})
+                        continue
+                    fields = types.ModuleType.__getattribute__(module, '__dict__')
+                    for key, value in fields.items():
+                        key = graph_text(key)
+                        if key is None:
+                            continue
+                        row = {'module':graph_text(name),'field':key,'value_type':graph_type(type(value))}
+                        if key in ('__name__','__doc__','__package__','__file__','__loader__','__spec__','__path__','line_trace'):
+                            if value is None or type(value) is bool:
+                                row['primitive_value'] = value
+                            elif type(value) is str:
+                                row['primitive_value'] = graph_text(value)
+                        if isinstance(value, type):
+                            row['registered_type'] = graph_type(value)
+                            for parent_name, parent_fields in providers:
+                                for parent_key, parent_value in parent_fields.items():
+                                    parent_key = graph_text(parent_key)
+                                    if parent_key is None:
+                                        continue
+                                    relation = ('PARENT_ATTRIBUTE_IS_REGISTERED_TYPE' if parent_value is value else
+                                                'PARENT_ATTRIBUTE_TYPE_IS_REGISTERED_TYPE' if type(parent_value) is value else None)
+                                    if relation is not None:
+                                        graph_record({'module':graph_text(name),'registered_field':key,
+                                                      'parent_module':parent_name,'parent_attribute':parent_key,
+                                                      'relation':relation})
+                        graph_record(row)
+                control['actual_cython_namespace_graph'] = graph
             if case == 'false_cython_after':
                 false_module = types.ModuleType('cython_runtime')
                 false_module.line_trace = False
