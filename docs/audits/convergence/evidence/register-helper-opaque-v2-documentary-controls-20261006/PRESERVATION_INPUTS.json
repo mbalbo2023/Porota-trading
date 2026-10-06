@@ -1,0 +1,122 @@
+{
+  "copy_time_custody_pending_root_preserver": true,
+  "counting_boundary": "70 controlled helper invocations12preserve58reject; actualsame91members/fourarchives checkedbytwoOWNadapters are not182/eight. Earlier64/168 scopes overlap and are not financial/Native/Gov sums.",
+  "earlier_v3_and_v4_capsules_must_not_be_overwritten": true,
+  "new_identity_capsule_is_not_qualified_by_this_epoch": true,
+  "no_final_register_generated": true,
+  "originals_to_be_preserved_byte_exact": true,
+  "record_count": 12,
+  "record_total_bytes": 335958,
+  "records": [
+    {
+      "artifact_role": "ACTUAL_REVIEWED_AND_EXECUTED_DOCUMENTARY_HELPER_SOURCE",
+      "bytes": 143273,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "60bd126002caf324ed9a3f42d45f21a9dd7591d162f3501d168d02ee10d35dfc",
+      "source_path": "/tmp/rc6_remediation_register_generate_v4_opaque_candidate_v2.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/sources/register-helper-opaque-v2.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_REVIEWED_AND_EXECUTED_DOCUMENTARY_HELPER_SOURCE",
+      "bytes": 80559,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "76ece1725ca2696bbffba6bb5ebba7b7d6d8edd722d5b6f3ab42ac6afeafc696",
+      "source_path": "/tmp/rc6_root_supplemental_named_findings_generate_v3_opaque_candidate_v2.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/sources/supplement-helper-opaque-v2.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_CONTROLLED_DOCUMENTARY_DRIVER_SOURCE",
+      "bytes": 21340,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "d7768060214cfdc6eba671ddaa36ca4676f9c6c5fe887782fdd67cca6ce35d66",
+      "source_path": "/tmp/rc6_register_helpers_opaque_v2_controls_candidate.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/sources/controlled70-driver.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_COMMITTED_CAPSULE_BYTE_COMPATIBILITY_DRIVER_SOURCE",
+      "bytes": 7964,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "ad968c7545e7d4c642be9cec246ba3f2c34339cc32d5f877ca0d8e4cdebc995a",
+      "source_path": "/tmp/rc6_register_helpers_opaque_v2_actual_capsule_candidate.py",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/sources/actual91-capsule-driver.py.source"
+    },
+    {
+      "artifact_role": "ACTUAL_CONTROLLED70_ORIGINAL_STDOUT_RECEIPT",
+      "bytes": 17554,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "cbf4360820f101065d8654576892bcdc3e24612c1ea99fa209130fd0d514f37b",
+      "source_path": "/workspace/rc6-documentary-opaque-v2-controls-20261006-raw/controls.stdout.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/raw/controlled70-original.stdout.json"
+    },
+    {
+      "artifact_role": "ACTUAL_CONTROLLED70_EMPTY_STDERR",
+      "bytes": 0,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/workspace/rc6-documentary-opaque-v2-controls-20261006-raw/controls.stderr",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/raw/controlled70-original.stderr"
+    },
+    {
+      "artifact_role": "ACTUAL_SAME91_FOUR_ARCHIVES_TWO_ADAPTERS_SOURCE_BYTE_CUSTODY_STDOUT",
+      "bytes": 54046,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "8bdca660d1509538b0f6e9d39b863185290d818ccacf824967bb4f82ab111a99",
+      "source_path": "/workspace/rc6-documentary-opaque-v2-controls-20261006-raw/actual-capsule.stdout.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/raw/actual91-original.stdout.json"
+    },
+    {
+      "artifact_role": "ACTUAL_CAPSULE_EMPTY_STDERR",
+      "bytes": 0,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/workspace/rc6-documentary-opaque-v2-controls-20261006-raw/actual-capsule.stderr",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/raw/actual91-original.stderr"
+    },
+    {
+      "artifact_role": "ACTUAL_ROOT_DISPATCH_DECLARATION_CAPTURE_FROM_LAUNCH",
+      "bytes": 859,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "e593437b487d22051873662bdd7909a4b03c7ab73e1af0bcdf64bd203a56d2ce",
+      "source_path": "/workspace/rc6-documentary-opaque-v2-controls-20261006-raw/dispatch.source-only.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/raw/dispatch-original-source-only.json"
+    },
+    {
+      "artifact_role": "NEW_RECORD_OF_LITERAL_INDEPENDENT_SOURCE_ONLY_REVIEW_NOT_EXECUTION",
+      "bytes": 3211,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "86ebbdbe0fe3ffdb5a66ccbda382e178db93228f88311bef7e9f709b4314eb25",
+      "source_path": "/tmp/rc6_register_helpers_opaque_v2_source_closure_notes.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/notes/independent-source-closure-notes.json"
+    },
+    {
+      "artifact_role": "NEW_DERIVED_PRESERVATION_PLAN_REPORTED_ROOT_EXECUTION_AND_EXACT_RAW_SCOPE",
+      "bytes": 3661,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "f2b4660e8d969e6a080f332b8339bf1302baa9761dc7ee98abe711b46c8085bf",
+      "source_path": "/tmp/rc6_register_helpers_opaque_v2_preservation_plan.json",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/notes/limited-execution-scope-preservation-plan.json"
+    },
+    {
+      "artifact_role": "NEW_DERIVED_PRESERVATION_README_NOT_RAW_EXECUTION",
+      "bytes": 3491,
+      "encoding": "IDENTITY_BYTE_EXACT",
+      "inspection_scope": "NOATIME_EXACT_NAMED_LOCAL_INPUT_ONLY_NOT_COPY_OR_EXECUTION_ATTESTATION",
+      "sha256": "7930f3023efcba67b8d9c334007f3d411421e552bad00a79586fc1d496ca0c2c",
+      "source_path": "/tmp/rc6_register_helpers_opaque_v2_preservation_readme.md",
+      "suggested_root_relative_path": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/notes/README_SOURCE.md"
+    }
+  ],
+  "schema": "rc6.opaque-helper-v2-preservation-inputs.v1",
+  "suggested_capsule_prefix": "docs/audits/convergence/evidence/register-helper-opaque-v2-documentary-controls-20261006/"
+}
