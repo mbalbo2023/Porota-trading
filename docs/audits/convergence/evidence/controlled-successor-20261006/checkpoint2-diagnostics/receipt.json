@@ -1,0 +1,93 @@
+{
+  "budget_first_clock_epoch": "3.11:45cases44PASS/1FAIL original concurrent follower due to writer clock advancing after BEGIN but before first read snapshot;3.12:45PASS. Earlier RED retained, not converted to PASS.",
+  "budget_fix": "Acquire the actual SQLite read snapshot/shared committed clock floor first, then sample the wall clock. Retain a local last-observed floor between read-only peeks; shared authority/time updates remain in the unchanged original bounded write. Native deterministic control commits a finishing writer before snapshot acquisition; rollback control rejects101->100.5 with committed floor100. No deadline, lease, cadence, SQL busy wait, cache or provider authority is relaxed.",
+  "budget_updated_epochs": "46/46PASS each3.11.16/3.12.14, same cases, exact157 packages. Includes unchanged original source-custody assertions plus both new clock/snapshot controls.",
+  "code_snapshot_at_checkpoint": [
+    {
+      "path": "rc6_ppi_global_budget.py",
+      "sha256": "c445cee4f466fca94eca194a280ab968e59dc04cee0e8ac823f4de05a542328f"
+    },
+    {
+      "path": "tests/test_rc6_budget_source_custody.py",
+      "sha256": "55fd90d49765077c0c1647a751a5ace0c474440fd1d7d0246f25c215ff8d644e"
+    },
+    {
+      "path": "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py",
+      "sha256": "cd39d440b36e5f35fbc23ad210fdf7370b728b761ce36020c9c88de3fa75f8da"
+    },
+    {
+      "path": "tests/test_rc6_native_archive_horizon_wrapper.py",
+      "sha256": "e38d09c2265ab8dc0a9032e30fdd853b79e110fb8d1f685f41069be57f50a9f9"
+    }
+  ],
+  "deploy_owner": "NOT_ACQUIRED",
+  "final_candidate_eligible": false,
+  "horizon_cause": "Only the final private profile caller used production-default ownerUID1000 although its entire synthetic producer/retention/restore/scratch namespace is owned by the creator. Explicit ownUID in this caller leaves production API default1000 and all quotas/stat/alias/custody rejection intact.",
+  "horizon_controls": "6/6PASS each epoch; private700namespace/600members, full11stats+SHA unchanged; real wrong-owner/mode/hardlink negatives. Not full1201.",
+  "material_gates_closed": [],
+  "mode": "PAPER_SHADOW_ONLY / PRODUCTION_PAPER / SIMULATION",
+  "parent_checkpoint_sha": "1e5804ac0d886dd6d094892d296105571031f1fb",
+  "ppi_watch": "UNTOUCHED",
+  "raw_files": [
+    {
+      "bytes": 13622,
+      "cases": 45,
+      "error": 0,
+      "fail": 1,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py311.clock-only.red.xml",
+      "sha256": "0aa20a8e23a73dc529f03f64f45c7921fb3dc6b82dbbe885d229da4847024af9",
+      "skip": 0
+    },
+    {
+      "bytes": 7684,
+      "cases": 45,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py312.clock-only.xml",
+      "sha256": "79e827e51562e1997adebb0d527732fbfb16832e968376911ab3f268bcda6a99",
+      "skip": 0
+    },
+    {
+      "bytes": 7844,
+      "cases": 46,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py311.snapshot-fixed.xml",
+      "sha256": "c4e6e391d352f6d912468a032b30e517f8ff5366fb0e10e8aae7658eef7cc1a3",
+      "skip": 0
+    },
+    {
+      "bytes": 7843,
+      "cases": 46,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py312.snapshot-fixed.xml",
+      "sha256": "49fb2510f3674e39aca67b2659bd65744b91d18158f2ac7a0433b0bd39d4f1f2",
+      "skip": 0
+    },
+    {
+      "bytes": 2124,
+      "cases": 6,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/horizon-private-owner-py311.xml",
+      "sha256": "9e7dd06036a0cf7307e2edd9c1fc897bef0f941343e748ae2d06e66c149220aa",
+      "skip": 0
+    },
+    {
+      "bytes": 2124,
+      "cases": 6,
+      "error": 0,
+      "fail": 0,
+      "path": "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/horizon-private-owner-py312.xml",
+      "sha256": "dedcbc3abbac4d892d9f3077a5c894cc96cfb5fa7a8980cad7efea8b54417e4f",
+      "skip": 0
+    }
+  ],
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "same_cases_across_python_epochs": true,
+  "schema": "rc6.controlled-successor-diagnostic-checkpoint.v1",
+  "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
+  "status": "DESARROLLO_DIAGNOSTIC_ONLY_NOT_FINAL_SOURCE_QUALIFICATION"
+}

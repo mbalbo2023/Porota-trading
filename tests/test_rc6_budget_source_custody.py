@@ -566,7 +566,7 @@ def test_committed_native_exit_follower_does_not_compete_with_writer_or_use_unce
 
     def traced_pending(budget, *args, **kwargs):
         result = original_pending(budget, *args, **kwargs)
-        if result and threading.get_ident() == follower["thread"]:
+        if result[0] and threading.get_ident() == follower["thread"]:
             polling.set()
             if writer_held.is_set():
                 polled_under_writer.set()
@@ -625,6 +625,131 @@ def test_committed_native_exit_follower_does_not_compete_with_writer_or_use_unce
         assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
         assert observed["frozen_admission_scope"] is None
         assert not observed["required_scope_verified_current"]
+    finally:
+        release.set()
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+def test_committed_follower_rejects_clock_rollback_between_readonly_observations(native_ledger, wire, monkeypatch):
+    import requests
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    entered, release = threading.Event(), threading.Event()
+    follower = {"thread": None, "observations": [], "committed_floor": None}
+    original_send = requests.adapters.HTTPAdapter.send
+    original_pending = budgets.GlobalPPIBudget._book_flight_pending
+
+    def blocked_body(adapter, request, **kwargs):
+        if request.url.split("?", 1)[0].lower().endswith("/book"):
+            entered.set()
+            assert release.wait(5)
+        return original_send(adapter, request, **kwargs)
+
+    def observed_pending(budget, *args, **kwargs):
+        result = original_pending(budget, *args, **kwargs)
+        if threading.get_ident() == follower["thread"]:
+            assert result[0]
+            follower["observations"].append(result[1])
+            with closing(budget._connect()) as connection:
+                committed = budget._get(connection, "last_clock", None)
+            if len(follower["observations"]) == 1:
+                follower["committed_floor"] = committed
+                clock.advance(1)
+            elif len(follower["observations"]) == 2:
+                assert committed == follower["committed_floor"]
+                assert result[1] > committed
+                clock.advance(-.5)  # Still above committed floor, below the prior read.
+        return result
+
+    def following_book():
+        follower["thread"] = threading.get_ident()
+        return scoped_book(reader, identity, "EXIT_CRITICAL")
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", blocked_body)
+    monkeypatch.setattr(budgets.GlobalPPIBudget, "_book_flight_pending", observed_pending)
+    try:
+        reader.login_once()
+        before = len(wire[1])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+            assert entered.wait(5)
+            following = pool.submit(following_book)
+            try:
+                with pytest.raises(budgets.BudgetBackpressure, match="PPI_BUDGET_CLOCK_ROLLBACK"):
+                    following.result(5)
+                assert len(follower["observations"]) == 2
+                assert len(wire[1]) == before
+            finally:
+                clock.advance(.5)
+                release.set()
+            assert first.result(5)["bids"]
+        assert len(wire[1]) - before == 1
+        assert runtime.budget.metrics()["global"]["used"] == 1
+    finally:
+        release.set()
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
+def test_pending_native_follower_samples_clock_after_acquiring_committed_snapshot(native_ledger, wire, monkeypatch):
+    import requests
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    entered, release = threading.Event(), threading.Event()
+    original_send = requests.adapters.HTTPAdapter.send
+    original_get = budgets.GlobalPPIBudget._get
+    observer = threading.get_ident()
+    injected = []
+
+    def blocked_body(adapter, request, **kwargs):
+        if request.url.split("?", 1)[0].lower().endswith("/book"):
+            entered.set()
+            assert release.wait(5)
+        return original_send(adapter, request, **kwargs)
+
+    def finishing_writer_before_snapshot(budget, connection, key, *args):
+        if threading.get_ident() == observer and key == "last_clock" and not injected:
+            injected.append(True)
+            clock.advance(1)
+            with closing(budget._connect()) as writer, writer:
+                budget._begin_write(writer)
+                budget._clock(writer)
+        return original_get(connection, key, *args)
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", blocked_body)
+    try:
+        reader.login_once()
+        before = len(wire[1])
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            first = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+            assert entered.wait(5)
+            try:
+                budget = runtime.budget
+                key = budgets.digest(list(identity))
+                authority = budgets.digest({name: budget.policy[name] for name in
+                    ("configuration_fingerprint", "recommendation_digest")})
+                with closing(budget._connect()) as connection:
+                    floor = original_get(connection, "last_clock", None)
+                    flight = original_get(connection, "critical_book_flights", {})[key]
+                with monkeypatch.context() as patch:
+                    patch.setattr(budgets.GlobalPPIBudget, "_get", finishing_writer_before_snapshot)
+                    pending, observed_at = budget._book_flight_pending(key, flight["lease"], authority, 5,
+                        critical=True, last_observed_clock=floor)
+                assert injected == [True] and pending is True
+                assert observed_at == clock.now().timestamp() and observed_at > floor
+                assert len(wire[1]) == before
+            finally:
+                release.set()
+            assert first.result(5)["bids"]
+        assert len(wire[1]) - before == 1
+        assert runtime.budget.metrics()["global"]["used"] == 1
     finally:
         release.set()
         reader.discard_exit_round_scope()

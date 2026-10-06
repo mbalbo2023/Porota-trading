@@ -9252,6 +9252,69 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py311.clock-only.red.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py311.snapshot-fixed.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py312.clock-only.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/budget-py312.snapshot-fixed.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/horizon-private-owner-py311.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/horizon-private-owner-py312.xml": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint2-diagnostics/receipt.json": {
+      "reason": "Preserve exact diagnostic source evolution and RED before native clock/snapshot or private-owner correction; bounded focal outputs do not replace whole Gov, BIG, full1201, browser or immutable image/artifact gates.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/CUSTODY.json": {
       "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
       "requirement_ids": [
@@ -16462,7 +16525,7 @@
       ]
     },
     "docs/audits/rc6-convergence-persistence-evidence/native_archive_v3_profile_probe_v2.py": {
-      "reason": "Run native archive capacity on complete raw Git/source/mode/blob/157 authority and audited own imports, private SQL and Python network barriers. Keep native512 live entries/128MiB,512MiB archive/scratch,2GiB reserve and inode10% unchanged; measure actual fsync/scratch and retention counters without requesting additional maintenance. Exactly five original members bind manifest/CURRENT/native receipts. Original30s postPRE clock includes constructor/recovery, tick, restore, custody, cleanup and result publication. OWNed97 controlled28-case PASS and integratedd933 descriptivefour-cut PASS have separate Source authorities; complete/horizon/acceptance stay false until1201 actual postPRE calls plus PRE, restarts361/841 and full physical checks. Zero compaction/rotation/deletion is not positive GC coverage, and fixed-source stale phases cannot be forced OPEN.",
+      "reason": "Run native archive capacity on complete raw Git/source/mode/blob/157 authority and audited own imports, private SQL and Python network barriers. Keep native512 live entries/128MiB,512MiB archive/scratch,2GiB reserve and inode10% unchanged; measure actual fsync/scratch and retention counters without requesting additional maintenance. Exactly five original members bind manifest/CURRENT/native receipts. Original30s postPRE clock includes constructor/recovery, tick, restore, custody, cleanup and result publication. OWNed97 controlled28-case PASS and integratedd933 descriptivefour-cut PASS have separate Source authorities; complete/horizon/acceptance stay false until1201 actual postPRE calls plus PRE, restarts361/841 and full physical checks. Zero compaction/rotation/deletion is not positive GC coverage, and fixed-source stale phases cannot be forced OPEN. Controlled successor checkpoint2: Bind only the private horizon archive caller explicitly to its fixture creating UID; native all11metadata/SHA and wrong-owner/mode/hardlink guards keep production UID1000 default, bounds and source custody unchanged.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -23597,7 +23660,7 @@
       ]
     },
     "rc6_ppi_global_budget.py": {
-      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence. Controlled successor20261006: Observe only an already committed pending exact-identity flight with read-only bounded SQLite snapshots; cache service, new flight authority, policy and demand admission still re-enter the original authoritative write. Preserve original 50ms fail-closed lock wait, cadence and provider single-flight.",
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence. Controlled successor20261006: Observe only an already committed pending exact-identity flight with read-only bounded SQLite snapshots; cache service, new flight authority, policy and demand admission still re-enter the original authoritative write. Preserve original 50ms fail-closed lock wait, cadence and provider single-flight. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write.",
       "requirement_ids": [
         "AUD-468-04",
         "U01",
@@ -24814,7 +24877,7 @@
       ]
     },
     "tests/test_rc6_budget_source_custody.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Reproduce an unrelated native reserved writer held beyond50ms while a committed EXIT follower waits; prove no repeated write competition and one fake wire/debt. An exclusive unreadable snapshot still fails closed without cache service or duplicate wire.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Reproduce an unrelated native reserved writer held beyond50ms while a committed EXIT follower waits; prove no repeated write competition and one fake wire/debt. An exclusive unreadable snapshot still fails closed without cache service or duplicate wire. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write.",
       "requirement_ids": [
         "U04",
         "U05",
@@ -25215,7 +25278,7 @@
       ]
     },
     "tests/test_rc6_native_archive_horizon_wrapper.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor checkpoint2: Bind only the private horizon archive caller explicitly to its fixture creating UID; native all11metadata/SHA and wrong-owner/mode/hardlink guards keep production UID1000 default, bounds and source custody unchanged.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -26371,6 +26434,7 @@
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_follower_rejects_clock_rollback_between_readonly_observations",
         "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
@@ -26382,6 +26446,7 @@
         "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
         "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
         "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_pending_native_follower_samples_clock_after_acquiring_committed_snapshot",
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
@@ -27052,6 +27117,7 @@
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_follower_rejects_clock_rollback_between_readonly_observations",
         "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
@@ -27063,6 +27129,7 @@
         "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
         "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
         "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_pending_native_follower_samples_clock_after_acquiring_committed_snapshot",
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
@@ -27321,7 +27388,8 @@
         "tests/fixtures/rc6_publication_storage_e24.py.source",
         "tests/test_issue465_stress.py",
         "tests/test_rc6_archive_v3_image_smoke.py",
-        "tests/test_rc6_budget_source_custody.py"
+        "tests/test_rc6_budget_source_custody.py",
+        "tests/test_rc6_native_archive_horizon_wrapper.py"
       ],
       "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Generation lifecycle/ACK/recovery with the original fixed512 files/128MiB live quota restored; canonical private512MiB archive V3 wired and fingerprinted; native1200 full-wheel physical capacity remains an active programming gate.",
@@ -27356,6 +27424,7 @@
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_follower_rejects_clock_rollback_between_readonly_observations",
         "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
@@ -27367,6 +27436,7 @@
         "tests/test_rc6_budget_source_custody.py::test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset",
         "tests/test_rc6_budget_source_custody.py::test_native_hot_rollback_journal_is_unknown_until_writer_finishes",
         "tests/test_rc6_budget_source_custody.py::test_observer_includes_its_own_capture_time_and_never_borrows_another_round",
+        "tests/test_rc6_budget_source_custody.py::test_pending_native_follower_samples_clock_after_acquiring_committed_snapshot",
         "tests/test_rc6_budget_source_custody.py::test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader",
         "tests/test_rc6_budget_source_custody.py::test_same_native_count_with_changed_identity_never_clears_from_frozen_scope",
         "tests/test_rc6_budget_source_custody.py::test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary",
@@ -27432,12 +27502,15 @@
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_explicit_wrong_archive_owner_remains_rejected_without_uid_changes",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_internet_socket_send_methods_are_blocked_before_transport_without_connecting",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_binds_actual_fixture_owner_without_metadata_writes",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_keeps_mode_and_link_custody_fail_closed",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_replace_refs_cannot_change_the_git_qualification_authority",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
@@ -27924,7 +27997,8 @@
         "scripts/fixtures/rc6_codec_legacy_v1.json",
         "scripts/rc6_archive_maximum_member_probe.py",
         "scripts/rc6_archive_v3_image_smoke.py",
-        "tests/test_issue465_source_retention_policy.py"
+        "tests/test_issue465_source_retention_policy.py",
+        "tests/test_rc6_native_archive_horizon_wrapper.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Objeto tar/gzip real, CRC/members/hash exactos, archiverID allowlisted y receipt independiente ligado a cadena.",
@@ -28000,12 +28074,15 @@
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_explicit_wrong_archive_owner_remains_rejected_without_uid_changes",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_internet_socket_send_methods_are_blocked_before_transport_without_connecting",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_binds_actual_fixture_owner_without_metadata_writes",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_keeps_mode_and_link_custody_fail_closed",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_replace_refs_cannot_change_the_git_qualification_authority",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock"
@@ -28958,7 +29035,8 @@
         "scripts/rc6_deploy_scoped_cleanup.py",
         "scripts/rc6_disk_space_guard.py",
         "scripts/rc6_shadow_live_namespace.py",
-        "scripts/rc6_sqlite_scratch_guard.py"
+        "scripts/rc6_sqlite_scratch_guard.py",
+        "tests/test_rc6_native_archive_horizon_wrapper.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "YAML/JSON/runbook/gates concuerdan; no reinstalar arbitrariamente6 GiB ni etiquetar como incumplimiento el piso autorizado.",
@@ -29050,12 +29128,15 @@
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_equal_legacy_or_incomplete_member_snapshots_are_rejected",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_explicit_wrong_archive_owner_remains_rejected_without_uid_changes",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_internet_socket_send_methods_are_blocked_before_transport_without_connecting",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_binds_actual_fixture_owner_without_metadata_writes",
+        "tests/test_rc6_native_archive_horizon_wrapper.py::test_private_archive_admission_keeps_mode_and_link_custody_fail_closed",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_replace_refs_cannot_change_the_git_qualification_authority",
         "tests/test_rc6_native_archive_horizon_wrapper.py::test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",

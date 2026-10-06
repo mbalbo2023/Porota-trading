@@ -225,3 +225,76 @@ def test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bi
     clock = "2026-10-05T13:35:01+00:00" if change == "clock" else "2026-10-05T13:35:00+00:00"
     with pytest.raises(AssertionError, match="NATIVE_PROFILE_ORIGINAL_MANIFEST_.*MISMATCH"):
         probe["original_member_binding"](members,pointer=pointer,expected_as_of=clock)
+
+
+@pytest.fixture
+def private_archive(tmp_path):
+    root = tmp_path / "archive"
+    root.mkdir(mode=0o700)
+    for name, data in (("archive.lock", b""), ("a" * 32 + ".receipt.json", b"private synthetic metadata bytes")):
+        descriptor = os.open(root / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+    return root
+
+
+def private_archive_snapshot(root, fields):
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+    try:
+        before = {name: getattr(os.fstat(descriptor), name) for name in fields}
+        result = {".": {"stat_fields": before}}
+        with os.scandir(descriptor) as iterator:
+            names = sorted(entry.name for entry in iterator)
+        for name in names:
+            member = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK, dir_fd=descriptor)
+            try:
+                info = os.fstat(member)
+                chunks = []
+                while chunk := os.read(member, 65536):
+                    chunks.append(chunk)
+                result[name] = {"stat_fields": {field: getattr(info, field) for field in fields},
+                                "sha256": hashlib.sha256(b"".join(chunks)).hexdigest()}
+            finally:
+                os.close(member)
+        assert before == {name: getattr(os.fstat(descriptor), name) for name in fields}
+        return result
+    finally:
+        os.close(descriptor)
+
+
+def test_private_archive_admission_binds_actual_fixture_owner_without_metadata_writes(probe, private_archive, record_property):
+    record_property("evidence_scope", "NATIVE_PRIVATE_NAMESPACE_OWNER_ADMISSION_NOT_FULL1201_HORIZON")
+    before = private_archive_snapshot(private_archive, probe["FIELDS"])
+    observed = probe["inspect_private_archive"](private_archive)
+    assert observed["state"] == "WITHIN_QUOTA" and observed["owner_uid"] == os.geteuid()
+    assert observed["max_bytes"] == 512 * 1024**2 and observed["maximum_files"] == 32768
+    assert observed["files"] == 2 and observed["inodes"] == 3
+    assert all(len(row["stat_fields"]) == 11 for row in before.values())
+    assert before == private_archive_snapshot(private_archive, probe["FIELDS"])
+
+
+@pytest.mark.parametrize("fault", ("directory_mode", "lock_mode", "member_mode", "hardlink"))
+def test_private_archive_admission_keeps_mode_and_link_custody_fail_closed(probe, private_archive, fault, record_property):
+    record_property("evidence_scope", "NATIVE_PRIVATE_NAMESPACE_CUSTODY_REJECTION_NOT_FULL1201_HORIZON")
+    member = private_archive / ("a" * 32 + ".receipt.json")
+    if fault == "directory_mode":
+        private_archive.chmod(0o755)
+    elif fault == "lock_mode":
+        (private_archive / "archive.lock").chmod(0o644)
+    elif fault == "member_mode":
+        member.chmod(0o644)
+    else:
+        os.link(member, private_archive / ("b" * 32 + ".receipt.json"))
+    before = private_archive_snapshot(private_archive, probe["FIELDS"])
+    with pytest.raises(ValueError, match="^ARCHIVE_CUSTODY_INVALID$"):
+        probe["inspect_private_archive"](private_archive)
+    assert before == private_archive_snapshot(private_archive, probe["FIELDS"])
+
+
+def test_explicit_wrong_archive_owner_remains_rejected_without_uid_changes(probe, private_archive, record_property):
+    record_property("evidence_scope", "NATIVE_PRIVATE_NAMESPACE_WRONG_OWNER_POLICY_REJECTION_NOT_FULL1201_HORIZON")
+    from rc6_shadow_runtime.archive_namespace import inspect_archive
+    before = private_archive_snapshot(private_archive, probe["FIELDS"])
+    with pytest.raises(ValueError, match="^ARCHIVE_CUSTODY_INVALID$"):
+        inspect_archive(private_archive, owner_uid=os.geteuid() + 1)
+    assert before == private_archive_snapshot(private_archive, probe["FIELDS"])

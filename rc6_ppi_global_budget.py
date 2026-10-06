@@ -1031,7 +1031,7 @@ class GlobalPPIBudget:
         except (KeyError, TypeError, ValueError, InvalidOperation):
             return None
 
-    def _book_flight_pending(self, key, lease, authority, age, *, critical):
+    def _book_flight_pending(self, key, lease, authority, age, *, critical, last_observed_clock):
         """Observe a committed wait without competing with its finishing writer.
 
         This snapshot grants no cache, service, or send authority. A changed
@@ -1041,8 +1041,12 @@ class GlobalPPIBudget:
         with closing(self._connect()) as c:
             c.execute("PRAGMA query_only=ON")
             c.execute("BEGIN")
+            # A deferred reader acquires its snapshot on the first SELECT.
+            # Sample time after that boundary: a finishing writer may advance
+            # the committed floor between BEGIN and the snapshot acquisition.
+            committed_clock = self._get(c, "last_clock", None)
             now = stamp(self.clock()).timestamp()
-            if now < self._get(c, "last_clock", now):
+            if now < last_observed_clock or (committed_clock is not None and now < committed_clock):
                 raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
             if now >= stamp(self.policy["expires_at"]).timestamp():
                 raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
@@ -1053,15 +1057,15 @@ class GlobalPPIBudget:
             if (cached and cached["authority"] == authority
                     and 0 <= now - cached["received_at"] <= age
                     and self._safe_book(cached["book"], now, age) is not None):
-                return False
+                return False, now
             active = self._get(c, "critical_book_flights", {}).get(key)
             if not active or active["lease"] != lease or active["until"] <= now:
-                return False
+                return False, now
             if critical:
                 pressure = self._get(c, "critical_exit_pressure", {}).get(key)
                 if not pressure or pressure.get("until", 0) <= now:
-                    return False
-            return True
+                    return False, now
+            return True, now
 
     def coalesced_book(self, identity, fetch, *, consumer, priority):
         """Off-wire, exact-identity single-flight for critical opened books.
@@ -1146,6 +1150,7 @@ class GlobalPPIBudget:
                 # Rewriting them every poll needlessly competes with the owner
                 # and round observer. Poll only this same live flight; cache
                 # service or new leadership still requires the write above.
+                last_observed_clock = now
                 while True:
                     if time.monotonic() >= deadline:
                         if critical:
@@ -1153,7 +1158,10 @@ class GlobalPPIBudget:
                             raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
                         raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_BACKPRESSURE")
                     time.sleep(min(.005, max(0, deadline - time.monotonic())))
-                    if not self._book_flight_pending(key, active["lease"], authority, age, critical=critical):
+                    pending, last_observed_clock = self._book_flight_pending(
+                        key, active["lease"], authority, age, critical=critical,
+                        last_observed_clock=last_observed_clock)
+                    if not pending:
                         break
             monitor = None
             if critical:

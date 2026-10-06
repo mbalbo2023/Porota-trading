@@ -73,6 +73,12 @@ def read_json(path):
                       parse_constant=lambda _: (_ for _ in ()).throw(ValueError("NATIVE_PROFILE_NONFINITE_JSON")))
 
 
+def inspect_private_archive(archive):
+    """Bind this synthetic producer's admission to its actual fixture owner."""
+    from rc6_shadow_runtime.archive_namespace import inspect_archive
+    return inspect_archive(archive, owner_uid=os.geteuid())
+
+
 def git_bytes(repository, *arguments, payload=None):
     environment = dict(os.environ, GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1",
                        GIT_OPTIONAL_LOCKS="0")
@@ -662,7 +668,6 @@ def main():
     from rc6_shadow_runtime.worker import ShadowRuntime
     import rc6_shadow_runtime.worker as worker_module
     from rc6_shadow_runtime.retention import EvidenceRetention
-    from rc6_shadow_runtime.archive_namespace import inspect_archive
     from rc6_shadow_runtime.persistence import read_committed_projection, shadow_evidence_root, shadow_archive_root
 
     store = fixture_database(database, catalog_count=args.catalog_count, observations_per_identity=5)
@@ -903,7 +908,7 @@ def main():
             raise AssertionError("NATIVE_PROFILE_NATIVE_ARCHIVE_HORIZON_HEAD_MISMATCH")
         result.update(execution_complete=True, native_horizon_contract_verified=args.ticks == 1201,
             final_sequence=final["pointer"]["sequence"], final_as_of=final["manifest"]["as_of"],
-            final_configuration_fingerprint=worker.configuration_fingerprint(clocks[-1]), archive_admission=inspect_archive(archive),
+            final_configuration_fingerprint=worker.configuration_fingerprint(clocks[-1]), archive_admission=inspect_private_archive(archive),
             archive_final=residence(archive), live_final=residence(worker.root), authority_control_final=residence(authority),
             measured_horizon_seconds=horizon_seconds, first_restored_tick_index=retained_index,
             first_original_public_restore_completed=True, verified_final_archive_head=final_head,
