@@ -9,7 +9,7 @@
   "supervision_issue": 473,
   "automation_id": "6ac30186bc40819199bfbfd32244aca5",
   "automation_title": "Convergencia RC6 nocturna",
-  "status": "WAITING_OWNER",
+  "status": "FIX_FORWARD_PREPARATION",
   "candidate_pr": 475,
   "candidate_sha_observed": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
   "production_sha_observed": "da697c6e6c2274579f9e4a112fabc4327475dd35",
@@ -30,8 +30,14 @@
     "local_fix_status": "CHECKPOINT7_PUBLISHED_PREDEPLOY_ACTIVE_FULLGOV311_LOCAL_ENOSPC_RUNNING"
   },
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": "WAIT_FOR_PREDEPLOY_37536160655_AND_ACTIVE_FULLGOV311_FIN_THEN_OWNER_RECONCILIATION",
+  "lease": {
+    "token": "rc6-2026-10-06T23:26:29.115Z-vrcon5kbhv",
+    "holder": "WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "acquired_at": "2026-10-06T23:26:29.115Z",
+    "expires_at": "2026-10-06T23:46:29.115Z",
+    "base_head": "33b86edfd60a4c03ee0f7da73d8a917b61c2fbc2"
+  },
+  "pending_action": "ACQUIRE_WRITE_OWNER_AND_REPAIR_PREDEPLOY_D2D15200",
   "predeploy": {
     "run_id": 37461053027,
     "attempt": 1,
@@ -361,7 +367,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T22:28:34.934Z",
+  "last_observed_at": "2026-10-06T23:26:29.115Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -474,8 +480,8 @@
     "runtime": "NOT_VERIFIED"
   },
   "candidate_tree_observed": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
-  "automation_disabled_at": null,
-  "automation_is_enabled": true,
+  "automation_disabled_at": "2026-10-06T23:26:29.115Z",
+  "automation_is_enabled": false,
   "previous_final_window_result": {
     "observed_at": "2026-10-05T11:41:24.050Z",
     "deadline_utc": "2026-10-05T11:30:00Z",
