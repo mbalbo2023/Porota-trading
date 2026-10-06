@@ -1,0 +1,39 @@
+--- pair_owned_launch.py
++++ pair_owned_launch_v2.py
+@@ -229,20 +229,23 @@
+     require(data_before==plan['input_data_all11_and_hash'],'ORIGINAL_CLOSED_DATA_ALL11_PIN_REQUIRED')
+     sql_observations=install_sqlite_guard(namespace)
+     if str(EPOCH) not in sys.path:sys.path.insert(0,str(EPOCH))
+-    import pair_components
+-    require(Path(pair_components.__file__).absolute()==EPOCH/'pair_components.py','EXTERNAL_COMPONENT_ORIGIN_REQUIRED')
++    import pair_components_v2
++    require(Path(pair_components_v2.__file__).absolute()==EPOCH/'pair_components_v2.py','EXTERNAL_COMPONENT_ORIGIN_REQUIRED')
+     identities_before=helper_identities();metrics=[];result=None;errors=[]
+     at=datetime.fromisoformat(PRE_ISO)
+     started_wall,started_cpu=time.monotonic(),time.process_time()
+     try:
+-        if variant=='ROW_control':result=pair_components.row_control(DATABASE,at,metrics)
+-        elif variant=='TUPLE_component':result=pair_components.tuple_component(DATABASE,at,metrics)
++        if variant=='ROW_control':result=pair_components_v2.row_control(DATABASE,at,metrics)
++        elif variant=='TUPLE_component':result=pair_components_v2.tuple_component(DATABASE,at,metrics)
+         else:raise ValueError('LITERAL_COMPONENT_VARIANT_REQUIRED')
+     except BaseException as error:errors.append(safe_error(error,'one_native_component_read'))
+     finished_wall,finished_cpu=time.monotonic(),time.process_time()
+     # All typed serialization and identity checks follow the actual source
+     # context-manager return/raise; they do not modify its 0.5 deadline.
+     identities_after=helper_identities();native_rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
++    # Genuine owned-child/tracker closure precedes producer postread evidence.
++    finalization=gov.finalize_child_infrastructure(infrastructure,limit=5)
++    require(finalization['status']=='GREEN','OWNED_CHILD_FINALIZATION_RED')
+     typed_wire=None;identity_facts=None;counts=None
+     if result is not None:
+         try:
+@@ -264,8 +267,6 @@
+     atimes=gov.compare_source(before,after)
+     require(data_before==data_after,'SOURCE_DATABASE_ALL11_CHANGED')
+     publish(output/'child.source-after.json',after);publish(output/'child.data-after.json',data_after)
+-    finalization=gov.finalize_child_infrastructure(infrastructure,limit=5)
+-    require(finalization['status']=='GREEN','OWNED_CHILD_FINALIZATION_RED')
+     publish(output/'child.result.json',{'status':'DIAGNOSTIC_RED','DIAGNOSTIC_ONLY':True,'ALIEN':True,
+         'gate_qualified':False,'native_import_proof_qualified':False,'canonical_BIG_qualified':False,
+         'variant':variant,'pid':os.getpid(),'parent_pid':os.getppid(),'source_sha':SHA,'source_tree':TREE,

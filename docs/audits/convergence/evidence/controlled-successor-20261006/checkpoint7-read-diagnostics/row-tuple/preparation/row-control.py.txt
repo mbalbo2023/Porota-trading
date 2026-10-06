@@ -1,0 +1,59 @@
+def row_control(database, at, metrics):
+    from rc6_shadow_runtime.source_reads import source_connection
+    result = {"metadata": [], "quotes": [], "cash": [], "truncated": [], "errors": []}
+    deadline = monotonic()+families.QUERY_BUDGET_SECONDS
+    mark(metrics, "deadline_created", deadline=deadline)
+    with source_connection(database, deadline=deadline) as (connection, _):
+        mark(metrics, "private_snapshot_acquired", deadline=deadline)
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("BEGIN")
+        connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
+        state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if not state or state["mode"] != "PRODUCTION_PAPER" or state["real_orders_sent"] != 0:
+            raise ValueError("PAPER_SAFETY_REQUIRED")
+        tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 200")}
+        specs = (
+            ("financial_instrument_catalog", "metadata", "last_seen_at", "last_seen_at", families.MAX_ROWS),
+            ("market_snapshots", "quotes", "observed_at", "id", 5000),
+            ("ppi_intraday_points", "quotes", "last_verified_at", "event_at", 5000),
+            ("paper_equity_by_currency", "cash", "measured_at", "id", 500),
+        )
+        for table, kind, cutoff_column, order_column, limit in specs:
+            if table not in tables:
+                continue
+            columns = {r[1] for r in connection.execute(f"PRAGMA table_info({table})")}
+            if cutoff_column not in columns or order_column not in columns:
+                result["errors"].append(table+":SOURCE_CLOCK_OR_SCHEMA_MISSING")
+                continue
+            try:
+                mark(metrics, "select_enter", table=table, deadline=deadline)
+                cursor = connection.execute(f"SELECT * FROM {table} WHERE julianday({cutoff_column})<=julianday(?) ORDER BY {order_column} DESC LIMIT ?", (at.isoformat(), limit+1))
+                mark(metrics, "select_execute_return", table=table, deadline=deadline)
+                rows = list(cursor)
+                mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline)
+            except sqlite3.OperationalError:
+                result["errors"].append(table+":READ_BUDGET_OR_SOURCE_UNAVAILABLE")
+                break
+            if len(rows) > limit:
+                result["truncated"].append(table)
+            row_names = rows[0].keys() if rows else ()
+            for raw in rows[:limit]:
+                row = dict(zip(row_names, raw))
+                if kind == "metadata":
+                    metadata = families._mapping(row.get("metadata_json"))
+                    effective = metadata.get("_effective_observed_at") or row.get("last_seen_at")
+                    row.update(metadata=metadata, source="PPI_CATALOG",
+                               observed_at=effective, received_at=effective)
+                elif table == "market_snapshots":
+                    row.update(financial_contract_v17=families._mapping(row.get("contract_json")),
+                               received_at=row.get("observed_at"), source_at=row.get("trade_at"),
+                               book_clock_required=True,
+                               source=row.get("source") or "PPI_MARKETDATA")
+                elif table == "ppi_intraday_points":
+                    row.update(received_at=row.get("last_verified_at"), source_at=row.get("event_at"),
+                               last=row.get("price"), source=row.get("source") or "PPI_INTRADAY")
+                    if not families._fresh(row.get("event_at"), row.get("first_received_at"), at, None):
+                        continue
+                result[kind].append(row)
+            mark(metrics, "rows_transformed", table=table, deadline=deadline)
+        return result

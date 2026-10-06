@@ -1,0 +1,138 @@
+{
+  "Gov_pytest_runs": 0,
+  "Source_edits": 0,
+  "builder_sha256": "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738",
+  "clones": 0,
+  "files": [
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323018075341723,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791322999707418294,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093399,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791322999707418294,
+        "st_nlink": 1,
+        "st_size": 21454,
+        "st_uid": 1000
+      },
+      "bytes": 21454,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/build_governed_sources.py",
+      "sha256": "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323018075341723,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791322999910881912,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095246,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791322999910881912,
+        "st_nlink": 1,
+        "st_size": 1632,
+        "st_uid": 1000
+      },
+      "bytes": 1632,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-binding.template.json",
+      "sha256": "129bbde282ea10ff313c2b36eed8ec2b4062f411ab696be6115569b4949b10f1"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323018075341723,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791322999912060016,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095247,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791322999912060016,
+        "st_nlink": 1,
+        "st_size": 743,
+        "st_uid": 1000
+      },
+      "bytes": 743,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/GitHub-preparation-authority.template.json",
+      "sha256": "3b52ebbe17a72640829de2f158661acf7fd425d2d48f643af5846c536e63e19d"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323018075341723,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791322999912945648,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095248,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791322999912945648,
+        "st_nlink": 1,
+        "st_size": 5252,
+        "st_uid": 1000
+      },
+      "bytes": 5252,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-preparation-plan.json",
+      "sha256": "743d094996d864d37ea3bb89e8aad080fe18051d7774debb431c99ed08b174df"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323018075341723,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791322999913692984,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095249,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791322999913692984,
+        "st_nlink": 1,
+        "st_size": 1658,
+        "st_uid": 1000
+      },
+      "bytes": 1658,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-preparation-index.json",
+      "sha256": "a7ac314ad7fae28d5706fe7e3dd304960c1c684493f64daa01c9a2d48c986ae4"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323031595284981,
+        "st_blocks": 48,
+        "st_ctime_ns": 1791323031595982913,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095250,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791323031595982913,
+        "st_nlink": 1,
+        "st_size": 21163,
+        "st_uid": 1000
+      },
+      "bytes": 21163,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/build_governed_sources.reviewed2860825.py.source",
+      "sha256": "2860825dc33c33cbe62853eada865b0c092c3f30972cbe1fc38addd4ecd884c6"
+    },
+    {
+      "all11_stat": {
+        "st_atime_ns": 1791323031595982913,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791323031597339892,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1095251,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791323031597339892,
+        "st_nlink": 1,
+        "st_size": 1461,
+        "st_uid": 1000
+      },
+      "bytes": 1461,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-review286-to-final03.diff",
+      "sha256": "73f18150d1869b806912b2fd3d58e9ba1bda556ccf0ac2a184974d49dfb71d0d"
+    }
+  ],
+  "frozen_no_further_mutations": true,
+  "schema": "rc6.fullGov.builder-FROZEN-preparation-index.v1",
+  "stage": "PREPARED_NOT_AUTHORIZED_NO_EXECUTION",
+  "wrapper_unchanged_sha256": "7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4"
+}

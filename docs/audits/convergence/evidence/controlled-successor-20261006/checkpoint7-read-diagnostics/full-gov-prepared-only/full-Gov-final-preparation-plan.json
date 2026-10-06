@@ -1,0 +1,227 @@
+{
+  "PR": 476,
+  "binding_template": {
+    "bytes": 1911,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/final-binding.template.json",
+    "sha256": "14600ffbff78ffa909849faee474120ee29e6793b360b9c06aee17fefca21cbd"
+  },
+  "bootstrap_and_custody": [
+    "Actual wrapper PID/TID Linux wait4(-1,WNOHANG) ECHILD and prctl37 same readback BEFORE product Source reads to load manager; own bootstrap scope only",
+    "Hash+Gitblob+mode644+NOFOLLOW/O_NOATIME/all11 exact manager Source capture; load unmodified real manager; its original pre_capture_kernel_state actual ECHILD/readback",
+    "Hash+Gitblob+mode644 exact REAL Gov Source capture; static finalizer-before-product capture ordering check; load unmodified actual Source CLI functions for normal original preflight, no adapters or alternate executable",
+    "Original real source_pin Git HEAD/tree/rawcommit/blob/mode/fullphysicalnamespace/.git exclusions, no overlays; original installed_closure157 and approved_scope wholeRoot+A3; exact19 original objects",
+    "Preparation CODE normal import/read atime changes separately measured by original compare_source; freeze baseline after declared preparation; never DATA/DB/archive priming or stat restoration",
+    "O_EXCL launch intent/launch controls BEFORE original managed_native_child; actual subprocess new session and source-typed original executable",
+    "Progress reads only supervisor-owned stdoutFD fstat and manager timing/PID; no Source/JUnit/native logs/DATA scans while any producer active",
+    "Original managed_custody_closed + original irreversible infrastructure guards; same parent actual ECHILD/subreaper readback AFTER ownedmain/adopted children realwait4 and PGID absence",
+    "Only own native control bytes next: exact launch source/uid/scope/watchdogs, phase commands/supervisorPID, original kernelFIN predicate, original child-finalizerGREEN5; every actual attemptedphase must prove FIN",
+    "UNKNOWN/childinfraRED/signal/latezero/missing attemptedphasecontrol => keep controls only, payloadpostreads0, no cleanup/upload Source/JUnit/log/DATA",
+    "Native phase logical pytest exit1 with original kernelFIN/finalizer closed permits negative documentary diagnosis only and remainsRED; execution requires collection+execution FIN. Collectionexit1 abort requires exact original governed-error + all execution markers absent, no invented FIN/JUnit/executedcount",
+    "Only after every required actual FIN: original Source10 bytes/mode/blob compare and honest atime ledger;157 RECORD byte/version/location/original10 metadata comparison, actual collection/JUnit counters, original FIP executed guards ifGREEN",
+    "Wrapper does not require native parent source-after on logicalFAIL and does not infer global/children RSS or transitive network from ownPID proof"
+  ],
+  "budgets": {
+    "native_child_infrastructure_finalizer_seconds": 5,
+    "native_collection_watchdog_seconds": 5400,
+    "native_execution_watchdog_seconds": 5400,
+    "native_failed_owned_child_cleanup_seconds": 5,
+    "native_sigint_failure_grace_seconds_original": 20,
+    "native_supervisor_original_caps_guards_and_irreversible_RED_fields_unchanged": true,
+    "no_green_for_wall_over_native5400_or_late_zero_signal_residual": true,
+    "outer_SIGINT_failure_grace_seconds_original": 0,
+    "outer_TERM_grace_seconds_original": 2,
+    "outer_failed_owned_child_cleanup_seconds": 5,
+    "outer_source_origin": "original preserved V2 canonical manager max; whole collection+execution+post is not one pytest phase",
+    "outer_whole_epoch_management_seconds": 21600
+  },
+  "current_published_source_sha_not_launch_target": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "current_published_source_tree_not_launch_target": "36227e546cb311546f08b80880064dde86a6f630",
+  "durable_outputs_after_actual_FIN": [
+    "original full source-before/source-after indexes with trackedGit count/mode/blob/Source10 and honestcodeatime",
+    "installed157 closure/normal dist-info RECORD SHA256+all11 capture/original10 comparison; no wheel/fullpackagebyte attestation",
+    "actual phase collection identities/order+sortedhash, JUnit ORIGINAL bytes+SHA16MiB and exact classname/name multiset and actual fails/errors/skips/duplicates",
+    "each native original launch/kernel/finalization/observations/namespace control plus raw stdout, original cap5/5400 fields and all observations preserved",
+    "samePID outer original kernelRAW/intent/progress/receipt; unknown controlonly proof and zero payloadreads if any FINmissing/RED",
+    "original FIP native guard requirements55/scenarios80/Sourceunion170 and map/cohorts only from genuinely executed raw fullJUnit afterGREEN; no material/artifact/runtime eligibility inferred",
+    "metadata-only lstat/NOFOLLOW/O_NOATIME retained own native output and EACH actual externally-owned shorttmp; allocatedbytes unique physicalinodes/hardlinks/aliases retained, fresh original2GiB/10pctinode floors; no deletion/globalcleanupGREEN",
+    "root preserves original RAW in GitHub exact bytes or lossless compressed original/storedsha manifests; no venv/wheel/DB/hugefixturecopies; no results onlylocal"
+  ],
+  "fresh_GitHub_authority_template": {
+    "bytes": 718,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/remote-authority.template.json",
+    "sha256": "02c64186c76f99d65dd3be44bf13b8cc7fdd80de168f7c89da5373dcd29a3484"
+  },
+  "immutable_original_required_objects": {
+    "count": 19,
+    "membership": "7 original prior-front commits A-G plus12 original source-head/source-base commits; raw commit SHA256/tree and Git SHA verified; no other historical audit",
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/original-required-19-objects.json",
+    "prior_proof_is_original_input_authority_only_not_final_HEAD_authority": true,
+    "sha256": "492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579"
+  },
+  "launch_sequence": [
+    {
+      "argv": [
+        "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+        "-I",
+        "-B",
+        "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+        "--binding",
+        "<NEW_OWNED_FILLED_BINDING311.json>"
+      ],
+      "epoch": "311",
+      "python_version": "3.11.16"
+    },
+    {
+      "argv": [
+        "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python",
+        "-I",
+        "-B",
+        "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+        "--binding",
+        "<NEW_OWNED_FILLED_BINDING312.json>"
+      ],
+      "epoch": "312",
+      "only_after311": "actual physicalFIN closed and classification reviewed; no retry/next epoch while newfailure unresolved",
+      "python_version": "3.12.14"
+    }
+  ],
+  "not_prepared_until_root_authorizes": [
+    "Fresh canonical GitHub ref/commit/tree/PR/RepoID read exact FINAL_SHA/tree and writer/deploy/lease check",
+    "Two independent newly-exclusive namespaces on same real disk, umask022, uid/gid1000; outer namespace700, each fresh normal Git worktree755",
+    "Full normal Git clone without hardlinks/alternates/worktrees/grafts/replace aliases/metadata overlays; canonical origin URL without credentials; exact detached FINAL_SHA/tree, clean tracked tree",
+    "If exact original19 objects are missing, root-authorized canonical GitHub object fetch only to their original local refs inside NEW clone .git, no force; HEAD/tree/source bytes unchanged and RED preflight preserved",
+    "Original19 commit raw SHA256/Git commit SHA/tree, actual installed157 names/versions/hash-lock policy, full wholeRoot originalA3 scope, Source10 custody receipts before execution",
+    "Fresh reviewed O_EXCL final binding and own GitHub authority file, stage=REMOTE_FINAL_SOURCE_FROZEN_AND_DURABLE_LAUNCH_AUTHORIZED, matching wrapper/hash/source module blob identities",
+    "Root reviews complete filled bindings/preparation; publishes specific launch receipt; allocates CPU/IO slot;311 then312 only after actual311FIN and no unresolvednewfailure"
+  ],
+  "original_native_subprocess_argv_template": [
+    "<EXACT_LOCKED_PYTHON>",
+    "-I",
+    "-B",
+    "<NEW_SOURCE>/scripts/rc6_controlled_governed_runner.py",
+    "--repo-root",
+    "<NEW_SOURCE>",
+    "--source-sha",
+    "<FINAL_SHA>",
+    "--source-tree",
+    "<FINAL_TREE>",
+    "--output-root",
+    "<NEW_NATIVE_OUTPUT_MUST_NOT_EXIST>",
+    "--timeout-seconds",
+    "5400"
+  ],
+  "preparation_Git_mutations_only_in_fresh_clone_not_existing_Source": true,
+  "preparation_clone_argv_template": [
+    [
+      "git",
+      "clone",
+      "--no-local",
+      "--no-hardlinks",
+      "--no-checkout",
+      "<CANONICALLY_VERIFIED_NORMAL_FULL_GIT_TRANSPORT>",
+      "<NEW_SHORT_NAMESPACE>/epoch<311_OR_312>/source"
+    ],
+    [
+      "git",
+      "-C",
+      "<NEW_SOURCE>",
+      "config",
+      "remote.origin.url",
+      "https://github.com/mbalbo2023/Porota-trading.git"
+    ],
+    [
+      "git",
+      "-C",
+      "<NEW_SOURCE>",
+      "checkout",
+      "--detach",
+      "<FINAL_REMOTE_SOURCE_SHA40>"
+    ],
+    [
+      "git",
+      "-C",
+      "<NEW_SOURCE>",
+      "fetch",
+      "--no-tags",
+      "--no-write-fetch-head",
+      "--no-auto-maintenance",
+      "https://github.com/mbalbo2023/Porota-trading.git",
+      "<ONE_LITERAL_ORIGINAL_SHA>:<ITS_LITERAL_ORIGINAL_LOCAL_REF_IF_MISSING>"
+    ]
+  ],
+  "prepared_utc": "2026-10-06T21:18:08.899630+00:00",
+  "previous_preparation_semantics_only": {
+    "no_old_Gov_execution_or_qualification_reused": true,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/previous-preparation-semantic-baseline.json",
+    "sha256": "8a8ee7a7b694c06de91eaffab5b57cbab15615651342d310b926b12e07ac4a91"
+  },
+  "progress": {
+    "each_checkpoint_O_EXCL_control_and_stdout": true,
+    "manager_poll_seconds_original": 5,
+    "maximum_expected_gap_seconds": 45,
+    "reads": "owned stdoutFD fstat only, no payload while active",
+    "root_durable_comment_checkpoints_required_before_long_run_and_each_phase_or_material_result": true,
+    "wrapper_checkpoint_interval_seconds": 40
+  },
+  "reader_bounds_original": {
+    "CI_256KiB_NOT_used_or_changed_for_Gov": true,
+    "JUnit_bytes": 16777216,
+    "Source_and_Gov_controls_bytes": 134217728
+  },
+  "repo": "mbalbo2023/Porota-trading",
+  "repo_id": 1338680554,
+  "required_published_actual_manager": {
+    "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+    "path": "scripts/rc6_controlled_native_child_manager.py",
+    "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+  },
+  "required_published_native_runner": {
+    "git_blob": "<GIT_BLOB_FROM_FINAL_REMOTE_SOURCE_TREE>",
+    "path": "scripts/rc6_controlled_governed_runner.py",
+    "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47"
+  },
+  "safety": {
+    "DEPLOY_OWNER": "NOT_ACQUIRED",
+    "PAPER_SHADOW_ONLY": true,
+    "PPI_Watch_unchanged": true,
+    "direct_host_Droplet_access": false,
+    "immutableArtifact_image_runtime_attested": false,
+    "live_network_routes_called": false,
+    "ops_branch_modified": false,
+    "probe472_called_or_modified": false,
+    "production_mode": "PRODUCTION_PAPER / SIMULATION",
+    "promotion_deploy_owner": "supervisor#473 exclusively",
+    "real_orders_sent": 0
+  },
+  "schema": "rc6.fullGov.final-launch-preparation.v1",
+  "short_namespace_requirement": {
+    "normal_new_parent700": true,
+    "owned_parent_absolute_path_bytes_max": 50,
+    "reason": "native AF_UNIX multiprocessing path limit; original phase_namespace selects new short sameFS tmpdir; no paths/sourcecaps changed"
+  },
+  "source_sha": "<FINAL_REMOTE_SOURCE_SHA40>",
+  "source_tree": "<FINAL_REMOTE_SOURCE_TREE40>",
+  "stage": "PREPARATION_ONLY_NO_SOURCE_CLONE_EXPORT_FETCH_PREFLIGHT_TEST_OR_GOV_RUN",
+  "status": "READY_FOR_ROOT_READ_REVIEW_ONLY_NO_EXECUTION_AUTHORITY",
+  "test_scope": {
+    "arguments": [
+      ".",
+      "--ignore=test_a3_primary_readonly_hf6.py"
+    ],
+    "collection_and_execution_same_nodeid_and_classname_name_multiset_REQUIRED": true,
+    "distinct_scenarios_not_doubled_for_two_interpreters": true,
+    "exclusions": [
+      "test_a3_primary_readonly_hf6.py|SUPERSEDED_DUPLICATE_MODULE|tests/test_a3_primary_readonly_hf6.py"
+    ],
+    "no_allowlist_filter_special_test_adapter_or_test_oracle_patch": true,
+    "no_preassumed_case_count": true,
+    "policy_origin": "original committed authority/test-policy/A3 matrix via original approved_scope"
+  },
+  "wrapper": {
+    "external_not_Source_overlay": true,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+    "sha256": "7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4",
+    "syntax_compile_only_done": true,
+    "wrapper_import_or_execution_done": false
+  }
+}

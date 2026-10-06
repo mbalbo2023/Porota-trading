@@ -1,0 +1,388 @@
+{
+  "ALIEN": true,
+  "DIAGNOSTIC_ONLY": true,
+  "Data11_preserved": true,
+  "PPI_Watch": "UNTOUCHED",
+  "Source10_and_rawGit_preserved": true,
+  "canonical_BIG_qualified": false,
+  "capability": {
+    "af_unix_ipc_functional": true,
+    "architecture": "x86_64",
+    "creation_denial_witnesses": [
+      {
+        "errno": 97,
+        "family": 10,
+        "operation": "socket_creation",
+        "socket_created": false
+      }
+    ],
+    "ipv4_creation_grants_operation_authority": false,
+    "kernel_errno": 97,
+    "native_socket_creation_denied_families": [
+      10
+    ],
+    "no_new_privileges": true,
+    "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+    "status": "INSTALLED_AND_KERNEL_WITNESSED",
+    "transitive_kernel_network_attestation": false
+  },
+  "child_cleanup": {
+    "errors": [],
+    "finalization_thread_finished": true,
+    "forced_termination": false,
+    "forced_termination_attempted": false,
+    "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+    "inherited_tracker_preserved": false,
+    "initial": {
+      "forkserver_alive_fd": null,
+      "forkserver_pid": null,
+      "resource_tracker_fd": null,
+      "resource_tracker_pid": null
+    },
+    "joined_children": [],
+    "kernel_echild_before_phase_return": true,
+    "management_bound_seconds": 5,
+    "protocol_steps": [
+      {
+        "completed": true,
+        "stage": "nonnegative_stdlib_finalizers",
+        "wall_seconds": 1.9879000319633633e-05
+      },
+      {
+        "completed": true,
+        "stage": "join_owned_children",
+        "wall_seconds": 6.328999006655067e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_forkserver",
+        "wall_seconds": 4.417001036927104e-06
+      },
+      {
+        "completed": true,
+        "stage": "remaining_stdlib_finalizers",
+        "wall_seconds": 3.555000148480758e-06
+      },
+      {
+        "completed": true,
+        "stage": "stop_owned_resource_tracker",
+        "wall_seconds": 3.5849989217240363e-06
+      },
+      {
+        "completed": true,
+        "stage": "verify_kernel_echild",
+        "wall_seconds": 3.6804998671868816e-05
+      }
+    ],
+    "signal_guard_installed_and_witnessed": true,
+    "signal_vetoed": false,
+    "status": "GREEN",
+    "stopped_owned_infrastructure": [],
+    "termination_signal_attempts": [],
+    "unexpected_kernel_children": [],
+    "wall_seconds": 0.0006339920000755228
+  },
+  "counts": {
+    "cash": 0,
+    "errors": 0,
+    "metadata": 12000,
+    "quotes": 0,
+    "truncated": 0
+  },
+  "errors": [],
+  "external_entry_module": "__main__",
+  "gate_qualified": false,
+  "inet_observations": {
+    "inet_socket_attempts": [],
+    "inet_socket_constructor_requests": [],
+    "subprocess_executable_counts": {
+      "git": 4
+    }
+  },
+  "inet_operation_audit_witness": true,
+  "isolated_fresh_process_does_not_reproduce_canonical_500MB_heap_context": true,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_import_proof_qualified": false,
+  "native_original_read_deadline_seconds": 0.5,
+  "native_result_returned": true,
+  "network_observation_scope": "THIS_PYTHON_PROCESS_ONLY_NO_BINARY_KERNEL_OR_TRANSITIVE_ATTESTATION",
+  "no_GC_policy_callbacks_profile_trace_dummy_heap_extra_SQL_or_cache": true,
+  "normal_source_imports_no_alias_rebinding": true,
+  "observed_instrumented_read_cpu_seconds": 0.10529129699999995,
+  "observed_instrumented_read_wall_seconds": 0.10532725399752962,
+  "observer_body_times_are_lower_bounds_never_subtracted_for_qualification": true,
+  "original_helpers_after": {
+    "families._fresh": {
+      "code_identity": 139623052977584,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 71,
+      "function_identity": 139623043010688,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "families._mapping": {
+      "code_identity": 139623071794640,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 52,
+      "function_identity": 139623054136064,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "families._read": {
+      "code_identity": 94734500434992,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 198,
+      "function_identity": 139623043011488,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "source_reads.source_connection": {
+      "code_identity": 94734501513840,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+      "first_line": 23,
+      "function_identity": 139623043013088,
+      "module": "rc6_shadow_runtime.source_reads"
+    },
+    "sqlite_snapshot.readonly_copy": {
+      "code_identity": 94734507996944,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+      "first_line": 89,
+      "function_identity": 139623043021248,
+      "module": "rc6_audit_evidence.sqlite_snapshot"
+    }
+  },
+  "original_helpers_before": {
+    "families._fresh": {
+      "code_identity": 139623052977584,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 71,
+      "function_identity": 139623043010688,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "families._mapping": {
+      "code_identity": 139623071794640,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 52,
+      "function_identity": 139623054136064,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "families._read": {
+      "code_identity": 94734500434992,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/families.py",
+      "first_line": 198,
+      "function_identity": 139623043011488,
+      "module": "rc6_shadow_runtime.families"
+    },
+    "source_reads.source_connection": {
+      "code_identity": 94734501513840,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_shadow_runtime/source_reads.py",
+      "first_line": 23,
+      "function_identity": 139623043013088,
+      "module": "rc6_shadow_runtime.source_reads"
+    },
+    "sqlite_snapshot.readonly_copy": {
+      "code_identity": 94734507996944,
+      "filename": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source/rc6_audit_evidence/sqlite_snapshot.py",
+      "first_line": 89,
+      "function_identity": 139623043021248,
+      "module": "rc6_audit_evidence.sqlite_snapshot"
+    }
+  },
+  "original_source_database_never_opened_by_SQLite": true,
+  "parent_pid": 38424,
+  "pid": 38437,
+  "post_read_native_process_peak_rss_bytes": 128069632,
+  "private_identity_facts": {
+    "metadata_rows_are_exact_distinct_dicts": true,
+    "metadata_values_are_exact_distinct_private_dicts": true
+  },
+  "read_finished_monotonic": 32416.915784797,
+  "read_started_monotonic": 32416.810457543,
+  "real_orders_sent": 0,
+  "source_atime_changes_disclosed": [],
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "sparse_phase_events": [
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.810466015,
+      "process_cpu": 2.034333071,
+      "recording_body_cpu_lower_bound": 2.133000000181795e-06,
+      "recording_body_wall_lower_bound": 1.3919998309575021e-06,
+      "stage": "deadline_created"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.847619381,
+      "process_cpu": 2.071488138,
+      "recording_body_cpu_lower_bound": 3.3250000002205127e-06,
+      "recording_body_wall_lower_bound": 3.8860016502439976e-06,
+      "stage": "private_snapshot_acquired"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.848529712,
+      "process_cpu": 2.072397607,
+      "recording_body_cpu_lower_bound": 3.2649999996969825e-06,
+      "recording_body_wall_lower_bound": 3.0750015866942704e-06,
+      "stage": "select_enter",
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.855863077,
+      "process_cpu": 2.079731012,
+      "recording_body_cpu_lower_bound": 3.305000000342062e-06,
+      "recording_body_wall_lower_bound": 3.044002369279042e-06,
+      "stage": "select_execute_return",
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "count": 12000,
+      "deadline": 32417.310464924,
+      "first_native_row_type": "tuple",
+      "monotonic": 32416.875873007,
+      "per_cursor_row_factory": "None",
+      "process_cpu": 2.099730126,
+      "recording_body_cpu_lower_bound": 6.559000000017079e-06,
+      "recording_body_wall_lower_bound": 7.692000508541241e-06,
+      "stage": "rows_materialized",
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.90490604,
+      "process_cpu": 2.128742998,
+      "recording_body_cpu_lower_bound": 6.4700000002027025e-06,
+      "recording_body_wall_lower_bound": 7.421000191243365e-06,
+      "stage": "rows_transformed",
+      "table": "financial_instrument_catalog"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.905052828,
+      "process_cpu": 2.128886511,
+      "recording_body_cpu_lower_bound": 1.982999999761148e-06,
+      "recording_body_wall_lower_bound": 1.5220030036289245e-06,
+      "stage": "select_enter",
+      "table": "market_snapshots"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.905199225,
+      "process_cpu": 2.129032658,
+      "recording_body_cpu_lower_bound": 1.9030000002473457e-06,
+      "recording_body_wall_lower_bound": 9.90999978967011e-07,
+      "stage": "select_execute_return",
+      "table": "market_snapshots"
+    },
+    {
+      "count": 0,
+      "deadline": 32417.310464924,
+      "first_native_row_type": null,
+      "monotonic": 32416.905821549,
+      "per_cursor_row_factory": "None",
+      "process_cpu": 2.129655613,
+      "recording_body_cpu_lower_bound": 2.0929999999808047e-06,
+      "recording_body_wall_lower_bound": 2.3229986254591495e-06,
+      "stage": "rows_materialized",
+      "table": "market_snapshots"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.905827547,
+      "process_cpu": 2.12966078,
+      "recording_body_cpu_lower_bound": 1.0619999999406105e-06,
+      "recording_body_wall_lower_bound": 5.609981599263847e-07,
+      "stage": "rows_transformed",
+      "table": "market_snapshots"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.905862319,
+      "process_cpu": 2.129695552,
+      "recording_body_cpu_lower_bound": 7.810000002272943e-07,
+      "recording_body_wall_lower_bound": 4.5100023271515965e-07,
+      "stage": "select_enter",
+      "table": "ppi_intraday_points"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.914841567,
+      "process_cpu": 2.138676141,
+      "recording_body_cpu_lower_bound": 4.51700000025923e-06,
+      "recording_body_wall_lower_bound": 3.956000000471249e-06,
+      "stage": "select_execute_return",
+      "table": "ppi_intraday_points"
+    },
+    {
+      "count": 0,
+      "deadline": 32417.310464924,
+      "first_native_row_type": null,
+      "monotonic": 32416.914853284,
+      "per_cursor_row_factory": "None",
+      "process_cpu": 2.138686577,
+      "recording_body_cpu_lower_bound": 1.2119999999171682e-06,
+      "recording_body_wall_lower_bound": 1.2019991117995232e-06,
+      "stage": "rows_materialized",
+      "table": "ppi_intraday_points"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.914856399,
+      "process_cpu": 2.138689621,
+      "recording_body_cpu_lower_bound": 8.819999997022876e-07,
+      "recording_body_wall_lower_bound": 4.2000101529993117e-07,
+      "stage": "rows_transformed",
+      "table": "ppi_intraday_points"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.914895006,
+      "process_cpu": 2.138728239,
+      "recording_body_cpu_lower_bound": 1.0509999999186448e-06,
+      "recording_body_wall_lower_bound": 4.809990059584379e-07,
+      "stage": "select_enter",
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.914959622,
+      "process_cpu": 2.138792915,
+      "recording_body_cpu_lower_bound": 1.0710000002411846e-06,
+      "recording_body_wall_lower_bound": 5.509973561856896e-07,
+      "stage": "select_execute_return",
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "count": 0,
+      "deadline": 32417.310464924,
+      "first_native_row_type": null,
+      "monotonic": 32416.914962045,
+      "per_cursor_row_factory": "None",
+      "process_cpu": 2.138795278,
+      "recording_body_cpu_lower_bound": 1.5019999999310585e-06,
+      "recording_body_wall_lower_bound": 1.4529978216160089e-06,
+      "stage": "rows_materialized",
+      "table": "paper_equity_by_currency"
+    },
+    {
+      "deadline": 32417.310464924,
+      "monotonic": 32416.914964639,
+      "process_cpu": 2.138797832,
+      "recording_body_cpu_lower_bound": 6.80999999946863e-07,
+      "recording_body_wall_lower_bound": 4.1100065573118627e-07,
+      "stage": "rows_transformed",
+      "table": "paper_equity_by_currency"
+    }
+  ],
+  "sqlite_open_observations": [
+    {
+      "original_source_sqlite_opened": false,
+      "path": "/workspace/rc6gov-1wpxjcv0/rc6-sqlite-copy-trp2tmja/snapshot.sqlite",
+      "private_scratch_only": true,
+      "uri_query": "mode=ro"
+    }
+  ],
+  "status": "DIAGNOSTIC_RED",
+  "typed_native_result_bytes": 8592168,
+  "typed_native_result_sha256": "e40b6b68ba00d75f442ce9f33361bd3260be3a4f8d5c43c40fe0d4553c3b97e7",
+  "variant": "TUPLE_component"
+}

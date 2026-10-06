@@ -1,0 +1,22 @@
+--- reviewed2860825/build_governed_sources.py
++++ final03d08c3/build_governed_sources.py
+@@ -267,6 +267,7 @@
+         native_raw, _ = w['source_module'](source, w['NATIVE_MEMBER'], binding['native_runner'])
+         w['static_native_source_barrier'](native_raw)
+         pre = {'stage': 'EXPLICIT_SOURCE_PREFLIGHT_ONLY_NOT_GOV', 'epoch': epoch,
++            'builder_sha256': binding['builder_sha256'],
+             'source_root': str(source), 'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+             'preparation_control_root': str(controls), 'manager': binding['manager'], 'native_runner': binding['native_runner']}
+         w['save'](controls/'preflight-input.json', pre)
+@@ -311,9 +312,11 @@
+     w = load_wrapper()
+     if args.preflight_binding:
+         row = w['document'](initial_read(args.preflight_binding))
++        require(w['digest'](initial_read(__file__)) == row['builder_sha256'], 'REVIEWED_BUILDER_SOURCE_BYTES_REBOUND')
+         require(row['stage'] == 'EXPLICIT_SOURCE_PREFLIGHT_ONLY_NOT_GOV', 'EXPLICIT_PREPARATION_PREFLIGHT_REQUIRED')
+         return preflight(w, row)
+     row = w['document'](initial_read(args.preparation_binding))
++    require(w['digest'](initial_read(__file__)) == row['builder_sha256'], 'REVIEWED_BUILDER_SOURCE_BYTES_REBOUND')
+     results = build(w, row)
+     print(json.dumps({'prepared': results, 'Gov_or_pytest_executed': False, 'real_orders_sent': 0}), flush=True)
+     return 0

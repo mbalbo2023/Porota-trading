@@ -618,7 +618,7 @@
       ],
       "native_caller": "Canonical Predeploy workspace execute_pytest_owned finally publishes complete ownedFIN through atomic cleanup.publish; safe_phase_postread reads with original262144 cap. Gov phase_child publishes original child-finalization control and must require its original GREEN/thread/ECHILD/signal/five-second predicates before product Source import bytes and source_pin.",
       "rca": "Actual Predeploy0f control artifact11442997716 reports ownedFIN lstat348070 over original262144 reader cap; the FIN/JUnit/log payload was unavailable and test counts remain unknown. Separate real process controls at five seconds show old phase_child entering Source postread after UNKNOWN while the unchanged requirement moved before that read prevents every such attempt. Original UNKNOWN/RED receipts are immutable.",
-      "remaining_uncertainty": "Actual348070 globalFIN unavailable; compact global size and test counts unknown. BIG0f original0.5s read remains RED, cycle/slow unclosed. FullGov311/312/HorizonV3/BrowserLARGE/artifact/image/runtime pending. No performance source fix inferred from prior ALIEN diagnostics.",
+      "remaining_uncertainty": "Actual348070 globalFIN unavailable; compact global size and test counts unknown. BIG0f original0.5s read remains RED, cycle/slow unclosed. FullGov311/312/HorizonV3/BrowserLARGE/artifact/image/runtime pending. No performance source fix inferred from prior ALIEN diagnostics. Checkpoint7 exact ordered ROW/TUPLE outputs equal but canonical0.5s failure was not reproduced; observed single-pair timing does not justify a performance Source fix. FullGov wrapper/builder are prepared-only, not executed gates.",
       "test_nodes": [
         "tests/test_rc6_predeploy_scoped_cleanup.py::test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green",
         "tests/test_rc6_predeploy_scoped_cleanup.py::test_exclusive_launch_intent_without_fin_blocks_postread_and_cannot_be_replaced",
@@ -21898,6 +21898,816 @@
     },
     "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint6-phase-child-barrier/publisher-component-control/outcome-summary.json": {
       "reason": "Controlled successor checkpoint6: preserve complete closed RAW, lossless encoded/segmented transport, actual negative results, source/data/kernel custody, minimum-fix proposals and bounded plans. Explicit manifests restore all original bytes. External formatting/phase controls do not qualify fullGov/BIG/Horizon/Browser/programartifact/image/runtime; no original RED or material budget is relaxed.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/CHANGE_SUMMARY.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/RAW_PRESERVATION.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/GitHub-preparation-authority.template.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/build_governed_sources.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/build_governed_sources.reviewed2860825.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/builder-binding.template.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/builder-frozen-final-index.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/builder-preparation-index.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/builder-preparation-plan.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-builder-prepared-only/builder-review286-to-final03.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/final-binding.template.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/full-Gov-final-preparation-plan.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/governed_outer.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/original-required-19-objects.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/preparation-index.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/previous-preparation-semantic-baseline.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/full-gov-prepared-only/remote-authority.template.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/prior-inventory/fip-22be0a8d-full-sha.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/ast-normalization-proof.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/ast-normalization-proof.v2.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/closed-pair-causal-note.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/closed-pair-raw-index.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/components-v1-to-v2.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/launcher-v1-to-v2.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/launcher-v2-to-v3.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/original-read.py.txt": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/original-vs-row-adaptations.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/pair_components.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/pair_components_v2.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/pair_owned_launch.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/pair_owned_launch_v2.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/pair_owned_launch_v3.py.source": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/plan-v2-to-v3.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/plan.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/plan.v3.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/preparation-handoff.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/preparation-handoff.v3.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/row-control.py.txt": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/row-vs-tuple.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/row-vs-tuple.v2.diff": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/preparation/tuple-component.py.txt": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child-finalization-control.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child.data-after.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child.data-before.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child.result.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child.source-after.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/child.source-before.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/execution.installed-closure.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/execution.namespace.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/execution.offline-capability.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/kernel-supervision.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/launch.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/native-finalization-readback-control.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/native.log": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/parent.data-after.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/parent.source-after.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/postread-kernel-barrier.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/ROW_control/typed-native-result.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child-finalization-control.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child.data-after.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child.data-before.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child.result.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child.source-after.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/child.source-before.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/execution.installed-closure.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/execution.namespace.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/execution.offline-capability.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/kernel-supervision.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/launch.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/native-finalization-readback-control.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/native.log": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/parent.data-after.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/parent.source-after.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/postread-kernel-barrier.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/TUPLE_component/typed-native-result.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/collection.installed-closure.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/collection.namespace.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/collection.offline-capability.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/pair-final.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/parent.data-before.json": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint7-read-diagnostics/row-tuple/raw/parent.source-before.json.gz": {
+      "reason": "Controlled successor checkpoint7: preserve complete closed ROW/TUPLE causal RAW and all used/unused scripts/plans without normalization; original kernel/child-finalization custody precedes payload reads. The isolated pair did not reproduce canonical0.5s RED and does not justify product performance changes or qualify BIG/import/browser gates. Preserve reviewed fullGov preparation inputs as unexecuted; original Root-dot/A3/native5400/finalizer5 remain unchanged.",
       "requirement_ids": [
         "U11",
         "U14",

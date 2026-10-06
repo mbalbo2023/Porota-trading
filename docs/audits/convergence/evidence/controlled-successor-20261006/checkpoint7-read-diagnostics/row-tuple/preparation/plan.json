@@ -1,0 +1,336 @@
+{
+  "ALIEN": true,
+  "DATA_custody": "Original main+WAL+SHM+journal all11 and SHA before/after actual original contexts and each real parent FIN. At preparation only stat11/closed receipts were read, no DB opened, hashed, copied or SQL-run.",
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "SQL_execute_timing_limit": "execute may prepare and step; list covers later native stepping+materialization. No claim of exclusive SQL/Row allocation cost.",
+  "Source_custody": "RawGit prepare_binding + all3680 physical Source files/dirs, source bytes/modes/blob IDs and original10 stable fields before/after each real FIN; atimes separately disclosed. No exclusions/reset.",
+  "Source_working_root_forbidden": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source",
+  "actual_SQL_guard": "Audited sqlite3.connect only file: URI mode=ro physically inside the fresh owned scratch. Original DATA and sidecars never opened by SQLite; normal source_connection/readonly_copy create and close its private copy unchanged.",
+  "artifacts": {
+    "ast-normalization-proof.json": {
+      "bytes": 587,
+      "sha256": "64662b8d8f78da166bc8fe27edf1dc1f4ca9d23c365edde03225f8ccc0f1f90e"
+    },
+    "ast-normalization-proof.v2.json": {
+      "bytes": 730,
+      "sha256": "e0b3dc2fea1d7f66b330c5fc741a110725434b83981341fe4b4af77245e7d0e1"
+    },
+    "components-v1-to-v2.diff": {
+      "bytes": 1678,
+      "sha256": "41f99d9612664696d01f0831c40a3b5fd78ef0993f615b3a2d22b38f7c9ff483"
+    },
+    "launcher-v1-to-v2.diff": {
+      "bytes": 2715,
+      "sha256": "be9998e6a60a4376a29d81e57b2141c4deba5221686b8c62d8c7a78129b5195f"
+    },
+    "original-read.py.txt": {
+      "bytes": 3335,
+      "sha256": "57449f72ed5102b76bd6a0235da600d0d8efe5a1bd86d16989076f8786f00199"
+    },
+    "original-vs-row-adaptations.diff": {
+      "bytes": 4110,
+      "sha256": "33e40e9ffd3e3b216ec9084d007ecf2c37a7e4fb69c1d0e2a6c53d21c1b05430"
+    },
+    "pair_components.py": {
+      "bytes": 8810,
+      "sha256": "17534aefdfb690a353578e510ae60b8421679c59abb3ccef4c8d2068f4fd3744"
+    },
+    "pair_components_v2.py": {
+      "bytes": 9210,
+      "sha256": "c79ac44ab2c4eb9316abfd42df008bfcf6c50e9aac5689dd6f5a53ac5df73029"
+    },
+    "pair_owned_launch.py": {
+      "bytes": 24071,
+      "sha256": "f347f3a7aae3b30d256b22b227efa84638575569d6cffd1d824d2ef8504548dc"
+    },
+    "pair_owned_launch_v2.py": {
+      "bytes": 24165,
+      "sha256": "3748ed9a1b0d5c1b89841a746338f1eef70cbed6cbf7cbade76bfd6b3ae27c0c"
+    },
+    "row-control.py.txt": {
+      "bytes": 3915,
+      "sha256": "52f7e4c3494d6e21323b020dec6fc3120b43dd2ed7cb1e95ccd4a75e58279788"
+    },
+    "row-vs-tuple.diff": {
+      "bytes": 1031,
+      "sha256": "e1784f2509a692b61cdcd7ff0f2fd2b0e950e09face584b11502191d77975f99"
+    },
+    "row-vs-tuple.v2.diff": {
+      "bytes": 1077,
+      "sha256": "80edfa2c00509ecf7454cc5b41e08e6b7fbca1ba144fc257fe4ed545e579ef4e"
+    },
+    "tuple-component.py.txt": {
+      "bytes": 3996,
+      "sha256": "d2e1fa5984ed13ffb698a424183fc7a818e381147b0b00713162d189d29590f1"
+    }
+  },
+  "at_derivation": "Untouched source/scripts/rc6_issue465_stress.py lines32-33: OPEN=2026-10-05T13:30Z; PRE=OPEN-timedelta(minutes=10)",
+  "at_iso": "2026-10-05T13:20:00+00:00",
+  "canonical_BIG_qualified": false,
+  "cause_and_savings_status": "UNPROVEN. Row wrappers are semantically unnecessary for this positional conversion but their original canonical cost has not been measured. One fresh isolated pair cannot reproduce prior500MB heap or justify a Source performance fix alone.",
+  "child_argv_template": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v2.py",
+    "--child",
+    "ROW_control|TUPLE_component"
+  ],
+  "child_cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+  "created_utc": "2026-10-06T21:17:15.658223+00:00",
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8",
+  "driver_browser_Gov_BIG_Horizon_not_launched": true,
+  "durable_handshake": "Root review exact scripts/diff/pin/stat11/hashes and publish SHA/action before launch. After full FIN root archives immutable raw hashes/size/index and exact results. No GitHub/ref/commit/deploy writes from this agent.",
+  "expected_RAW_members": [
+    "parent.source-before.json",
+    "parent.data-before.json",
+    "ROW_control/launch.json",
+    "ROW_control/kernel-supervision.json",
+    "ROW_control/postread-kernel-barrier.json",
+    "ROW_control/child.result.json",
+    "ROW_control/typed-native-result.json if read returned",
+    "ROW_control/child.source-before.json",
+    "ROW_control/child.source-after.json",
+    "ROW_control/child.data-before.json",
+    "ROW_control/child.data-after.json",
+    "ROW_control/parent.source-after.json",
+    "ROW_control/parent.data-after.json",
+    "TUPLE_component/same members",
+    "pair-final.json"
+  ],
+  "frozen_source_existing_export_no_overlays_or_fresh_clone": true,
+  "input_absent_sidecars": [
+    "-wal",
+    "-shm",
+    "-journal"
+  ],
+  "input_closed_receipts": {
+    "kernel": {
+      "bytes": 2901,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/kernel-supervision.json",
+      "sha256": "c9b1cefddffa353e570c7551c1ae115b85878a98a7c0a889b3e0bc25bbc44208",
+      "stat11": {
+        "st_atime_ns": 1791318099948079473,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791318099952047753,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1706442,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791318099952047753,
+        "st_nlink": 1,
+        "st_size": 2901,
+        "st_uid": 1000
+      }
+    },
+    "summary": {
+      "bytes": 19935,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/big-final-summary.json",
+      "sha256": "323322db7b26698e8c395d2f56e5f58f298ae37b0e9a875298722b95a2ab3597",
+      "stat11": {
+        "st_atime_ns": 1791318638339155697,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791318638340671812,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1619710,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318638340671812,
+        "st_nlink": 1,
+        "st_size": 19935,
+        "st_uid": 1000
+      }
+    }
+  },
+  "input_data_all11_and_hash": {
+    "": {
+      "sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+      "st_atime_ns": 1791318084980147805,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791318084952147932,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706424,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318084952147932,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "interpreter": "CPython3.11.16 locked PRODUCT157 untouched",
+  "material_gates_closed": [],
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "namespace": "Each native PID has fresh0700 same-disk external phase_namespace/HYPOTHESIS/LOG_DIR/tmp, no aliases/hardlinks. No Source clone, overlay, function/global/module replacement or provider call.",
+  "native_import_proof_qualified": false,
+  "necessary_custody_reads_scope": "Future bounded NOATIME hash captures validate input before/after both variants identically; no deliberate DATA cache priming/reset or SQL probe. OS cache/allocation context remains a confound, not reproduced.",
+  "network_claim_scope": "Actual process-local operation observations plus separate kernel IPv6 creation witness; no binary/kernel-transitive isolation or inferred zero constructors.",
+  "no_GC_callbacks_collection_thresholds_profile_trace_dummyheap_extra_SQL_business_cache": true,
+  "no_exit_zero_exception_for_qualification": "Only physical custody allows deliberate ALIEN diagnostic exit1; every material/import qualification remains false",
+  "observation": "Sparse clocks only deadline_created/private_snapshot_acquired and execute_return/list_return/transform_end at up to4 tables, actual first native Row type/per-cursor factory. No per-row callback. Recording body cost lower bounds disclosed and never subtracted.",
+  "one_invocation_each_no_retry": true,
+  "original_closed_BIG_remains_RED": true,
+  "original_closed_BIG_returncode": 1,
+  "original_database": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow/data/paper_v17/observer_v17.db",
+  "original_database_sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+  "original_instruments": 12000,
+  "original_ipv6_kernel_creation_DENIED_and_INET_audit_preserved": true,
+  "original_materialized_observations": 60000,
+  "outer_controls": {
+    "manager_file_sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+    "manager_function_unmodified": true,
+    "original_cleanup_signal_policy_preserved": true,
+    "original_sigint_failure_grace_seconds": 20,
+    "original_tracked_manager": "scripts.rc6_controlled_governed_runner.subprocess_phase",
+    "owned_cleanup_seconds": 5,
+    "per_variant_management_seconds": 60,
+    "rss_strictly_less_than_bytes": 2147483648,
+    "total_RAW_maximum_bytes": 134217728
+  },
+  "parent_argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v2.py"
+  ],
+  "planned_progress": "Print supervisor PID and variant start; before60s report owned kernel status only; print actual main PID/FIN and postread barrier. No producer payload is inspected while active.",
+  "postread_barrier": [
+    "actual_wait4_pid_reap",
+    "prespawn_ECHILD",
+    "post_main_ECHILD",
+    "owned_children_exhaustion",
+    "PGID_absent_at_main_reap",
+    "PGID_absent_after_reap",
+    "wait4_zero_not_observed",
+    "no_late_reap",
+    "no_timeout",
+    "no_group_signal_observation",
+    "no_supervisor_error",
+    "no_residual",
+    "no_adopted_descendant",
+    "no_remaining_owned_child",
+    "subreaper_restore_attempted",
+    "cleanup<=5s",
+    "actual_reap<=60s",
+    "peak_RSS<2GiB"
+  ],
+  "read_limits": {
+    "Source_capture_and_consumer_seconds": 0.5,
+    "all_four_original_specs_and_schemas_retained": true,
+    "cash_limit": 500,
+    "each_SQL_limit_plus_one": true,
+    "market_snapshots_limit": 5000,
+    "metadata_limit": 20000,
+    "original_SQLite_checks": "162 preyield/164 postyield/172 aftercleanup unchanged",
+    "original_SQLite_timeout_seconds": 0.025,
+    "original_julianday_cutoff_and_order_preserved": true,
+    "original_max_source_file_bytes": 536870912,
+    "ppi_intraday_points_limit": 5000,
+    "progress_step_interval": 1000
+  },
+  "real_orders_sent": 0,
+  "resource_and_result_RED_preserved": "Any original deadline/SQL/custody/network/type/cleanup failure remains in RAW; no retry, skip, policy change or PASS promotion.",
+  "schema": "rc6.row-tuple.original-reader-pair.preparation.v2",
+  "source_functions": {
+    "rc6_audit_evidence/sqlite_snapshot.py": {
+      "bytes": 8516,
+      "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea",
+      "stat11_at_preparation": {
+        "st_atime_ns": 1791318085324146246,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791317302568686023,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1705809,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791316465000000000,
+        "st_nlink": 1,
+        "st_size": 8516,
+        "st_uid": 1000
+      }
+    },
+    "rc6_shadow_runtime/families.py": {
+      "bytes": 44176,
+      "sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398",
+      "stat11_at_preparation": {
+        "st_atime_ns": 1791318085348146137,
+        "st_blocks": 88,
+        "st_ctime_ns": 1791317302576220335,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1705841,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791316465000000000,
+        "st_nlink": 1,
+        "st_size": 44176,
+        "st_uid": 1000
+      }
+    },
+    "rc6_shadow_runtime/source_reads.py": {
+      "bytes": 1334,
+      "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189",
+      "stat11_at_preparation": {
+        "st_atime_ns": 1791318085320146264,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791317302577759043,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1705852,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791316465000000000,
+        "st_nlink": 1,
+        "st_size": 1334,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_controlled_governed_runner.py": {
+      "bytes": 63436,
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stat11_at_preparation": {
+        "st_atime_ns": 1791318081044165689,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317302586058918,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1705936,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791316465000000000,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "scripts/rc6_issue465_stress.py": {
+      "bytes": 52966,
+      "sha256": "11212f6534759b2b7483b5aaf2fdf367b819ce428b04cd565791dbed8d732456",
+      "stat11_at_preparation": {
+        "st_atime_ns": 1791318083124156235,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791317302587365602,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1705955,
+        "st_mode": 33188,
+        "st_mtime_ns": 1791316465000000000,
+        "st_nlink": 1,
+        "st_size": 52966,
+        "st_uid": 1000
+      }
+    }
+  },
+  "source_index": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/pin/source.index.json",
+  "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+  "source_repo": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/repository",
+  "source_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "PREPARED_NOT_EXECUTED_AWAIT_ROOT_REVIEW_AND_EXCLUSIVE_CPU_IO_SLOT",
+  "typed_comparison": "After both full kernel FIN only: exact ordered full typed bytes for None,bool,int,str,float64 binary bits including -0.0/NaN,bytes,list,tuple,dict keys/values; no default=str or JSON graph reconstruction. Private metadata dict identity separately witnessed in each native result.",
+  "typed_comparison_limits": "This fixed native DB covers its actual types/content/alias invariants only. No mutation/oracle suite validation or canonical context/callback compatibility is inferred.",
+  "unknown_or_any_barrier_RED": "No parent Source/DATA/log/payload reads, no second variant, no retry",
+  "variants_in_fixed_sequence": [
+    "ROW_control",
+    "TUPLE_component"
+  ]
+}

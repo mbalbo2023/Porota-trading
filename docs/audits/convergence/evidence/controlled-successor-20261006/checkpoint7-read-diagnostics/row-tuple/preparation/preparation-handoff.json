@@ -1,0 +1,17 @@
+{
+  "DB_open_hash_copy_SQL_count_at_preparation": 0,
+  "DIAGNOSTIC_ONLY": true,
+  "Source_writes": 0,
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8",
+  "gate_qualified": false,
+  "native_execution_count": 0,
+  "parent_argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/pair_owned_launch_v2.py"
+  ],
+  "plan_bytes": 15027,
+  "plan_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/plan.json",
+  "plan_sha256": "7d2c9b14e0b77b6374552b3da5124787eda0a8d1db3e227227f7de2834b9701b"
+}
