@@ -9,15 +9,20 @@
   "supervision_issue": 473,
   "automation_id": "6ac30186bc40819199bfbfd32244aca5",
   "automation_title": "Convergencia RC6 nocturna",
-  "status": "BLOCKED",
+  "status": "WAITING_OWNER",
   "candidate_pr": null,
-  "candidate_sha_observed": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
+  "candidate_sha_observed": "874b095f1e15a75678b27013f820a8d82be630e2",
   "production_sha_observed": "da697c6e6c2274579f9e4a112fabc4327475dd35",
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
-  "pending_action": null,
+  "lease": {
+    "token": "run-20261006041407924-71561b8c",
+    "acquired_at": "2026-10-06T04:14:07.924Z",
+    "expires_at": "2026-10-06T04:34:07.924Z",
+    "owner": "SUPERVISOR_AUTOMATICO_GITHUB"
+  },
+  "pending_action": "WAIT_FOR_CODEX_FINAL_DELIVERY_AND_OWNER_RELEASE",
   "predeploy": null,
   "deploy": null,
   "first_run_receipt": {
@@ -69,7 +74,6 @@
     }
   ],
   "blockers": [
-    "WINDOW_EXPIRED_NO_PROMOTION",
     "INTEGRATION_OWNER_ACTIVE",
     "FINAL_CANDIDATE_NOT_DELIVERED",
     "EXACT_PR_NOT_CREATED",
@@ -87,12 +91,11 @@
   },
   "schedule": {
     "timezone": "America/Buenos_Aires",
-    "dtstart": "2026-10-04T23:30:00-03:00",
-    "frequency": "HOURLY",
-    "count": 12
+    "dtstart": "2026-10-06T01:00:00-03:00",
+    "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-05T11:41:24.050Z",
+  "last_observed_at": "2026-10-06T04:14:07.924Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -185,9 +188,9 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-05T10:34:08.330Z",
-    "candidate_sha": "ca3df68631164b9a20fdfd1d2617a24e18e042cf",
-    "candidate_tree": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1",
+    "observed_at": "2026-10-06T04:14:07.924Z",
+    "candidate_sha": "874b095f1e15a75678b27013f820a8d82be630e2",
+    "candidate_tree": "9c045b490e724cc7927a0747bc1dcc7b84c45d3d",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
     "candidate_prs_found": 0,
     "candidate_actions_runs_found": 0,
@@ -195,12 +198,14 @@
     "integration_owner_status": "ACTIVE_NOT_RELEASED",
     "owner_comment_id": 5986480121,
     "exact_release_observed": false,
-    "material_change": false,
-    "external_mutations": "NONE",
-    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5992240156"
+    "material_change": true,
+    "external_mutations": "CONTROL_STATE_LEASE_ONLY",
+    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5993692352"
   },
-  "candidate_tree_observed": "2515d1c6aec34a3a90d292fbfc1fb51333b4c8b1",
-  "final_window_result": {
+  "candidate_tree_observed": "9c045b490e724cc7927a0747bc1dcc7b84c45d3d",
+  "automation_disabled_at": null,
+  "automation_is_enabled": true,
+  "previous_final_window_result": {
     "observed_at": "2026-10-05T11:41:24.050Z",
     "deadline_utc": "2026-10-05T11:30:00Z",
     "result": "BLOCKED_WINDOW_EXPIRED_NO_PROMOTION",
@@ -234,7 +239,5 @@
     "automation_title": "Convergencia RC6 nocturna",
     "automation_disabled": true,
     "automation_disabled_at": "2026-10-05T11:41:24.050Z"
-  },
-  "automation_disabled_at": "2026-10-05T11:41:24.050Z",
-  "automation_is_enabled": false
+  }
 }
