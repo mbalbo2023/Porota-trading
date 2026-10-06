@@ -24536,6 +24536,14 @@
         "U24"
       ]
     },
+    "tests/test_issue465_provenance.py": {
+      "reason": "Bind the strict single-build Predeploy workflow guard to the canonical owned POROTA_PREDEPLOY_TMP JUnit/governed evidence paths and resolve its workflow from the physical source tree, preserving ordering, exact source/artifact authority and portability outside checkout cwd. The integrated input is evolved with the actual native workflow guard; no production workflow, budget or material eligibility is changed.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "tests/test_issue465_source_retention_policy.py": {
       "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
       "requirement_ids": [
@@ -26627,6 +26635,7 @@
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy",
+        "tests/test_issue465_provenance.py::test_predeploy_executes_strict_provenance_in_final_single_build",
         "tests/test_issue465_stress_audit_gate.py::test_bool_int_coercion_cannot_bless_false_safety_types",
         "tests/test_issue465_stress_audit_gate.py::test_claimed_green_cannot_hide_nonpass_or_duplicate_junit",
         "tests/test_issue465_stress_audit_gate.py::test_convergence_receipt_always_validates_counters_before_provenance",
@@ -28541,6 +28550,7 @@
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy",
+        "tests/test_issue465_provenance.py::test_predeploy_executes_strict_provenance_in_final_single_build",
         "tests/test_issue465_stress_audit_gate.py::test_bool_int_coercion_cannot_bless_false_safety_types",
         "tests/test_issue465_stress_audit_gate.py::test_claimed_green_cannot_hide_nonpass_or_duplicate_junit",
         "tests/test_issue465_stress_audit_gate.py::test_convergence_receipt_always_validates_counters_before_provenance",
@@ -28964,6 +28974,7 @@
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy",
+        "tests/test_issue465_provenance.py::test_predeploy_executes_strict_provenance_in_final_single_build",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
         "tests/test_rc6_archive_v3_image_smoke.py::test_bounded_noatime_reader_rejects_alias_hardlink_and_oversized_member",
