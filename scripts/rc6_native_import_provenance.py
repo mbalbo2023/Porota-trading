@@ -43,6 +43,19 @@ _ORIGINAL_FIND = _bootstrap._find_and_load
 _ORIGINAL_LOAD = _bootstrap._load_unlocked
 _EXTENSION_LOADER = machinery.ExtensionFileLoader
 _FUTURE_FLAGS = sum(getattr(__future__, name).compiler_flag for name in __future__.all_feature_names)
+_TYPE_FIELDS = {name:type.__dict__[name] for name in ("__dict__", "__module__", "__name__", "__qualname__")}
+_IMPORT_ERROR_NAME = ImportError.__dict__["name"]
+
+
+def _static_type_field(cls, name):
+    # Calling the actual built-in descriptor bypasses descriptors supplied by
+    # a foreign metaclass; type.__getattribute__ alone does not provide that.
+    return _TYPE_FIELDS[name].__get__(cls, type(cls))
+
+
+def _static_type_text(cls, name):
+    value = _static_type_field(cls, name)
+    return value if type(value) is str and len(value) <= MAX_TEXT else None
 
 
 def _protocol_owners():
@@ -432,11 +445,11 @@ class NativeImportObserver:
         metaclass = values.get("_DeprecatedType")
         field = name.removeprefix("typing.")
         if (type(metaclass) is not type or type(alias) is not metaclass or values.get(field) is not alias
-                or type.__getattribute__(alias, "__module__") != "typing"
-                or type.__getattribute__(alias, "__name__") != name
-                or type.__getattribute__(alias, "__qualname__") != field):
+                or _static_type_field(alias, "__module__") != "typing"
+                or _static_type_field(alias, "__name__") != name
+                or _static_type_field(alias, "__qualname__") != field):
             return None
-        method = type.__getattribute__(metaclass, "__dict__").get("__getattribute__")
+        method = _static_type_field(metaclass, "__dict__").get("__getattribute__")
         if (self.factories["typing"]["code"] is None or type(method) is not types.FunctionType or method.__globals__ is not values
                 or method.__code__ != self.factories["typing"]["code"]
                 or method.__code__.co_filename != self.runtime_sources["typing"]["path"]):
@@ -535,8 +548,8 @@ class NativeImportObserver:
                     row["outcome"] = "RETURNED_MODULE" if type(result) is types.ModuleType else "RETURNED_NONMODULE"
                 else:
                     row["outcome"] = "MODULE_NOT_FOUND" if type(failure) is ModuleNotFoundError else "IMPORT_EXCEPTION"
-                    row["error_class"] = type(failure).__name__
-                    error_name = failure.name if isinstance(failure, ImportError) else None
+                    row["error_class"] = _static_type_text(type(failure), "__name__")
+                    error_name = _IMPORT_ERROR_NAME.__get__(failure, type(failure)) if isinstance(failure, ImportError) else None
                     row["error_name"] = error_name if type(error_name) is str and len(error_name) <= MAX_TEXT else None
                     row["core_missing_raiser_verified"] = False
                     if type(failure) is ModuleNotFoundError:
@@ -580,9 +593,13 @@ class NativeImportObserver:
                 if sum(map(len, self.load_stacks.values())) >= self.record_limit:
                     self.counts["overflow"] += 1
                     return None
+                loader_module = _static_type_text(type(spec.loader), "__module__")
+                loader_name = _static_type_text(type(spec.loader), "__qualname__")
                 row = {"module":spec.name,"origin":origin,"thread_identity":thread,
-                       "loader_type":type.__getattribute__(type(spec.loader), "__module__")+"."+type.__getattribute__(type(spec.loader), "__qualname__"),
+                       "loader_type":loader_module+"."+loader_name if loader_module is not None and loader_name is not None else "UNVERIFIED_CLASS_METADATA",
                        "outcome":"IN_PROGRESS"}
+                if row["loader_type"] == "UNVERIFIED_CLASS_METADATA":
+                    self.counts["errors"] += 1
                 if len(row["loader_type"]) > MAX_TEXT:
                     self.counts["overflow"] += 1
                     return None
@@ -628,7 +645,7 @@ class NativeImportObserver:
                         self.load_stacks.pop(row["thread_identity"], None)
                 row["outcome"] = "LOADER_RETURNED" if failure is None else "LOADER_EXCEPTION"
                 if failure is not None:
-                    row["error_class"] = type(failure).__name__
+                    row["error_class"] = _static_type_text(type(failure), "__name__")
                 before = token["before"]
                 if before is None or failure is not None or type(result) is not types.ModuleType:
                     return
@@ -656,9 +673,10 @@ class NativeImportObserver:
                     referenced_types = []
                     for value in values.values():
                         cls = type(value)
-                        if (type.__getattribute__(cls, "__module__") == name
-                                and fields.get(type.__getattribute__(cls, "__name__")) is cls):
-                            referenced_types.append(type.__getattribute__(cls, "__name__"))
+                        class_name = _static_type_text(cls, "__name__")
+                        if (_static_type_text(cls, "__module__") == name and class_name is not None
+                                and fields.get(class_name) is cls):
+                            referenced_types.append(class_name)
                     runtime_shape = (name == "cython_runtime" and fields.get("__name__") == name
                                      and type(fields.get("line_trace")) is bool
                                      and set(fields) <= {"__name__","__doc__","__package__","__loader__","__spec__","line_trace"})

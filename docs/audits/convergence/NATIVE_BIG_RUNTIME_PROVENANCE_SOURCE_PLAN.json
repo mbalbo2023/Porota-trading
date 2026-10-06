@@ -105,7 +105,15 @@
       "variants": ["audit_hook_veto", "audit_hook_duplicate", "audit_hook_error"],
       "evidence_kind": "SOURCE_REVIEW_FINDING_WITH_UNEXECUTED_PHYSICAL_SUBPROCESS_GUARDS"
     },
-    "opaque_reference_cache": "Classification cache includes the actual caller globals identity, retained strongly until deactivation; the same code/callsite cannot borrow qualification from another globals dictionary."
+    "opaque_reference_cache": "Classification cache includes the actual caller globals identity, retained strongly until deactivation; the same code/callsite cannot borrow qualification from another globals dictionary.",
+    "foreign_class_metadata": {
+      "finding": "type.__getattribute__ bypasses a metaclass method override but can still execute a descriptor supplied by that foreign metaclass.",
+      "fix": "Read physical class fields by directly invoking the original built-in type descriptors, and ImportError.name via its original member descriptor. Non-string/unbounded metadata is unverified. Do not call foreign metaclass descriptors merely to label the loader, exception or referenced native type.",
+      "guard": "tests/test_rc6_native_big_import_provenance.py::test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives",
+      "variants": ["foreign_loader_result", "foreign_loader_abort"],
+      "evidence_kind": "SOURCE_REVIEW_FINDING_WITH_UNEXECUTED_PHYSICAL_BASELINE_VERSUS_OBSERVED_DELEGATION_CONTROLS",
+      "previous_unexecuted_source": "0bff040c0e2764a1a23c05c6956c531d5b24e66a"
+    }
   },
   "validation": {
     "source_ast_and_compile_only": "PASS",

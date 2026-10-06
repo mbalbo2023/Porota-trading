@@ -411,11 +411,68 @@ def _runtime_control_child(root, private, case):
         assert rejected.counts == {key:0 for key in rejected.counts}
         control['rejected_installation_receptions'] = rejected.installation_receptions
         control['rejected_observer_inactive_and_protocol_restored'] = True
+    foreign_loader_cases = ('foreign_loader_result','foreign_loader_abort')
+    if case in foreign_loader_cases:
+        metadata_accesses, loader_calls = [], []
+        class ForeignLoaderMeta(type):
+            @property
+            def __module__(cls):
+                metadata_accesses.append('descriptor:__module__')
+                raise AssertionError('observer invoked foreign metaclass descriptor')
+            @property
+            def __name__(cls):
+                metadata_accesses.append('descriptor:__name__')
+                raise AssertionError('observer invoked foreign metaclass descriptor')
+            def __getattribute__(cls, name):
+                if name in ('__module__','__name__','__qualname__'):
+                    metadata_accesses.append('override:'+name)
+                    raise AssertionError('observer invoked foreign metaclass override')
+                return type.__getattribute__(cls, name)
+        class ForeignLoader(metaclass=ForeignLoaderMeta):
+            def create_module(self, spec):
+                loader_calls.append('create_module')
+                return None
+            def exec_module(self, module):
+                loader_calls.append('exec_module')
+                if case == 'foreign_loader_abort':
+                    raise SystemExit('actual original loader exception')
+                module.VALUE = 17
+                module.__file__ = str(Path(__file__).resolve())
+        class ForeignFinder:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname.startswith('rc6_runtime_guard_foreign_loader_'):
+                    return proof.machinery.ModuleSpec(fullname, ForeignLoader(), origin=str(Path(__file__).resolve()))
+                return None
+        def delegated_import(suffix):
+            name = 'rc6_runtime_guard_foreign_loader_'+suffix
+            finder = ForeignFinder()
+            sys.meta_path.insert(0, finder)
+            try:
+                module = __import__(name)
+                return {'outcome':'RETURNED_MODULE','value':module.VALUE}
+            except SystemExit as error:
+                return {'outcome':'SystemExit','code':error.code}
+            finally:
+                sys.meta_path.remove(finder)
+                sys.modules.pop(name, None)
+        baseline = delegated_import('baseline')
+        control['baseline_delegation'] = baseline
+        control['baseline_metadata_accesses'] = list(metadata_accesses)
+        control['baseline_loader_calls'] = list(loader_calls)
+        metadata_accesses.clear()
+        loader_calls.clear()
     observer = proof.NativeImportObserver(binding, role='RUNTIME_FACTORY_CONTROL')
     before = observer.initial_receipt()
     if case in installation_cases:
         assert before['audit_hook_installation']['verified'] is True
         assert before['audit_hook_installation']['receptions'] == 1
+    elif case in foreign_loader_cases:
+        control['observed_delegation'] = delegated_import('observed')
+        control['observed_metadata_accesses'] = list(metadata_accesses)
+        control['observed_loader_calls'] = list(loader_calls)
+        assert control['observed_delegation'] == baseline
+        assert metadata_accesses == control['baseline_metadata_accesses'] == []
+        assert loader_calls == control['baseline_loader_calls'] == ['create_module','exec_module']
     elif case == 'typing_aliases':
         control['actual_aliases'] = [name for name in ('typing.io','typing.re') if name in sys.modules]
         for name in control['actual_aliases']:
@@ -573,6 +630,21 @@ def test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverifi
     result = _physical_runtime_control(tmp_path, 'false_typing_alias')
     assert any(row['module'] == 'typing.io' for row in result['boundary_after']['unresolved'])
     assert result['transient_closure_verified'] is False
+
+
+@pytest.mark.parametrize('case',['foreign_loader_result','foreign_loader_abort'])
+def test_loader_metaclass_descriptors_are_not_invoked_by_observer_and_original_delegation_survives(tmp_path, case):
+    result = _physical_runtime_control(tmp_path, case)
+    control = result['control']
+    assert control['observed_delegation'] == control['baseline_delegation']
+    assert control['observed_metadata_accesses'] == control['baseline_metadata_accesses'] == []
+    assert control['observed_loader_calls'] == control['baseline_loader_calls'] == ['create_module','exec_module']
+    assert result['original_import_machinery_restored'] is True
+    if case == 'foreign_loader_abort':
+        assert control['observed_delegation'] == {'outcome':'SystemExit','code':'actual original loader exception'}
+        assert any(row.get('error_class') == 'SystemExit' for row in result['selected_loader_outcomes'])
+    else:
+        assert control['observed_delegation'] == {'outcome':'RETURNED_MODULE','value':17}
 
 
 @pytest.mark.parametrize('case,factory',[('namedtuple','collections.namedtuple'),('dataclass','dataclasses._create_fn')])
