@@ -30,7 +30,13 @@
     "local_fix_status": "NEW_MINIMAL_PROCESS_CUSTODY_FIX_UNCOMMITTED_UNTESTED"
   },
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "rc6-2026-10-06T18:54:40.531Z-eolsspni87",
+    "holder": "WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "acquired_at": "2026-10-06T18:54:40.531Z",
+    "expires_at": "2026-10-06T19:14:40.531Z",
+    "base_head": "b9b9df7f0e4def9649a68d6a66a87f0e107f491a"
+  },
   "pending_action": "WAIT_FOR_SUCCESSOR_FOCAL_VALIDATION_COMMIT_NEW_SHA_AUTOMATIC_PREDEPLOY_AND_RELEASE",
   "predeploy": {
     "run_id": 37461053027,
