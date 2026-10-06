@@ -1,0 +1,16 @@
+{
+  "expected_unique_nodeids": 43,
+  "management_watchdog_seconds": 180,
+  "pins": {
+    "/workspace/rc6-budget-runtime-provenance-ce932-focal-runner.py": "2391d7e58a8efad628e4d3f6186c51cd94459669870ff27bc6a51493dbb5c4e2",
+    "/workspace/rc6-budget-runtime-provenance-ce932-focal-supervisor-v3.py": "ea2b0797c3d2f92a5a106c6ffd4c01ac963d5edcced1faa806b8baa5d1eabf87"
+  },
+  "product_caps_unchanged": true,
+  "schema": "rc6.source-only-focal-dispatch.v1",
+  "source_files": 2244,
+  "source_index_sha256": "5ac62df15394777bfdab456dbac5b70a4a071b8b60ff9e3ee078a25b8c619192",
+  "source_only_dispatch_is_not_execution_receipt": true,
+  "source_sha": "ce9323625e89fd8a10979d9b1eaf353c55c176e5",
+  "source_tar_sha256": "490e5b5609b7274cb2019459303929aec6ea9e5fa3fb4a2736455746c5f5dd94",
+  "source_tree": "cedd0a34e444526b504d06329b3fe0c8ce9d9ec1"
+}
