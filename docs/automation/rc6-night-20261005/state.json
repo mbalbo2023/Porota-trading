@@ -29,7 +29,13 @@
     "released": false
   },
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "rc6-2026-10-06T18:32:39.947Z-dc174f1pgx",
+    "holder": "WS-RC6-NIGHT-CONVERGENCE-20261005",
+    "acquired_at": "2026-10-06T18:32:39.947Z",
+    "expires_at": "2026-10-06T18:52:39.947Z",
+    "base_head": "ea7ada1ed04af0c1445a15567e7ff21059e6be52"
+  },
   "pending_action": "WAIT_FOR_SUCCESSOR_CI_FOCALS_COMMIT_NEW_SHA_AND_AUTOMATIC_PREDEPLOY",
   "predeploy": {
     "run_id": 37461053027,
