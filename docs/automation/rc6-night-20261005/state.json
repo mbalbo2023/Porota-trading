@@ -29,13 +29,8 @@
     "released": false
   },
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-06T16:31:38.080Z:asoh1vrrcomuwwbucg",
-    "owner": "HOURLY_SUPERVISOR",
-    "acquired_at": "2026-10-06T16:31:38.080Z",
-    "expires_at": "2026-10-06T16:51:38.080Z"
-  },
-  "pending_action": "WAIT_FOR_SUCCESSOR_COMMIT_NEW_SHA_AND_AUTOMATIC_PREDEPLOY",
+  "lease": null,
+  "pending_action": "WAIT_FOR_SUCCESSOR_CI_FOCALS_COMMIT_NEW_SHA_AND_AUTOMATIC_PREDEPLOY",
   "predeploy": {
     "run_id": 37461053027,
     "attempt": 1,
@@ -201,6 +196,16 @@
       "pr": 476,
       "remote_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
       "released": false
+    },
+    {
+      "type": "successor_storage_compatibility_focal_green",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6020747955",
+      "comment_id": 6020747955,
+      "observed_at": "2026-10-06T16:31:53.265Z",
+      "remote_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+      "cpython311_pass": 478,
+      "cpython312_pass": 478,
+      "committed": false
     }
   ],
   "blockers": [
@@ -224,7 +229,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T16:31:38.080Z",
+  "last_observed_at": "2026-10-06T16:31:53.265Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -317,7 +322,7 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-06T16:23:54.852Z",
+    "observed_at": "2026-10-06T16:31:53.265Z",
     "candidate_sha": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
     "candidate_tree": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
@@ -328,18 +333,19 @@
     "successor_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
     "successor_predeploy_run_id": 37475359176,
     "successor_predeploy_status": "completed",
-    "latest_coordination_comment_id": 6018301486,
+    "latest_coordination_comment_id": 6020747955,
     "integration_owner_status": "ACTIVE_CONTROLLED_SUCCESSOR",
     "exact_release_observed": false,
     "material_change": true,
-    "external_mutations": "CONTROL_STATE_ONLY_OWNER_RECEIPT_DEDUPED",
+    "external_mutations": "CONTROL_STATE_ONLY",
     "material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844",
     "successor_predeploy_conclusion": "failure",
     "governed_discovered": 5972,
     "governed_failures": 1,
     "governed_errors": 0,
     "focal_repairs_validated_not_committed": true,
-    "pre_cpu_diagnostic": "RED_CAUSE_LOCALIZED"
+    "pre_cpu_diagnostic": "RED_CAUSE_LOCALIZED",
+    "storage_compatibility_focals": "GREEN_478_PER_EPOCH_UNCOMMITTED"
   },
   "candidate_tree_observed": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
   "automation_disabled_at": null,
@@ -452,7 +458,7 @@
     "url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37475359176"
   },
   "latest_successor_checkpoint": {
-    "observed_at": "2026-10-06T16:23:54.852Z",
+    "observed_at": "2026-10-06T16:31:53.265Z",
     "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
     "remote_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
     "remote_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
@@ -486,6 +492,18 @@
       "automatic Predeploy on new SHA"
     ],
     "receipt_id": 6020451844,
-    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844"
+    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844",
+    "storage_compatibility": {
+      "status": "FOCAL_GREEN_UNCOMMITTED",
+      "diff_sha256": "f7dec4a785659183d16a88ee8819c5b67222b910c2054582fe6a99ed64f08415",
+      "cpython311": "478/478 PASS",
+      "cpython312": "478/478 PASS",
+      "exact_original_case_set": true,
+      "cap_1048576_preserved": true,
+      "native_savings_verified": false
+    },
+    "next_focal": "62 CI controls sequentially on CPython 3.11 and 3.12 with collection/execution FIN and negative timeout",
+    "checkpoint_comment_id": 6020747955,
+    "checkpoint_url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6020747955"
   }
 }
