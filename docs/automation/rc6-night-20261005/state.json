@@ -11,12 +11,17 @@
   "automation_title": "Convergencia RC6 nocturna",
   "status": "WAITING_OWNER",
   "candidate_pr": null,
-  "candidate_sha_observed": "874b095f1e15a75678b27013f820a8d82be630e2",
+  "candidate_sha_observed": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
   "production_sha_observed": "da697c6e6c2274579f9e4a112fabc4327475dd35",
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "run-20261006051802347-6477b271",
+    "acquired_at": "2026-10-06T05:18:02.347Z",
+    "expires_at": "2026-10-06T05:38:02.347Z",
+    "owner": "SUPERVISOR_AUTOMATICO_GITHUB"
+  },
   "pending_action": "WAIT_FOR_CODEX_FINAL_DELIVERY_AND_OWNER_RELEASE",
   "predeploy": null,
   "deploy": null,
@@ -97,7 +102,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T04:14:54.291Z",
+  "last_observed_at": "2026-10-06T05:18:02.347Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -190,9 +195,9 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-06T04:14:54.291Z",
-    "candidate_sha": "874b095f1e15a75678b27013f820a8d82be630e2",
-    "candidate_tree": "9c045b490e724cc7927a0747bc1dcc7b84c45d3d",
+    "observed_at": "2026-10-06T05:18:02.347Z",
+    "candidate_sha": "b6c2e2a3a9f43e0b1e4dad8133455b319fd1bc2a",
+    "candidate_tree": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
     "candidate_prs_found": 0,
     "candidate_actions_runs_found": 0,
@@ -201,11 +206,10 @@
     "owner_comment_id": 5986480121,
     "exact_release_observed": false,
     "material_change": true,
-    "external_mutations": "CONTROL_STATE_AND_PROGRESS_RECEIPT_ONLY",
-    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-5993692352",
-    "material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6009200309"
+    "external_mutations": "CONTROL_STATE_LEASE_ONLY",
+    "prior_material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6009200309"
   },
-  "candidate_tree_observed": "9c045b490e724cc7927a0747bc1dcc7b84c45d3d",
+  "candidate_tree_observed": "050cc575e9bea27112fd7ed33ed0b33c59c74cf8",
   "automation_disabled_at": null,
   "automation_is_enabled": true,
   "previous_final_window_result": {
