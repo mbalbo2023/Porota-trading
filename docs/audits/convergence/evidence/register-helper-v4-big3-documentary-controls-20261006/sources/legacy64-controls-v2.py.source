@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""SOURCE-planned replay of the original64 documentary controls on V4.
+
+Original V3 driver/receipts are immutable; this is no new Native/scenario count.
+"""
+import ast
+import copy
+import gzip
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+HELPER = Path('/tmp/rc6_remediation_register_generate_v4_publication_big3_candidate.py')
+SUPPLEMENT_HELPER = Path('/tmp/rc6_root_supplemental_named_findings_generate_v3_publication_big3_candidate.py')
+EXPECTED_HELPER_SHA256 = {
+    HELPER: '549aaf8920f6da76f8080fabbc4ae9ba2021a9512951f80912e8364541f7dda4',
+    SUPPLEMENT_HELPER: 'fe26d269425e2cb461bb20ddee6da013b242b66fc77aa867d887f4362718a83b',
+}
+
+
+def verify_expected_helper_pins():
+    for path, expected in EXPECTED_HELPER_SHA256.items():
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise AssertionError('documentary helper bytes differ from exact reviewed pin: ' + str(path))
+
+
+verify_expected_helper_pins()
+spec = importlib.util.spec_from_file_location('external_documentary_register_helper', HELPER)
+H = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(H)
+supp_spec = importlib.util.spec_from_file_location('external_documentary_supplement_helper', SUPPLEMENT_HELPER)
+S = importlib.util.module_from_spec(supp_spec)
+supp_spec.loader.exec_module(S)
+verify_expected_helper_pins()
+
+
+def run():
+    ast.parse(HELPER.read_bytes())
+    ast.parse(SUPPLEMENT_HELPER.read_bytes())
+    results = []
+    with tempfile.TemporaryDirectory(prefix='rc6-derived-ref-controlled-') as tmp:
+        repo = Path(tmp) / 'repo'
+        repo.mkdir()
+        def git(*args):
+            return subprocess.check_output(['git', '--no-replace-objects', '--no-optional-locks', '-C', str(repo), *args], stderr=subprocess.PIPE)
+        git('init', '-q')
+        meta = {'schema': 'CONTROLLED_DOCUMENTARY_METADATA', 'scope': 'NO_PRODUCT_NO_GOV_NO_PROVIDER_NO_NATIVE_EXECUTION',
+                'capture_source': 'CONTROLLED_PRIVATE_DOC_FIXTURE', 'environment': {'fixture_only': True},
+                'counts': {'recorded_case_count': 2}, 'signed_zero': -0.0, 'null_clock': None, 'literal': 'á'}
+        meta['literal_ref_shaped_data'] = {'$rc6_ref': {'schema': 'LITERAL_RAW_RECEIPT_DATA_NOT_CONTROL'}}
+        raw_xml = b'<testsuites><testsuite name="controlled" tests="2"><testcase classname="tests.test_doc_fixture" name="test_doc" time="0"/><testcase classname="tests.test_doc_fixture" name="test_doc[x]" time="0"><skipped/></testcase></testsuite></testsuites>'
+        raw_gzip = gzip.compress(raw_xml, mtime=0)
+        meta['raw_refs'] = {'raw/cases.xml.gz': {'encoding': 'gzip-mtime0', 'sha256': H.sha256(raw_gzip),
+            'bytes': len(raw_gzip), 'original_uncompressed_sha256': H.sha256(raw_xml),
+            'original_uncompressed_bytes': len(raw_xml), 'decompressed_copy_byte_exact': True,
+            'original_path': '/tmp/controlled-unread-capture.xml'}}
+        raw_json = (json.dumps(meta, ensure_ascii=False) + '\n').encode()
+        (repo / 'raw').mkdir()
+        (repo / 'raw/meta.json').write_bytes(raw_json)
+        (repo / 'raw/cases.xml').write_bytes(raw_xml)
+        (repo / 'raw/cases.xml.gz').write_bytes(raw_gzip)
+        json_gzip = gzip.compress(raw_json, mtime=0)
+        raw_program = b"raise RuntimeError('ARCHIVAL_SOURCE_MUST_NEVER_RUN')\n"
+        raw_log = b"CONTROLLED PRIVATE RAW LOG; NO NATIVE EXECUTION\n"
+        (repo / 'raw/meta.json.gz').write_bytes(json_gzip)
+        (repo / 'raw/program.py.source.gz').write_bytes(gzip.compress(raw_program, mtime=0))
+        (repo / 'raw/control.log.gz').write_bytes(gzip.compress(raw_log, mtime=0))
+
+        packet_scenarios = ['valid', 'missing_mapping', 'duplicate_stored', 'mapping_hash', 'mapping_mode',
+                            'control_hash', 'wrong_schema', 'missing_custody', 'missing_raw', 'original_name', 'stored_escape']
+        for scenario in packet_scenarios:
+            folder = repo / 'raw/packet-fixtures' / scenario
+            folder.mkdir(parents=True)
+            packet_files = {'meta.json': {'sha256': H.sha256(raw_json), 'bytes': len(raw_json), 'mode': '0644'}}
+            custody_files = {'meta.json': {'original_relative_path': 'meta.json', 'stored_relative_path': 'meta.json',
+                'sha256': H.sha256(raw_json), 'bytes': len(raw_json), 'mode': '0644'}}
+            (folder / 'meta.json').write_bytes(raw_json)
+            for ordinal in range(15):
+                original_name = 'archive/program' + str(ordinal) + '.py'
+                stored_name = original_name + '.source'
+                payload = raw_program + ('# controlled ordinal ' + str(ordinal) + '\n').encode()
+                packet_files[original_name] = {'sha256': H.sha256(payload), 'bytes': len(payload), 'mode': '0644'}
+                custody_files[original_name] = {'original_relative_path': original_name, 'stored_relative_path': stored_name,
+                    'sha256': H.sha256(payload), 'bytes': len(payload), 'mode': '0644'}
+                target = folder / stored_name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not (scenario == 'missing_raw' and ordinal == 0):
+                    target.write_bytes(payload)
+            packet_manifest = {'schema': 'rc6.sre-compact-source-readonly-packet.v1', 'files': packet_files,
+                'scope': 'PRIVATE_CONTROLLED_DOC_NOT_NATIVE'}
+            packet_bytes = (json.dumps(packet_manifest, sort_keys=True) + '\n').encode()
+            (folder / 'PACKET_MANIFEST.json').write_bytes(packet_bytes)
+            custody_files['PACKET_MANIFEST.json'] = {'original_relative_path': 'PACKET_MANIFEST.json',
+                'stored_relative_path': 'PACKET_MANIFEST.json', 'sha256': H.sha256(packet_bytes),
+                'bytes': len(packet_bytes), 'mode': '0644'}
+            custody = {'schema': 'rc6.fresh-github-source-ro-packet-copy-custody.v1', 'files': custody_files,
+                'original_control_sha256': H.sha256(packet_bytes), 'scope': 'PRIVATE_CONTROLLED_DOC_NOT_NATIVE'}
+            first = 'archive/program0.py'
+            if scenario == 'missing_mapping': custody_files.pop(first)
+            elif scenario == 'duplicate_stored': custody_files['archive/program1.py']['stored_relative_path'] = custody_files[first]['stored_relative_path']
+            elif scenario == 'mapping_hash': custody_files[first]['sha256'] = 'f' * 64
+            elif scenario == 'mapping_mode': custody_files[first]['mode'] = '0755'
+            elif scenario == 'control_hash': custody['original_control_sha256'] = 'f' * 64
+            elif scenario == 'wrong_schema': custody['schema'] = 'UNKNOWN_CONTROLLED_SCHEMA'
+            elif scenario == 'original_name': custody_files[first]['original_relative_path'] = 'changed.py'
+            elif scenario == 'stored_escape': custody_files[first]['stored_relative_path'] = '../escape.py.source'
+            if scenario != 'missing_custody':
+                (folder / 'CUSTODY.json').write_text(json.dumps(custody, sort_keys=True) + '\n')
+
+        (repo / 'tests').mkdir()
+        (repo / 'tests/test_doc_fixture.py').write_text('def test_doc():\n    return None\n')
+        original = {f'E{i:03d}': {'path': 'CONTROLLED_RECORD_ONLY', 'sha256': '0' * 64, 'bytes': i,
+                    'source_scope': 'CONTROLLED_ORIGINAL_METADATA_NOT_RAW_EXECUTION',
+                    'binding_source_sha': None, 'recorded_metadata': {'ordinal': i, 'signed_zero': -0.0, 'scope': 'CONTROLLED'},
+                    'boundary': 'No product or native guard was executed.'} for i in range(1, 211)}
+        original['E001'].update(path='raw/meta.json', sha256=H.sha256(raw_json), bytes=len(raw_json))
+        original['E002'].update(path='raw/cases.xml', sha256=H.sha256(raw_xml), bytes=len(raw_xml))
+        original['E003']['literal_ref_shaped_data'] = {'$rc6_ref': {'schema': 'LITERAL_ORIGINAL_CATALOG_DATA_NOT_CONTROL'}}
+        original['E004'].update(path='raw/cases.xml.gz', sha256=H.sha256(raw_gzip), bytes=len(raw_gzip))
+        template_path = repo / H.REGISTER_PATH
+        template_path.parent.mkdir(parents=True)
+        template_path.write_text(json.dumps({'schema': 'rc6.remediation-register.v1', 'evidence_catalog': original}))
+        git('add', '.')
+        git('-c', 'user.name=Controlled fixture', '-c', 'user.email=controlled@invalid', 'commit', '-q', '-m', 'Controlled documentary fixture only')
+        sha = git('rev-parse', 'HEAD').decode().strip()
+        source = H.Source(repo, sha)
+        try:
+            expanded = {'schema': 'rc6.remediation-register.v1', 'source_snapshot': {'sha': sha, 'tree': source.tree},
+                'evidence_catalog': copy.deepcopy(original),
+                'requirements': [{'id': 'CONTROLLED_NON_REQUIREMENT', 'GUARD': [{'base_node': 'tests/test_doc_fixture.py::test_doc',
+                    'committed_source_binding': source.binding('tests/test_doc_fixture.py'),
+                    'explicit_variants': ['[x]'], 'execution_evidence': [{'evidence_id': 'E002', 'recorded_status': 'SKIP', 'variant': '[x]'}]}]}],
+                'additional_findings': [], 'restored_controls': [],
+                'current_source_inventory': {'files': [source.binding('tests/test_doc_fixture.py')], 'guards': [{
+                    'base_node': 'tests/test_doc_fixture.py::test_doc', 'committed_source_binding': source.binding('tests/test_doc_fixture.py'),
+                    'execution_evidence': [{'evidence_id': 'E002', 'recorded_status': 'SKIP', 'variant': '[x]'}]}]},
+                'current_path_evolution': {'tests/test_doc_fixture.py': {'committed_source_binding': source.binding('tests/test_doc_fixture.py')}},
+                'validation': {'native_tests_executed': 0}}
+            expanded['evidence_catalog']['E001'].update(current_publication_binding=source.binding('raw/meta.json'), original_raw_json_metadata=meta)
+            expanded['evidence_catalog']['E002'].update(current_publication_binding=source.binding('raw/cases.xml'),
+                original_raw_xml_metadata=H.xml_metadata_from_raw(raw_xml, source.entries))
+            expanded['evidence_catalog']['E003']['previous_publication_definition'] = copy.deepcopy(original['E003'])
+            decoded, encoding = H.decode_known_xml(raw_gzip, 'raw/cases.xml.gz')
+            expanded['evidence_catalog']['E004'].update(current_publication_binding=source.binding('raw/cases.xml.gz'),
+                original_raw_xml_metadata=H.xml_metadata_from_raw(decoded, source.entries), raw_encoding_metadata=encoding)
+
+            decoded_json, json_encoding = H.decode_known_json(json_gzip, 'raw/meta.json.gz')
+            expanded['evidence_catalog']['E211'] = {
+                'path': 'raw/meta.json.gz', 'sha256': H.sha256(json_gzip), 'bytes': len(json_gzip),
+                'source_scope': 'CONTROLLED_PRIVATE_DOC_FIXTURE', 'binding_source_sha': sha,
+                'evidence_kind': 'CONTROLLED_RAW_JSON_GZIP_NOT_EXECUTION',
+                'current_publication_binding': source.binding('raw/meta.json.gz'),
+                'original_raw_json_metadata': decoded_json, 'raw_encoding_metadata': json_encoding,
+            }
+            compact = H.compact_derived(expanded, original, source)
+            resolver = H.RefResolver(source, compact)
+            reconstructed = resolver.expand()
+            if H.canonical(reconstructed) != H.canonical(expanded):
+                raise AssertionError('controlled roundtrip differs')
+            if H.canonical({eid: compact['evidence_catalog'][eid] for eid in original}) != H.canonical(original):
+                raise AssertionError('original210 fields changed')
+            results.append({'control': 'ROUNDTRIP_ORIGINAL210_SIGNED_ZERO_NULL_SCOPE_AND_CLAUSE_VARIANTS', 'result': 'PRESERVED',
+                            'resolved_refs': resolver.resolved_refs, 'verified_RAW_members': len(resolver.verified_members)})
+            def reject(name, mutation):
+                changed = copy.deepcopy(compact)
+                mutation(changed)
+                try:
+                    H.RefResolver(source, changed).expand()
+                except (H.RefResolutionError, ValueError, subprocess.SubprocessError):
+                    results.append({'control': name, 'result': 'REJECTED'})
+                else:
+                    raise AssertionError('altered reference accepted: ' + name)
+            ref_path = lambda d: d['current_evidence_derivation']['E001']['original_raw_json_metadata']['$rc6_ref']
+            reject('RAW_BYTE_DIGEST_MISMATCH', lambda d: ref_path(d)['member'].update(sha256='f' * 64))
+            reject('RAW_GIT_MODE_MISMATCH', lambda d: ref_path(d)['member'].update(git_mode='100755'))
+            reject('RAW_TREE_MISMATCH', lambda d: ref_path(d)['member'].update(source_tree='f' * 40))
+            reject('ABBREVIATED_RAW_SOURCE_SHA', lambda d: ref_path(d)['member'].update(source_sha=sha[:8]))
+            reject('RAW_LENGTH_BOOL_NOT_INT', lambda d: ref_path(d)['member'].update(bytes=True))
+            reject('RAW_PATH_ESCAPE', lambda d: ref_path(d)['member'].update(path='../raw/meta.json'))
+            reject('DERIVED_METADATA_HASH_MISMATCH', lambda d: ref_path(d).update(value_sha256='f' * 64))
+            reject('UNKNOWN_REFERENCE_KIND', lambda d: ref_path(d).update(kind='UNKNOWN'))
+            reject('FALSE_NEW_EXECUTION_AUTHORITY', lambda d: ref_path(d).update(new_execution_claimed=True))
+            reject('ORIGINAL210_FIELD_MUTATION', lambda d: d['evidence_catalog']['E100'].update(boundary='changed'))
+            reject('ORIGINAL210_ID_SUBSTITUTION', lambda d: d['original_catalog_preservation']['ids'].__setitem__(-1, 'E211'))
+            reject('ABSENT_LOCAL_PAYLOAD_KEY', lambda d: d['current_source_inventory']['files'][0]['$rc6_ref'].update(key='missing'))
+            def mutate_table(d):
+                ref = d['current_source_inventory']['files'][0]['$rc6_ref']
+                d['derived_payload_tables'][ref['table']][ref['key']]['git_mode'] = '100755'
+            reject('LOCAL_PAYLOAD_HASH_MISMATCH', mutate_table)
+            reject('DOCUMENT_SOURCE_SNAPSHOT_MISMATCH', lambda d: d['source_snapshot'].update(sha='f' * 40))
+            gzip_ref = lambda d: d['current_evidence_derivation']['E004']['original_raw_xml_metadata']['$rc6_ref']
+            reject('GZIP_UNCOMPRESSED_HASH_MISMATCH', lambda d: gzip_ref(d)['xml_encoding'].update(uncompressed_sha256='f' * 64))
+            reject('GZIP_COMPRESSED_LENGTH_MISMATCH', lambda d: gzip_ref(d)['xml_encoding'].update(compressed_bytes=len(raw_gzip) + 1))
+            reject('GZIP_MTIME_FALSE_DECLARATION', lambda d: gzip_ref(d)['xml_encoding'].update(gzip_mtime=1))
+            reject('ABSENT_GZIP_RAW_MEMBER_NOT_ZERO_PASS', lambda d: gzip_ref(d)['member'].update(path='raw/missing.xml.gz'))
+            def rejects_decoder(name, data, path):
+                for module in (H, S):
+                    try:
+                        module.decode_known_xml(data, path)
+                    except ValueError:
+                        continue
+                    raise AssertionError('altered XML/gzip was accepted: ' + name)
+                results.append({'control': name, 'result': 'REJECTED_BY_BOTH_STANDALONE_HELPERS'})
+            bad_crc = bytearray(raw_gzip)
+            bad_crc[-8] ^= 1
+            rejects_decoder('GZIP_CRC_CHANGED', bytes(bad_crc), 'raw/cases.xml.gz')
+            rejects_decoder('GZIP_TRUNCATED_TRAILER', raw_gzip[:-4], 'raw/cases.xml.gz')
+            rejects_decoder('GZIP_CONCATENATED_MEMBERS', raw_gzip + raw_gzip, 'raw/cases.xml.gz')
+            rejects_decoder('GZIP_UNDECLARED_TRAILING_BYTES', raw_gzip + b'trailing', 'raw/cases.xml.gz')
+            rejects_decoder('ARBITRARY_ZIP_MEMBER_UNSUPPORTED', b'PK\x03\x04' + raw_xml, 'raw/cases.zip')
+            refs = H.declared_xml_receipt_members(source, meta)
+            if H.canonical(refs) != H.canonical(S.declared_xml_receipt_members(source, meta)):
+                raise AssertionError('standalone supplement/register XML declarations differ')
+            if len(refs) != 1 or refs[0]['xml_encoding'] != encoding or refs[0]['raw_xml_metadata']['actual_case_count'] != 2:
+                raise AssertionError('gzip native-shaped fixture count or encoding was lost')
+            results.append({'control': 'KNOWN_GZIP_MTIME0_EXACT_RAW_SCOPES_AND_TWO_CASES', 'result': 'PRESERVED_WITHOUT_NATIVE_EXECUTION',
+                'compressed_bytes': encoding['compressed_bytes'], 'uncompressed_bytes': encoding['uncompressed_bytes'],
+                'recorded_case_outcomes': refs[0]['raw_xml_metadata']['actual_case_outcomes']})
+            def rejects_declaration(name, mutation):
+                changed = copy.deepcopy(meta)
+                mutation(changed['raw_refs'])
+                for module in (H, S):
+                    try:
+                        module.declared_xml_receipt_members(source, changed)
+                    except (ValueError, FileNotFoundError):
+                        continue
+                    raise AssertionError('invalid XML declaration accepted: ' + name)
+                results.append({'control': name, 'result': 'REJECTED_BY_BOTH_STANDALONE_HELPERS'})
+            rejects_declaration('DECLARED_GZIP_RAW_HASH_CHANGED', lambda r: r['raw/cases.xml.gz'].update(sha256='f' * 64))
+            rejects_declaration('DECLARED_GZIP_UNCOMPRESSED_HASH_CHANGED', lambda r: r['raw/cases.xml.gz'].update(original_uncompressed_sha256='f' * 64))
+            rejects_declaration('DECLARED_GZIP_LENGTH_BOOL', lambda r: r['raw/cases.xml.gz'].update(bytes=True))
+            rejects_declaration('DECLARED_GZIP_MISSING_PATH_NOT_ZERO_PASS', lambda r: r.update({'raw/missing.xml.gz': r.pop('raw/cases.xml.gz')}))
+
+            json_ref = lambda d: d['current_evidence_derivation']['E211']['original_raw_json_metadata']['$rc6_ref']
+            if H.canonical(reconstructed['evidence_catalog']['E211']['original_raw_json_metadata']) != H.canonical(meta):
+                raise AssertionError('known JSON.gz metadata fields or literal ref-shaped data changed')
+            results.append({'control': 'JSON_GZIP_ROUNDTRIP_ORIGINAL_SCOPE_FIELDS_SIGNED_ZERO_AND_LITERAL_REFS',
+                'result': 'PRESERVED_WITHOUT_NATIVE_EXECUTION'})
+            reject('JSON_GZIP_UNCOMPRESSED_HASH_MISMATCH', lambda d: json_ref(d)['json_encoding'].update(uncompressed_sha256='f' * 64))
+            reject('JSON_GZIP_MTIME_FALSE_DECLARATION', lambda d: json_ref(d)['json_encoding'].update(gzip_mtime=1))
+            reject('JSON_GZIP_REQUIRED_ENCODING_REMOVED', lambda d: json_ref(d).pop('json_encoding'))
+            reject('RAW_CATALOG_ENCODING_ALTERED', lambda d: d['current_evidence_derivation']['E211']['raw_encoding_metadata'].update(compressed_bytes=True))
+            def reject_raw(name, data, path, json_only=False):
+                for module in (H, S):
+                    try:
+                        (module.decode_known_json if json_only else module.decode_known_raw_member)(data, path)
+                    except ValueError:
+                        continue
+                    raise AssertionError('invalid RAW/JSON accepted: ' + name)
+                results.append({'control': name, 'result': 'REJECTED_BY_BOTH_STANDALONE_HELPERS'})
+            bad_json_crc = bytearray(json_gzip)
+            bad_json_crc[-8] ^= 1
+            reject_raw('JSON_GZIP_CRC_CHANGED', bytes(bad_json_crc), 'raw/meta.json.gz')
+            reject_raw('JSON_GZIP_TRUNCATED_STREAM', json_gzip[:-4], 'raw/meta.json.gz')
+            reject_raw('JSON_GZIP_CONCATENATED_MEMBERS', json_gzip + json_gzip, 'raw/meta.json.gz')
+            reject_raw('JSON_GZIP_TRAILING_BYTES', json_gzip + b'bad', 'raw/meta.json.gz')
+            reject_raw('UNKNOWN_GZIP_ARCHIVE_SUFFIX', json_gzip, 'raw/archive.tar.gz')
+            reject_raw('JSON_DUPLICATE_KEYS_COMPRESSED', gzip.compress(b'{"a":1,"a":2}', mtime=0), 'raw/ambiguous.json.gz', True)
+            reject_raw('JSON_NONFINITE_COMPRESSED', gzip.compress(b'{"a":NaN}', mtime=0), 'raw/nonfinite.json.gz', True)
+            prior_limits = [(module, module.DOCUMENTARY_MEMBER_LIMIT_BYTES) for module in (H, S)]
+            try:
+                for module, _ in prior_limits: module.DOCUMENTARY_MEMBER_LIMIT_BYTES = 128
+                reject_raw('JSON_GZIP_DECODED_BOUNDARY_SHIM_128_BYTES', gzip.compress(b' ' * 129, mtime=0), 'raw/oversize.json.gz')
+                results[-1].update(controlled_boundary_shim_bytes=128, decoded_fixture_bytes=129, operational_limit_measured=False)
+            finally:
+                for module, prior in prior_limits: module.DOCUMENTARY_MEMBER_LIMIT_BYTES = prior
+            if not all(module.DOCUMENTARY_MEMBER_LIMIT_BYTES == prior for module, prior in prior_limits):
+                raise AssertionError('documentary member bound was not restored')
+            results[-1]['production_bound_restored'] = True
+            for member_path, original_raw in [('raw/program.py.source.gz', raw_program), ('raw/control.log.gz', raw_log)]:
+                decoded_raw, actual_encoding = H.decode_known_raw_member(source.read(member_path), member_path)
+                if decoded_raw != original_raw or actual_encoding != S.decode_known_raw_member(source.read(member_path), member_path)[1]:
+                    raise AssertionError('known archival program/log bytes changed')
+            results.append({'control': 'ARCHIVAL_SOURCE_AND_LOG_GZIP_BYTES_ONLY_NO_IMPORT_OR_EXECUTION', 'result': 'PRESERVED'})
+            legacy = copy.deepcopy(compact)
+            ref_path(legacy).pop('json_encoding')
+            if H.canonical(H.RefResolver(source, legacy).expand()) != H.canonical(expanded):
+                raise AssertionError('legacy plain JSON ref lost compatibility')
+            results.append({'control': 'LEGACY_PLAIN_JSON_REF_WITHOUT_ENCODING_REMAINS_EXACT', 'result': 'PRESERVED'})
+            declaration = {'stored_path': 'meta.json.gz', 'stored_sha256': H.sha256(json_gzip),
+                'stored_bytes': len(json_gzip), 'original_sha256': H.sha256(raw_json), 'original_bytes': len(raw_json),
+                'original_path': '/must/not/be/read/local/meta.json', 'storage': 'GZIP_MTIME_0_LOSSLESS',
+                'classification': 'PRIVATE_CONTROLLED_DOC_NOT_NATIVE'}
+            dossier = {'schema': 'rc6.packed-scalar-dispatch-native-dossier.v1', 'stored_originals': [declaration],
+                       'scope': 'PRIVATE_CONTROLLED_DOC_NOT_NATIVE', 'current_unique_native_cases': 365,
+                       'new_native_cases': 94, 'existing_overlapping_native_cases': 271}
+            custody = H.declared_raw_dossier_members(source, 'raw/DOSSIER.json', dossier)
+            if H.canonical(custody) != H.canonical(S.declared_raw_dossier_members(source, 'raw/DOSSIER.json', dossier)):
+                raise AssertionError('standalone dossier custody implementations differ')
+            if len(custody) != 1 or custody[0]['raw_encoding_metadata'] != json_encoding or 'executed_cases' in custody[0]:
+                raise AssertionError('dossier custody invented execution or changed encoding')
+            results.append({'control': 'DOSSIER_DECLARES_RELATIVE_MEMBER_HASHES_NO_OVERLAP_COUNT_INFERENCE', 'result': 'PRESERVED'})
+            def reject_dossier(name, mutation):
+                altered = copy.deepcopy(dossier)
+                mutation(altered)
+                for module in (H, S):
+                    try:
+                        module.declared_raw_dossier_members(source, 'raw/DOSSIER.json', altered)
+                    except ValueError:
+                        continue
+                    raise AssertionError('invalid dossier accepted: ' + name)
+                results.append({'control': name, 'result': 'REJECTED_BY_BOTH_STANDALONE_HELPERS'})
+            reject_dossier('DOSSIER_STORED_HASH_CHANGED', lambda d: d['stored_originals'][0].update(stored_sha256='f' * 64))
+            reject_dossier('DOSSIER_ORIGINAL_HASH_CHANGED', lambda d: d['stored_originals'][0].update(original_sha256='f' * 64))
+            reject_dossier('DOSSIER_LENGTH_BOOL', lambda d: d['stored_originals'][0].update(stored_bytes=True))
+            reject_dossier('DOSSIER_ENCODING_DISAGREES', lambda d: d['stored_originals'][0].update(storage='none'))
+            reject_dossier('DOSSIER_PATH_ESCAPE', lambda d: d['stored_originals'][0].update(stored_path='../meta.json.gz'))
+            reject_dossier('DOSSIER_MEMBER_MISSING_NOT_ZERO_PASS', lambda d: d['stored_originals'][0].update(stored_path='missing.json.gz'))
+            reject_dossier('DOSSIER_DUPLICATE_MEMBER', lambda d: d['stored_originals'].append(copy.deepcopy(d['stored_originals'][0])))
+
+            for scenario in packet_scenarios:
+                packet_path = 'raw/packet-fixtures/' + scenario + '/PACKET_MANIFEST.json'
+                packet = H.decode_known_json(source.read(packet_path), packet_path)[0]
+                if scenario == 'valid':
+                    members = H.declared_raw_dossier_members(source, packet_path, packet)
+                    if H.canonical(members) != H.canonical(S.declared_raw_dossier_members(source, packet_path, packet)):
+                        raise AssertionError('standalone packet archival mapping differs')
+                    archived = [m for m in members if m['archival_path_mapping']['original_relative_path'].endswith('.py')]
+                    if len(archived) != 15 or not all(m['publication_binding']['path'].endswith('.py.source') for m in archived):
+                        raise AssertionError('packet literal originals did not resolve through exact 15 .py.source CUSTODY mappings')
+                    if any(k not in m['archival_path_mapping'] for m in members for k in ['custody_publication_binding', 'custody_declaration_sha256']):
+                        raise AssertionError('archival custody/hash association missing')
+                    results.append({'control': 'PACKET_LITERAL_MANIFEST_15_ARCHIVAL_PATHS_THROUGH_PUBLISHED_CUSTODY', 'result': 'PRESERVED_NO_ARCHIVAL_IMPORT_OR_EXECUTION'})
+                else:
+                    for module in (H, S):
+                        try:
+                            module.declared_raw_dossier_members(source, packet_path, packet)
+                        except ValueError:
+                            continue
+                        raise AssertionError('invalid archival packet accepted: ' + scenario)
+                    results.append({'control': 'PACKET_CUSTODY_' + scenario.upper(), 'result': 'REJECTED_BY_BOTH_STANDALONE_HELPERS'})
+
+            compact_path = Path(tmp) / 'controlled-compact.json'
+            compact_path.write_text(json.dumps(compact, ensure_ascii=False, allow_nan=False))
+            cli = subprocess.run([os.environ.get('RC6_DIAGNOSTIC_PYTHON', os.sys.executable), '-B', '-I', '-S', str(HELPER), '--repo', str(repo),
+                '--source', sha, '--verify-refs', str(compact_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, check=True, timeout=5)
+            verified_cli = json.loads(cli.stdout)
+            if verified_cli.get('status') != 'DERIVED_REFERENCES_VERIFIED_NOT_EXECUTED' or verified_cli.get('native_tests_executed') != 0:
+                raise AssertionError('controlled CLI granted execution authority')
+            results.append({'control': 'CONTROLLED_EXTERNAL_COMPACT_CLI_VERIFICATION', 'result': 'VERIFIED_DOCUMENTARY_REFS_ONLY',
+                'resolved_refs': verified_cli['resolved_refs'], 'verified_RAW_members': verified_cli['verified_RAW_members']})
+        finally:
+            source.close()
+    if len(results) != 64 or len({row['control'] for row in results}) != 64:
+        raise AssertionError('LEGACY64_DOCUMENTARY_CONTROL_IDENTITIES_NOT_EXACT')
+    receipt = {'schema': 'rc6.derived-register-ref-controlled-diagnostic.v1',
+        'scope': 'PRIVATE_SYNTHETIC_GIT_JSON_XML_CODEC_ONLY_NO_PRODUCT_IMPORT_NO_NATIVE_GOV_PROVIDER_IMAGE_RUNTIME_OR_FINANCIAL_EXECUTION',
+        'helper_sha256': hashlib.sha256(HELPER.read_bytes()).hexdigest(), 'controls': results,
+        'supplement_helper_sha256': hashlib.sha256(SUPPLEMENT_HELPER.read_bytes()).hexdigest(),
+        'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'legacy_control_replay': {'historical_driver_sha256': '40981cd324dbf0270a69c025f794bd3150fafbdc8012dba5b3c7ae851899532c',
+            'historical_receipt_sha256': '2c28598fa8f622539deccaae11536657713762661116f08562307237fe4f1cd6',
+            'scope': 'REEXECUTION_OF_LEGACY64_ON_NEW_HELPERS_OVERLAPPING_NOT_NEW_SCENARIOS'},
+        'control_count': len(results), 'native_tests_executed': 0, 'root_files_modified': False,
+        'generator26MB_executed': False, 'claim_boundary': 'Controlled parser/codec cases are not native product regression, real final receipt or final freeze.'}
+    target = Path('/tmp/rc6_register_helpers_v4_publication_big3_legacy_controls_v2_receipt.json')
+    with target.open('x', encoding='utf-8') as output:
+        output.write(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
+    print(json.dumps({'receipt': str(target), 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(), 'controls': len(results),
+        'scope': receipt['scope'], 'native_tests_executed': 0}))
+
+
+if __name__ == '__main__':
+    verify_expected_helper_pins()
+    try:
+        run()
+    finally:
+        verify_expected_helper_pins()
