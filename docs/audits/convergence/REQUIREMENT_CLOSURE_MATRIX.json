@@ -6534,6 +6534,16 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/NATIVE_BIG_RUNTIME_PROVENANCE_SOURCE_PLAN.json": {
+      "reason": "Preserve the source-only runtime-import provenance fix-forward plan, five complete historical focal REDs and observed raw native-class descriptor metadata that motivates exact-owner binding without invoking getters. The bounded50-case protocol scope and repeated interpreter epochs are not additive scenario coverage; this document does not attest current source execution or close BIG90, full1201, governed-suite, image, artifact or runtime gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/ORDEN_UNICA_CODEX_RC6_CONVERGENCIA_468_469_470.md": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -14707,6 +14717,32 @@
         "U26"
       ]
     },
+    "docs/audits/rc6-convergence-persistence-evidence/FULL1201_DRIVER_V2_SOURCE_PLAN.json": {
+      "reason": "Preserve the prepared full1201 v2 plan for actual wait4, owned subreaper, pre/post ECHILD, absent owned PGID and complete reaped-child RSS before any native/database/source/index/TAR/log postcapture. Exact same-epoch index and TAR eleven-stat/SHA/blob equality strengthens custody while the original1202 native calls,30s postPRE cycles, nine-hour retention plus one-hour recovery, quotas and restarts remain unchanged. Source preparation and the preserved v1 history do not prove a physical horizon or BIG90/Gov/artifact acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/FULL1201_DRIVER_V2_SRE_SOURCE_REVIEW.json": {
+      "reason": "Preserve the independent NOATIME source review of the exact ac9ba0f4 full1201 v2 driver and manager/custody changes confined to main, with all19 original nonmain definitions retained. The review records the prior same-bytes/changed-stat custody gap, exact same-epoch index/TAR comparison and pending outer-supervisor/native qualification; static source/AST closure is not executed full1201, BIG90, final Source C, Gov, image or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/rc6-convergence-persistence-evidence/FULL1201_EXTERNAL_DRIVER_SOURCE_PLAN.json": {
       "reason": "Prepare source-bound external full1201 supervisor and exact CLI/plan: rawGit member bytes,wholeSource/index/TAR/157 before fixtures,1202 real native calls and read-clock/cut joins,original30s/fullcut/quotas/GC,stale native phases,exactfive original members,SourceDB11stat/SHA and actual wait4/reap/lifetimeRSS. Child-only watchdog completion must be observed before deadline; unreaped child prevents acceptance/postcapture, finalSource/log/proof/emission are explicitly outside management deadline. Six source-only corrections have independent review, but no driver or horizon Native/Gov/benchmark/image/runtime has executed. Historical NORMAL4 cannot substitute for the wheel.",
       "requirement_ids": [
@@ -16881,6 +16917,19 @@
     },
     "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source": {
       "reason": "Prepare source-bound external full1201 supervisor and exact CLI/plan: rawGit member bytes,wholeSource/index/TAR/157 before fixtures,1202 real native calls and read-clock/cut joins,original30s/fullcut/quotas/GC,stale native phases,exactfive original members,SourceDB11stat/SHA and actual wait4/reap/lifetimeRSS. Child-only watchdog completion must be observed before deadline; unreaped child prevents acceptance/postcapture, finalSource/log/proof/emission are explicitly outside management deadline. Six source-only corrections have independent review, but no driver or horizon Native/Gov/benchmark/image/runtime has executed. Historical NORMAL4 cannot substitute for the wheel.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U15",
+        "U18",
+        "U24",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source": {
+      "reason": "Archive the literal unexecuted full1201 v2 external supervisor as a fix-forward successor to preserved v1. Owned FIN requires actual wait4/ECHILD/PGID/subreaper closure before postcapture, and source index/TAR must retain exact eleven-stat/SHA/blob custody. Original producer,1202 calls,30s full-cycle limits, retention/quotas and restart cuts remain unchanged; management or cleanup time grants no native acceptance extension and this prepared source is not a completed horizon, BIG90 benchmark, final Gov or artifact.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -26730,6 +26779,8 @@
         "tests/test_rc6_publication_type_identity.py::test_private_append_hook_keeps_legacy_subclass_comparisons_and_never_adds_type_callbacks",
         "tests/test_rc6_publication_type_identity.py::test_private_type_checks_add_no_metaclass_eq_ne_or_hash_callbacks",
         "tests/test_rc6_shadow_family_runtime.py::test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+        "tests/test_rc6_shadow_family_runtime.py::test_empty_native_metadata_remains_private_to_each_instrument",
+        "tests/test_rc6_shadow_family_runtime.py::test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff",
         "tests/test_rc6_source_capture_deadlines.py::test_capture_rejects_success_after_complete_close_and_cleanup",
         "tests/test_rc6_source_capture_deadlines.py::test_capture_timeout_reason_is_the_exact_nonsecret_contract",
         "tests/test_rc6_source_capture_deadlines.py::test_late_cleanup_preserves_original_consumer_failure_and_still_closes_everything",
@@ -27822,6 +27873,8 @@
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_missing_history_diagnostic_creates_no_database_or_directory",
         "tests/test_rc6_observer_history_diagnostics.py::test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source",
+        "tests/test_rc6_shadow_family_runtime.py::test_empty_native_metadata_remains_private_to_each_instrument",
+        "tests/test_rc6_shadow_family_runtime.py::test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_U24_preopen_tick_WAL_without_SHM_preserves_source_inventory_and_all_stats",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_context_deadline_never_publishes_partially_read_history",
         "tests/test_rc6_shadow_preopen_runtime.py::test_NEW_preopen_python_processing_obeys_deadline_and_retains_cleanup_reserve",

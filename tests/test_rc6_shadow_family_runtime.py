@@ -70,6 +70,44 @@ def source_row(record, **fields):
             "received_at": AT.isoformat(), **fields}
 
 
+def test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff(tmp_path):
+    from rc6_shadow_runtime import families
+    record = instrument("GGAL", "ACCIONES")
+    path = fixture_db(tmp_path, [record])
+    snapshot(path, record)
+    snapshot(path, record, received_at=AT+timedelta(seconds=1))
+    with sqlite3.connect(path) as connection:
+        connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN "extra bytes" BLOB')
+        connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN extra_real REAL')
+        connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN extra_null TEXT')
+        connection.execute('UPDATE financial_instrument_catalog SET "extra bytes"=?, extra_real=?',
+                           (b"\x00\xffnative", 1.125))
+        connection.row_factory = sqlite3.Row
+        raw_metadata = dict(connection.execute('SELECT * FROM financial_instrument_catalog').fetchone())
+        raw_quote = dict(connection.execute('SELECT * FROM market_snapshots WHERE id=1').fetchone())
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    actual = families._read(path, AT)
+    assert len(actual["metadata"]) == len(actual["quotes"]) == 1
+    assert {key: actual["metadata"][0][key] for key in raw_metadata} == raw_metadata
+    assert {key: actual["quotes"][0][key] for key in raw_quote} == raw_quote
+    assert actual["metadata"][0]["metadata"] == {}
+    assert actual["metadata"][0]["observed_at"] == AT.isoformat()
+    assert actual["quotes"][0]["received_at"] == AT.isoformat()
+    assert actual["quotes"][0]["source_at"] == AT.isoformat()
+    assert not actual["errors"] and not actual["truncated"]
+    assert families.QUERY_BUDGET_SECONDS == .5
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_empty_native_metadata_remains_private_to_each_instrument(tmp_path):
+    from rc6_shadow_runtime import families
+    path = fixture_db(tmp_path, [instrument("GGAL", "ACCIONES"), instrument("BBAR", "ACCIONES")])
+    rows = families._read(path, AT)["metadata"]
+    assert len(rows) == 2 and rows[0]["metadata"] == rows[1]["metadata"] == {}
+    rows[0]["metadata"]["private_change"] = True
+    assert rows[1]["metadata"] == {}
+
+
 @pytest.mark.parametrize("as_of", [AT-timedelta(seconds=15), AT, AT+timedelta(minutes=5)])
 def test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads(tmp_path, monkeypatch, as_of):
     import ast

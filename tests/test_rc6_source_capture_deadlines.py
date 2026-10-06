@@ -22,12 +22,12 @@ from rc6_shadow_runtime.persistence import failure_reason
 
 
 @pytest.fixture
-def private_inputs(monkeypatch):
+def private_inputs(monkeypatch, tmp_path):
     for name in tuple(os.environ):
         if name.startswith(scratch.ENV_PREFIX):
             monkeypatch.delenv(name)
     # The source and canonical disk scratch remain outside the code snapshot.
-    with tempfile.TemporaryDirectory(prefix="rc6-capture-boundaries-", dir="/workspace") as directory:
+    with tempfile.TemporaryDirectory(prefix="rc6-capture-boundaries-", dir=tmp_path) as directory:
         folder = Path(directory)
         source = folder / "observer.sqlite"
         with sqlite3.connect(source) as writer:
@@ -199,7 +199,8 @@ def test_source_open_race_to_fifo_is_bounded_and_rejected_before_read(private_in
     before = source_custody(source)
     environment = {name: value for name, value in os.environ.items() if not name.startswith(scratch.ENV_PREFIX)}
     child = subprocess.Popen([sys.executable, "-B", "-u", "-c", FIFO_CHILD, str(source), str(root), suffix],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+        cwd=Path(__file__).resolve().parents[1])
     try:
         try:
             output, errors = child.communicate(timeout=1.5)

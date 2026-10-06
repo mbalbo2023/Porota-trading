@@ -50,6 +50,8 @@ _ALIASES = {
 
 
 def _mapping(value):
+    if value is None or type(value) is str and value == "{}":
+        return {}
     if isinstance(value, Mapping):
         return dict(value)
     try:
@@ -225,14 +227,14 @@ def _read(database, at):
                 break
             if len(rows) > limit:
                 result["truncated"].append(table)
+            row_names = rows[0].keys() if rows else ()
             for raw in rows[:limit]:
-                row = dict(raw)
+                row = dict(zip(row_names, raw))
                 if kind == "metadata":
-                    row.update(metadata=_mapping(row.get("metadata_json")), source="PPI_CATALOG",
-                               observed_at=row.get("last_seen_at"), received_at=row.get("last_seen_at"))
-                    metadata = row["metadata"]
+                    metadata = _mapping(row.get("metadata_json"))
                     effective = metadata.get("_effective_observed_at") or row.get("last_seen_at")
-                    row.update(observed_at=effective, received_at=effective)
+                    row.update(metadata=metadata, source="PPI_CATALOG",
+                               observed_at=effective, received_at=effective)
                 elif table == "market_snapshots":
                     row.update(financial_contract_v17=_mapping(row.get("contract_json")),
                                received_at=row.get("observed_at"), source_at=row.get("trade_at"),
