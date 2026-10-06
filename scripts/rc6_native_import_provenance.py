@@ -342,7 +342,7 @@ class NativeImportObserver:
         self.attempts, self.loads, self.attempt_stacks, self.load_stacks = [], [], {}, {}
         self.attempt_rows, self.load_rows = {}, {}
         self.unfinished_protocol_calls = 0
-        self.synthetic_modules = {}
+        self.synthetic_modules, self.synthetic_bindings = {}, {}
         self.factories, self.runtime_sources, self.frozen_codes = {}, {}, {}
         self.extension_methods = {}
         self._prepare_runtime_sources()
@@ -650,47 +650,94 @@ class NativeImportObserver:
                 if before is None or failure is not None or type(result) is not types.ModuleType:
                     return
                 values = types.ModuleType.__getattribute__(result, "__dict__")
+                if (len(values) > self.record_limit or
+                        any(type(key) is not str or len(key) > MAX_TEXT for key in values)):
+                    self.counts["overflow"] += 1
+                    return
                 qualified = (not token["concurrent"] and values.get("__spec__") is spec
                              and values.get("__loader__") is token["loader"]
-                             and values.get("__file__") == row["origin"]
+                             and type(values.get("__file__")) is str and values["__file__"] == row["origin"]
                              and self._origin(row["origin"])["origin"] == "ACTUAL_VENV")
                 if not qualified:
                     row["synthetic_module_lineage"] = "UNVERIFIED_EXTENSION_PARENT_OR_CONCURRENT_CREATION"
                     return
-                created = []
+                created, companions, deferred = [], [], []
+                if len(sys.modules) > self.record_limit or len(values) > self.record_limit:
+                    self.counts["overflow"] += 1
+                    return
                 for name, module in tuple(sys.modules.items()):
-                    if name in before or type(name) is not str or len(name) > MAX_TEXT or type(module) is not types.ModuleType:
+                    if type(name) is not str or len(name) > MAX_TEXT or name in before or type(module) is not types.ModuleType:
                         continue
                     fields = types.ModuleType.__getattribute__(module, "__dict__")
-                    if fields.get("__file__") or fields.get("__spec__") or fields.get("__path__"):
+                    if (len(fields) > self.record_limit or
+                            any(type(key) is not str or len(key) > MAX_TEXT for key in fields)):
+                        self.counts["overflow"] += 1
+                        return
+                    if any(fields.get(key) is not None for key in ("__file__", "__spec__", "__path__")):
                         continue
                     if name in self.synthetic_modules:
                         # The deepest observed extension load owns creation;
                         # enclosing imports cannot relabel its provider.
                         continue
-                    # Versioned Cython types require actual parent attributes of
-                    # precisely that registered type, not a name-prefix rule.
-                    referenced_types = []
-                    for value in values.values():
+                    # The actual Cython type may declare __module__ = None.
+                    # Registry membership and parent type identity are evidence;
+                    # a matching spelling or prefix is never sufficient.
+                    referenced_types, bindings = [], []
+                    for attribute, value in values.items():
                         cls = type(value)
                         class_name = _static_type_text(cls, "__name__")
-                        if (_static_type_text(cls, "__module__") == name and class_name is not None
-                                and fields.get(class_name) is cls):
-                            referenced_types.append(class_name)
-                    runtime_shape = (name == "cython_runtime" and fields.get("__name__") == name
-                                     and type(fields.get("line_trace")) is bool
-                                     and set(fields) <= {"__name__","__doc__","__package__","__loader__","__spec__","line_trace"})
-                    if not referenced_types and not runtime_shape:
+                        declared_module = _static_type_field(cls, "__module__")
+                        if (class_name is None or fields.get(class_name) is not cls
+                                or not (declared_module is None or type(declared_module) is str
+                                        and len(declared_module) <= MAX_TEXT and declared_module == name)):
+                            continue
+                        if type(attribute) is not str or len(attribute) > MAX_TEXT:
+                            self.counts["overflow"] += 1
+                            return
+                        if not self._admit("extension_type_binding", (name, id(module), id(cls), attribute)):
+                            return
+                        referenced_types.append(class_name)
+                        bindings.append((class_name, cls, attribute))
+                    runtime_shape = self._runtime_shape_current(name, module, "ORIGINAL_LINE_TRACE_BOOL")
+                    empty_runtime = self._runtime_shape_current(name, module, "EMPTY_FIVE_STANDARD_FIELDS_WITH_EXACT_SAME_TOKEN_TYPE_REGISTRY")
+                    if not referenced_types:
+                        if runtime_shape or empty_runtime:
+                            if not self._admit("extension_deferred_runtime", (name, id(module))):
+                                return
+                            deferred.append((name, module, runtime_shape, empty_runtime))
                         continue
                     if not self._admit("extension_created_registry_object", (name, id(module))):
-                        continue
+                        return
                     proof = {"origin":"EXTENSION_CREATED_RUNTIME_MODULE","path":row["origin"],
                              "extension_module":row["module"],"actual_object_identity":hex(id(module)),
                              "extension_object_identity":hex(id(result)),"loader_type":row["loader_type"],
                              "referenced_type_attributes":sorted(set(referenced_types)),
-                             "runtime_shape_observed":runtime_shape,"thread_identity":row["thread_identity"],
+                             "runtime_shape_observed":False,"thread_identity":row["thread_identity"],
                              "scope":"EXACT_REGISTRY_OBJECT_CREATED_INSIDE_UNCONTENDED_ORIGINAL_EXTENSION_LOAD; NOT_BINARY_AUTHENTICATION"}
                     self.synthetic_modules[name] = (module, result, spec, token["loader"], proof)
+                    self.synthetic_bindings[name] = {"types":tuple(bindings), "companion":None, "shape":None}
+                    companions.append((name, module, tuple(bindings)))
+                    created.append(name)
+                for name, module, runtime_shape, empty_runtime in deferred:
+                    # An empty runtime has no direct class relationship. Require
+                    # exactly one strongly bound class registry created by this
+                    # same original, uncontended loader token, never a later scan.
+                    companion = companions[0] if empty_runtime and len(companions) == 1 else None
+                    if not runtime_shape and companion is None:
+                        row["empty_runtime_companion"] = "UNVERIFIED_MISSING_OR_AMBIGUOUS_SAME_TOKEN_REGISTRY"
+                        continue
+                    if not self._admit("extension_created_registry_object", (name, id(module))):
+                        return
+                    proof = {"origin":"EXTENSION_CREATED_RUNTIME_MODULE","path":row["origin"],
+                             "extension_module":row["module"],"actual_object_identity":hex(id(module)),
+                             "extension_object_identity":hex(id(result)),"loader_type":row["loader_type"],
+                             "referenced_type_attributes":[],"runtime_shape_observed":True,
+                             "runtime_shape_basis":"ORIGINAL_LINE_TRACE_BOOL" if runtime_shape else "EMPTY_FIVE_STANDARD_FIELDS_WITH_EXACT_SAME_TOKEN_TYPE_REGISTRY",
+                             "companion_registry":companion[0] if companion is not None else None,
+                             "thread_identity":row["thread_identity"],
+                             "scope":"EXACT_REGISTRY_OBJECT_CREATED_INSIDE_UNCONTENDED_ORIGINAL_EXTENSION_LOAD; NOT_BINARY_AUTHENTICATION"}
+                    self.synthetic_modules[name] = (module, result, spec, token["loader"], proof)
+                    self.synthetic_bindings[name] = {"types":(), "companion":companion, "shape":proof["runtime_shape_basis"]}
                     created.append(name)
                 row["synthetic_module_lineage"] = {"created":created,"concurrent":False}
             except BaseException:
@@ -714,6 +761,39 @@ class NativeImportObserver:
                         attempt["loader_records"].append(index)
         except BaseException:
             self.counts["errors"] += 1
+
+    def _registry_binding_current(self, name, module, parent, bindings):
+        if sys.modules.get(name) is not module or type(module) is not types.ModuleType:
+            return False
+        fields = types.ModuleType.__getattribute__(module, "__dict__")
+        if any(len(values) > self.record_limit or
+               any(type(key) is not str or len(key) > MAX_TEXT for key in values)
+               for values in (fields, parent)):
+            return False
+        if any(fields.get(key) is not None for key in ("__file__", "__spec__", "__path__")):
+            return False
+        for class_name, cls, attribute in bindings:
+            declared_module = _static_type_field(cls, "__module__")
+            if (fields.get(class_name) is not cls or type(parent.get(attribute)) is not cls
+                    or not (declared_module is None or type(declared_module) is str
+                            and len(declared_module) <= MAX_TEXT and declared_module == name)):
+                return False
+        return bool(bindings)
+
+    def _runtime_shape_current(self, name, module, basis):
+        if type(name) is not str or name != "cython_runtime" or type(module) is not types.ModuleType:
+            return False
+        fields = types.ModuleType.__getattribute__(module, "__dict__")
+        if (len(fields) > self.record_limit or
+                any(type(key) is not str or len(key) > MAX_TEXT for key in fields)
+                or type(fields.get("__name__")) is not str or fields["__name__"] != name):
+            return False
+        standard = {"__name__","__doc__","__package__","__loader__","__spec__"}
+        if basis == "ORIGINAL_LINE_TRACE_BOOL":
+            return type(fields.get("line_trace")) is bool and set(fields) <= standard | {"line_trace"}
+        if basis == "EMPTY_FIVE_STANDARD_FIELDS_WITH_EXACT_SAME_TOKEN_TYPE_REGISTRY":
+            return set(fields) == standard and all(fields[key] is None for key in standard - {"__name__"})
+        return False
 
     def _origin(self, filename):
         if not isinstance(filename,str) or not filename or len(filename) > MAX_TEXT or filename.startswith("<"):
@@ -767,8 +847,19 @@ class NativeImportObserver:
                 captured = self.synthetic_modules.get(name)
                 if captured and captured[0] is module and sys.modules.get(captured[4]["extension_module"]) is captured[1]:
                     parent = types.ModuleType.__getattribute__(captured[1], "__dict__")
-                    if (parent.get("__spec__") is captured[2] and parent.get("__loader__") is captured[3]
-                            and parent.get("__file__") == captured[4]["path"]):
+                    binding = self.synthetic_bindings.get(name)
+                    binding_current = (binding is not None and len(parent) <= self.record_limit
+                                       and all(type(key) is str and len(key) <= MAX_TEXT for key in parent))
+                    if binding_current and binding["shape"] is not None:
+                        binding_current = self._runtime_shape_current(name, module, binding["shape"])
+                    if binding_current and binding["types"]:
+                        binding_current = self._registry_binding_current(name, module, parent, binding["types"])
+                    if binding_current and binding["companion"] is not None:
+                        companion_name, companion_module, companion_types = binding["companion"]
+                        binding_current = self._registry_binding_current(companion_name, companion_module, parent, companion_types)
+                    if (binding_current and parent.get("__spec__") is captured[2] and parent.get("__loader__") is captured[3]
+                            and type(parent.get("__file__")) is str and parent["__file__"] == captured[4]["path"]
+                            ):
                         modules[name] = [captured[4]]; origin_count += 1
                         continue
                 unresolved.append({"module":name,"reason":"ORIGIN_NOT_OBSERVABLE_NO_EXACT_EXTENSION_CREATION_LINEAGE"})
@@ -854,6 +945,7 @@ class NativeImportObserver:
             self.load_stacks.clear()
             self.opaque_references.clear()
             self.synthetic_modules.clear()
+            self.synthetic_bindings.clear()
         _detach_protocol(self)
 
     def _resolved_attempt(self, name):

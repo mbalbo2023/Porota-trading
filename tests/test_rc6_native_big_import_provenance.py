@@ -583,9 +583,16 @@ def _runtime_control_child(root, private, case):
         else:
             assert imported.__name__ == name and case != 'loader_abort'
             del sys.modules[name]
-    elif case in ('cython_extension','false_cython_after','unknown_runtime_module'):
+    elif case in ('cython_extension','false_cython_after','unknown_runtime_module',
+                  'cython_ambiguous_companion','cython_concurrent_loader','cython_companion_replaced',
+                  'cython_parent_type_replaced','cython_parent_type_added_after','cython_preexisting',
+                  'cython_runtime_same_object_namespace_mutated'):
         if case == 'unknown_runtime_module':
-            sys.modules['rc6_unknown_extension_runtime'] = types.ModuleType('rc6_unknown_extension_runtime')
+            false_registry = types.ModuleType('rc6_unknown_extension_runtime')
+            false_meta = type('_common_types_metatype', (type,), {'__module__':None})
+            false_registry._common_types_metatype = false_meta
+            false_registry.cython_function_or_method = false_meta('cython_function_or_method', (), {'__module__':None})
+            sys.modules['rc6_unknown_extension_runtime'] = false_registry
         else:
             actual = importlib.import_module('charset_normalizer.cd')
             assert type(actual.__loader__) is proof._EXTENSION_LOADER
@@ -649,15 +656,96 @@ def _runtime_control_child(root, private, case):
                         graph_record(row)
                 control['actual_cython_namespace_graph'] = graph
             if case == 'false_cython_after':
+                # Match the actual five-field runtime layout; only identity and
+                # captured creation lineage distinguish this replacement.
                 false_module = types.ModuleType('cython_runtime')
-                false_module.line_trace = False
                 sys.modules['cython_runtime'] = false_module
+            elif case in ('cython_companion_replaced','cython_parent_type_replaced','cython_runtime_same_object_namespace_mutated'):
+                companion = observer.synthetic_bindings['cython_runtime']['companion']
+                assert companion is not None and companion[2]
+                companion_name, companion_module, companion_types = companion
+                control['adversary_scope'] = 'POST_CAPTURE_ACTUAL_REGISTRY_OR_PARENT_TYPE_MUTATION'
+                if case == 'cython_companion_replaced':
+                    replacement = types.ModuleType(companion_name)
+                    vars(replacement).update(types.ModuleType.__getattribute__(companion_module, '__dict__'))
+                    sys.modules[companion_name] = replacement
+                elif case == 'cython_parent_type_replaced':
+                    captured_parent = observer.synthetic_modules['cython_runtime'][1]
+                    attribute = companion_types[0][2]
+                    types.ModuleType.__getattribute__(captured_parent, '__dict__')[attribute] = object()
+                else:
+                    runtime = sys.modules['cython_runtime']
+                    assert observer.synthetic_modules['cython_runtime'][0] is runtime
+                    vars(runtime)['rc6_unrelated_namespace'] = object()
+                    control['adversary_scope'] = 'POST_CAPTURE_RUNTIME_NAMESPACE_MUTATION'
+                control['mutated_companion'] = companion_name
+            elif case in ('cython_ambiguous_companion','cython_concurrent_loader',
+                          'cython_parent_type_added_after','cython_preexisting'):
+                # First obtain the real compiled extension and its actual type.
+                # Following direct protocol controls are not replays of native
+                # C initialization or claims that the controlled loader ran.
+                preparatory = observer.finish()
+                assert preparatory['boundary_after']['modules']['cython_runtime'][0]['origin'] == 'EXTENSION_CREATED_RUNTIME_MODULE'
+                control['preparatory_actual_extension_status'] = preparatory['status']
+                parent_fields = types.ModuleType.__getattribute__(actual, '__dict__')
+                registered = [(name, sys.modules[name]) for name in control['actual_cython_modules']]
+                class_name, registered_type = next((key, value) for name, module in registered
+                    for key, value in types.ModuleType.__getattribute__(module, '__dict__').items()
+                    if type(key) is str and any(type(parent_value) is value for parent_value in parent_fields.values()))
+                if case != 'cython_preexisting':
+                    for name, module in registered:
+                        assert sys.modules.pop(name) is module
+                    control['registry_removal_scope'] = 'EXPLICIT_PROTOCOL_ADVERSARY_NO_C_EXTENSION_REINITIALIZATION'
+                observer = proof.NativeImportObserver(binding, role='DIRECT_PROTOCOL_OR_PREEXISTING_ADVERSARY')
+                before = observer.initial_receipt()
+                control['adversary_scope'] = 'RETAINED_PREEXISTING_REGISTRY' if case == 'cython_preexisting' else 'DIRECT_OBSERVER_PROTOCOL_ADVERSARY_AFTER_ACTUAL_EXTENSION'
+                if case != 'cython_preexisting':
+                    import threading
+                    token = observer._loader_start(actual.__spec__)
+                    assert token is not None and token['before'] is not None
+                    signal, release, second_errors = threading.Event(), threading.Event(), []
+                    second = None
+                    if case == 'cython_concurrent_loader':
+                        def concurrent_protocol():
+                            other = observer._loader_start(actual.__spec__)
+                            try:
+                                assert other is not None
+                                signal.set()
+                                assert release.wait(2)
+                            except BaseException as error:
+                                second_errors.append(type(error).__name__)
+                            finally:
+                                observer._loader_end(other, actual, None)
+                        second = threading.Thread(target=concurrent_protocol)
+                        second.start()
+                        assert signal.wait(2)
+                    try:
+                        runtime = types.ModuleType('cython_runtime')
+                        sys.modules['cython_runtime'] = runtime
+                        registry_count = 2 if case == 'cython_ambiguous_companion' else 1
+                        candidate_type = (type(class_name, (), {'__module__':None})
+                                          if case == 'cython_parent_type_added_after' else registered_type)
+                        for index in range(registry_count):
+                            name = 'rc6_control_type_registry_'+str(index)
+                            module = types.ModuleType(name)
+                            vars(module)[class_name] = candidate_type
+                            sys.modules[name] = module
+                        observer._loader_end(token, actual, None)
+                        control['same_token_registry_candidates'] = registry_count
+                        if case == 'cython_parent_type_added_after':
+                            parent_fields['rc6_late_type_reference'] = candidate_type()
+                            control['type_reference_added_after_loader_return'] = True
+                    finally:
+                        if second is not None:
+                            release.set()
+                            second.join(3)
+                            assert not second.is_alive() and not second_errors
     else:
         raise AssertionError('unknown control')
     result = observer.finish()
     assert observer.active is False
     assert proof._bootstrap._find_and_load is before_find and proof._bootstrap._load_unlocked is before_load
-    assert not observer.opaque_references and not observer.synthetic_modules
+    assert not observer.opaque_references and not observer.synthetic_modules and not observer.synthetic_bindings
     result.update(control=control,test_binding_scope=binding['test_binding_scope'],
                   native_child_pid=os.getpid(),initial_native_pid=before['native_pid'],
                   original_import_machinery_restored=True)
@@ -868,6 +956,34 @@ def test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption(t
     result = _physical_runtime_control(tmp_path, case)
     assert any(row['module'] == name for row in result['boundary_after']['unresolved'])
     assert result['transient_closure_verified'] is False
+
+
+@pytest.mark.parametrize('case', [
+    'cython_ambiguous_companion','cython_concurrent_loader','cython_companion_replaced',
+    'cython_parent_type_replaced','cython_parent_type_added_after','cython_preexisting',
+    'cython_runtime_same_object_namespace_mutated',
+])
+def test_runtime_registry_proof_rejects_ambiguous_concurrent_stale_or_late_type_authority(tmp_path, case):
+    result = _physical_runtime_control(tmp_path, case)
+    assert any(row['module'] == 'cython_runtime' for row in result['boundary_after']['unresolved'])
+    assert 'cython_runtime' not in result['boundary_after']['modules']
+    assert result['transient_closure_verified'] is False
+    assert result['control']['adversary_scope'] in (
+        'POST_CAPTURE_ACTUAL_REGISTRY_OR_PARENT_TYPE_MUTATION', 'RETAINED_PREEXISTING_REGISTRY',
+        'DIRECT_OBSERVER_PROTOCOL_ADVERSARY_AFTER_ACTUAL_EXTENSION',
+        'POST_CAPTURE_RUNTIME_NAMESPACE_MUTATION',
+    )
+    if case == 'cython_ambiguous_companion':
+        assert result['control']['same_token_registry_candidates'] == 2
+        assert any(row.get('empty_runtime_companion') == 'UNVERIFIED_MISSING_OR_AMBIGUOUS_SAME_TOKEN_REGISTRY'
+                   for row in result['selected_loader_outcomes'])
+    elif case == 'cython_concurrent_loader':
+        assert any(row.get('synthetic_module_lineage') == 'UNVERIFIED_EXTENSION_PARENT_OR_CONCURRENT_CREATION'
+                   for row in result['selected_loader_outcomes'])
+    elif case == 'cython_parent_type_added_after':
+        assert result['control']['type_reference_added_after_loader_return'] is True
+    elif case == 'cython_preexisting':
+        assert any(row['module'] == 'cython_runtime' for row in result['boundary_before']['unresolved'])
 
 
 if __name__ == '__main__':
