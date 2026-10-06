@@ -76,7 +76,7 @@ class _Snapshot:
         while pending:
             node = pending.pop()
             kind = type(node)
-            if kind is not dict and kind is not list and kind is not tuple:
+            if kind not in _CONTAINERS:
                 return
             key = id(node)
             if key in self.nodes:
@@ -93,14 +93,13 @@ class _Snapshot:
             children = tuple(node.values()) if kind is dict else tuple(node)
             for child in children:
                 child_kind = type(child)
-                if child_kind is dict or child_kind is list or child_kind is tuple:
+                if child_kind in _CONTAINERS:
                     child_key = id(child)
                     if child_key not in queued:
                         if budget[0] + len(queued) + 1 > MAX_SNAPSHOT_CONTAINERS:
                             return
                         queued.add(child_key); pending.append(child)
-                elif (child_kind is not type(None) and child_kind is not bool
-                      and child_kind is not int and child_kind is not float and child_kind is not str):
+                elif child_kind not in _LEAVES:
                     return
             if builder.objects.get(key) is not node:
                 return
@@ -178,8 +177,7 @@ class _SectionScope:
                 if type(value) is not dict:
                     continue
                 for name, member in value.items():
-                    if (type(name) is str and name not in mutable
-                            and (type(member) is dict or type(member) is list or type(member) is tuple)):
+                    if type(name) is str and name not in mutable and type(member) in _CONTAINERS:
                         key = id(member), name
                         if key not in occurrences and len(occurrences) >= MAX_ROOT_CANDIDATES:
                             occurrences.clear()
@@ -203,15 +201,7 @@ class _SectionScope:
         # observe them later in this role, including another root section.
         # Exact Decimal is allowed here only; snapshots still exclude it and
         # its original default=str serialization is never replayed.
-        if type(value) is not dict:
-            return False
-        # With no activable root capture, replay cannot occur in this role.
-        # Candidates already exclude the publisher's mutable root fields.
-        # Exact strings and builtin dict iteration add no user comparisons.
-        if not any(type(name) is str and (id(member), name) in self.candidates
-                   for name, member in dict.items(value)):
-            return False
-        if len(builder.objects) > MAX_ROLE_CONTAINERS:
+        if type(value) is not dict or len(builder.objects) > MAX_ROLE_CONTAINERS:
             return False
         references = 0
         for node in builder.objects.values():
@@ -220,7 +210,7 @@ class _SectionScope:
             if counter:
                 if not _plain_counter(node):
                     return False
-            elif kind is not dict and kind is not list and kind is not tuple:
+            elif kind not in _CONTAINERS:
                 return False
             references += len(node) * (2 if kind is dict or counter else 1)
             if references > MAX_ROLE_REFERENCES:
@@ -231,13 +221,8 @@ class _SectionScope:
                 children = node.values()
             else:
                 children = node
-            for child in children:
-                child_kind = type(child)
-                if (child_kind is not dict and child_kind is not list and child_kind is not tuple
-                        and child_kind is not type(None) and child_kind is not bool
-                        and child_kind is not int and child_kind is not float and child_kind is not str
-                        and child_kind is not Decimal and child_kind is not Counter):
-                    return False
+            if any(type(child) not in _ROLE_TYPES and type(child) is not Counter for child in children):
+                return False
         return True
 
     def record_dependency(self, key, result):

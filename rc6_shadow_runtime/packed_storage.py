@@ -386,7 +386,8 @@ class _CaptureBuilder:
             # token also fits. Append once without moving any legacy cut.
             if len(raw) <= PACK_TARGET-len(buffer.template):
                 buffer.append(raw); return
-        if (self._publication_scope is not None and type(value) in (dict, list, tuple)
+        if (self._publication_scope is not None
+                and (type(value) is dict or type(value) is list or type(value) is tuple)
                 and len(value) >= self._publication_scope.minimum_items
                 and self._publication_scope.append(self, value, name, buffer, root=root)):
             return

@@ -151,3 +151,55 @@ raw JUnit/receipts. Existing module coverage overlaps prior focal evidence.
 The new source guard is not a financial scenario or a BIG acceptance witness.
 Only Root's subsequently integrated, uninstrumented native BIG may determine
 performance or global completion.
+
+## Private type audit correction — source only
+
+WORKSTREAM_ID: `rc6-private-type-identity-20261006`. Documentary parent:
+`7791c00b381e1c84c0eddce7be487ec2bf786ccc`. The e24 focal D remains an actual
+468-case qualified compatibility result; its source and A/B/C/D capsule remain
+unchanged historical evidence. Root's subsequently integrated BIG1426 remained
+RED at the original 90 seconds. Inclusive preparation was 49.283258 seconds/4
+calls and publication 59.720053 seconds/1 call. Neither span establishes private
+reuse hits, the cost of an audit, or a saving.
+
+SOURCE review found that seven newly introduced predicates compared classes by
+tuple membership. An unknown metaclass can run `__eq__` there before original
+capture, mutate a marker field and change the resulting wire. This is an
+unexecuted source-derived counterexample until the controlled native guards run.
+The semantic reference is the pre-private 8764 encoder, frozen in PriorBuilder
+and PriorPrepared from blob `1fde1525d74fb8d77ed39ed9b017f03472a347cf`; accidental
+callbacks introduced by the e24 private audit are not retained as a contract.
+
+Only the three Snapshot predicates, candidate-construction predicate, two
+whole-role predicates and the packed private hook now use class identity.
+Original memberships in count, shape, scalar, binding and small-plain paths
+retain their frequency, order and effects. There is no class-keyed set/dict or
+user equality/hash in the new type predicates. An exact-dict root check uses
+`dict.items`, exact string names and `(id(member), name)` candidate pairs to
+disable the private scope for a role with no activable root capture. Mutable
+root fields were already excluded from those candidates. Candidate roles retain
+the complete final-state eligibility audit. Counts, constructors, every
+Snapshot.matches check, dependencies, frontier bytes, cache lifetime and all
+expanded-occurrence proofs are unchanged. No count fusion is implemented.
+
+The historical e24 helper is preserved byte-exactly at
+`tests/fixtures/rc6_publication_storage_e24.py.source`, SHA256
+`35ad9e2120d6d435798496568341d3426082e62c16425c9e0fa91f54833505be` (16,347 bytes).
+It is compiled explicitly only by the controlled guard; it is a historical
+reference, not the fixed producer. Fresh graphs isolate original, e24 and fixed
+paths. A marker preceding the probe demonstrates the e24 full-wire difference;
+fixed sections, complete role wire, callback traces, metrics, canonical hash and
+full decode must match 8764. Baseline metaclass callbacks from original scalar
+serialization remain observable, so the claim is zero additional private type
+callbacks, never zero callbacks overall. Other controls cover private Snapshot/
+candidate/hook isolation, non-candidate self-clearing Counter callbacks and
+strong count tables, late count mutation with final candidate audit retained,
+and standard Counter/Decimal serialization with actual instruments replay. The
+existing native-worker guard still verifies factual Counter/Decimal groups,
+publisher/full reader/projection and real reuse under the canonical small caller.
+
+Source AST/compilation checks do not execute these guards. Native counts must
+come from the assigned single collection/JUnit; only a separately authorized
+integrated BIG can decide performance. The original 90-second, .25-second,
+2-GiB, live/archive/scratch quotas and GC policy remain unchanged. The broad
+enumeration incident remains UNKNOWN/NOT_VERIFIED as recorded in the capsule.
