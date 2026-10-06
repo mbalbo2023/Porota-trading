@@ -166,13 +166,19 @@ def test_native_writer_restore_checks_every_wire_and_decodes_checkpoint_only_onc
     monkeypatch.setattr(serialization, "THRESHOLD", 1)
     native = native_fixture(tmp_path, count=3)
     calls = []
-    original = serialization._storage_bytes
-    def checked_storage(value, **kwargs):
-        calls.append(value["logical_sha256"])
-        return original(value, **kwargs)
-    monkeypatch.setattr(serialization, "_storage_bytes", checked_storage)
+    original_verify = persistence.verify_storage_wire
+    original_decode = persistence.decode_storage
+    def checked_verify(value, **kwargs):
+        calls.append(("verify", value["logical_sha256"]))
+        return original_verify(value, **kwargs)
+    def checked_decode(value, **kwargs):
+        calls.append(("decode", value["logical_sha256"]))
+        return original_decode(value, **kwargs)
+    monkeypatch.setattr(persistence, "verify_storage_wire", checked_verify)
+    monkeypatch.setattr(persistence, "decode_storage", checked_decode)
     result = native.worker.files.read_writer_generation(checkpoint=True)
-    expected = [native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES]
+    expected = [("verify" if role == "report" else "decode",
+                 native.cut["manifest"]["files"][role]["payload_digest"]) for role in persistence.ROLES]
     assert sorted(calls) == sorted(expected)
     assert result["checkpoint"] == native.cut["checkpoint"]
     assert result["export_contract"]["verification_level"] == "WIRE_AND_CHECKPOINT_SEMANTICS"
@@ -183,12 +189,17 @@ def test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_
     from rc6_shadow_runtime import serialization
     monkeypatch.setattr(serialization, "THRESHOLD", 1)
     native = native_fixture(tmp_path, count=3)
-    original = serialization._storage_bytes
+    original_verify = persistence.verify_storage_wire
+    original_decode = persistence.decode_storage
     calls = []
-    def checked(value, **kwargs):
-        calls.append(value["logical_sha256"])
-        return original(value, **kwargs)
-    monkeypatch.setattr(serialization, "_storage_bytes", checked)
+    def checked_verify(value, **kwargs):
+        calls.append(("verify", value["logical_sha256"]))
+        return original_verify(value, **kwargs)
+    def checked_decode(value, **kwargs):
+        calls.append(("decode", value["logical_sha256"]))
+        return original_decode(value, **kwargs)
+    monkeypatch.setattr(persistence, "verify_storage_wire", checked_verify)
+    monkeypatch.setattr(persistence, "decode_storage", checked_decode)
     files = native.worker.files
     with files:
         first = files.read_writer_generation(checkpoint=True)
@@ -199,11 +210,13 @@ def test_native_writer_transaction_receipts_reuse_only_verified_bytes_and_never_
         assert second["export_contract"]["verified_payloads"]["report"]["payload_digest"] != "0"*64
         assert third["checkpoint"] == native.cut["checkpoint"]
         expected = {role: native.cut["manifest"]["files"][role]["payload_digest"] for role in persistence.ROLES}
-        assert Counter(calls) == Counter({expected["report"]: 1, expected["checkpoint"]: 2, expected["status"]: 3})
+        assert Counter(calls) == Counter({("verify", expected["report"]): 1,
+            ("decode", expected["checkpoint"]): 2, ("decode", expected["status"]): 3})
     assert files._wire_receipts == {}
     calls.clear()
     files.read_writer_generation(checkpoint=False)
-    assert Counter(calls) == Counter(expected.values())
+    assert Counter(calls) == Counter(("decode" if role == "status" else "verify", value)
+                                    for role, value in expected.items())
 
 
 @pytest.mark.parametrize("attack", ["member", "hardlink", "authority", "deadline", "limit", "failure"])

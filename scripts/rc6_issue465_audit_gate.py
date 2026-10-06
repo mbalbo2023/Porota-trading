@@ -138,9 +138,13 @@ def _guarded_front_path(root, path, frozen, current, successor):
             and row.get("source_blobs", {}).get("466") == frozen["blob"]
             and row.get("source_git_modes", {}).get("466") == frozen["git_mode"],
             "CONVERGENCE_FRONT_SOURCE_MISMATCH:" + path)
+    try:
+        guards = convergence.path_guard_nodes(successor, row)
+    except convergence.ConvergenceError as error:
+        raise AuditGateError("CONVERGENCE_FRONT_GUARD_REPRESENTATION_INVALID:" + path) from error
     require(row.get("preservation") == "EVOLVED_WITH_NATIVE_GUARDS"
             and isinstance(row.get("evolution_reason"), str) and row["evolution_reason"].strip()
-            and bool(row.get("requirement_ids")) and bool(row.get("guard_nodes")),
+            and bool(row.get("requirement_ids")) and bool(guards),
             "CONVERGENCE_FRONT_EVOLUTION_UNGUARDED:" + path)
     requirements = {item["id"]: item for item in successor["requirements"]}
     executions = {}
@@ -149,14 +153,25 @@ def _guarded_front_path(root, path, frozen, current, successor):
         requirement = requirements[identifier]
         require(requirement.get("software_status") == "EXECUTED_NATIVE_GREEN",
                 "CONVERGENCE_FRONT_REQUIREMENT_NOT_EXECUTED:" + path)
-        for receipt in requirement.get("execution_receipts", []):
+        receipts = requirement.get("execution_receipts", [])
+        require(isinstance(receipts, list) and all(isinstance(receipt, dict) for receipt in receipts),
+                "CONVERGENCE_FRONT_GUARD_RECEIPT_INVALID:" + path)
+        receipt_nodes = []
+        for receipt in receipts:
             count = receipt.get("executed_cases")
             require(type(count) is int and count > 0, "CONVERGENCE_FRONT_GUARD_NOT_EXECUTED:" + path)
-            executions[receipt["node"]] = count
-    require(all(node in executions for node in row["guard_nodes"]),
+            node = receipt.get("node")
+            require(isinstance(node, str), "CONVERGENCE_FRONT_GUARD_RECEIPT_INVALID:" + path)
+            receipt_nodes.append(node)
+            executions[node] = count
+        if "path_guard_derivation" in successor:
+            require(len(set(receipt_nodes)) == len(receipt_nodes)
+                    and set(receipt_nodes) == set(requirement["test_nodes"]),
+                    "CONVERGENCE_FRONT_GUARD_RECEIPT_NODES_MISMATCH:" + path)
+    require(all(node in executions for node in guards),
             "CONVERGENCE_FRONT_GUARD_RECEIPT_MISSING:" + path)
     return {"path": path, "frozen": frozen, "candidate": current,
-            "requirement_ids": row["requirement_ids"], "guard_nodes": row["guard_nodes"]}
+            "requirement_ids": row["requirement_ids"], "guard_nodes": guards}
 
 
 def verify(root: Path, junit: Path, governed: Path) -> dict:

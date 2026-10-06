@@ -806,7 +806,8 @@ def test_worktree_git_file_supported(candidate, tmp_path):
 
 
 def test_predeploy_executes_strict_provenance_in_final_single_build(candidate):
-    workflow = yaml.safe_load(Path(".github/workflows/porota-predeploy-v2.yml").read_text())
+    workflow = yaml.safe_load((Path(__file__).resolve().parents[1] /
+                               ".github/workflows/porota-predeploy-v2.yml").read_text())
     steps = workflow["jobs"]["artifact-gate"]["steps"]
     by_name = {step["name"]: step for step in steps}
     names = list(by_name)
@@ -827,7 +828,7 @@ def test_predeploy_executes_strict_provenance_in_final_single_build(candidate):
     audit_gate = "Issue 465 programable reauditing evidence gate"
     assert names.index(audit_gate) > names.index("Governed automatic test discovery and execution")
     assert "rc6_issue465_audit_gate.py verify" in by_name[audit_gate]["run"]
-    assert "--junit /tmp/porota-governed-tests.xml" in by_name[audit_gate]["run"]
+    assert '--junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"' in by_name[audit_gate]["run"]
     assert "porota-issue465-audit-gate.json" in by_name["Upload predeploy evidence"]["with"]["path"]
     assert "ISSUE465_REAUDIT.json" in by_name["Upload predeploy evidence"]["with"]["path"]
     assert sum(step.get("run", "").count("docker build") for step in steps) == 1

@@ -160,10 +160,106 @@ def assert_rejected(candidate, signature, **kwargs):
     assert not candidate[2].exists()
 
 
+def path_guard_proof():
+    """Controlled representation only; these rows claim no test execution."""
+    return {"schema": "rc6.final-input-provenance.v1",
+        "path_guard_derivation": provenance.PATH_GUARD_DERIVATION,
+        "requirements": [
+            {"id": "U04", "test_nodes": [SUCCESSOR_CASES[0], GUARD]},
+            {"id": "U24", "test_nodes": [GUARD]},
+            {"id": "U29", "test_nodes": [SUCCESSOR_CASES[-1]]}],
+        "paths": [{"path": "controlled-changed", "requirement_ids": ["U24", "U04"]},
+                  {"path": "controlled-unchanged", "requirement_ids": []}]}
+
+
+def test_path_guard_derivation_preserves_historical_semantics_and_roundtrip():
+    proof = path_guard_proof()
+    roundtrip = provenance.read_json((json.dumps(proof, sort_keys=True, indent=2) + "\n").encode())
+    expected = [sorted({GUARD, SUCCESSOR_CASES[0]}), []]
+    assert [provenance.path_guard_nodes(roundtrip, row) for row in roundtrip["paths"]] == expected
+    assert roundtrip == proof
+    historical = deepcopy(roundtrip)
+    historical.pop("path_guard_derivation")
+    for row, nodes in zip(historical["paths"], expected):
+        row["guard_nodes"] = nodes
+    assert [provenance.path_guard_nodes(historical, row) for row in historical["paths"]] == expected
+    # Original controlled verifier-result fixtures predate requirement.test_nodes.
+    for requirement in historical["requirements"]:
+        requirement.pop("test_nodes")
+    assert [provenance.path_guard_nodes(historical, row) for row in historical["paths"]] == expected
+
+
+@pytest.mark.parametrize("attack,signature", [
+    ("unknown_marker", "PATH_GUARD_DERIVATION_INVALID"),
+    ("null_marker", "PATH_GUARD_DERIVATION_INVALID"),
+    ("missing_marker", "PATH_GUARD_INLINE_INVALID"),
+    ("shadow_inline", "PATH_GUARD_SHADOW_INLINE"),
+    ("empty_shadow_inline", "PATH_GUARD_SHADOW_INLINE"),
+    ("null_shadow_inline", "PATH_GUARD_SHADOW_INLINE"),
+    ("other_path_shadow_inline", "PATH_GUARD_SHADOW_INLINE"),
+    ("missing_reference", "PATH_GUARD_REFERENCE_INVALID"),
+    ("unknown_reference", "PATH_GUARD_REFERENCE_INVALID"),
+    ("unhashable_reference", "PATH_GUARD_REFERENCE_INVALID"),
+    ("duplicate_reference", "PATH_GUARD_REFERENCE_DUPLICATE"),
+    ("other_path_unknown_reference", "PATH_GUARD_REFERENCE_INVALID"),
+    ("missing_requirements", "PATH_GUARD_REQUIREMENTS_MISSING"),
+    ("duplicate_requirement", "PATH_GUARD_REQUIREMENT_DUPLICATE"),
+    ("invalid_requirement", "PATH_GUARD_REQUIREMENT_INVALID"),
+    ("missing_nodes", "PATH_GUARD_TEST_NODES_INVALID"),
+    ("unreferenced_missing_nodes", "PATH_GUARD_TEST_NODES_INVALID"),
+    ("empty_nodes", "PATH_GUARD_TEST_NODES_INVALID"),
+    ("invalid_node", "PATH_GUARD_TEST_NODES_INVALID"),
+    ("unhashable_node", "PATH_GUARD_TEST_NODES_INVALID"),
+    ("duplicate_node", "PATH_GUARD_TEST_NODES_DUPLICATE"),
+    ("invalid_paths", "PATH_GUARD_PATHS_INVALID"),
+    ("invalid_path", "PATH_GUARD_PATH_INVALID"),
+    ("duplicate_inline_node", "PATH_GUARD_INLINE_DUPLICATE"),
+    ("invalid_inline_node", "PATH_GUARD_INLINE_INVALID")])
+def test_path_guard_derivation_rejects_ambiguous_or_unbound_representations(attack, signature):
+    proof = path_guard_proof()
+    row = proof["paths"][0]
+    requirement = proof["requirements"][0]
+    if attack == "unknown_marker": proof["path_guard_derivation"] = "sorted-union.v2"
+    elif attack == "null_marker": proof["path_guard_derivation"] = None
+    elif attack == "missing_marker": proof.pop("path_guard_derivation")
+    elif attack == "shadow_inline": row["guard_nodes"] = [GUARD]
+    elif attack == "empty_shadow_inline": row["guard_nodes"] = []
+    elif attack == "null_shadow_inline": row["guard_nodes"] = None
+    elif attack == "other_path_shadow_inline": proof["paths"][1]["guard_nodes"] = []
+    elif attack == "missing_reference": row.pop("requirement_ids")
+    elif attack == "unknown_reference": row["requirement_ids"] = ["U01"]
+    elif attack == "unhashable_reference": row["requirement_ids"] = [["U04"]]
+    elif attack == "duplicate_reference": row["requirement_ids"].append("U04")
+    elif attack == "other_path_unknown_reference": proof["paths"][1]["requirement_ids"] = ["U01"]
+    elif attack == "missing_requirements": proof.pop("requirements")
+    elif attack == "duplicate_requirement": proof["requirements"].append(deepcopy(requirement))
+    elif attack == "invalid_requirement": requirement["id"] = "UNBOUND"
+    elif attack == "missing_nodes": requirement.pop("test_nodes")
+    elif attack == "unreferenced_missing_nodes": proof["requirements"][-1].pop("test_nodes")
+    elif attack == "empty_nodes": requirement["test_nodes"] = []
+    elif attack == "invalid_node": requirement["test_nodes"] = [GUARD.replace("tests/", "tests/../tests/")]
+    elif attack == "unhashable_node": requirement["test_nodes"] = [[GUARD]]
+    elif attack == "duplicate_node": requirement["test_nodes"].append(GUARD)
+    elif attack == "invalid_paths": proof["paths"] = None
+    elif attack == "invalid_path": proof["paths"].append(None)
+    elif attack in {"duplicate_inline_node", "invalid_inline_node"}:
+        proof.pop("path_guard_derivation")
+        row["guard_nodes"] = [GUARD, GUARD] if attack == "duplicate_inline_node" else ["not-a-native-node"]
+    else: raise AssertionError(attack)
+    with pytest.raises(provenance.ConvergenceError, match=signature):
+        provenance.path_guard_nodes(proof, row)
+
+
 def test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts(candidate):
     result = cli(candidate)
     assert result.returncode == 0, result.stderr
-    report = json.loads(candidate[2].read_text())
+    report = provenance.read_json(candidate[2].read_bytes())
+    assert report["path_guard_derivation"] == provenance.PATH_GUARD_DERIVATION
+    by_id = {row["id"]: row for row in report["requirements"]}
+    for row in report["paths"]:
+        assert "guard_nodes" not in row
+        expected = sorted({node for identifier in row["requirement_ids"] for node in by_id[identifier]["test_nodes"]})
+        assert provenance.path_guard_nodes(report, row) == expected
     assert report["candidate_sha"] == native_git(candidate[0], "rev-parse", "HEAD")
     assert report["candidate_tree"] == native_git(candidate[0], "rev-parse", "HEAD^{tree}")
     assert len(report["sources"]) == 15 and report["source_union_paths"] == 170
@@ -330,6 +426,18 @@ def test_original_gate_receipt_binding_counterexample_and_current_native_rejecti
     old_source = provenance.git(REPO, 'show', old_sha + ':scripts/rc6_issue465_audit_gate.py', binary=True)
     old = types.ModuleType('controlled_original_receipt_binding_gate')
     exec(compile(old_source, old_sha + ':scripts/rc6_issue465_audit_gate.py', 'exec'), old.__dict__)
+    def historical_inline(*arguments, **options):
+        native = provenance.verify(*arguments, **options)
+        inline = {**native, 'paths': [{**row, 'guard_nodes': provenance.path_guard_nodes(native, row)}
+                                    for row in native['paths']]}
+        inline.pop('path_guard_derivation')
+        return inline
+    # Bridge only the representation expected by the frozen consumer. Keep the
+    # native verifier, source authority and JUnit checks, and isolate the adapter
+    # from the current gate's imported convergence module.
+    old.convergence = types.SimpleNamespace(**vars(provenance))
+    old.convergence.verify = historical_inline
+    assert audit465.convergence is provenance and old.convergence is not provenance
     # Preserve the actual native validator counterexample at its immutable old
     # source, without presenting synthetic case metadata as a real governed run.
     assert old.verify(root, xml, governed)['status'] == 'GREEN'
@@ -501,10 +609,10 @@ def test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build():
     final = names.index("Final convergence input and guard provenance")
     assert inventory < tests < final < build
     assert "--fetch-source-refs" in steps[inventory]["run"] and "--junit" not in steps[inventory]["run"]
-    assert "--junit /tmp/porota-governed-tests.xml" in steps[final]["run"]
+    assert '--junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"' in steps[final]["run"]
     assert "final_material_receipt_binding(" in steps[final]["run"]
-    assert "Path('/tmp/porota-governed-tests.json')" in steps[final]["run"]
-    assert "Path('/tmp/porota-governed-tests.xml')" in steps[final]["run"]
+    assert '''Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.json'))''' in steps[final]["run"]
+    assert '''Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.xml'))''' in steps[final]["run"]
     assert sum("docker build" in step.get("run", "") for step in steps) == 1
 
 
@@ -785,7 +893,7 @@ def test_junit_summary_must_equal_actual_case_outcomes(candidate, counters):
     assert_rejected(candidate, "JUNIT")
 
 
-@pytest.mark.parametrize("mutation", ["empty_nodes", "not_executed", "missing_test_source", "node_alias", "missing_requirement", "duplicate_requirement", "unexplained_evolution"])
+@pytest.mark.parametrize("mutation", ["empty_nodes", "not_executed", "missing_test_source", "node_alias", "missing_requirement", "duplicate_requirement", "unexplained_evolution", "duplicate_evolution_requirement"])
 def test_missing_or_ambiguous_closure_guards_never_bless_source_evolution(candidate, mutation):
     root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
     matrix = json.loads(path.read_text()); row = matrix["requirements"][0]
@@ -795,9 +903,13 @@ def test_missing_or_ambiguous_closure_guards_never_bless_source_evolution(candid
     elif mutation == "node_alias": row["test_nodes"] = [GUARD.replace("tests/", "tests/../tests/")]
     elif mutation == "missing_requirement": matrix["requirements"].pop()
     elif mutation == "duplicate_requirement": matrix["requirements"][-1] = deepcopy(row)
+    elif mutation == "duplicate_evolution_requirement":
+        for evolution in matrix["path_evolution"].values():
+            evolution["requirement_ids"] *= 2
     else: matrix["path_evolution"] = {}
     write_json(path, matrix); commit(root)
-    assert_rejected(candidate, "CLOSURE" if mutation != "unexplained_evolution" else "UNEXPLAINED_SOURCE_EVOLUTION")
+    assert_rejected(candidate, "UNEXPLAINED_SOURCE_EVOLUTION" if mutation in
+        {"unexplained_evolution", "duplicate_evolution_requirement"} else "CLOSURE")
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "rebound_clause", "missing_guard"])

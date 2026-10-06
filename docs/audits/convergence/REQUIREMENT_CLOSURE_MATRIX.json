@@ -8533,6 +8533,601 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/MANIFEST.json": {
+      "reason": "Preserve the successor recovery, nine distinct focal epochs, BIG deadline RED, Gov311 terminal23F/120E and post-execution namespace diagnosis with original RAW hashes and copy metadata. No epoch aggregation, RELEASED, material closure, final Source C, artifact, merge, deploy or runtime acceptance is asserted.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/README.md": {
+      "reason": "Preserve the successor recovery, nine distinct focal epochs, BIG deadline RED, Gov311 terminal23F/120E and post-execution namespace diagnosis with original RAW hashes and copy metadata. No epoch aggregation, RELEASED, material closure, final Source C, artifact, merge, deploy or runtime acceptance is asserted.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/RECOVERY_STATUS.json": {
+      "reason": "Preserve the successor recovery, nine distinct focal epochs, BIG deadline RED, Gov311 terminal23F/120E and post-execution namespace diagnosis with original RAW hashes and copy metadata. No epoch aggregation, RELEASED, material closure, final Source C, artifact, merge, deploy or runtime acceptance is asserted.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/helpers/porota-governed311-external-runner.py.source": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/helpers/porota_export_source.py.source": {
+      "reason": "Archive the current whole-Git source exporter as non-executable .py.source, with raw commit/tree authority, exact file blob/hash/mode inventory and explicit source namespace output. This records export preparation intent and preserves the helper for review; it does not perform an export now, authenticate historical helper bytes, qualify Source C or substitute for native data custody and immutable artifact validation.",
+      "requirement_ids": [
+        "U04",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/helpers/porota_rc6_focal.py.source": {
+      "reason": "Archive the current focal helper as non-executable .py.source: it binds literal Git SHA/tree/blobs/modes and stable code stats, qualifies157 before collection, joins native collection/execution/JUnit identities and reports original outcomes. Current copied helper bytes do not attest exact historical helper identity for every epoch; storing this source neither runs pytest nor qualifies final Gov, BIG/horizon, image/artifact or runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/helpers/porota_rc6_import_probe.py.source": {
+      "reason": "Archive the exact import-only diagnostic helper as non-executable .py.source: qualify157, install the bounded DNS/INET deny hook before importing ba_data912_history and preserve stack frames without locals or operational arguments. Storing this reviewed helper runs no imports or fixtures and supplies no Gov override, zero-attempt reclassification, Git SHA/tree authentication, binary authenticity or final acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/big-9a9b/native-big-result.json": {
+      "reason": "Preserve the canonical Source9a9 12,000-catalogue/60,000-observation BIG diagnostic with import_proof_complete=true only for its observed local window and business_resource_complete=false. The original0.5s family snapshot budget expired at0.5422399569997651s before fsync or complete PREOPEN/OPEN; custody/quota/RSS/reap positives and five PAPER exits after failure do not establish slow-fsync exit isolation or complete BIG90/horizon/browser/Gov. Retain original limits, RED and real_orders_sent=0 without retroqualification.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/big-9a9b/native-big.log": {
+      "reason": "Preserve the exact original canonical9a9 BIG log alongside its native result: TIME_BUDGET_EXHAUSTED remains a business/resource RED before complete PREOPEN/OPEN. A terminal log is a historical diagnostic, not an executed regression module or proof that import-window/resource positives, post-failure PAPER exits or later source changes close the material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/763e-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for 763e-311, Source763e1f70/Python3.11.16: 93 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/763e-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for 763e-311, Source763e1f70/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/763e-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for 763e-311, Source763e1f70/Python3.11.16: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/763e-311/receipt.json": {
+      "reason": "Preserve the exact original 763e-311 receipt tied to Source763e1f70, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/92c3-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for 92c3-311, Source92c3d574/Python3.11.16: 93 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/92c3-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for 92c3-311, Source92c3d574/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/92c3-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for 92c3-311, Source92c3d574/Python3.11.16: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/92c3-311/receipt.json": {
+      "reason": "Preserve the exact original 92c3-311 receipt tied to Source92c3d574, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for 9a9b-311, Source9a9b0f38/Python3.11.16: 93 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for 9a9b-311, Source9a9b0f38/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for 9a9b-311, Source9a9b0f38/Python3.11.16: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-311/receipt.json": {
+      "reason": "Preserve the exact original 9a9b-311 receipt tied to Source9a9b0f38, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-312/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for 9a9b-312, Source9a9b0f38/Python3.12.14: 93 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-312/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for 9a9b-312, Source9a9b0f38/Python3.12.14, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-312/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for 9a9b-312, Source9a9b0f38/Python3.12.14: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/9a9b-312/receipt.json": {
+      "reason": "Preserve the exact original 9a9b-312 receipt tied to Source9a9b0f38, Python3.12.14, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 93PASS/0FAIL/0ERROR/0SKIP over93 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and16 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-initial-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for b6c2-initial-311, Sourceb6c2e2a3/Python3.11.16: 50 distinct cases covering 49 import-provenance cases plus the original canonical-factory control. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-initial-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for b6c2-initial-311, Sourceb6c2e2a3/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-initial-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for b6c2-initial-311, Sourceb6c2e2a3/Python3.11.16: 49PASS/1FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Root attributes the single failure to the initial harness main-guard omission; the original RED remains unchanged. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-initial-311/receipt.json": {
+      "reason": "Preserve the exact original b6c2-initial-311 receipt tied to Sourceb6c2e2a3, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 49PASS/1FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Root attributes the single failure to the initial harness main-guard omission; the original RED remains unchanged. Scope is 49 import-provenance cases plus the original canonical-factory control; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for b6c2-successor-311, Sourceb6c2e2a3/Python3.11.16: 50 distinct cases covering 49 import-provenance cases plus the original canonical-factory control. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for b6c2-successor-311, Sourceb6c2e2a3/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for b6c2-successor-311, Sourceb6c2e2a3/Python3.11.16: 50PASS/0FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-311/receipt.json": {
+      "reason": "Preserve the exact original b6c2-successor-311 receipt tied to Sourceb6c2e2a3, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 50PASS/0FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Scope is 49 import-provenance cases plus the original canonical-factory control; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-312/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for b6c2-successor-312, Sourceb6c2e2a3/Python3.12.14: 50 distinct cases covering 49 import-provenance cases plus the original canonical-factory control. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-312/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for b6c2-successor-312, Sourceb6c2e2a3/Python3.12.14, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-312/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for b6c2-successor-312, Sourceb6c2e2a3/Python3.12.14: 7PASS/43FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Root attributes43 failures to rootowned-interpreter O_NOATIME custody rejection; this is an attribution and the complete original RED is retained. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/b6c2-successor-312/receipt.json": {
+      "reason": "Preserve the exact original b6c2-successor-312 receipt tied to Sourceb6c2e2a3, Python3.12.14, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 7PASS/43FAIL/0ERROR/0SKIP over50 collected/executed unique cases. Root attributes43 failures to rootowned-interpreter O_NOATIME custody rejection; this is an attribution and the complete original RED is retained. Scope is 49 import-provenance cases plus the original canonical-factory control; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-311/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for d56a-311, Sourced56ac830/Python3.11.16: 92 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and15 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-311/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for d56a-311, Sourced56ac830/Python3.11.16, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-311/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for d56a-311, Sourced56ac830/Python3.11.16: 92PASS/0FAIL/0ERROR/0SKIP over92 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-311/receipt.json": {
+      "reason": "Preserve the exact original d56a-311 receipt tied to Sourced56ac830, Python3.11.16, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 92PASS/0FAIL/0ERROR/0SKIP over92 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and15 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-312/collection-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture collection identities for d56a-312, Sourced56ac830/Python3.12.14: 92 distinct cases covering 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and15 family cases. The list joins the same epoch JUnit/receipt without changing nodes, outcomes or thresholds; collection alone is not native fixture execution, final governed acceptance, BIG/horizon performance or qualification of a later source.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-312/environment-before-fixtures.json": {
+      "reason": "Preserve the original pre-fixture platform/interpreter/distribution metadata for d56a-312, Sourced56ac830/Python3.12.14, with157 exact names/versions and source lock/policy hashes. This checks the declared frozen environment before fixtures, not installed-distribution byte authenticity, final Source C execution, a container image or runtime behavior; the epoch outcome remains in its original receipt/JUnit.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-312/focal.xml": {
+      "reason": "Preserve the unedited raw JUnit for d56a-312, Sourced56ac830/Python3.12.14: 92PASS/0FAIL/0ERROR/0SKIP over92 collected/executed unique cases. Original case identities/outcomes and receipt digest stay exact; this historical XML is documentary evidence rather than an executed test module or a JUnit qualifying later Source C. Repeated focal epochs do not add independent scenarios or close material gates.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/focals/d56a-312/receipt.json": {
+      "reason": "Preserve the exact original d56a-312 receipt tied to Sourced56ac830, Python3.12.14, source-file blob/mode/stable-code-custody checks,157 installed names/versions and one actual scoped focal epoch: 92PASS/0FAIL/0ERROR/0SKIP over92 collected/executed unique cases. Scope is 49 import-provenance cases, the original canonical-factory control,12 capture-deadline,15 private source-reader and15 family cases; the receipt is not final Gov, complete BIG/horizon/browser, immutable image/artifact or runtime acceptance, and epoch/interpreter counts are not summed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U14",
+        "U24",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/collection.kernel.json": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/collection.log": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/execution.kernel.json": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/execution.log": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/governed-cli.log": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/governed-error.json": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/launch.json": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/local-fixture-cleanup.json": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/porota-governed-tests.xml": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/governed311-9a9b/post-execution-diagnostic.json": {
+      "reason": "Preserve the original terminal Gov311 RAW or its explicitly post-execution diagnostic:5890cases,23failures,120errors,0skips, namespace and owned-child-exhaustion RED. Archival bytes and current metadata do not constitute successful source-after, final frozen execution, artifact or runtime acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/import-probe-9a9b/urllib3-import-probe.json": {
+      "reason": "Preserve the original terminal import-only diagnostic: one urllib3 _has_ipv6 import-time socket.bind was recorded and denied before its syscall, with bounded stack frames,157 environment metadata, imports_completed=true, fixtures_created=false and acceptance_complete=false. Source9a9 association is supplied by Root/source_root; the RAW carries no independently authenticated SHA/tree. This proves the diagnostic cause only and cannot erase a recorded Gov attempt, override its zero-INET gate, authenticate wheel bytes or grant final acceptance.",
+      "requirement_ids": [
+        "U04",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/epoch-manifest.json": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/failures-from-junit.log": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/fixed.execution.json": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/fixed.stdout.log": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/fixed.xml": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/path-guards-uncommitted311/focal-red.xml": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/regressions-uncommitted311/focal.xml": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-recovery-20261006/raw/regressions-uncommitted311/stdout.log": {
+      "reason": "Preserve terminal local cleanup or distinct uncommitted diagnostic epochs:CI234cases50PASS3FAIL181ERROR precedes FIXED143PASS and Root12PASS. Original bytes, hashes, scopes and error signatures are retained without summing epochs, authenticating final Source C, relaxing gates, granting final eligibility or authorizing merge/deploy/runtime.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U25",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/final-predeploy-source-only-preparation/CUSTODY.json": {
       "reason": "Preserve byte-exact source-only finalGov helper f4e99413, review recipe, plan/README/manifest and original29-member ZIP with complete CRC, modes, bytes andSHA checks. d933 workflow/locks/helpers are immutable review snapshots, not final C or native execution. Runner prepares literal157311/312 before fixtures, real whole-Git raw blob/mode/namespace before/after collection and execution, exact root dot scope, original exclusions, parser/JUnit/node identities and correct candidateSHA/tree/source-unchanged/JUnit bytehash fields. Code atime and Python network/import scopes are stated honestly. Gov/FIP native compatibility, final C, single canonical build/artifact and actual same-image primary/secondary replay remain pending; no image/deploy/provider execution or acceptance is claimed.",
       "requirement_ids": [
@@ -23392,7 +23987,7 @@
       ]
     },
     "scripts/rc6_capture_restore_diagnostic.py": {
-      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
+      "reason": "Restore the caller umask in finally across successful and failed diagnostic entrypoints; diagnostic scratch remains private while later controlled source checkouts retain their native Git file/directory modes. The existing rejected-preflight regression proves the following source file remains0644 without loosening source custody.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -23401,7 +23996,7 @@
       ]
     },
     "scripts/rc6_convergence_provenance.py": {
-      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "reason": "Derive each path guard as the exact sorted union of complete requirement.test_nodes instead of repeating that union per path; explicit versioned discriminator and strict reference/shadow guards preserve historical inline v1 reading, SHA/tree/JUnit binding, source authority, material dispositions and the original 8 MiB consumer cap.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -23481,7 +24076,7 @@
       ]
     },
     "scripts/rc6_issue465_audit_gate.py": {
-      "reason": "Preserve all original Issue465 authority and executed clauses while accepting only a current native convergence proof with the exact c27 frozen source records and same-SHA/tree/JUnit executed guard receipts; arbitrary successors and mutable legacy authority remain rejected.",
+      "reason": "Read the explicit derived-path-guard representation through the strict convergence helper; preserve frozen source and executed-receipt authority and require the exact unique receipts of each referenced requirement. This does not admit inventory-only or material RED proofs.",
       "requirement_ids": [
         "U11",
         "U25"
@@ -24096,7 +24691,7 @@
       ]
     },
     "tests/test_rc6_capture_restore_diagnostic.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Extend the actual rejected-preflight guard to verify restoration of the caller umask and native0644 mode for a following source file. Preserve diagnostic-only scope, source ownership and all custody checks.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -24105,7 +24700,7 @@
       ]
     },
     "tests/test_rc6_committed_projection.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Observe actual public persistence wire verification and decoding calls for both supported storage codecs instead of the legacy v1-only private storage helper; preserve per-role verification counts, transaction receipt invalidation and fresh mutable decoded graph controls.",
       "requirement_ids": [
         "AUD-468-04",
         "AUD-468-19",
@@ -24706,6 +25301,15 @@
         "AUD-468-13",
         "AUD-468-18",
         "U24"
+      ]
+    },
+    "tests/test_rc6_shadow_runtime_wiring.py": {
+      "reason": "Complete and close the synthetic fixture writers and checkpoint before the configured IOL cache read-only capture; preserve the quiescent-source contract and fail-closed concurrent-change guards in native source-read tests. No production read or budget is relaxed.",
+      "requirement_ids": [
+        "U04",
+        "U13",
+        "U24",
+        "U29"
       ]
     },
     "tests/test_rc6_source_capture_deadlines.py": {
@@ -26081,6 +26685,8 @@
         "tests/test_rc6_convergence_provenance.py::test_original_gate_receipt_binding_counterexample_and_current_native_rejection",
         "tests/test_rc6_convergence_provenance.py::test_original_pr_refs_are_checked_by_real_fetch_from_isolated_local_origin",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_preserves_historical_semantics_and_roundtrip",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_rejects_ambiguous_or_unbound_representations",
         "tests/test_rc6_convergence_provenance.py::test_phantom_old_JUnit_names_cannot_replace_absent_native_successor_execution",
         "tests/test_rc6_convergence_provenance.py::test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build",
         "tests/test_rc6_convergence_provenance.py::test_previously_discovered_findings_cannot_be_omitted_from_a_clean_candidate",
@@ -27993,6 +28599,8 @@
         "tests/test_rc6_convergence_provenance.py::test_original_gate_receipt_binding_counterexample_and_current_native_rejection",
         "tests/test_rc6_convergence_provenance.py::test_original_pr_refs_are_checked_by_real_fetch_from_isolated_local_origin",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_preserves_historical_semantics_and_roundtrip",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_rejects_ambiguous_or_unbound_representations",
         "tests/test_rc6_convergence_provenance.py::test_phantom_old_JUnit_names_cannot_replace_absent_native_successor_execution",
         "tests/test_rc6_convergence_provenance.py::test_predeploy_inventory_fetches_before_governed_tests_and_the_only_build",
         "tests/test_rc6_convergence_provenance.py::test_previously_discovered_findings_cannot_be_omitted_from_a_clean_candidate",
@@ -28426,6 +29034,8 @@
         "tests/test_rc6_convergence_provenance.py::test_native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts",
         "tests/test_rc6_convergence_provenance.py::test_new_integration_findings_require_unique_ids_real_guards_and_original_parent",
         "tests/test_rc6_convergence_provenance.py::test_output_alias_never_overwrites_an_unrelated_existing_receipt",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_preserves_historical_semantics_and_roundtrip",
+        "tests/test_rc6_convergence_provenance.py::test_path_guard_derivation_rejects_ambiguous_or_unbound_representations",
         "tests/test_rc6_convergence_sre_binding.py::test_actual_install_checks_all_inputs_and_aliases_before_first_atomic_copy",
         "tests/test_rc6_convergence_sre_binding.py::test_actual_promotion_id_guards_run_before_any_tag_even_with_valid_tar",
         "tests/test_rc6_convergence_sre_binding.py::test_approved_origin_rejects_adversarial_inputs",

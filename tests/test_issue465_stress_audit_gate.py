@@ -268,8 +268,20 @@ def controlled_successor(evidence, monkeypatch):
     return root, junit, governed, result, calls, commit
 
 
-def test_guarded_successor_recomputes_proof_and_preserves_original_fronts(controlled_successor):
+def derive_controlled_successor(successor):
+    """Opt in without changing the historical controlled fixture or its nodes."""
+    successor["path_guard_derivation"] = gate.convergence.PATH_GUARD_DERIVATION
+    for requirement in successor["requirements"]:
+        requirement["test_nodes"] = [receipt["node"] for receipt in requirement["execution_receipts"]]
+    for row in successor["paths"]:
+        row.pop("guard_nodes")
+
+
+@pytest.mark.parametrize("encoding", ["inline", "derived"])
+def test_guarded_successor_recomputes_proof_and_preserves_original_fronts(controlled_successor, encoding):
     root, junit, governed, successor, calls, _ = controlled_successor
+    expected = {row["path"]: row["guard_nodes"] for row in successor["paths"]}
+    if encoding == "derived": derive_controlled_successor(successor)
     result = verify(root, junit, governed)
     assert result["status"] == "GREEN"
     assert result["front_preservation"] == "GUARDED_CONVERGENCE_SUCCESSOR"
@@ -277,6 +289,7 @@ def test_guarded_successor_recomputes_proof_and_preserves_original_fronts(contro
     assert type(calls[0][2]) is gate.convergence.JunitReceipt
     assert calls[0][2].data == junit.read_bytes()
     assert len(result["evolved_fronts"]) == 7  # seven toy streams share one fixture path
+    assert all(row["guard_nodes"] == expected[row["path"]] for row in result["evolved_fronts"])
     assert result["convergence_junit_sha256"] == successor["test_execution"]["junit_sha256"]
     assert result["independent_reaudit"] == "PENDING"
     assert result["safety"]["deploy"] is False
@@ -325,12 +338,42 @@ def test_convergence_receipt_always_validates_counters_before_provenance(control
     "wrong_source_mode", "wrong_final_blob", "wrong_final_mode", "empty_reason", "empty_requirement",
     "invalid_requirement", "empty_guards", "unbound_guard", "unexecuted_requirement", "zero_cases",
     "bool_cases", "no_execution_receipt", "legacy_matrix_rewrite", "legacy_report_rewrite",
-    "dirty_bytes", "dirty_executable_mode", "private_mode", "writable_mode"])
+    "dirty_bytes", "dirty_executable_mode", "private_mode", "writable_mode",
+    "derived_wrong_marker", "derived_missing_marker", "derived_shadow_inline", "derived_empty_shadow_inline",
+    "derived_null_shadow_inline", "derived_unknown_requirement", "derived_duplicate_path_requirement",
+    "derived_duplicate_requirement", "derived_missing_test_nodes", "derived_duplicate_test_nodes",
+    "derived_missing_node_receipt", "derived_unbound_receipt", "derived_duplicate_receipt",
+    "derived_cross_requirement_receipt", "derived_wrong_junit", "derived_wrong_sha"])
 def test_guarded_successor_cannot_bypass_source_authority_or_execution(controlled_successor, attack):
     root, junit, governed, successor, _, commit = controlled_successor
     row = successor["paths"][0]
     requirement = successor["requirements"][0]
-    if attack == "inventory_only": successor["software_status"] = "INVENTORY_NOT_EXECUTED"
+    if attack.startswith("derived_"):
+        node = row["guard_nodes"][0]
+        derive_controlled_successor(successor)
+        if attack == "derived_wrong_marker": successor["path_guard_derivation"] = "sorted-union.v2"
+        elif attack == "derived_missing_marker": successor.pop("path_guard_derivation")
+        elif attack == "derived_shadow_inline": row["guard_nodes"] = [node]
+        elif attack == "derived_empty_shadow_inline": row["guard_nodes"] = []
+        elif attack == "derived_null_shadow_inline": row["guard_nodes"] = None
+        elif attack == "derived_unknown_requirement": row["requirement_ids"] = ["U04"]
+        elif attack == "derived_duplicate_path_requirement": row["requirement_ids"].append("U11")
+        elif attack == "derived_duplicate_requirement": successor["requirements"].append(deepcopy(requirement))
+        elif attack == "derived_missing_test_nodes": requirement.pop("test_nodes")
+        elif attack == "derived_duplicate_test_nodes": requirement["test_nodes"].append(node)
+        elif attack == "derived_missing_node_receipt": requirement["execution_receipts"] = []
+        elif attack == "derived_unbound_receipt":
+            requirement["execution_receipts"].append({"node": "tests/test_evidence.py::test_missing", "executed_cases": 1})
+        elif attack == "derived_duplicate_receipt": requirement["execution_receipts"].append(deepcopy(requirement["execution_receipts"][0]))
+        elif attack == "derived_cross_requirement_receipt":
+            requirement["execution_receipts"] = []
+            successor["requirements"].append({"id": "U04", "software_status": "EXECUTED_NATIVE_GREEN",
+                "test_nodes": [node], "execution_receipts": [{"node": node, "executed_cases": 1}]})
+            row["requirement_ids"].append("U04")
+        elif attack == "derived_wrong_junit": successor["test_execution"]["junit_sha256"] = "a" * 64
+        elif attack == "derived_wrong_sha": successor["candidate_sha"] = "a" * 40
+        else: raise AssertionError(attack)
+    elif attack == "inventory_only": successor["software_status"] = "INVENTORY_NOT_EXECUTED"
     elif attack == "wrong_sha": successor["candidate_sha"] = "a" * 40
     elif attack == "wrong_tree": successor["candidate_tree"] = "a" * 40
     elif attack == "wrong_junit": successor["test_execution"]["junit_sha256"] = "a" * 64

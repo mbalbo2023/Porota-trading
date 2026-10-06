@@ -306,6 +306,14 @@ def test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file(tmp
 
 def test_configured_iol_cache_is_reused_and_protected_as_an_input(tmp_path, monkeypatch):
     store, _ = make_store(tmp_path, count=1)
+    # Finish fixture writers before a capture that requires a quiescent source.
+    # sqlite3's transaction context does not close its connection; a delayed
+    # collector can otherwise checkpoint the main file during the capture.
+    import gc
+    from contextlib import closing
+    gc.collect()
+    with closing(sqlite3.connect(store.path)) as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     cache_dir = tmp_path / "custom-market"
     cache_dir.mkdir()
     cache = cache_dir / "quotes.json"

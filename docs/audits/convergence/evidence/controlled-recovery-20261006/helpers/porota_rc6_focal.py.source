@@ -1,0 +1,88 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import stat
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+def main():
+    source = Path(sys.argv[1]).resolve()
+    output = Path(sys.argv[2]).resolve()
+    output.mkdir(exist_ok=False)
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(source))
+    os.chdir(output)
+    
+    def git(*args):
+        return subprocess.check_output(['git', '--no-replace-objects', '-C', str(source), *args])
+    
+    sha = git('rev-parse', 'HEAD').decode().strip()
+    tree = git('rev-parse', 'HEAD^{tree}').decode().strip()
+    fields = ('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_mtime_ns','st_ctime_ns')
+    
+    def inventory():
+        rows = {}
+        for entry in git('ls-tree','-r','--full-tree','-z',sha).split(b'\0'):
+            if not entry:
+                continue
+            metadata, name = entry.split(b'\t',1)
+            mode, kind, blob = metadata.decode().split()
+            assert kind == 'blob' and mode in ('100644','100755')
+            path = source/name.decode()
+            fd = os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK)
+            try:
+                before = os.fstat(fd)
+                assert stat.S_ISREG(before.st_mode)
+                chunks = []
+                while part := os.read(fd, 1048576):
+                    chunks.append(part)
+                wire = b''.join(chunks)
+                after = os.fstat(fd)
+                assert all(getattr(before,k)==getattr(after,k)==getattr(path.lstat(),k) for k in fields)
+            finally:
+                os.close(fd)
+            actual_blob = hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()
+            assert actual_blob == blob and mode == '100'+format(stat.S_IMODE(before.st_mode),'03o')
+            rows[name.decode()] = {'blob_id':blob,'sha256':hashlib.sha256(wire).hexdigest(),'mode':mode,'stable_stats':{k:getattr(before,k) for k in fields}}
+        assert git('status','--porcelain','--untracked-files=all').strip() == b''
+        return rows
+    
+    def write(name, value):
+        (output/name).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+    
+    before = inventory()
+    write('source-before.json',before)
+    from scripts.rc6_native_import_provenance import environment_qualification
+    environment = environment_qualification(source)
+    write('environment-before-fixtures.json',environment)
+    import pytest
+    from _pytest.junitxml import mangle_test_address
+    collected = []
+    class Observer:
+        def pytest_collection_finish(self, session):
+            for item in session.items:
+                address = mangle_test_address(item.nodeid)
+                collected.append(('.'.join(address[:-1]),address[-1]))
+            write('collection-before-fixtures.json',collected)
+    
+    targets = sys.argv[3:]
+    started = time.monotonic()
+    rc = int(pytest.main([*(str(source/target.split('::')[0])+('::'+'::'.join(target.split('::')[1:]) if '::' in target else '') for target in targets),'-q','-p','no:cacheprovider','--basetemp='+str(output/'fixtures'),'--junitxml='+str(output/'focal.xml')],plugins=[Observer()]))
+    elapsed = time.monotonic()-started
+    after = inventory()
+    write('source-after.json',after)
+    xml_wire = (output/'focal.xml').read_bytes()
+    cases = list(ET.fromstring(xml_wire).iter('testcase'))
+    executed = [(row.get('classname'),row.get('name')) for row in cases]
+    counts = {name:sum(len(row.findall(name)) for row in cases) for name in ('failure','error','skipped')}
+    receipt = {'schema':'rc6.controlled-recovery-focal.v1','source_sha':sha,'source_tree':tree,'python':platform.python_version(),'installed_total':environment['installed_total'],'command':sys.argv,'wall_seconds':elapsed,'collected':len(collected),'executed':len(cases),'identities_match':sorted(collected)==sorted(executed),'duplicate_collected':len(collected)-len(set(collected)),'duplicate_executed':len(executed)-len(set(executed)),'counts':counts,'exit_code':rc,'source_unchanged':before==after,'source_files':len(before),'junit_sha256':hashlib.sha256(xml_wire).hexdigest(),'junit_bytes':len(xml_wire),'scope':'SCOPED_NATIVE_FOCAL_WITH_PHYSICAL_GIT_BLOBS_MODES_AND_STABLE_CODE_STATS; NOT_FULL_GOV_BIG_HORIZON_IMAGE_OR_RUNTIME','real_orders_sent':0}
+    write('receipt.json',receipt)
+    print(json.dumps(receipt,sort_keys=True))
+    raise SystemExit(rc or int(not receipt['source_unchanged'] or not receipt['identities_match'] or any(counts.values())))
+
+if __name__ == "__main__":
+    main()

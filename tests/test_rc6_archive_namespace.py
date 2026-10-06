@@ -49,8 +49,8 @@ def test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_wi
     before = inventory(root)
     result = inspect_archive(root)
     assert result["schema"] == SCHEMA and result["verification_level"] == LEVEL
-    assert result["occupied_bytes"] == sum(path.stat().st_size for path in root.iterdir())
-    assert result["allocated_bytes"] == sum(path.stat().st_blocks * 512 for path in root.iterdir())
+    assert result["occupied_bytes"] == sum(info.st_size for name, info in before.items() if name != Path("."))
+    assert result["allocated_bytes"] == sum(info.st_blocks * 512 for name, info in before.items() if name != Path("."))
     assert result["allocated_directory_bytes"] == root.stat().st_blocks * 512
     assert result["files"] == 4 and result["inodes"] == 5
     assert result["growth_remaining_bytes"] + result["occupied_bytes"] == 512 * 1024**2

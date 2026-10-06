@@ -35,6 +35,8 @@ CLOSURE = "REQUIREMENT_CLOSURE_MATRIX.json"
 SCENARIOS = "ORIGINAL_SCENARIOS_469.json"
 SOURCE_PRS = {447, 448, 449, 450, 451, 453, 454, 455, 456, 457, 459, 461, 463, 466, 470}
 REQUIREMENTS = {f"U{i:02d}" for i in range(1, 30)} | {f"AUD-468-{i:02d}" for i in range(1, 22)} | {f"UX470-I{i:02d}" for i in range(1, 6)}
+PATH_GUARD_DERIVATION = "sorted-union-of-required-test-nodes.v1"
+GUARD_NODE_PATTERN = re.compile(r"(?:tests/)?test_[A-Za-z0-9_]+\.py::test_[A-Za-z0-9_]+")
 FRONT_VARIANTS = ({f"F01-{i:02d}" for i in range(1, 36)} | {f"F02-{i:02d}" for i in range(1, 21)}
                   | {f"F03F05-{i:02d}" for i in range(1, 36)})
 RESTORED_CONTROLS = {"H_LEGACY_ASSET_CLASS_COLLISION", "M_FIXED_INCOME_ANNUAL_LABEL",
@@ -101,6 +103,63 @@ def read_json(data):
     require(len(data) <= 8 * 1024**2, "CONVERGENCE_INPUT_TOO_LARGE")
     return json.loads(data, object_pairs_hook=_pairs,
                       parse_constant=lambda value: (_ for _ in ()).throw(ConvergenceError("INVALID_JSON_CONSTANT")))
+
+
+def path_guard_nodes(proof, row):
+    """Read historical inline guards or derive their exact union without loss.
+
+    The opt-in discriminator applies to every path: inline shadow values are
+    forbidden and the complete requirements remain the sole node authority.
+    Historical inline v1 receipts do not need a requirement.test_nodes field.
+    This representation check does not attest source or test execution.
+    """
+    require(isinstance(proof, dict) and proof.get("schema") == "rc6.final-input-provenance.v1"
+            and isinstance(row, dict), "PATH_GUARD_PROOF_INVALID")
+    derived = "path_guard_derivation" in proof
+    require(not derived or proof["path_guard_derivation"] == PATH_GUARD_DERIVATION,
+            "PATH_GUARD_DERIVATION_INVALID")
+    requirements = proof.get("requirements")
+    require(isinstance(requirements, list) and bool(requirements), "PATH_GUARD_REQUIREMENTS_MISSING")
+    by_id = {}
+    for requirement in requirements:
+        require(isinstance(requirement, dict)
+                and isinstance(requirement.get("id"), str) and requirement["id"] in REQUIREMENTS,
+                "PATH_GUARD_REQUIREMENT_INVALID")
+        identifier = requirement["id"]
+        require(identifier not in by_id, "PATH_GUARD_REQUIREMENT_DUPLICATE:" + identifier)
+        if derived:
+            nodes = requirement.get("test_nodes")
+            require(isinstance(nodes, list) and bool(nodes)
+                    and all(isinstance(node, str) and GUARD_NODE_PATTERN.fullmatch(node) for node in nodes),
+                    "PATH_GUARD_TEST_NODES_INVALID:" + identifier)
+            require(len(set(nodes)) == len(nodes), "PATH_GUARD_TEST_NODES_DUPLICATE:" + identifier)
+        by_id[identifier] = requirement
+
+    def requirement_ids(path_row):
+        require(isinstance(path_row, dict), "PATH_GUARD_PATH_INVALID")
+        identifiers = path_row.get("requirement_ids")
+        require(isinstance(identifiers, list)
+                and all(isinstance(identifier, str) and identifier in by_id for identifier in identifiers),
+                "PATH_GUARD_REFERENCE_INVALID")
+        require(len(set(identifiers)) == len(identifiers), "PATH_GUARD_REFERENCE_DUPLICATE")
+        return identifiers
+
+    if derived:
+        paths = proof.get("paths")
+        require(isinstance(paths, list), "PATH_GUARD_PATHS_INVALID")
+        for path_row in paths:
+            requirement_ids(path_row)
+            require("guard_nodes" not in path_row, "PATH_GUARD_SHADOW_INLINE")
+        require("guard_nodes" not in row, "PATH_GUARD_SHADOW_INLINE")
+        return sorted({node for identifier in requirement_ids(row)
+                       for node in by_id[identifier]["test_nodes"]})
+    requirement_ids(row)
+    nodes = row.get("guard_nodes")
+    require(isinstance(nodes, list)
+            and all(isinstance(node, str) and GUARD_NODE_PATTERN.fullmatch(node) for node in nodes),
+            "PATH_GUARD_INLINE_INVALID")
+    require(len(set(nodes)) == len(nodes), "PATH_GUARD_INLINE_DUPLICATE")
+    return list(nodes)
 
 
 def tree(root, revision):
@@ -327,7 +386,7 @@ def guard_rows(rows, expected, final_tree, executed, declared_guards):
                 "CLOSURE_GUARDS_MISSING:" + row["id"])
         receipts = []
         for node in nodes:
-            require(isinstance(node, str) and re.fullmatch(r"(?:tests/)?test_[A-Za-z0-9_]+\.py::test_[A-Za-z0-9_]+", node),
+            require(isinstance(node, str) and GUARD_NODE_PATTERN.fullmatch(node),
                     "CLOSURE_GUARD_INVALID")
             require(node.split("::")[0] in final_tree, "CLOSURE_GUARD_SOURCE_MISSING")
             require(node in declared_guards, "CLOSURE_GUARD_DECLARATION_MISSING:" + node)
@@ -527,14 +586,14 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
             proof = evolution.get(path, {})
             reason, guard_ids = proof.get("reason"), proof.get("requirement_ids", [])
             require(isinstance(reason, str) and bool(reason.strip()) and isinstance(guard_ids, list)
-                    and bool(guard_ids) and all(item in by_id for item in guard_ids), "UNEXPLAINED_SOURCE_EVOLUTION:" + path)
+                    and bool(guard_ids) and all(isinstance(item, str) and item in by_id for item in guard_ids)
+                    and len(set(guard_ids)) == len(guard_ids), "UNEXPLAINED_SOURCE_EVOLUTION:" + path)
         paths.append({"path": path, "final_blob": final["blob"], "git_mode": final["git_mode"],
                       "source_blobs": blobs, "byte_preserved_from": sorted(key for key, blob in blobs.items() if blob == final["blob"]),
                       "source_git_modes": {key: value["git_mode"] for key, value in originals.items()},
                       "mode_preserved_from": sorted(key for key, value in originals.items() if value["git_mode"] == final["git_mode"]),
                       "expected_input": expected, "evolution_reason": reason, "requirement_ids": guard_ids,
                       "workstreams": sorted({by_id[item].get("workstream", "CONVERGENCE_INTEGRATION") for item in guard_ids}),
-                      "guard_nodes": sorted({node for item in guard_ids for node in by_id[item]["test_nodes"]}),
                       "preservation": "EVOLVED_WITH_NATIVE_GUARDS" if changed_expected or evolved_delta or new_or_changed_source and originals else
                           "ADDITIONAL_WITH_NATIVE_GUARDS" if new_or_changed_source else
                           "EXACT_INPUT_BYTES" if expected else "EXACT_BASELINE_OR_SOURCE_BYTES"})
@@ -542,6 +601,7 @@ def verify(root, candidate_sha, junit=None, *, fetch_source_refs=False):
     require(not git(root, "for-each-ref", "--format=%(refname)", "refs/replace/"), "GIT_REPLACE_REFS_FORBIDDEN")
     require(not git(root, "status", "--porcelain", "--untracked-files=no"), "TRACKED_CHECKOUT_CHANGED")
     return {"schema": "rc6.final-input-provenance.v1", "candidate_sha": candidate_sha,
+            "path_guard_derivation": PATH_GUARD_DERIVATION,
             "candidate_tree": candidate_tree, "product": manifest["product"],
             "sources": source_reports, "source_union_paths": len(expected_sources),
             "prior_frozen_fronts": prior_fronts,

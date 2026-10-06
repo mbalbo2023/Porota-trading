@@ -648,7 +648,14 @@ def _arguments(argv=None):
 
 def main(argv=None):
     args=_arguments(argv)
-    os.umask(0o077)
+    previous_umask = os.umask(0o077)
+    try:
+        return _main(args)
+    finally:
+        os.umask(previous_umask)
+
+
+def _main(args):
     source=_absolute(args.source); data=_absolute(args.data); raw=_absolute(args.raw)
     if (raw.is_relative_to(data) or source.is_relative_to(data) or data.is_relative_to(raw)
             or raw.is_relative_to(source) or source.is_relative_to(raw) or data.is_relative_to(source)):

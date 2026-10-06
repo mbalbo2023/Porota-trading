@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import socket
 import sqlite3
+import stat
 import sys
 
 import pytest
@@ -210,9 +212,18 @@ def test_preflight_rejects_wrong_interpreter_before_private_fixture_creation(tmp
     def rejected(*items):
         raise ValueError("DIAGNOSTIC_FROZEN157_PREFLIGHT_REJECTED")
     monkeypatch.setattr(diagnostic, "_preflight", rejected)
-    with pytest.raises(ValueError, match="DIAGNOSTIC_FROZEN157_PREFLIGHT_REJECTED"):
-        diagnostic.main(["--phase","restore", "--source",str(source), "--data",str(data),
-                         "--source-index",str(index), "--raw",str(raw)])
+    previous_umask = os.umask(0o022)
+    try:
+        with pytest.raises(ValueError, match="DIAGNOSTIC_FROZEN157_PREFLIGHT_REJECTED"):
+            diagnostic.main(["--phase","restore", "--source",str(source), "--data",str(data),
+                             "--source-index",str(index), "--raw",str(raw)])
+        restored_umask = os.umask(0o022)
+        assert restored_umask == 0o022
+        following_file = tmp_path / "following-source.py"
+        following_file.write_text("VALUE = 1\n")
+        assert stat.S_IMODE(following_file.stat().st_mode) == 0o644
+    finally:
+        os.umask(previous_umask)
     assert not raw.exists()
 
 

@@ -1,0 +1,9 @@
+{
+  "exception_class": "ValueError",
+  "execution_id": "038c1c47bc274ad1abf9cce271905653",
+  "raw_logs_preserved": true,
+  "reason": "PHYSICAL_SOURCE_EXTRA_MISSING_IGNORED_OR_EMPTY_DIRECTORY_FORBIDDEN",
+  "source_sha": "9a9b0f3860453ce47bee520d70b1957201679966",
+  "source_tree": "96f7ae24d75abc2a6c27866bb7e3fdfad6e9f18a",
+  "status": "RED"
+}
