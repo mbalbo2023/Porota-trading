@@ -445,9 +445,9 @@ class NativeImportObserver:
         metaclass = values.get("_DeprecatedType")
         field = name.removeprefix("typing.")
         if (type(metaclass) is not type or type(alias) is not metaclass or values.get(field) is not alias
-                or _static_type_field(alias, "__module__") != "typing"
-                or _static_type_field(alias, "__name__") != name
-                or _static_type_field(alias, "__qualname__") != field):
+                or _static_type_text(alias, "__module__") != "typing"
+                or _static_type_text(alias, "__name__") != name
+                or _static_type_text(alias, "__qualname__") != field):
             return None
         method = _static_type_field(metaclass, "__dict__").get("__getattribute__")
         if (self.factories["typing"]["code"] is None or type(method) is not types.FunctionType or method.__globals__ is not values

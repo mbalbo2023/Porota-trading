@@ -479,6 +479,23 @@ def _runtime_control_child(root, private, case):
             alias = sys.modules[name]
             assert alias is vars(typing)[name.removeprefix('typing.')]
             assert type(alias) is vars(typing)['_DeprecatedType']
+    elif case == 'false_typing_metadata':
+        metadata_comparisons = []
+        class ForeignMetadata:
+            def __eq__(self, other):
+                metadata_comparisons.append('__eq__')
+                return True
+            def __ne__(self, other):
+                metadata_comparisons.append('__ne__')
+                return False
+        alias = vars(typing).get('io')
+        control['original_typing_alias_available'] = alias is not None
+        if alias is None:
+            alias = type('typing.io', (), {'__qualname__':'io'})
+            vars(typing)['io'] = alias
+            sys.modules['typing.io'] = alias
+        alias.__module__ = ForeignMetadata()
+        control['metadata_comparisons'] = metadata_comparisons
     elif case == 'false_typing_alias':
         # Use the real metaclass and matching public names; only exact alias
         # identity in the real parent module can reject this lookalike.
@@ -626,10 +643,13 @@ def test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_aft
     assert result['event_counts'] == {key:0 for key in result['event_counts']}
 
 
-def test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified(tmp_path):
-    result = _physical_runtime_control(tmp_path, 'false_typing_alias')
+@pytest.mark.parametrize('case',['false_typing_alias','false_typing_metadata'])
+def test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified(tmp_path, case):
+    result = _physical_runtime_control(tmp_path, case)
     assert any(row['module'] == 'typing.io' for row in result['boundary_after']['unresolved'])
     assert result['transient_closure_verified'] is False
+    if case == 'false_typing_metadata':
+        assert result['control']['metadata_comparisons'] == []
 
 
 @pytest.mark.parametrize('case',['foreign_loader_result','foreign_loader_abort'])
