@@ -616,7 +616,16 @@
         "U28",
         "U29"
       ],
-      "remaining_uncertainty": "Actual348070 globalFIN unavailable; compact global size and test counts unknown. BIG0f original0.5s read remains RED, cycle/slow unclosed. FullGov311/312/HorizonV3/BrowserLARGE/artifact/image/runtime pending. No performance source fix inferred from prior ALIEN diagnostics."
+      "native_caller": "Canonical Predeploy workspace execute_pytest_owned finally publishes complete ownedFIN through atomic cleanup.publish; safe_phase_postread reads with original262144 cap. Gov phase_child publishes original child-finalization control and must require its original GREEN/thread/ECHILD/signal/five-second predicates before product Source import bytes and source_pin.",
+      "rca": "Actual Predeploy0f control artifact11442997716 reports ownedFIN lstat348070 over original262144 reader cap; the FIN/JUnit/log payload was unavailable and test counts remain unknown. Separate real process controls at five seconds show old phase_child entering Source postread after UNKNOWN while the unchanged requirement moved before that read prevents every such attempt. Original UNKNOWN/RED receipts are immutable.",
+      "remaining_uncertainty": "Actual348070 globalFIN unavailable; compact global size and test counts unknown. BIG0f original0.5s read remains RED, cycle/slow unclosed. FullGov311/312/HorizonV3/BrowserLARGE/artifact/image/runtime pending. No performance source fix inferred from prior ALIEN diagnostics.",
+      "test_nodes": [
+        "tests/test_rc6_predeploy_scoped_cleanup.py::test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green",
+        "tests/test_rc6_predeploy_scoped_cleanup.py::test_exclusive_launch_intent_without_fin_blocks_postread_and_cannot_be_replaced",
+        "tests/test_rc6_predeploy_scoped_cleanup.py::test_aliased_fin_is_never_followed_or_uploaded_as_a_control_receipt",
+        "tests/test_rc6_controlled_governed_runner.py::test_owned_tracker_and_child_are_really_finished_before_main_pid_return",
+        "tests/test_rc6_controlled_governed_runner.py::test_kernel_live_orphan_stays_irreversibly_red_even_after_cleanup"
+      ]
     }
   ],
   "counting_rule": "55 original requirement IDs,80 original R IDs,90 original F01/F02/F03-F05 clauses and6 restored controls; shared/parametrized native guard executions are not new independent attacks.",
