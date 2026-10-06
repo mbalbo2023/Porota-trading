@@ -470,11 +470,13 @@ def _runtime_control_child(root, private, case):
                            for key in ('__module__','__name__','__qualname__')}}
         if type(raw) is str and len(raw) <= 4096:
             row['literal_str'] = raw
-        elif type(raw) is types.GetSetDescriptorType:
-            descriptor_name = types.GetSetDescriptorType.__dict__['__name__'].__get__(raw, types.GetSetDescriptorType)
-            descriptor_owner = types.GetSetDescriptorType.__dict__['__objclass__'].__get__(raw, types.GetSetDescriptorType)
+        elif type(raw) is types.GetSetDescriptorType or type(raw) is types.MemberDescriptorType:
+            descriptor_type = type(raw)
+            descriptor_name = descriptor_type.__dict__['__name__'].__get__(raw, descriptor_type)
+            descriptor_owner = descriptor_type.__dict__['__objclass__'].__get__(raw, descriptor_type)
             namespace = proof._static_type_field(cls, '__dict__')
-            row['getset_metadata'] = {
+            metadata_key = 'getset_metadata' if descriptor_type is types.GetSetDescriptorType else 'member_metadata'
+            row[metadata_key] = {
                 'name':descriptor_name if type(descriptor_name) is str and len(descriptor_name) <= 4096 else None,
                 'owner_is_registered_class':descriptor_owner is cls,
                 'physical_class_module_field_is_descriptor':namespace.get('__module__') is raw,
@@ -716,6 +718,26 @@ def _runtime_control_child(root, private, case):
                 control['actual_cython_namespace_graph'] = graph
                 control['actual_cython_loader_return_metadata'] = loader_return_diagnostic
                 control['combined_unit_metadata_record_count'] = len(graph['records']) + len(loader_return_diagnostic['records'])
+                foreign_descriptor_checks = []
+                for name in control['actual_cython_modules']:
+                    namespace = types.ModuleType.__getattribute__(sys.modules[name], '__dict__')
+                    for value in namespace.values():
+                        if not isinstance(value, type):
+                            continue
+                        raw = proof._static_type_field(value, '__module__')
+                        if type(raw) is not types.MemberDescriptorType and type(raw) is not types.GetSetDescriptorType:
+                            continue
+                        assert len(foreign_descriptor_checks) + control['combined_unit_metadata_record_count'] < 2048
+                        foreign = type('Rc6ForeignDescriptorOwner', (), {'__module__':raw})
+                        assert not proof._registered_module_metadata_matches(foreign, raw, name)
+                        foreign_descriptor_checks.append(proof._static_type_text(type(raw), '__name__'))
+                assert set(foreign_descriptor_checks) == {'member_descriptor','getset_descriptor'}
+                control['combined_unit_metadata_record_count'] += len(foreign_descriptor_checks)
+                control['foreign_descriptor_rejection'] = {
+                    'scope':'UNIT_PREDICATE_COUNTEREXAMPLE_NOT_EXTENSION_CREATION',
+                    'actual_foreign_descriptor_types_rejected':foreign_descriptor_checks,
+                    'getter_executed':False,
+                }
             if case == 'false_cython_after':
                 # Match the actual five-field runtime layout; only identity and
                 # captured creation lineage distinguish this replacement.

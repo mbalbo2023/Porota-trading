@@ -58,6 +58,27 @@ def _static_type_text(cls, name):
     return value if type(value) is str and len(value) <= MAX_TEXT else None
 
 
+def _registered_module_metadata_matches(cls, raw, name):
+    if type(name) is not str or len(name) > MAX_TEXT:
+        return False
+    if raw is None:
+        return True
+    if type(raw) is str:
+        return len(raw) <= MAX_TEXT and raw == name
+    descriptor_type = type(raw)
+    if descriptor_type is not types.MemberDescriptorType and descriptor_type is not types.GetSetDescriptorType:
+        return False
+    # Inspect metadata of the exact built-in descriptor; never call raw.__get__.
+    descriptor_name = descriptor_type.__dict__["__name__"].__get__(raw, descriptor_type)
+    descriptor_owner = descriptor_type.__dict__["__objclass__"].__get__(raw, descriptor_type)
+    namespace = _static_type_field(cls, "__dict__")
+    return (type(descriptor_name) is str and descriptor_name == "__module__"
+            and descriptor_owner is cls and type(namespace) is types.MappingProxyType
+            and len(namespace) <= MAX_RECORDS
+            and all(type(key) is str and len(key) <= MAX_TEXT for key in namespace)
+            and namespace.get("__module__") is raw)
+
+
 def _protocol_owners():
     with _PROTOCOL_LOCK:
         return tuple(owner for owner in _PROTOCOL_OWNERS if owner.active and owner.native_pid == os.getpid())
@@ -679,7 +700,7 @@ class NativeImportObserver:
                         # The deepest observed extension load owns creation;
                         # enclosing imports cannot relabel its provider.
                         continue
-                    # The actual Cython type may declare __module__ = None.
+                    # The actual Cython type can own a native __module__ field.
                     # Registry membership and parent type identity are evidence;
                     # a matching spelling or prefix is never sufficient.
                     referenced_types, bindings = [], []
@@ -688,8 +709,7 @@ class NativeImportObserver:
                         class_name = _static_type_text(cls, "__name__")
                         declared_module = _static_type_field(cls, "__module__")
                         if (class_name is None or fields.get(class_name) is not cls
-                                or not (declared_module is None or type(declared_module) is str
-                                        and len(declared_module) <= MAX_TEXT and declared_module == name)):
+                                or not _registered_module_metadata_matches(cls, declared_module, name)):
                             continue
                         if type(attribute) is not str or len(attribute) > MAX_TEXT:
                             self.counts["overflow"] += 1
@@ -697,7 +717,7 @@ class NativeImportObserver:
                         if not self._admit("extension_type_binding", (name, id(module), id(cls), attribute)):
                             return
                         referenced_types.append(class_name)
-                        bindings.append((class_name, cls, attribute))
+                        bindings.append((class_name, cls, attribute, declared_module))
                     runtime_shape = self._runtime_shape_current(name, module, "ORIGINAL_LINE_TRACE_BOOL")
                     empty_runtime = self._runtime_shape_current(name, module, "EMPTY_FIVE_STANDARD_FIELDS_WITH_EXACT_SAME_TOKEN_TYPE_REGISTRY")
                     if not referenced_types:
@@ -772,11 +792,11 @@ class NativeImportObserver:
             return False
         if any(fields.get(key) is not None for key in ("__file__", "__spec__", "__path__")):
             return False
-        for class_name, cls, attribute in bindings:
+        for class_name, cls, attribute, captured_module_metadata in bindings:
             declared_module = _static_type_field(cls, "__module__")
             if (fields.get(class_name) is not cls or type(parent.get(attribute)) is not cls
-                    or not (declared_module is None or type(declared_module) is str
-                            and len(declared_module) <= MAX_TEXT and declared_module == name)):
+                    or declared_module is not captured_module_metadata
+                    or not _registered_module_metadata_matches(cls, declared_module, name)):
                 return False
         return bool(bindings)
 

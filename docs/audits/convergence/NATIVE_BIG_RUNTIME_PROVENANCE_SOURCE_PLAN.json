@@ -1,6 +1,6 @@
 {
   "schema": "rc6.native-big-runtime-provenance-source-plan.v1",
-  "status": "SOURCE_UNIT_RAW_METADATA_DIAGNOSTIC_WITH_FOUR_PRESERVED_PRIOR_FOCAL_REDS_HELPER_UNCHANGED_CURRENT_SOURCE_NOT_EXECUTED",
+  "status": "SOURCE_NATIVE_MODULE_DESCRIPTOR_FIX_FORWARD_WITH_FIVE_PRESERVED_PRIOR_FOCAL_REDS_CURRENT_SOURCE_NOT_EXECUTED",
   "base": {
     "sha": "793cc7039ecfb5d9c34999cf20691245776543e6",
     "tree": "c73d2caea93a88a57564bedb7bfe72e7f5806fc8"
@@ -285,14 +285,54 @@
     "source_comparison": "The graph uses _static_type_text, which converts every non-str raw field to null. The new helper uses _static_type_field and requires raw None or a matching bounded str. The earlier interpretation of graph null as literal raw None was incorrect. Raw field type at the actual loader return was not recorded, so a descriptor is a hypothesis until captured.",
     "limits": "Separate complete 50-case RED, never summed with the three prior 43-case epochs. No BIG, horizon, artifact, Gov, image, deployment or runtime acceptance."
   },
-  "current_raw_class_metadata_unit_diagnostic": {
+  "preserved_raw_class_metadata_unit_diagnostic": {
+    "source_sha": "2304d1acf217cc268a575cd496a7b9db4baf02e6",
+    "implementation_phase": "PREPARED_SOURCE_THEN_EXECUTED_SCOPED_FOCAL_RED",
     "scope": "Only the existing Cython positive physical child adds metadata capture; helper 88811374 remains byte-identical and every existing 50-case assertion is unchanged.",
     "unchanged_helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
     "return_observation": "A unit-only subclass records before delegating _loader_end to the exact unchanged original method in finally. Rows identify the selected loader, actual registry slot/static class name, new-in-token state and parent type-identity count. It does not qualify modules or claim a C factory ran from post-import data.",
     "raw_field_observation": "Distinguish literal None, bounded literal str and the exact raw object type. For exact GetSetDescriptorType only, read its built-in name/owner metadata and physical class namespace membership identities. The raw module descriptor getter is never invoked; unknown raw fields are not normalized to None or allowed.",
     "bounds": "Loader-return rows and post-import graph rows together retain at most 2048 records with 4096-character metadata bounds. Errors and truncation remain explicit. Existing physical child stdout/stderr storage remains 4MiB per stream, not a capture_output heap bound. No observer, product/resource threshold, GC or deadline change.",
     "expected_unique_cases": 50,
+    "scoped_native_executions": 1,
+    "source_review": "ROOT_AND_FINANCE_CLOSED_BEFORE_SCOPED_NATIVE_RED"
+  },
+  "fifth_prior_focal_native_result": {
+    "source_sha": "2304d1acf217cc268a575cd496a7b9db4baf02e6",
+    "source_tree": "cd7e39d3052c0a57b31fb6356eb37291b84aa892",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "ab2614ba4dd8e7650c14514b204e4c5985fe14054959c8b141d6412f368577b1",
+    "receipt_bytes": 269628,
+    "junit_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/native-import-provenance-focal.junit.xml",
+    "junit_sha256": "b4fa9a2a2e30c1a531e081b77ded6a4b934d6538ebcb5a4a1008d1610807fedb",
+    "junit_bytes": 29326,
+    "actual_cases": 50,
+    "passed": 42,
+    "failed": 8,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "helper_sha256": "88811374c036c6a95f9292a0e7e8f4fa45330e3bd71b6ed5e048c227015e00c7",
+    "source_unchanged": true,
+    "actual_scope": "Original Cython positive and seven adversaries remain failed. The seven fail their positive capture precondition and are not accepted negative guards.",
+    "positive_child_stdout_path": "/workspace/rc6-budget-runtime-provenance-2304-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0/runtime-control-stdout.bin",
+    "positive_child_stdout_sha256": "02dde31c2213d0b9cfd18e35b4dd9ed1dece1deeb73ed92732b34c34339f11e7",
+    "positive_child_stdout_bytes": 106539,
+    "selected_receipt_and_child_read_all11_unchanged": true,
+    "actual_unit_metadata_records": 39,
+    "actual_unit_metadata_errors": 0,
+    "actual_unit_metadata_overflow": 0,
+    "at_original_loader_return": "cython_function_or_method has literal_none=false and raw built-in member_descriptor metadata. The cd token reports a new registry with nine exact parent-type identities; md reports the registry preexisting with fourteen identities. The common metatype owns a GetSetDescriptorType named __module__, with exact owner and physical namespace identity observed without calling its getter.",
+    "actual_rca": "The same-token registry predicate rejects the actual member_descriptor because it accepts only raw None or a matching str. This prevents capture of the companion and causes the eight positive-precondition failures. Raw member name/owner/physical membership were not captured by this epoch; they remain qualifying conditions to verify on the next actual execution, not retrospective assertions.",
+    "limits": "Separate complete 50-case RED, not added to any earlier scope. No BIG performance, horizon, Gov, image, artifact, deployment or runtime acceptance. Existing RAW stays byte-exact."
+  },
+  "current_native_module_descriptor_fix_forward": {
+    "source_only": true,
     "new_native_executions": 0,
+    "minimal_predicate": "Keep raw None and matching bounded exact str. Also accept only exact built-in MemberDescriptorType or GetSetDescriptorType whose built-in name is __module__, built-in __objclass__ is the exact registered class, and its bounded typed physical class namespace holds that exact descriptor as its own __module__ field. Never invoke the raw descriptor getter; unknown objects, foreign owners and name-only lookalikes remain unqualified.",
+    "creation_contract_unchanged": "A new exact registry object must still be observed inside the original verified uncontended extension-loader token, with registry[class_name] is class and type(original parent attribute) is class. Empty runtime still needs exactly one same-token companion. No prefix or unrelated class grants authority.",
+    "current_snapshot": "The admitted private type binding now includes a strong reference to its original raw module metadata. Snapshot requires current raw metadata is that captured object and reruns the exact typed predicate as well as registry/parent/runtime-shape identities. No object or descriptor travels through JSON or the worker queue; all refs clear on deactivate.",
+    "bounds": "The raw reference is part of the existing shared-admitted type-binding record, not a new unbounded store. Shared 2048 records and 4096 text remain unchanged; descriptor namespace inspection is bounded and typed before lookup, with no hashing, stack traversal, tracing, sampling or per-function profiling. These limits are not a heap or binary-authentication claim.",
+    "unit_guard_extension": "The existing Cython positive physical control captures MemberDescriptorType metadata with the same built-in mechanism. Within that same control it copies the actual Member/GetSet raw fields to a foreign class and requires the predicate to reject both owner mismatches without invoking getters. These are unit predicate counterexamples, not extension-creation or new requirement/scenario claims; their retained rows share the existing 2048 metadata bound.",
+    "original_assertions_and_scope": "All 32 top-level test definitions and their assertions remain AST-identical to 2304. The expected focal remains the exact original 43 plus seven adversarial variants and unchanged canonical20 case: 50 unique collection/call/JUnit cases, never summed across epochs.",
     "source_review": "PENDING"
   },
   "future_focal": {
