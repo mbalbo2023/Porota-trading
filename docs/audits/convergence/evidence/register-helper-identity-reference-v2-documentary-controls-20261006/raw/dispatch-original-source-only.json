@@ -1,0 +1,15 @@
+{
+  "actual_members_if_qualified": 29,
+  "external_body_verified": false,
+  "final_register": false,
+  "native_product": 0,
+  "pins": {
+    "/tmp/rc6_register_helpers_identity_reference_actual_capsule_candidate.py": "5582ae3b98f0b740be13938d7e7b493de8576c48e542bfecb7bd22c75c11dc75",
+    "/tmp/rc6_register_helpers_identity_reference_controls_candidate_v2.py": "1c690072a1a3bd2bf4363b72a1e45111bbf5dd89050200f43debf2af9835100a",
+    "/tmp/rc6_remediation_register_generate_v4_identity_reference_candidate_v2.py": "f5fc8a253f318eb86bbfd21b3e1dbd12e326b12b68d8ddda37ec4ac1e1903d8c",
+    "/tmp/rc6_root_supplemental_named_findings_generate_v3_identity_reference_candidate_v2.py": "cc4207797345e195792cde09bafb42f318a7dfa4f057bee2c677f4cb3efcea65"
+  },
+  "planned_controls": 33,
+  "publication_source_sha": "6e4a1dad7d4bcad3878b55c3264545274c40b92b",
+  "publication_tree": "9cb4960dd9b4b7085a5e34d40ff7baec08c9956e"
+}
