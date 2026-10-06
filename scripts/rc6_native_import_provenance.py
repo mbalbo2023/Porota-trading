@@ -1,14 +1,20 @@
 """Bounded native import provenance, separate from business/resource success.
 
-Only preparation and two module boundaries inspect files. The audit callback
-counts import/exec events and retains bounded strings; it never hashes files,
-samples stacks, profiles calls, requests GC or changes a deadline.
+Preparation qualifies source and exact language-runtime factories. Observations
+are bounded import/exec events and original import-loader outcomes, never call
+profiling. Rare opaque exec events inspect one caller frame and retain exact
+code-object evidence; arbitrary opaque code remains unverified.
 """
 from __future__ import annotations
 
+import _imp
+import __future__
+import ast
 import hashlib
+from importlib import _bootstrap, machinery
 import importlib.metadata
 import json
+import marshal
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -25,8 +31,84 @@ HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 MAX_RECORDS = 2048
 MAX_TEXT = 4096
+_INSTALLATION_EVENT = "rc6.native_import_provenance.installation"
 STATS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
          "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+
+# Only import machinery is observed. Original results/exceptions are delegated
+# unchanged; no tracing/profiling hook or per-function interception is installed.
+_PROTOCOL_LOCK = threading.RLock()
+_PROTOCOL_OWNERS = []
+_ORIGINAL_FIND = _bootstrap._find_and_load
+_ORIGINAL_LOAD = _bootstrap._load_unlocked
+_EXTENSION_LOADER = machinery.ExtensionFileLoader
+_FUTURE_FLAGS = sum(getattr(__future__, name).compiler_flag for name in __future__.all_feature_names)
+
+
+def _protocol_owners():
+    with _PROTOCOL_LOCK:
+        return tuple(owner for owner in _PROTOCOL_OWNERS if owner.active and owner.native_pid == os.getpid())
+
+
+def _observed_find(name, import_):
+    owners = _protocol_owners()
+    tokens = [(owner, owner._attempt_start(name)) for owner in owners]
+    result, failure = None, None
+    try:
+        result = _ORIGINAL_FIND(name, import_)
+        return result
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        for owner, token in tokens:
+            owner._attempt_end(token, result, failure)
+
+
+def _observed_load(spec):
+    owners = _protocol_owners()
+    tokens = [(owner, owner._loader_start(spec)) for owner in owners]
+    result, failure = None, None
+    try:
+        result = _ORIGINAL_LOAD(spec)
+        return result
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        for owner, token in tokens:
+            owner._loader_end(token, result, failure)
+
+
+def _attach_protocol(owner):
+    with _PROTOCOL_LOCK:
+        if (not any(_bootstrap._find_and_load is item for item in (_ORIGINAL_FIND, _observed_find))
+                or not any(_bootstrap._load_unlocked is item for item in (_ORIGINAL_LOAD, _observed_load))):
+            raise ValueError("IMPORT_PROVENANCE_IMPORT_MACHINERY_OWNER_CHANGED")
+        _PROTOCOL_OWNERS.append(owner)
+        _bootstrap._find_and_load, _bootstrap._load_unlocked = _observed_find, _observed_load
+
+
+def _detach_protocol(owner):
+    with _PROTOCOL_LOCK:
+        _PROTOCOL_OWNERS[:] = [item for item in _PROTOCOL_OWNERS if item is not owner]
+        if not _PROTOCOL_OWNERS:
+            if _bootstrap._find_and_load is _observed_find:
+                _bootstrap._find_and_load = _ORIGINAL_FIND
+            elif _bootstrap._find_and_load is not _ORIGINAL_FIND:
+                owner.counts["errors"] += 1
+            if _bootstrap._load_unlocked is _observed_load:
+                _bootstrap._load_unlocked = _ORIGINAL_LOAD
+            elif _bootstrap._load_unlocked is not _ORIGINAL_LOAD:
+                owner.counts["errors"] += 1
+
+
+def _code_children(code):
+    pending = [code]
+    while pending:
+        current = pending.pop()
+        yield current
+        pending.extend(value for value in current.co_consts if type(value) is types.CodeType)
 
 
 def _unique(pairs):
@@ -240,11 +322,380 @@ class NativeImportObserver:
             raise ValueError("IMPORT_PROVENANCE_ACTUAL_VENV_ROOTS_REQUIRED")
         self.counts = {"import":0,"exec":0,"import_filename_none":0,"opaque_exec":0,"overflow":0,"errors":0}
         self.records, self.seen, self.pending_names = [], set(), set()
+        self.native_pid = os.getpid()
+        self.installing, self.installation_verified, self.installation_receptions = False, False, 0
+        self._installation_nonce = None
+        self.evidence_keys, self.opaque_references = set(), {}
+        self.attempts, self.loads, self.attempt_stacks, self.load_stacks = [], [], {}, {}
+        self.attempt_rows, self.load_rows = {}, {}
+        self.unfinished_protocol_calls = 0
+        self.synthetic_modules = {}
+        self.factories, self.runtime_sources, self.frozen_codes = {}, {}, {}
+        self.extension_methods = {}
+        self._prepare_runtime_sources()
         self.finalization_failed = False
         self.before = self.snapshot()
         self.installed_at = time.monotonic()
-        sys.addaudithook(self.audit)
-        self.active = True
+        try:
+            _attach_protocol(self)
+            self.installing, self._installation_nonce = True, object()
+            sys.addaudithook(self.audit)
+            # An existing hook may veto addaudithook with RuntimeError without
+            # raising here. Only this owned nonce during installation proves
+            # reception; the sentinel is never an import/exec record.
+            sys.audit(_INSTALLATION_EVENT, self._installation_nonce)
+            if self.installation_receptions != 1:
+                raise ValueError("IMPORT_PROVENANCE_AUDIT_HOOK_INSTALLATION_UNVERIFIED")
+            self.installation_verified = True
+            self.active = True
+        except BaseException:
+            self.deactivate()
+            raise
+        finally:
+            self.installing, self._installation_nonce = False, None
+
+    def _prepare_runtime_sources(self):
+        # Reads/compilation occur before installing this observer. No module is
+        # executed, and these are compiler references, not binary authentication.
+        for module, relative, qualified, payload, mode in (
+                ("collections", "collections/__init__.py", "namedtuple", "code", "eval"),
+                ("dataclasses", "dataclasses.py", "_create_fn", "txt", "exec"),
+                ("typing", "typing.py", "_DeprecatedType.__getattribute__", None, None)):
+            path = self.stdlib / relative
+            wire, identity = _capture(path)
+            reference = compile(wire, str(path), "exec", dont_inherit=True, optimize=sys.flags.optimize)
+            code = next((item for item in _code_children(reference) if item.co_qualname == qualified), None)
+            if code is None and module != "typing":
+                raise ValueError("IMPORT_PROVENANCE_RUNTIME_FACTORY_SOURCE_MISSING")
+            self.runtime_sources[module] = {"path":str(path), **identity}
+            lines = set()
+            if payload:
+                node = next(item for item in ast.walk(ast.parse(wire))
+                            if isinstance(item, ast.FunctionDef) and item.name == qualified)
+                lines = {item.lineno for item in ast.walk(node)
+                         if isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id == mode}
+            self.factories[module] = {"code":code,"qualified":qualified,"payload":payload,"mode":mode,"lines":lines}
+        for name in _imp._frozen_module_names():
+            if len(self.frozen_codes) >= MAX_RECORDS:
+                raise ValueError("IMPORT_PROVENANCE_FROZEN_REFERENCE_BOUND")
+            if _imp.is_frozen(name):
+                code = _imp.get_frozen_object(name)
+                if type(code) is types.CodeType:
+                    self.frozen_codes.setdefault(code.co_filename, []).append((name, code))
+        bootstrap = _imp.get_frozen_object("_frozen_importlib")
+        original = {item.co_name:item for item in _code_children(bootstrap)
+                    if item.co_name in ("_find_and_load", "_load_unlocked", "_find_and_load_unlocked")}
+        self.import_failure_reference = original["_find_and_load_unlocked"]
+        if any(type(function) is not types.FunctionType or function.__globals__ is not vars(_bootstrap)
+               or function.__code__ != original.get(name)
+               or function.__code__.co_filename != original[name].co_filename
+               for name, function in (("_find_and_load", _ORIGINAL_FIND), ("_load_unlocked", _ORIGINAL_LOAD))):
+            raise ValueError("IMPORT_PROVENANCE_ORIGINAL_IMPORT_MACHINERY_UNVERIFIED")
+        external = _imp.get_frozen_object("_frozen_importlib_external")
+        methods = {item.co_qualname:item for item in _code_children(external)
+                   if item.co_qualname in ("ExtensionFileLoader.create_module", "ExtensionFileLoader.exec_module")}
+        for name in ("create_module", "exec_module"):
+            function = vars(_EXTENSION_LOADER).get(name)
+            if (type(function) is not types.FunctionType
+                    or function.__code__ != methods.get("ExtensionFileLoader."+name)):
+                raise ValueError("IMPORT_PROVENANCE_ORIGINAL_EXTENSION_LOADER_UNVERIFIED")
+            self.extension_methods[name] = function
+
+    def _admit(self, kind, key):
+        identity = (kind, key)
+        if identity in self.evidence_keys:
+            return True
+        if len(self.evidence_keys) >= self.record_limit:
+            self.counts["overflow"] += 1
+            return False
+        self.evidence_keys.add(identity)
+        return True
+
+    def _qualified_runtime_module(self, name):
+        module = sys.modules.get(name)
+        if type(module) is not types.ModuleType:
+            return None
+        values = types.ModuleType.__getattribute__(module, "__dict__")
+        expected = self.runtime_sources.get(name)
+        spec = values.get("__spec__")
+        if (expected is None or values.get("__file__") != expected["path"]
+                or type(spec) is not machinery.ModuleSpec or spec.origin != expected["path"]):
+            return None
+        return values
+
+    def _typing_alias(self, name, alias):
+        if name not in ("typing.io", "typing.re"):
+            return None
+        values = self._qualified_runtime_module("typing")
+        if values is None:
+            return None
+        metaclass = values.get("_DeprecatedType")
+        field = name.removeprefix("typing.")
+        if (type(metaclass) is not type or type(alias) is not metaclass or values.get(field) is not alias
+                or type.__getattribute__(alias, "__module__") != "typing"
+                or type.__getattribute__(alias, "__name__") != name
+                or type.__getattribute__(alias, "__qualname__") != field):
+            return None
+        method = type.__getattribute__(metaclass, "__dict__").get("__getattribute__")
+        if (self.factories["typing"]["code"] is None or type(method) is not types.FunctionType or method.__globals__ is not values
+                or method.__code__ != self.factories["typing"]["code"]
+                or method.__code__.co_filename != self.runtime_sources["typing"]["path"]):
+            return None
+        return {"origin":"NONMODULE_PUBLIC_TYPING_ALIAS","path":self.runtime_sources["typing"]["path"],
+                "parent_module":"typing","alias_identity":hex(id(alias)),"actual_metaclass_identity":hex(id(metaclass)),
+                "parent_source_sha256":self.runtime_sources["typing"]["sha256"],
+                "scope":"EXACT_RETAINED_PARENT_ALIAS_TYPE_RELATIONSHIP_NOT_CREATION_TIME_OR_BINARY_AUTHENTICATION"}
+
+    def _opaque_evidence(self, code, frame):
+        key = (id(code), id(frame.f_code), id(frame.f_globals), frame.f_lineno)
+        known = self.opaque_references.get(key)
+        if known is not None:
+            return key, known[2]
+        if not self._admit("opaque_code", key):
+            return key, {"status":"UNVERIFIED","reason":"CODE_OBJECT_RECORD_BOUND"}
+        row = {"status":"UNVERIFIED","reason":"NO_EXACT_RUNTIME_FACTORY_OR_FROZEN_CODE",
+               "actual_code_identity":hex(id(code))}
+        if type(code) is types.CodeType:
+            for name, reference in self.frozen_codes.get(code.co_filename, ()):
+                if code == reference and code.co_filename == reference.co_filename:
+                    row = {"status":"QUALIFIED_FROZEN_CODE","interpreter_frozen_name":name,
+                           "actual_code_identity":hex(id(code)),"reference_code_identity":hex(id(reference)),
+                           "code_sha256":hashlib.sha256(marshal.dumps(code)).hexdigest(),
+                           "scope":"EXACT_INTERPRETER_FROZEN_CODE_REFERENCE_NOT_EXECUTABLE_BINARY_AUTHENTICATION"}
+                    break
+            if row["status"] == "UNVERIFIED":
+                for module, definition in self.factories.items():
+                    if not definition["payload"]:
+                        continue
+                    values = self._qualified_runtime_module(module)
+                    function = values.get(definition["qualified"]) if values else None
+                    if (type(function) is not types.FunctionType or function.__code__ is not frame.f_code
+                            or frame.f_globals is not values or frame.f_code != definition["code"]
+                            or frame.f_code.co_filename != self.runtime_sources[module]["path"]
+                            or frame.f_lineno not in definition["lines"]):
+                        continue
+                    text = frame.f_locals.get(definition["payload"])
+                    if type(text) is not str or len(text) > MAX_TEXT or len(text.encode()) > MAX_TEXT:
+                        row["reason"] = "RUNTIME_FACTORY_TEXT_NOT_BOUNDED"
+                        self.counts["overflow"] += 1
+                        break
+                    reference = compile(text, code.co_filename, definition["mode"],
+                                        flags=frame.f_code.co_flags & _FUTURE_FLAGS, dont_inherit=True,
+                                        optimize=sys.flags.optimize)
+                    if code != reference or code.co_filename != "<string>":
+                        row["reason"] = "RUNTIME_FACTORY_ACTUAL_CODE_MISMATCH"
+                        break
+                    row = {"status":"QUALIFIED_RUNTIME_FACTORY_CODE","factory":module+"."+definition["qualified"],
+                           "factory_callsite_line":frame.f_lineno,"actual_factory_code_identity":hex(id(frame.f_code)),
+                           "actual_function_identity":hex(id(function)),"actual_code_identity":hex(id(code)),
+                           "factory_source":self.runtime_sources[module],
+                           "generated_source_sha256":hashlib.sha256(text.encode()).hexdigest(),
+                           "code_sha256":hashlib.sha256(marshal.dumps(code)).hexdigest(),
+                           "scope":"EXACT_FACTORY_CODE_GLOBALS_CALLSITE_AND_COMPILED_GENERATION_INPUT; LOCAL_RUNTIME_EVIDENCE"}
+                    break
+        # Strong references prevent id reuse during the active window. They are
+        # released on deactivation; only bounded JSON evidence survives.
+        self.opaque_references[key] = (code, frame.f_code, row, frame.f_globals)
+        return key, row
+
+    def _attempt_start(self, name):
+        with self.lock:
+            try:
+                if not self.active or self.native_pid != os.getpid():
+                    return None
+                if type(name) is not str or len(name) > MAX_TEXT:
+                    self.counts["overflow"] += 1
+                    return None
+                thread = threading.get_ident()
+                if sum(map(len, self.attempt_stacks.values())) >= self.record_limit:
+                    self.counts["overflow"] += 1
+                    return None
+                row = {"module":name,"thread_identity":thread,"loader_records":[],"outcome":"IN_PROGRESS"}
+                self.attempt_stacks.setdefault(thread, []).append(row)
+                return row
+            except BaseException:
+                self.counts["errors"] += 1
+                return None
+
+    def _attempt_end(self, row, result, failure):
+        if row is None:
+            return
+        with self.lock:
+            try:
+                if not self.active or self.native_pid != os.getpid():
+                    return
+                stack = self.attempt_stacks.get(row["thread_identity"], [])
+                if not stack or stack[-1] is not row:
+                    self.counts["errors"] += 1
+                else:
+                    stack.pop()
+                    if not stack:
+                        self.attempt_stacks.pop(row["thread_identity"], None)
+                if failure is None:
+                    row["outcome"] = "RETURNED_MODULE" if type(result) is types.ModuleType else "RETURNED_NONMODULE"
+                else:
+                    row["outcome"] = "MODULE_NOT_FOUND" if type(failure) is ModuleNotFoundError else "IMPORT_EXCEPTION"
+                    row["error_class"] = type(failure).__name__
+                    error_name = failure.name if isinstance(failure, ImportError) else None
+                    row["error_name"] = error_name if type(error_name) is str and len(error_name) <= MAX_TEXT else None
+                    row["core_missing_raiser_verified"] = False
+                    if type(failure) is ModuleNotFoundError:
+                        # Bound the exceptional denial path only. A user finder
+                        # constructing the same exception class is not a core
+                        # optional-lookup outcome and receives no exemption.
+                        trace = failure.__traceback__
+                        for _ in range(8):
+                            if trace is None or trace.tb_next is None:
+                                break
+                            trace = trace.tb_next
+                        if trace is not None and trace.tb_next is None:
+                            row["core_missing_raiser_verified"] = (
+                                trace.tb_frame.f_code == self.import_failure_reference
+                                and trace.tb_frame.f_code.co_filename == self.import_failure_reference.co_filename
+                                and trace.tb_frame.f_globals is vars(_bootstrap))
+                key = (row["module"], row["outcome"], row.get("error_class"), row.get("error_name"),
+                       row.get("core_missing_raiser_verified"),
+                       tuple(row["loader_records"]))
+                if self._admit("import_attempt", key):
+                    if key not in self.attempt_rows:
+                        row["occurrences"] = 0
+                        self.attempt_rows[key] = row
+                        self.attempts.append(row)
+                    self.attempt_rows[key]["occurrences"] += 1
+            except BaseException:
+                self.counts["errors"] += 1
+
+    def _loader_start(self, spec):
+        with self.lock:
+            try:
+                if not self.active or self.native_pid != os.getpid():
+                    return None
+                if type(spec) is not machinery.ModuleSpec or type(spec.name) is not str or len(spec.name) > MAX_TEXT:
+                    self.counts["errors"] += 1
+                    return None
+                origin = spec.origin if type(spec.origin) is str and len(spec.origin) <= MAX_TEXT else None
+                if type(spec.origin) is str and len(spec.origin) > MAX_TEXT:
+                    self.counts["overflow"] += 1
+                thread = threading.get_ident()
+                if sum(map(len, self.load_stacks.values())) >= self.record_limit:
+                    self.counts["overflow"] += 1
+                    return None
+                row = {"module":spec.name,"origin":origin,"thread_identity":thread,
+                       "loader_type":type.__getattribute__(type(spec.loader), "__module__")+"."+type.__getattribute__(type(spec.loader), "__qualname__"),
+                       "outcome":"IN_PROGRESS"}
+                if len(row["loader_type"]) > MAX_TEXT:
+                    self.counts["overflow"] += 1
+                    return None
+                extension = (type(spec.loader) is _EXTENSION_LOADER
+                             and spec.name in ("charset_normalizer.cd", "charset_normalizer.md"))
+                if extension:
+                    for method, reference in self.extension_methods.items():
+                        bound = getattr(spec.loader, method)
+                        if (type(bound) is not types.MethodType or bound.__self__ is not spec.loader
+                                or bound.__func__ is not reference):
+                            extension = False
+                            row["synthetic_module_lineage"] = "UNVERIFIED_EXTENSION_METHOD_IDENTITY"
+                            break
+                before = dict(sys.modules) if extension and len(sys.modules) <= self.record_limit else None
+                if extension and before is None:
+                    self.counts["overflow"] += 1
+                token = {"row":row,"spec":spec,"loader":spec.loader,"before":before,
+                         "concurrent":bool(self.load_stacks and thread not in self.load_stacks)}
+                for other_thread, others in self.load_stacks.items():
+                    if other_thread != thread:
+                        for other in others:
+                            other["concurrent"] = True
+                self.load_stacks.setdefault(thread, []).append(token)
+                return token
+            except BaseException:
+                self.counts["errors"] += 1
+                return None
+
+    def _loader_end(self, token, result, failure):
+        if token is None:
+            return
+        with self.lock:
+            try:
+                if not self.active or self.native_pid != os.getpid():
+                    return
+                row, spec = token["row"], token["spec"]
+                stack = self.load_stacks.get(row["thread_identity"], [])
+                if not stack or stack[-1] is not token:
+                    self.counts["errors"] += 1
+                else:
+                    stack.pop()
+                    if not stack:
+                        self.load_stacks.pop(row["thread_identity"], None)
+                row["outcome"] = "LOADER_RETURNED" if failure is None else "LOADER_EXCEPTION"
+                if failure is not None:
+                    row["error_class"] = type(failure).__name__
+                before = token["before"]
+                if before is None or failure is not None or type(result) is not types.ModuleType:
+                    return
+                values = types.ModuleType.__getattribute__(result, "__dict__")
+                qualified = (not token["concurrent"] and values.get("__spec__") is spec
+                             and values.get("__loader__") is token["loader"]
+                             and values.get("__file__") == row["origin"]
+                             and self._origin(row["origin"])["origin"] == "ACTUAL_VENV")
+                if not qualified:
+                    row["synthetic_module_lineage"] = "UNVERIFIED_EXTENSION_PARENT_OR_CONCURRENT_CREATION"
+                    return
+                created = []
+                for name, module in tuple(sys.modules.items()):
+                    if name in before or type(name) is not str or len(name) > MAX_TEXT or type(module) is not types.ModuleType:
+                        continue
+                    fields = types.ModuleType.__getattribute__(module, "__dict__")
+                    if fields.get("__file__") or fields.get("__spec__") or fields.get("__path__"):
+                        continue
+                    if name in self.synthetic_modules:
+                        # The deepest observed extension load owns creation;
+                        # enclosing imports cannot relabel its provider.
+                        continue
+                    # Versioned Cython types require actual parent attributes of
+                    # precisely that registered type, not a name-prefix rule.
+                    referenced_types = []
+                    for value in values.values():
+                        cls = type(value)
+                        if (type.__getattribute__(cls, "__module__") == name
+                                and fields.get(type.__getattribute__(cls, "__name__")) is cls):
+                            referenced_types.append(type.__getattribute__(cls, "__name__"))
+                    runtime_shape = (name == "cython_runtime" and fields.get("__name__") == name
+                                     and type(fields.get("line_trace")) is bool
+                                     and set(fields) <= {"__name__","__doc__","__package__","__loader__","__spec__","line_trace"})
+                    if not referenced_types and not runtime_shape:
+                        continue
+                    if not self._admit("extension_created_registry_object", (name, id(module))):
+                        continue
+                    proof = {"origin":"EXTENSION_CREATED_RUNTIME_MODULE","path":row["origin"],
+                             "extension_module":row["module"],"actual_object_identity":hex(id(module)),
+                             "extension_object_identity":hex(id(result)),"loader_type":row["loader_type"],
+                             "referenced_type_attributes":sorted(set(referenced_types)),
+                             "runtime_shape_observed":runtime_shape,"thread_identity":row["thread_identity"],
+                             "scope":"EXACT_REGISTRY_OBJECT_CREATED_INSIDE_UNCONTENDED_ORIGINAL_EXTENSION_LOAD; NOT_BINARY_AUTHENTICATION"}
+                    self.synthetic_modules[name] = (module, result, spec, token["loader"], proof)
+                    created.append(name)
+                row["synthetic_module_lineage"] = {"created":created,"concurrent":False}
+            except BaseException:
+                self.counts["errors"] += 1
+            finally:
+                if self.active and self.native_pid == os.getpid():
+                    self._retain_loader(token["row"])
+
+    def _retain_loader(self, row):
+        try:
+            key = (row["module"], row["origin"], row["loader_type"], row["outcome"], row.get("error_class"))
+            if self._admit("selected_loader", key):
+                if key not in self.load_rows:
+                    row["occurrences"] = 0
+                    self.load_rows[key] = len(self.loads)
+                    self.loads.append(row)
+                index = self.load_rows[key]
+                self.loads[index]["occurrences"] += 1
+                for attempt in self.attempt_stacks.get(row["thread_identity"], ()):
+                    if index not in attempt["loader_records"]:
+                        attempt["loader_records"].append(index)
+        except BaseException:
+            self.counts["errors"] += 1
 
     def _origin(self, filename):
         if not isinstance(filename,str) or not filename or len(filename) > MAX_TEXT or filename.startswith("<"):
@@ -268,10 +719,18 @@ class NativeImportObserver:
             if not isinstance(name,str) or len(name)>MAX_TEXT:
                 overflow += 1; continue
             if not isinstance(module,types.ModuleType):
-                unresolved.append({"module":name,"reason":"NOT_A_MODULE_OBJECT"}); continue
+                alias = self._typing_alias(name, module)
+                if alias:
+                    modules[name] = [alias]; origin_count += 1
+                else:
+                    unresolved.append({"module":name,"reason":"NOT_A_MODULE_OBJECT"})
+                continue
             values = types.ModuleType.__getattribute__(module,"__dict__")
             filename, spec = values.get("__file__"), values.get("__spec__")
-            origin = getattr(spec,"origin",None)
+            if spec is not None and type(spec) is not machinery.ModuleSpec:
+                unresolved.append({"module":name,"reason":"SPEC_TYPE_NOT_OBSERVABLE_WITHOUT_CALLBACK"})
+                continue
+            origin = spec.origin if spec is not None else None
             if not filename and origin == "built-in" and name in sys.builtin_module_names:
                 modules[name] = [{"origin":"BUILTIN","path":None}]; origin_count+=1; continue
             if not filename and origin == "frozen":
@@ -287,7 +746,15 @@ class NativeImportObserver:
                 unresolved.append({"module":name,"reason":"FILE_SPEC_ORIGIN_MISMATCH"})
                 paths.append(origin)
             if not paths:
-                unresolved.append({"module":name,"reason":"ORIGIN_NOT_OBSERVABLE"}); continue
+                captured = self.synthetic_modules.get(name)
+                if captured and captured[0] is module and sys.modules.get(captured[4]["extension_module"]) is captured[1]:
+                    parent = types.ModuleType.__getattribute__(captured[1], "__dict__")
+                    if (parent.get("__spec__") is captured[2] and parent.get("__loader__") is captured[3]
+                            and parent.get("__file__") == captured[4]["path"]):
+                        modules[name] = [captured[4]]; origin_count += 1
+                        continue
+                unresolved.append({"module":name,"reason":"ORIGIN_NOT_OBSERVABLE_NO_EXACT_EXTENSION_CREATION_LINEAGE"})
+                continue
             rows = []
             for filename in paths:
                 if origin_count+len(unresolved)>=self.record_limit:
@@ -308,7 +775,12 @@ class NativeImportObserver:
             "scope":"RETAINED_MODULE_LOCATIONS_AT_ONE_BOUNDARY_NOT_TRANSIENT_EXECUTION_CLOSURE"}
 
     def audit(self, event, arguments):
-        if not self.active or event not in ("import","exec"):
+        if event == _INSTALLATION_EVENT:
+            if (self.installing and self.native_pid == os.getpid()
+                    and len(arguments) == 1 and arguments[0] is self._installation_nonce):
+                self.installation_receptions += 1
+            return
+        if not self.active or self.native_pid != os.getpid() or event not in ("import","exec"):
             return
         with self.lock:
             if not self.active:
@@ -316,9 +788,11 @@ class NativeImportObserver:
             try:
                 self.counts[event] += 1
                 module, filename = (arguments[0],arguments[1]) if event == "import" else (None,arguments[0].co_filename)
+                opaque = None
                 if event == "import" and filename is None:
                     self.counts["import_filename_none"] += 1
-                    if isinstance(module,str) and len(module)<=MAX_TEXT and len(self.pending_names)<self.record_limit:
+                    if (isinstance(module,str) and len(module)<=MAX_TEXT
+                            and (module in self.pending_names or len(self.pending_names)<self.record_limit)):
                         self.pending_names.add(module)
                     else:
                         self.counts["overflow"] += 1
@@ -327,12 +801,21 @@ class NativeImportObserver:
                 if (module is not None and (not isinstance(module,str) or len(module)>MAX_TEXT)
                         or filename is not None and (not isinstance(filename,str) or len(filename)>MAX_TEXT)):
                     self.counts["overflow"] += 1; return
-                key = (event,module,filename)
+                if event == "exec" and (not isinstance(filename,str) or filename.startswith("<")):
+                    # One caller frame on the rare denial branch; no stack walk
+                    # or function-call profiler. A code object is classified once
+                    # for this actual factory/callsite, never by filename alone.
+                    opaque_key, opaque = self._opaque_evidence(arguments[0], sys._getframe(1))
+                key = (event,module,filename,opaque_key if opaque is not None else None)
                 if key in self.seen:
                     return
-                if len(self.records)>=self.record_limit:
-                    self.counts["overflow"] += 1; return
-                self.seen.add(key); self.records.append({"event":event,"module":module,"filename":filename})
+                if not self._admit("audit_event", key):
+                    return
+                self.seen.add(key)
+                row = {"event":event,"module":module,"filename":filename}
+                if opaque is not None:
+                    row["runtime_code_provenance"] = opaque
+                self.records.append(row)
             except BaseException:
                 self.counts["errors"] += 1
 
@@ -340,12 +823,48 @@ class NativeImportObserver:
         return {"schema":"rc6.native-import-proof.v1","status":"IN_PROGRESS_NOT_CLOSED","native_pid":os.getpid(),
             "parent_pid":os.getppid(),"source_sha":self.binding["source_sha"],"source_tree":self.binding["source_tree"],
             "source_index_sha256":self.binding["source_index_sha256"],"boundary_before":self.before,
+            "audit_hook_installation":{"verified":self.installation_verified,"receptions":self.installation_receptions,
+                "event":_INSTALLATION_EVENT,"scope":"OWNED_NONCE_RECEIVED_EXACTLY_ONCE_DURING_INSTALLATION_ONLY"},
             "installed_at_monotonic":self.installed_at,"transient_closure_verified":False}
 
     def deactivate(self):
         """Audit hooks cannot be removed; every ownership exit makes this inert."""
         with self.lock:
             self.active = False
+            self.unfinished_protocol_calls += sum(map(len, self.attempt_stacks.values())) + sum(map(len, self.load_stacks.values()))
+            self.attempt_stacks.clear()
+            self.load_stacks.clear()
+            self.opaque_references.clear()
+            self.synthetic_modules.clear()
+        _detach_protocol(self)
+
+    def _resolved_attempt(self, name):
+        allowed = {"PINNED_SOURCE", "STDLIB", "ACTUAL_VENV", "BUILTIN", "FROZEN_SPEC"}
+        candidates = [row for row in self.attempts if row["module"] == name]
+        if not candidates:
+            return None
+        outcomes = []
+        for row in candidates:
+            if (row["outcome"] == "MODULE_NOT_FOUND" and row.get("error_name") == name
+                    and row.get("core_missing_raiser_verified") is True and not row["loader_records"]):
+                outcomes.append({"basis":"ACTUAL_MODULE_NOT_FOUND_BEFORE_ANY_SELECTED_LOADER", **row})
+                continue
+            selected = [self.loads[index] for index in row["loader_records"] if self.loads[index]["module"] == name]
+            if not selected:
+                return None
+            observed = []
+            for loader in selected:
+                origin = loader.get("origin")
+                path = self._origin(origin) if origin not in ("built-in", "frozen") else {"origin":"BUILTIN" if origin == "built-in" else "FROZEN_SPEC", "path":None}
+                matched = [event for event in self.records
+                           if event["filename"] == origin and event["event"] in ("exec", "import")]
+                if path["origin"] not in allowed or not matched:
+                    return None
+                observed.append({"loader":loader,"observed_origin":path,
+                                 "execution_event_basis":"ACTUAL_MATCHING_IMPORT_OR_EXEC_EVENT"})
+            outcomes.append({"basis":"ACTUAL_SELECTED_LOADER_AND_OBSERVED_EXECUTION_WITH_RECORDED_OUTCOME",
+                             "import_attempt":row,"selected_loaders":observed})
+        return {"module":name,"basis":"ACTUAL_IMPORT_MACHINERY_OUTCOMES_NOT_FINAL_ABSENCE", "outcomes":outcomes}
 
     def finish(self):
         try:
@@ -356,34 +875,52 @@ class NativeImportObserver:
                 self.counts["errors"] += 1
             raise
         finally:
+            self.deactivate()
             with self.lock:
-                self.active = False; closed_at = time.monotonic()
+                closed_at = time.monotonic()
                 records, counts, pending = list(self.records),dict(self.counts),set(self.pending_names)
-        observations, resolved, unresolved = [], [], []
+        observations, resolved, lifecycle_resolved, unresolved = [], [], [], []
         for record in records:
             row = dict(record)
-            row["observed_origin"] = self._origin(record["filename"]) if record["filename"] is not None else None
+            runtime = record.get("runtime_code_provenance")
+            if runtime and runtime["status"] in ("QUALIFIED_RUNTIME_FACTORY_CODE", "QUALIFIED_FROZEN_CODE"):
+                row["observed_origin"] = {"origin":runtime["status"],"path":record["filename"],"scope":"QUALIFIED_LOCAL_RUNTIME_CREATION_NOT_FILE_OR_BINARY_AUTHENTICATION"}
+            else:
+                row["observed_origin"] = self._origin(record["filename"]) if record["filename"] is not None else None
             observations.append(row)
         for name in sorted(pending):
             rows = after["modules"].get(name)
-            if rows and all(row["origin"] in {"PINNED_SOURCE","PINNED_SOURCE_NAMESPACE","STDLIB","ACTUAL_VENV","BUILTIN","FROZEN_SPEC"} for row in rows):
+            if rows and all(row["origin"] in {"PINNED_SOURCE","PINNED_SOURCE_NAMESPACE","STDLIB","ACTUAL_VENV","BUILTIN","FROZEN_SPEC",
+                                              "NONMODULE_PUBLIC_TYPING_ALIAS","EXTENSION_CREATED_RUNTIME_MODULE"} for row in rows):
                 resolved.append({"module":name,"basis":"ACTUAL_RETAINED_MODULE_AT_FINAL_BOUNDARY","origins":rows})
             else:
-                unresolved.append(name)
+                outcome = self._resolved_attempt(name)
+                if outcome is not None:
+                    lifecycle_resolved.append(outcome)
+                else:
+                    unresolved.append(name)
         invalid = [{"phase":phase,"module":name,**row} for phase,graph in (("BEFORE",self.before),("AFTER",after))
             for name,rows in graph["modules"].items() for row in rows if row["origin"] in {"ALIEN","UNPINNED_SOURCE"}]
         invalid += [row for row in observations if row["observed_origin"] and row["observed_origin"]["origin"] in {"ALIEN","UNPINNED_SOURCE"}]
-        missing = (self.finalization_failed or counts["errors"] or counts["overflow"] or counts["opaque_exec"] or unresolved
+        opaque_unresolved = [row for row in observations if row.get("runtime_code_provenance", {}).get("status") == "UNVERIFIED"]
+        missing = (not self.installation_verified or self.finalization_failed or counts["errors"] or counts["overflow"] or opaque_unresolved or unresolved
+            or self.unfinished_protocol_calls
             or self.before["unresolved"] or after["unresolved"] or self.before["overflow_count"] or after["overflow_count"]
             or any(row["origin"]=="UNLOCATABLE" for graph in (self.before,after) for rows in graph["modules"].values() for row in rows)
             or any(row["observed_origin"] is not None and row["observed_origin"]["origin"]=="UNLOCATABLE" for row in observations))
         status = "BLOCKED_ALIEN_OR_UNPINNED" if invalid else "UNVERIFIED_LIMITS" if missing else "VERIFIED_OBSERVED_WINDOW"
         return {**self.initial_receipt(),"status":status,"boundary_after":after,"closed_at_monotonic":closed_at,
             "event_counts":counts,"event_records":observations,"filename_none_resolved_by_retained_boundary":resolved,
+            "filename_none_resolved_by_import_lifecycle":lifecycle_resolved,
             "filename_none_unresolved":unresolved,"invalid":invalid,"record_limit":self.record_limit,
+            "import_attempt_outcomes":list(self.attempts),"selected_loader_outcomes":list(self.loads),
+            "unfinished_import_protocol_calls":self.unfinished_protocol_calls,"shared_evidence_record_count":len(self.evidence_keys),
+            "runtime_factory_source_qualification":self.runtime_sources,
+            "opaque_exec_unresolved_records":len(opaque_unresolved),
             "transient_closure_verified":status=="VERIFIED_OBSERVED_WINDOW",
             "scope":"AUDIT_IMPORT_EXEC_FROM_INSTALLATION_THROUGH_FINAL_BOUNDARY; SNAPSHOTS_ARE_RETAINED_ONLY",
             "limits":["Bootstrap before hook installation and final IPC/emission/process teardown after this boundary are outside this window.",
-                "Unknown/opaque exec, unresolved filenameNone, observer errors and truncation prevent a closed-window claim.",
+                "Unknown opaque code, unresolved imports/registry objects, active import calls, observer errors and truncation prevent a closed-window claim.",
                 "Observed paths and code.co_filename are local interpreter metadata, not cryptographic authentication of executed code or installed binaries.",
-                "No function execution counts, call profiling, stack sampler, GC callback or threshold change."]}
+                "Exact runtime factory/frozen-code and extension registry relationships are bounded local evidence, not binary authentication.",
+                "No function execution counts, call profiling, full-stack sampler, GC callback or threshold change; opaque denial inspects one caller frame."]}

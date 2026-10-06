@@ -349,3 +349,324 @@ def test_callback_source_has_no_hash_io_profile_or_gc_operation():
     callback=next(node for node in observer.body if isinstance(node,ast.FunctionDef) and node.name=='audit')
     called={ast.unparse(node.func) for node in ast.walk(callback) if isinstance(node,ast.Call)}
     assert not any(value in called for value in ('open','os.open','os.read','sys.setprofile','sys.settrace','gc.collect','hashlib.sha256'))
+
+
+def _runtime_control_child(root, private, case):
+    """Physical Source main and actual interpreter events; no market/runtime.
+
+    This observer-unit binding is intentionally not raw-Git/frozen157 authority.
+    The enclosing governed focal must establish that authority before fixtures.
+    """
+    import collections
+    import dataclasses
+    import importlib
+    import stat
+    import types
+    import typing
+    sys.path.insert(0, str(root))
+    from scripts import rc6_native_import_provenance as proof
+    private.mkdir(exist_ok=True)
+    files = {}
+    for path in root.rglob('*.py'):
+        if path.is_file() and not path.is_symlink():
+            body = path.read_bytes()
+            files[path.relative_to(root).as_posix()] = {
+                'sha256':hashlib.sha256(body).hexdigest(),
+                'mode':'100'+format(stat.S_IMODE(path.stat().st_mode), '03o'),
+                'blob_id':hashlib.sha1(b'blob '+str(len(body)).encode()+b'\0'+body).hexdigest()}
+    binding = {'source_root':str(root),'source_sha':'a'*40,'source_tree':'b'*40,
+               'source_index_sha256':'c'*64,'files':files,'prepared_by_pid':os.getpid(),
+               'test_binding_scope':'PHYSICAL_OBSERVER_UNIT_CONTROL_NOT_RAW_GIT_QUALIFICATION'}
+    before_find, before_load = proof._bootstrap._find_and_load, proof._bootstrap._load_unlocked
+    control = {'case':case,'provider_requests':0,'real_orders_sent':0,'business_runtime_executed':False}
+    installation_cases = ('audit_hook_veto','audit_hook_duplicate','audit_hook_error')
+    if case in installation_cases:
+        pending = [True]
+        def prior_hook(event, arguments):
+            if pending[0] and case == 'audit_hook_veto' and event == 'sys.addaudithook':
+                pending[0] = False
+                raise RuntimeError('controlled silent installation veto')
+            if pending[0] and event == proof._INSTALLATION_EVENT:
+                pending[0] = False
+                if case == 'audit_hook_duplicate':
+                    sys.audit(event, *arguments)
+                elif case == 'audit_hook_error':
+                    raise KeyboardInterrupt('controlled sentinel interruption')
+        sys.addaudithook(prior_hook)
+        rejected = proof.NativeImportObserver.__new__(proof.NativeImportObserver)
+        try:
+            rejected.__init__(binding, role='REJECTED_INSTALLATION_CONTROL')
+        except (ValueError, KeyboardInterrupt) as error:
+            control['installation_error_class'] = type(error).__name__
+            if case == 'audit_hook_error':
+                assert type(error) is KeyboardInterrupt
+            else:
+                assert type(error) is ValueError and str(error) == 'IMPORT_PROVENANCE_AUDIT_HOOK_INSTALLATION_UNVERIFIED'
+        else:
+            raise AssertionError('installation without unique sentinel was accepted')
+        assert rejected.active is rejected.installing is rejected.installation_verified is False
+        assert rejected._installation_nonce is None
+        assert proof._bootstrap._find_and_load is before_find and proof._bootstrap._load_unlocked is before_load
+        assert not any(owner is rejected for owner in proof._PROTOCOL_OWNERS)
+        assert rejected.counts == {key:0 for key in rejected.counts}
+        control['rejected_installation_receptions'] = rejected.installation_receptions
+        control['rejected_observer_inactive_and_protocol_restored'] = True
+    observer = proof.NativeImportObserver(binding, role='RUNTIME_FACTORY_CONTROL')
+    before = observer.initial_receipt()
+    if case in installation_cases:
+        assert before['audit_hook_installation']['verified'] is True
+        assert before['audit_hook_installation']['receptions'] == 1
+    elif case == 'typing_aliases':
+        control['actual_aliases'] = [name for name in ('typing.io','typing.re') if name in sys.modules]
+        for name in control['actual_aliases']:
+            alias = sys.modules[name]
+            assert alias is vars(typing)[name.removeprefix('typing.')]
+            assert type(alias) is vars(typing)['_DeprecatedType']
+    elif case == 'false_typing_alias':
+        # Use the real metaclass and matching public names; only exact alias
+        # identity in the real parent module can reject this lookalike.
+        if '_DeprecatedType' in vars(typing):
+            false_alias = vars(typing)['_DeprecatedType']('typing.io', (), {'__module__':'typing','__qualname__':'io'})
+        else:
+            false_alias = type('typing.io', (), {'__module__':'typing','__qualname__':'io'})
+        sys.modules['typing.io'] = false_alias
+    elif case in ('namedtuple','dataclass','lookalike_factory','factory_text_bound'):
+        if case == 'namedtuple':
+            record = collections.namedtuple('ActualRuntimeRecord', ('left','right'))(3, 4)
+            assert record.left == 3 and record.right == 4
+        elif case == 'dataclass':
+            @dataclasses.dataclass(frozen=True)
+            class ActualRuntimeRecord:
+                left: int
+                right: int
+            assert ActualRuntimeRecord(3, 4).right == 4
+        elif case == 'lookalike_factory':
+            false_factory = types.FunctionType(collections.namedtuple.__code__, dict(vars(collections)))
+            assert false_factory('LookalikeRuntimeRecord', ('left',))(3).left == 3
+        else:
+            # Actual valid Python factory input exceeds the existing text bound.
+            # Generation still runs; provenance remains incomplete without a cap raise.
+            record = collections.namedtuple('LargeRuntimeRecord', ['field_'+str(n) for n in range(500)])
+            assert len(record._fields) == 500
+    elif case in ('real_frozen','fake_frozen'):
+        if case == 'real_frozen':
+            import _imp
+            code = _imp.get_frozen_object('runpy')
+            exec(code, {'__name__':'rc6_control_frozen_runpy','__package__':None})
+        else:
+            exec(compile('INJECTED=True', '<frozen runpy>', 'exec'), {})
+    elif case in ('optional_missing','missing_repeated','fabricated_missing'):
+        name = 'rc6_runtime_guard_optional_package_absent'
+        repetitions = 100 if case == 'missing_repeated' else 1
+        for _ in range(repetitions):
+            try:
+                __import__(name)
+            except ModuleNotFoundError as error:
+                assert error.name == name
+            else:
+                raise AssertionError('missing package unexpectedly available')
+        if case == 'fabricated_missing':
+            sys.audit('import', 'rc6_runtime_guard_fabricated_missing', None, None, None, None)
+    elif case == 'constructed_missing':
+        name = 'rc6_runtime_guard_constructed_missing'
+        # The same name first has a genuine core failure. A later user-finder
+        # exception must remain a distinct unqualified outcome, not merge into it.
+        try:
+            __import__(name)
+        except ModuleNotFoundError as error:
+            assert error.name == name
+        else:
+            raise AssertionError('missing package unexpectedly available')
+        class FalseMissingFinder:
+            def find_spec(self, fullname, path=None, target=None):
+                if fullname == name:
+                    raise ModuleNotFoundError('constructed finder exception', name=fullname)
+                return None
+        finder = FalseMissingFinder()
+        sys.meta_path.insert(0, finder)
+        try:
+            __import__(name)
+        except ModuleNotFoundError as error:
+            assert error.name == name
+        else:
+            raise AssertionError('constructed failure lost')
+        finally:
+            sys.meta_path.remove(finder)
+    elif case in ('transient_pinned','transient_alien','loader_abort'):
+        if case == 'transient_pinned':
+            name = 'scripts.rc6_sqlite_scratch_guard'
+        else:
+            name = 'rc6_runtime_guard_private_module'
+            body = 'VALUE=17\n' if case == 'transient_alien' else 'raise SystemExit("controlled loader abort")\n'
+            (private/(name+'.py')).write_text(body)
+            sys.path.insert(0, str(private))
+        try:
+            imported = __import__(name, fromlist=['_rc6_control'])
+        except SystemExit:
+            assert case == 'loader_abort'
+        else:
+            assert imported.__name__ == name and case != 'loader_abort'
+            del sys.modules[name]
+    elif case in ('cython_extension','false_cython_after','unknown_runtime_module'):
+        if case == 'unknown_runtime_module':
+            sys.modules['rc6_unknown_extension_runtime'] = types.ModuleType('rc6_unknown_extension_runtime')
+        else:
+            actual = importlib.import_module('charset_normalizer.cd')
+            assert type(actual.__loader__) is proof._EXTENSION_LOADER
+            assert actual.__spec__.origin == actual.__file__
+            control['actual_extension_path'] = actual.__file__
+            control['actual_cython_modules'] = [name for name in sys.modules
+                                               if name == 'cython_runtime' or name.startswith('_cython_')]
+            assert 'cython_runtime' in control['actual_cython_modules']
+            if case == 'false_cython_after':
+                false_module = types.ModuleType('cython_runtime')
+                false_module.line_trace = False
+                sys.modules['cython_runtime'] = false_module
+    else:
+        raise AssertionError('unknown control')
+    result = observer.finish()
+    assert observer.active is False
+    assert proof._bootstrap._find_and_load is before_find and proof._bootstrap._load_unlocked is before_load
+    assert not observer.opaque_references and not observer.synthetic_modules
+    result.update(control=control,test_binding_scope=binding['test_binding_scope'],
+                  native_child_pid=os.getpid(),initial_native_pid=before['native_pid'],
+                  original_import_machinery_restored=True)
+    print(json.dumps(result, sort_keys=True))
+
+
+def _physical_runtime_control(tmp_path, case):
+    environment = {**os.environ,'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1'}
+    environment.pop('PYTHONPATH', None)
+    completed = subprocess.run([sys.executable,'-I','-B',str(Path(__file__).resolve()),
+        '--runtime-provenance-control',str(ROOT),str(tmp_path),case], cwd=tmp_path,
+        env=environment,capture_output=True,text=True,timeout=20,check=True)
+    result = json.loads(completed.stdout)
+    assert result['native_pid'] == result['native_child_pid'] == result['initial_native_pid']
+    assert result['original_import_machinery_restored'] is True
+    assert result['shared_evidence_record_count'] <= result['record_limit'] == 2048
+    assert result['test_binding_scope'] == 'PHYSICAL_OBSERVER_UNIT_CONTROL_NOT_RAW_GIT_QUALIFICATION'
+    return result
+
+
+def test_exact_typing_public_aliases_are_classified_without_pretending_module_type(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'typing_aliases')
+    for name in result['control']['actual_aliases']:
+        row = result['boundary_before']['modules'][name][0]
+        assert row['origin'] == 'NONMODULE_PUBLIC_TYPING_ALIAS' and row['parent_module'] == 'typing'
+        assert row['scope'].startswith('EXACT_RETAINED_PARENT_ALIAS_TYPE_RELATIONSHIP')
+    assert not any(row['module'] in ('typing.io','typing.re') for row in result['boundary_before']['unresolved'])
+
+
+@pytest.mark.parametrize('case,receptions,error_class',[
+    ('audit_hook_veto',0,'ValueError'),('audit_hook_duplicate',2,'ValueError'),
+    ('audit_hook_error',0,'KeyboardInterrupt')])
+def test_audit_hook_installation_requires_unique_owned_sentinel_and_restores_after_failure(tmp_path, case, receptions, error_class):
+    result = _physical_runtime_control(tmp_path, case)
+    assert result['control']['rejected_installation_receptions'] == receptions
+    assert result['control']['installation_error_class'] == error_class
+    assert result['control']['rejected_observer_inactive_and_protocol_restored'] is True
+    assert result['audit_hook_installation']['verified'] is True and result['audit_hook_installation']['receptions'] == 1
+    assert result['event_counts'] == {key:0 for key in result['event_counts']}
+
+
+def test_false_typing_alias_with_real_metaclass_and_matching_name_stays_unverified(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'false_typing_alias')
+    assert any(row['module'] == 'typing.io' for row in result['boundary_after']['unresolved'])
+    assert result['transient_closure_verified'] is False
+
+
+@pytest.mark.parametrize('case,factory',[('namedtuple','collections.namedtuple'),('dataclass','dataclasses._create_fn')])
+def test_real_language_factory_exec_has_exact_code_and_callsite_evidence(tmp_path, case, factory):
+    result = _physical_runtime_control(tmp_path, case)
+    rows = [row['runtime_code_provenance'] for row in result['event_records'] if row.get('runtime_code_provenance')]
+    assert any(row['status'] == 'QUALIFIED_RUNTIME_FACTORY_CODE' and row.get('factory') == factory for row in rows)
+    assert all(row['status'] != 'UNVERIFIED' for row in rows)
+    assert result['event_counts']['opaque_exec'] > 0 and result['opaque_exec_unresolved_records'] == 0
+
+
+def test_cloned_factory_with_same_code_but_foreign_globals_is_rejected(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'lookalike_factory')
+    assert result['opaque_exec_unresolved_records'] > 0 and result['transient_closure_verified'] is False
+
+
+def test_valid_language_generation_over_text_bound_does_not_raise_provenance_cap(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'factory_text_bound')
+    assert result['event_counts']['overflow'] > 0 and result['transient_closure_verified'] is False
+
+
+@pytest.mark.parametrize('case,qualified',[('real_frozen',True),('fake_frozen',False)])
+def test_frozen_filename_requires_actual_interpreter_code_reference(tmp_path, case, qualified):
+    result = _physical_runtime_control(tmp_path, case)
+    rows = [row['runtime_code_provenance'] for row in result['event_records'] if row.get('runtime_code_provenance')]
+    if qualified:
+        assert any(row['status'] == 'QUALIFIED_FROZEN_CODE' and row.get('interpreter_frozen_name') == 'runpy' for row in rows)
+    else:
+        assert result['opaque_exec_unresolved_records'] > 0 and result['transient_closure_verified'] is False
+
+
+@pytest.mark.parametrize('case,repetitions',[('optional_missing',1),('missing_repeated',100)])
+def test_actual_optional_missing_outcome_is_bounded_and_distinct_from_final_absence(tmp_path, case, repetitions):
+    result = _physical_runtime_control(tmp_path, case)
+    name = 'rc6_runtime_guard_optional_package_absent'
+    row = next(row for row in result['filename_none_resolved_by_import_lifecycle'] if row['module'] == name)
+    assert row['outcomes'][0]['basis'] == 'ACTUAL_MODULE_NOT_FOUND_BEFORE_ANY_SELECTED_LOADER'
+    assert row['outcomes'][0]['error_name'] == name and row['outcomes'][0]['occurrences'] == repetitions
+    assert name not in result['filename_none_unresolved'] and result['event_counts']['overflow'] == 0
+
+
+def test_fabricated_missing_audit_event_has_no_actual_import_outcome(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'fabricated_missing')
+    assert 'rc6_runtime_guard_fabricated_missing' in result['filename_none_unresolved']
+    assert result['transient_closure_verified'] is False
+
+
+def test_user_finder_constructed_module_not_found_is_not_core_optional_absence(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'constructed_missing')
+    name = 'rc6_runtime_guard_constructed_missing'
+    assert name in result['filename_none_unresolved']
+    rows = [row for row in result['import_attempt_outcomes'] if row['module'] == name]
+    assert {row['core_missing_raiser_verified'] for row in rows} == {False, True}
+    assert all(row['outcome'] == 'MODULE_NOT_FOUND' for row in rows)
+    assert result['transient_closure_verified'] is False
+
+
+def test_actual_pinned_transient_module_is_joined_to_loader_and_execution_after_deletion(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'transient_pinned')
+    name = 'scripts.rc6_sqlite_scratch_guard'
+    assert name not in result['boundary_after']['modules']
+    row = next(row for row in result['filename_none_resolved_by_import_lifecycle'] if row['module'] == name)
+    selected = row['outcomes'][0]['selected_loaders'][0]
+    assert selected['observed_origin']['origin'] == 'PINNED_SOURCE'
+    assert selected['execution_event_basis'] == 'ACTUAL_MATCHING_IMPORT_OR_EXEC_EVENT'
+
+
+@pytest.mark.parametrize('case',['transient_alien','loader_abort'])
+def test_private_alien_loader_and_base_exception_preserve_evidence_and_restore_protocol(tmp_path, case):
+    result = _physical_runtime_control(tmp_path, case)
+    assert result['status'] == 'BLOCKED_ALIEN_OR_UNPINNED' and result['transient_closure_verified'] is False
+    if case == 'loader_abort':
+        assert any(row.get('error_class') == 'SystemExit' for row in result['selected_loader_outcomes'])
+    assert result['original_import_machinery_restored'] is True
+
+
+def test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage(tmp_path):
+    result = _physical_runtime_control(tmp_path, 'cython_extension')
+    for name in result['control']['actual_cython_modules']:
+        row = result['boundary_after']['modules'][name][0]
+        assert row['origin'] == 'EXTENSION_CREATED_RUNTIME_MODULE'
+        assert row['extension_module'] in ('charset_normalizer.cd','charset_normalizer.md')
+        assert row['path'] == result['boundary_after']['modules'][row['extension_module']][0]['path']
+        assert row['referenced_type_attributes'] or (name == 'cython_runtime' and row['runtime_shape_observed'])
+
+
+@pytest.mark.parametrize('case,name',[('false_cython_after','cython_runtime'),('unknown_runtime_module','rc6_unknown_extension_runtime')])
+def test_replaced_or_unknown_native_runtime_module_has_no_name_based_exemption(tmp_path, case, name):
+    result = _physical_runtime_control(tmp_path, case)
+    assert any(row['module'] == name for row in result['boundary_after']['unresolved'])
+    assert result['transient_closure_verified'] is False
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 5 or sys.argv[1] != '--runtime-provenance-control':
+        raise SystemExit('This entrypoint only runs explicit private observer controls.')
+    _runtime_control_child(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4])
