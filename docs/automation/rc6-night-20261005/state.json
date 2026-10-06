@@ -30,13 +30,7 @@
     "local_fix_status": "CHECKPOINT6_LOCAL_ONLY_COMMIT_REJECTED_BY_INVENTORY_METADATA_FIX_IN_PROGRESS"
   },
   "deploy_owner": null,
-  "lease": {
-    "token": "rc6-2026-10-06T21:28:35.386Z-0lfla3umj3",
-    "holder": "WS-RC6-NIGHT-CONVERGENCE-20261005",
-    "acquired_at": "2026-10-06T21:28:35.386Z",
-    "expires_at": "2026-10-06T21:48:35.386Z",
-    "base_head": "9eed6a5fc4d3921617156a49e928f7e0c8a32b58"
-  },
+  "lease": null,
   "pending_action": "WAIT_FOR_OWNER_METADATA_FIX_LOCAL_VALIDATION_FAST_FORWARD_NEW_SHA_AND_FRESH_PREDEPLOY",
   "predeploy": {
     "run_id": 37461053027,
@@ -608,8 +602,8 @@
     ]
   },
   "last_lease_release": {
-    "token": "rc6-2026-10-06T20:10:11.148Z-z169mibi65",
-    "released_at": "2026-10-06T20:10:45.777Z",
-    "state_commit_parent": "938881a2f0b8e288a232247498a16e7ed72bda42"
+    "token": "rc6-2026-10-06T21:28:35.386Z-0lfla3umj3",
+    "released_at": "2026-10-06T21:29:34.050Z",
+    "state_commit_parent": "9a6937dc043990518e7b8931680523c6966f79b2"
   }
 }
