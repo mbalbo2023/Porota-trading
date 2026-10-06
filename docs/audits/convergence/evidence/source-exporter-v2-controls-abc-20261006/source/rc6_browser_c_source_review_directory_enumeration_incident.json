@@ -1,0 +1,37 @@
+{
+  "atime_restored": false,
+  "current_directory_atime_or_unchanged_claimed": false,
+  "data_or_historical_tar_body_bytes_opened_by_that_operation": false,
+  "directory_before_after_eleven_stat_witness_recorded": false,
+  "directory_custody_state": "UNKNOWN_POSSIBLE_DIRECTORY_ATIME_CHANGE",
+  "exact_traversed_directory_set_recorded": false,
+  "native_or_browser_rerun_performed": false,
+  "observed_scope": "RETURNED_NAMES_INCLUDED_BROWSER_NORMAL_NATIVE_FIXTURE_DIRECTORIES_AND_FILE_NAMES_WITHIN_RAW_C; SUBSEQUENT_INSPECTION_RESTRICTED_TO_LITERAL_SOURCE_AND_JSON_METADATA",
+  "observer": "/root/sre_review",
+  "old_historical_incident_scope_extended": false,
+  "original_operation": {
+    "argv_text": "rg --files /workspace/rc6-root-efa69894-browser-20261006-raw-retry-c",
+    "kind": "RECURSIVE_FILE_NAME_ENUMERATION",
+    "raw_root": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c",
+    "tool": "exec_command"
+  },
+  "recorded_at_utc": "2026-10-06T01:35:44Z",
+  "schema": "rc6.source-review-directory-enumeration-incident.v1",
+  "scope_boundary": "THIS_NOTE_RECORDS_OBSERVER_METADATA_SCOPE_ONLY; DOES_NOT_CHANGE_BROWSER_C_GATE_OR_RETROACTIVELY_CLAIM_DATA_CUSTODY",
+  "separate_findings": {
+    "allowed_code_atime_phase_changes": {
+      "custody": "SOURCE_BEFORE_AFTER_JSON_RECORDS_NOT_DATA_DIRECTORY_ATIME",
+      "recorded_count": 124
+    },
+    "strict_browser_c_tar_blocks": {
+      "browser_c_result_remains": "RED",
+      "cause_exactly_proven": false,
+      "content_sha_and_size_equal": true,
+      "recorded_after": 350568,
+      "recorded_before": 350560
+    }
+  },
+  "source_or_raw_file_bytes_modified": false,
+  "sqlite_opened_or_fixture_product_executed": false,
+  "status": "SOURCE_OBSERVER_SCOPE_INCIDENT_NOT_NATIVE_CUSTODY_REQUALIFICATION"
+}
