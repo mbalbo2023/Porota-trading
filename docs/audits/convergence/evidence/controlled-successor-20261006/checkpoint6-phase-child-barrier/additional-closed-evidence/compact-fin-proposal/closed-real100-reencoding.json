@@ -1,0 +1,67 @@
+{
+  "actual375229_348070_compact_size": "NOT_OBSERVED_PAYLOAD_UNAVAILABLE",
+  "no_source_or_helper_execution": true,
+  "samples": [
+    {
+      "actual_kernel_fin_closed": true,
+      "actual_phase_exitcode": 1,
+      "actual_phase_green": false,
+      "actual_reaped_descendants": 100,
+      "all_keys_values_arrays_errors_preserved": true,
+      "compact_bytes": 34481,
+      "compact_sha256": "211472289f08cd652e8c187d325007ec37fbd1d11c57e3212fda4ec85be6d346",
+      "default_serializer_bytes_exactly_original": true,
+      "epoch": "311",
+      "measurement_scope": "READ_ONLY_FORMATTING_OF_ALREADY_REAL_CLOSED_COMPONENT_RECORD_NOT_NEW_GATE_EXECUTION",
+      "no_original348070_fin_payload_available": true,
+      "original_raw_path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-af243396ab394adeba719cd094071a19/porota-pytest-owned-fin.json",
+      "phase_red_not_reclassified": true,
+      "pretty_bytes": 49894,
+      "raw_original_stat11_preserved_during_read": {
+        "st_atime_ns": 1791314770814446536,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791314770816334823,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093737,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791314770816334823,
+        "st_nlink": 1,
+        "st_size": 49894,
+        "st_uid": 1000
+      },
+      "raw_sha256": "528062d7a1b676eaadabb6f7668496aae4285c2714dff12e0c703b744ddb0bb3"
+    },
+    {
+      "actual_kernel_fin_closed": true,
+      "actual_phase_exitcode": 1,
+      "actual_phase_green": false,
+      "actual_reaped_descendants": 100,
+      "all_keys_values_arrays_errors_preserved": true,
+      "compact_bytes": 34047,
+      "compact_sha256": "57a8025b183e65e9ed6d863206e4eaab8452cb5d06e6c6523244d04b3f3c5d66",
+      "default_serializer_bytes_exactly_original": true,
+      "epoch": "312",
+      "measurement_scope": "READ_ONLY_FORMATTING_OF_ALREADY_REAL_CLOSED_COMPONENT_RECORD_NOT_NEW_GATE_EXECUTION",
+      "no_original348070_fin_payload_available": true,
+      "original_raw_path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-819307d4925940049839f8e54294764c/porota-pytest-owned-fin.json",
+      "phase_red_not_reclassified": true,
+      "pretty_bytes": 49460,
+      "raw_original_stat11_preserved_during_read": {
+        "st_atime_ns": 1791314916133779845,
+        "st_blocks": 104,
+        "st_ctime_ns": 1791314916136193821,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1609249,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791314916136193821,
+        "st_nlink": 1,
+        "st_size": 49460,
+        "st_uid": 1000
+      },
+      "raw_sha256": "e08af309a36a1ad2cbd7bfda99bd2105fbe71d1bb9475bfdbff32f52b7af7056"
+    }
+  ],
+  "schema": "rc6.control.fin.lossless-formatting-observations.v1"
+}

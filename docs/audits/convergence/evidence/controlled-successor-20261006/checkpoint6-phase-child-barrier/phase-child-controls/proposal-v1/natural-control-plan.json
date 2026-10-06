@@ -1,0 +1,102 @@
+{
+  "acceptance_of_control_not_Gov": [
+    "Old negative: real finalizer UNKNOWN5 plus source_postread_attempt>=1, physicalSourceReads0 due observerVETO.",
+    "New negative: same real finalizer UNKNOWN5, source_postread_attempt=0, physicalSourceReads0, original predicate reason preserved.",
+    "New positive: actual kernel ECHILD/finished thread/signalguard/no errors, Source snapshot after closure permitted; code10/bytes stable and original atime evolution disclosed.",
+    "Full Gov remains BLOCKED until fix-forward Source is authorized/published/frozen and material gate launch authorized separately."
+  ],
+  "actual_original_operations_unchanged": [
+    "Actual phase_namespace with fresh private0700 directory and original short sameFS tmp allocator.",
+    "Original native restrict_inet_creation and install_phase_audit run before pytest; no INET relaxation/rebinding/import trick.",
+    "Actual product157 pytest executes original argv and internal Observer against a declared tiny source catalog.",
+    "child_infrastructure_snapshot and finalize_child_infrastructure exact original functions, real multiprocessing join/protocols, actual5s and real daemon finalizer thread.",
+    "All kernel primitives remain original, real ownPID/TID/UID/proc/wait4/prctl; no mocks, fabricated ECHILD, termination calls or fake versions."
+  ],
+  "cases": [
+    {
+      "catalog": "ONE_REAL_PYTEST_TEST_STARTS_ONE_REAL_FORK_MULTIPROCESSING_WORKER_SLEEP6",
+      "driver": "old316",
+      "expected": "Original finalize_child_infrastructure(initial,limit=5) returns RED with real unfinished finalizer thread/live owned child. After owned finalization-control publish, old phase_child reaches Source snapshot. Read-only audit observer VETOS first attempted own-catalog postread before OS physical read. Source capture attempt is observed; original phase remains RED/UNKNOWN.",
+      "name": "old_unknown5_source_postread_veto"
+    },
+    {
+      "catalog": "SAME_REAL_PYTEST_SLEEP6_CASE",
+      "driver": "newa2b6",
+      "expected": "Same real finalizer5 produces RED/UNKNOWN. Verbatim existing require raises PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED immediately after original control publish. No Source postread attempt and zero physical reads; actual worker remains alive briefly then closes naturally. Original phase remains RED.",
+      "name": "new_unknown5_guard_before_source"
+    },
+    {
+      "catalog": "ONE_REAL_PYTEST_TEST_WITH_NO_CHILD",
+      "driver": "newa2b6",
+      "expected": "Actual finalizer thread ends within5; actual kernel ECHILD; original statusGREEN/no signals/errors. Same moved predicate passes, original Source capture/observations proceed; no fixture gate or metadata-only fakeGREEN.",
+      "name": "new_positive_closed_kernel_source_allowed"
+    }
+  ],
+  "clones_created": 0,
+  "control_and_payload_barrier": [
+    "Record actual own kernel WNOHANG result0 while worker6 is still alive, own child PID/PPid/UID/proc identity and finalizer thread identity from the exact created fixture; do not examine foreign proc or signal it.",
+    "Only control JSON and own logger fstat while active; no Source/log/JUnit/producer payload reads after unknown finalization.",
+    "After original RED, wait ONLY for the exact owned finalizer thread to finish after worker6 naturally exits; diagnostic observation bound separate from original5, not phase acceptance extension.",
+    "Same component supervisor calls original actual pre_capture_kernel_state for post-diagnostic ECHILD and subreaper readback; no new process supplies a global/original-parent FIN.",
+    "Only after actual same-PID kernel closure save/read catalog/log/manifest/JUnit control snapshots. Preserve original finalizer JSON5s and early error byte-for-byte; never rewrite status or convert UNKNOWN into phaseGREEN.",
+    "Outer launcher if approved uses source-pinned manager55325 with actual same-parent wait4/ECHILD/PGID/restore and original TERM2/progress5/failedcleanup5, bound60 for component management only."
+  ],
+  "explicit_component_adapters_not_product_overlays": [
+    "source_pin: captures an actual newly-created tiny controlled Source catalog using original capture/hash/11stats, with context explicitly NOT_FULL_GIT_SOURCE_QUALIFICATION. No spoofed productive Tree or synthetic PASS receipt.",
+    "installed_closure: actual importlib.metadata in locked157 interpreter and compare original frozen157 approved names/versions; no installers, package files or sys.path mutation.",
+    "approved_scope: returns actual automatic pytest discovery of this tiny catalog, no productive Gov scope claim.",
+    "publish observation: delegates to exact original publisher, then observes immutable bytes of only its own phase child-finalization.json control, marks returned real RED/UNKNOWN. Never changes finalization result or thread.",
+    "sys.addaudithook observation: only after real UNKNOWN finalization, counts/vetos any own Source catalog open/listdir/scandir before physical reading. Observer does not change tests/fixtures/kernel/timeout/status or allow INET."
+  ],
+  "interpreters": {
+    "311": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "312": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python"
+  },
+  "mode": "PREPARED_PLAN_ONLY_NO_RUN_NO_SOURCE_EDITS",
+  "needs_root_review_and_durable_authorization_before_run": true,
+  "new_driver": {
+    "external": "/workspace/scratch/rc6-phase-fin-postread-proposal-m3kkg78v/proposed/rc6_controlled_governed_runner.py",
+    "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47"
+  },
+  "old_driver": {
+    "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+    "source": "scripts/rc6_controlled_governed_runner.py"
+  },
+  "original_budgets_and_guards": {
+    "DEPLOY_OWNER": "NOT_ACQUIRED",
+    "PAPER_SHADOW_ONLY": true,
+    "PPI_Watch": "UNTOUCHED",
+    "fullGov_phase_seconds": 5400,
+    "kernel_zero_RED": true,
+    "live_control_seconds": 6,
+    "original_child_finalizer_seconds": 5,
+    "real_orders_sent": 0,
+    "source_custody_10_plus_atime_record": true
+  },
+  "outputs_O_EXCL": [
+    "driver old/new .source",
+    "original tinycatalog Source .source",
+    "launch context/pin and source before",
+    "original finalization control JSON at5s",
+    "audit-veto memory observation/control",
+    "kernel own live0/identity/thread observation",
+    "diagnostic samePID actual ECHILD scope",
+    "outer actualkernel FIN",
+    "original logs/JUnit only after FIN",
+    "source_after10/atime and metadata157",
+    "raw index/digests"
+  ],
+  "predeploy37522988940_ACTIVE": "FREEZE_WORKING_SOURCE_NO_PUSH_OR_EDIT",
+  "schema": "rc6.phase-child-post-finalization-natural-control-plan.v1",
+  "scope": "NATURAL_PHASE_CHILD_COMPONENT_TINYCATALOG_ONLY_NOT_FULL_GOV_REPO_ROOT_OR_SOURCE_QUALIFICATION",
+  "source_derivation": {
+    "V2historical_ac9_unchanged": true,
+    "all_other_functions_AST_identical": true,
+    "newonlymoves_verbatim_existing_require": true,
+    "old316_module_bytes_unmodified": true
+  },
+  "source_edits": 0,
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "tests_launched": 0
+}

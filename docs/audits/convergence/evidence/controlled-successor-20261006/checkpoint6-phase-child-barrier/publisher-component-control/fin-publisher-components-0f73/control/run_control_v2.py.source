@@ -1,0 +1,145 @@
+"""Actual owned outer FIN before any postlaunch component/output reads."""
+import hashlib
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import stat
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum')
+MANAGER = BASE / 'rc6-native-big-0f73e2c-oz3nr9js/source/docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source'
+MANAGER_SHA = 'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec'
+WORKER = ROOT / 'control/publisher_control.py'
+WORKER_SHA = '0da9a5c42f4640c3ac375a5de25326030d9f79fec1393732f88afdeff7007e88'
+FIELDS = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+
+
+def info(st):
+    return {key: getattr(st, key) for key in FIELDS}
+
+
+def captured(path, maximum=131072):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        before = info(os.fstat(fd))
+        assert stat.S_ISREG(before['st_mode']) and before['st_uid'] == os.geteuid() and before['st_nlink'] == 1
+        assert before['st_size'] <= maximum
+        parts, total = [], 0
+        while part := os.read(fd, min(1048576, maximum + 1 - total)):
+            parts.append(part)
+            total += len(part)
+            assert total <= maximum
+        raw = b''.join(parts)
+        assert len(raw) == before['st_size'] and before == info(os.fstat(fd)) == info(path.lstat())
+        return raw, before
+    finally:
+        os.close(fd)
+
+
+def save(path, value):
+    raw = (json.dumps(value, sort_keys=True, indent=2) + '\n').encode()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return hashlib.sha256(raw).hexdigest()
+
+
+def closure():
+    rows = sorted(({'name': re.sub(r'[-_.]+', '-', d.metadata['Name']).lower(), 'version': d.version}
+                   for d in importlib.metadata.distributions()), key=lambda row: (row['name'], row['version']))
+    assert len(rows) == len({row['name'] for row in rows}) == 157
+    return rows
+
+
+def main():
+    epoch = sys.argv[1]
+    assert epoch in ('311', '312') and len(sys.argv) == 2
+    python = BASE / ('venv' + epoch) / 'bin/python'
+    assert sys.executable == str(python)
+    assert tuple(sys.version_info[:2]) == ((3, 11) if epoch == '311' else (3, 12))
+    manager_raw, manager_before = captured(MANAGER, 1048576)
+    assert hashlib.sha256(manager_raw).hexdigest() == MANAGER_SHA
+    worker_raw, worker_before = captured(WORKER)
+    assert hashlib.sha256(worker_raw).hexdigest() == WORKER_SHA
+    # Component supervisor only: the preserved Source V2's actual kernel
+    # functions are reused verbatim. This is never a product import proof.
+    manager = runpy.run_path(str(MANAGER))
+    before = manager['pre_capture_kernel_state']()
+    distributions = closure()
+    output = ROOT / ('epoch' + epoch)
+    os.mkdir(output, 0o700)
+    raw_output = output / 'raw'
+    os.mkdir(raw_output, 0o700)
+    argv = [str(python), '-I', '-B', str(WORKER), epoch, str(raw_output)]
+    save(output / 'launch.json', {'epoch': epoch, 'argv': argv, 'cwd': str(ROOT),
+         'manager_sha256': MANAGER_SHA, 'manager_source_stat11': manager_before,
+         'worker_sha256': hashlib.sha256(worker_raw).hexdigest(), 'worker_stat11': worker_before,
+         'actual_kernel_before': before, 'actual_installed_metadata157': distributions,
+         'component_management_seconds': 60, 'original_cleanup_seconds': 5,
+         'classification': 'PUBLISHER_COMPONENT_ONLY_ALIEN_FOR_PRODUCT_SOURCE_IMPORT_PROOF',
+         'source_runtime_writes': 0, 'real_orders_sent': 0})
+    progress_sequence = 0
+
+    def progress(stage, pid, entered, deadline, fd):
+        nonlocal progress_sequence
+        row = {'stage': stage, 'pid': pid, 'elapsed': time.monotonic() - entered,
+               'management_deadline': deadline, 'log_bytes_fstat_only': os.fstat(fd).st_size,
+               'source_data_log_payload_reads_while_active': 0}
+        save(output / ('progress-' + str(progress_sequence).zfill(4) + '.json'), row)
+        progress_sequence += 1
+        print(json.dumps(row, sort_keys=True), flush=True)
+
+    environment = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',
+                       RUNNER_TEMP=str(output))
+    environment.pop('PYTHONPATH', None)
+    kernel = manager['managed_native_child'](argv, ROOT, output / 'worker.log', environment,
+                                             60, terminate_grace=2, progress_poll=5, progress=progress)
+    save(output / 'kernel.json', kernel)
+    if not manager['managed_custody_closed'](kernel):
+        save(output / 'UNKNOWN-control-only.json', {'kernel': kernel, 'postlaunch_source_or_output_reads': 0,
+             'irreversible_red_preserved': True, 'source_qualified': False, 'real_orders_sent': 0})
+        print(json.dumps({'epoch': epoch, 'owned_fin_closed': False, 'postread_payloads': 0}), flush=True)
+        return 1
+    after = manager['pre_capture_kernel_state']()
+    assert after['subreaper_state_after'] == before['subreaper_state_after']
+    manager_after_raw, manager_after = captured(MANAGER, 1048576)
+    worker_after_raw, worker_after = captured(WORKER)
+    # Interpreter imports may change CODE atime; disclose it and require
+    # bytes plus the other ten physical stat fields to remain unchanged.
+    assert manager_after_raw == manager_raw and worker_after_raw == worker_raw
+    assert {k: v for k, v in manager_before.items() if k != 'st_atime_ns'} == {k: v for k, v in manager_after.items() if k != 'st_atime_ns'}
+    assert {k: v for k, v in worker_before.items() if k != 'st_atime_ns'} == {k: v for k, v in worker_after.items() if k != 'st_atime_ns'}
+    assert closure() == distributions
+    log_raw, log_stat = captured(output / 'worker.log')
+    receipt_path = raw_output / 'component-receipt.json'
+    component = None
+    if os.path.lexists(receipt_path):
+        receipt_raw, receipt_stat = captured(receipt_path)
+        component = {'sha256': hashlib.sha256(receipt_raw).hexdigest(), 'stat11': receipt_stat,
+                     'value': json.loads(receipt_raw)}
+    phase_green = manager['managed_phase_green'](kernel)
+    final = {'epoch': epoch, 'actual_owned_fin_closed': True, 'original_phase_green': phase_green,
+             'kernel': kernel, 'actual_kernel_before': before, 'actual_kernel_after': after,
+             'component': component, 'manager_source_before': manager_before, 'manager_source_after': manager_after,
+             'worker_before': worker_before, 'worker_after': worker_after, 'code_atime_declared': True,
+             'worker_log': {'sha256': hashlib.sha256(log_raw).hexdigest(), 'stat11': log_stat},
+             'installed_metadata157_unchanged': True, 'source_runtime_writes': 0,
+             'classification': 'EXTERNAL_ALIEN_PUBLISHER_COMPONENT_ONLY_NOT_SOURCE_OR_NEW_BUSINESS_KERNEL_PROOF',
+             'final_candidate_eligible': False, 'real_orders_sent': 0}
+    final_sha = save(output / 'terminal-receipt.json', final)
+    control_passed = phase_green and component is not None and component['value']['publisher_control_passed'] is True
+    print(json.dumps({'epoch': epoch, 'owned_fin_closed': True, 'component_control_passed': control_passed,
+                      'terminal_receipt': str(output / 'terminal-receipt.json'), 'sha256': final_sha}, sort_keys=True), flush=True)
+    return 0 if control_passed else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

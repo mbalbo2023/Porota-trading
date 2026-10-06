@@ -1,0 +1,195 @@
+{
+  "CPU_slot": "RELEASED_NO_ACTIVE_CONTROL_PRODUCERS",
+  "RAW_index_path": "/workspace/scratch/rc6-phase-fin-postread-raw-index-fpagnnlf/raw-index.json",
+  "RAW_index_sha256": "9a410519eaac94318daff3feea40235b2b239a24c14dede81cc7ee00d39f50af",
+  "Source_qualification": "COMPONENT_ADAPTERS_DECLARED_NOT_WHOLE_GIT_GOV_GATE",
+  "epochs": [
+    {
+      "157_metadata_equal": true,
+      "cases": [
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "old_unknown5",
+          "component_receipt_sha256": "22508427fef460530cc2a968af98d511edc768e0a2b5d5413d5c636c81b6da4e",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "db61e4a761fc689dcd862cf5a1ad591a6fddfa78f65ae1a00a8b767aa5a52393",
+            "skips": 0
+          },
+          "native_pid": 33285,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "dc88ac5b799ff50b1bf60c6516abe3520e0984b0b948a2478720591700befbbc",
+          "original_finalizer_thread_finished": false,
+          "original_finalizer_wall_seconds": 5.000216336000449,
+          "original_phase_exception": {
+            "class": "RuntimeError",
+            "reason": "COMPONENT_SOURCE_POSTREAD_VETO_BEFORE_PHYSICAL_IO"
+          },
+          "original_phase_status": "RED",
+          "original_unknown_sticky": true,
+          "outer_kernel_sha256": "f3d148d5d7055024043a676e31a2f968356937b3caac76f14b78d5ce8456b7a0",
+          "source_attempts": 1,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        },
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "new_unknown5",
+          "component_receipt_sha256": "f3c0b7b38b53660cb608683bb86e56c45501bc3beb1115c9a05b396bf9394834",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "3f0302f76124d0218fb3b88b23cfa5455df52d03352f014549c4dea39b0ef214",
+            "skips": 0
+          },
+          "native_pid": 33290,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "103ef30176ed5da6d23c45dd4fa8ec9185c978722aeca12a54518da73cc58f0b",
+          "original_finalizer_thread_finished": false,
+          "original_finalizer_wall_seconds": 5.000167382997461,
+          "original_phase_exception": {
+            "class": "ValueError",
+            "reason": "PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED"
+          },
+          "original_phase_status": "RED",
+          "original_unknown_sticky": true,
+          "outer_kernel_sha256": "e62c859f05dda9aaf7cb87b33bd5d2c45fd3cc6b7d036b0caa73b07f622a516d",
+          "source_attempts": 0,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        },
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "new_positive",
+          "component_receipt_sha256": "98497fa2a22fee44bf4a7f618b1910c92314472fca6bc38fd04c62e7767e8268",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "0bc30723e4123acdeddd7ed8a5fba2551e3ac876f2f5c1aaf06541728091cfe6",
+            "skips": 0
+          },
+          "native_pid": 33293,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "11a8ab2237264a8ae44f4b622136b2007025a0a6e2881a23d9211dfe8835608e",
+          "original_finalizer_thread_finished": true,
+          "original_finalizer_wall_seconds": 0.00032334899879060686,
+          "original_phase_exception": null,
+          "original_phase_status": "GREEN",
+          "original_unknown_sticky": false,
+          "outer_kernel_sha256": "0de3a6ba6160623a82bb779e6ecdbe10915bd0fd9f15fcc550313abc7ecad9cb",
+          "source_attempts": 1,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        }
+      ],
+      "epoch": "311",
+      "receipt_sha256": "43b8602ef1f1a697a49731553ef43bc6ec736018f984148ff446224640c60ff1",
+      "three_component_conditions_observed": true,
+      "working_source4_bytes10_stable": true
+    },
+    {
+      "157_metadata_equal": true,
+      "cases": [
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "old_unknown5",
+          "component_receipt_sha256": "3e461f905b16eacf4801490fe08ae6b5581f8722a22caccf9e10aeea15708b1d",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "0a0cdab5ed748211a0e7a19007ea6e75a15a3be8017d000cae10ad83d58600d0",
+            "skips": 0
+          },
+          "native_pid": 33306,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "b6976d3af1b5581ec858a82001204bab3372f4d7a7709526d46bcbb3d9491840",
+          "original_finalizer_thread_finished": false,
+          "original_finalizer_wall_seconds": 5.000170380000782,
+          "original_phase_exception": {
+            "class": "RuntimeError",
+            "reason": "COMPONENT_SOURCE_POSTREAD_VETO_BEFORE_PHYSICAL_IO"
+          },
+          "original_phase_status": "RED",
+          "original_unknown_sticky": true,
+          "outer_kernel_sha256": "aa918d2b614bd416b9f2d33d58ab998b52cd7585f218db681a375077e88e60a1",
+          "source_attempts": 1,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        },
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "new_unknown5",
+          "component_receipt_sha256": "85608eadbefa7fb6d87834f5c304d4605549638a9048c0b68d743f6534a3aad2",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "172e3500b59ce421d9826af5cbc26ad88a01b5cef088865454348c882f74dcbc",
+            "skips": 0
+          },
+          "native_pid": 33309,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "c324866fe10a3b0cce7e3f7a3caf80d21de990918b24a282aa103365a1dd4d68",
+          "original_finalizer_thread_finished": false,
+          "original_finalizer_wall_seconds": 5.000182100000529,
+          "original_phase_exception": {
+            "class": "ValueError",
+            "reason": "PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED"
+          },
+          "original_phase_status": "RED",
+          "original_unknown_sticky": true,
+          "outer_kernel_sha256": "852524122e13fdfedcb90c0685524a7d3681a1e27463a3065f02340ab6e34975",
+          "source_attempts": 0,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        },
+        {
+          "actual_parent_kernel_FIN": true,
+          "case": "new_positive",
+          "component_receipt_sha256": "5d03f3451e6dd9b3f4bd9d0fa5618b1b7a2ae5d800efb51f9f96a5327b161eb0",
+          "diagnostic_not_reclassification": true,
+          "junit_tinycatalog_only": {
+            "cases": 1,
+            "errors": 0,
+            "failures": 0,
+            "sha256": "2d7e1a11c07f449d4985831b0a2837f0c3e3028497f01d92d6da4afaac998248",
+            "skips": 0
+          },
+          "native_pid": 33312,
+          "original_finalization_bytes_unchanged": true,
+          "original_finalization_sha256": "dd7d1b9cf65f74b7b3b3f44c8dc9397f7f0aacba0e7f82cea58dcc040e64b292",
+          "original_finalizer_thread_finished": true,
+          "original_finalizer_wall_seconds": 0.0006123070015746634,
+          "original_phase_exception": null,
+          "original_phase_status": "GREEN",
+          "original_unknown_sticky": false,
+          "outer_kernel_sha256": "7071f6071395f081de5c74564ef240ef88bd1664b0ce98b5c9b1a6149eb82ba7",
+          "source_attempts": 1,
+          "source_payload_bytes_read_in_original_phase_after_UNKNOWN_before_diagnostic_FIN": 0
+        }
+      ],
+      "epoch": "312",
+      "receipt_sha256": "af905181ff2e58ca08a60408076a2b27ef0d5a21f8d4c88584ef6083536024c0",
+      "three_component_conditions_observed": true,
+      "working_source4_bytes10_stable": true
+    }
+  ],
+  "fullGov_gate_runs": 0,
+  "historical_V2_ac9_unchanged": true,
+  "kernel_FIN_all_actual_same_parent": true,
+  "negative_original5_RED_and_UNKNOWN_preserved": true,
+  "no_working_Source_edits": true,
+  "positive_actual_original_finalizer_ECHILD_and_thread_finish": true,
+  "proposal_diff_sha256": "1062f532a519db719481de1fc50a88ca491bc89fdc6ebfc11687cfe5d3839f36",
+  "proposal_new_runner_sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+  "real_orders_sent": 0,
+  "same_three_conditions_in_two_epochs_not_six_distinct_product_scenarios": true,
+  "schema": "rc6.phase-child-postread-natural-controls-final-summary.v1",
+  "selected_files": 127,
+  "selected_original_bytes": 987138
+}

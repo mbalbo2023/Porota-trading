@@ -1,0 +1,593 @@
+{
+  "actual_catalog_count": 12000,
+  "actual_materialized_observations": 60000,
+  "actual_native_launch_to_main_reap_seconds": 16.831398368998634,
+  "actual_parent_cleanup_seconds": 6.388399924617261e-05,
+  "actual_parent_echild_pgid_closed": true,
+  "actual_parent_no_signals_adopted_residue_late_or_zero": true,
+  "actual_pids": {
+    "native_cli": 33093,
+    "resource_tracker": 33098,
+    "supervisor": 33055,
+    "worker": 33099
+  },
+  "artifact_validated": false,
+  "authorized_launch": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6024708682",
+  "business_resource_complete": false,
+  "causal_note": {
+    "bytes": 15508,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/big-closed-red-causal-note.json",
+    "sha256": "c46bf199bf96170f43000ac34e6d4e3e9ce1114bfdde1376d37e8a1c892b129e"
+  },
+  "code_all11_unchanged_claim": false,
+  "code_atime_changes_disclosed_count": 80,
+  "data_original_guard_custody_verified_again_by_postfin_nofollow_noatime_hash": true,
+  "data_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow",
+  "exact_error": {
+    "class": "SnapshotError",
+    "context": {
+      "frames": [
+        {
+          "function": "_shadow_child_work",
+          "line": 439,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "tick",
+          "line": 366,
+          "module": "rc6_shadow_runtime.worker"
+        },
+        {
+          "function": "measured",
+          "line": 332,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "family_reports",
+          "line": 497,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "_read",
+          "line": 202,
+          "module": "rc6_shadow_runtime.families"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "source_connection",
+          "line": 28,
+          "module": "rc6_shadow_runtime.source_reads"
+        },
+        {
+          "function": "__exit__",
+          "line": 144,
+          "module": "contextlib"
+        },
+        {
+          "function": "readonly_copy",
+          "line": 164,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_check",
+          "line": 24,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        }
+      ],
+      "sqlite_errorcode": null,
+      "sqlite_errorname": null
+    },
+    "reason": "TIME_BUDGET_EXHAUSTED"
+  },
+  "external_gc_tuning_profiler_stack_sampler": false,
+  "factual_paper_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.06670639299999959,
+    "elapsed_seconds": 0.07347052899785922,
+    "finished_at_monotonic": 28268.258975045,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638452,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 28268.185335866
+  },
+  "family_handler_aggregate_not_exact0_5_interval": true,
+  "final_candidate_eligible": false,
+  "five_exits_after_red_without_fsync_do_not_close_slow_isolation": true,
+  "full_gov_or_fip_qualification": false,
+  "full_open_browser_dataset_qualified": false,
+  "full_pre_open_pipeline": false,
+  "handler_resources": {
+    "checkpoint_restore": {
+      "calls": 1,
+      "cpu_seconds": 0.000406102999999991,
+      "elapsed_seconds": 0.0003828469998552464,
+      "peak_rss_bytes": 104603648
+    },
+    "families": {
+      "calls": 1,
+      "cpu_seconds": 0.5215510519999995,
+      "elapsed_seconds": 0.5221184969996102
+    },
+    "native_orchestrator": {
+      "calls": 2,
+      "cpu_seconds": 10.830901188,
+      "elapsed_seconds": 10.8385210919987,
+      "peak_rss_bytes": 503107584
+    },
+    "native_stage_enrichment": {
+      "calls": 1,
+      "cpu_seconds": 0.09782155999999986,
+      "elapsed_seconds": 0.09783709700059262,
+      "peak_rss_bytes": 503107584
+    }
+  },
+  "harness_final": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 20294,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/harness-final.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/harness-final.json",
+    "sha256": "ec822dffb43077b86a48cfe66ccb76d0f8fb7e1af2ec6855f7b98aec7f72d57f",
+    "stat11_after": {
+      "st_atime_ns": 1791318101877751954,
+      "st_blocks": 40,
+      "st_ctime_ns": 1791318101879361557,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706449,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318101879361557,
+      "st_nlink": 1,
+      "st_size": 20294,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318101877751954,
+      "st_blocks": 40,
+      "st_ctime_ns": 1791318101879361557,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706449,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318101879361557,
+      "st_nlink": 1,
+      "st_size": 20294,
+      "st_uid": 1000
+    }
+  },
+  "image_validated": false,
+  "import_proof": {
+    "actual157_parent_before_fixtures": {
+      "executable": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "expected_total": 157,
+      "installed_total": 157,
+      "installed_unique_total": 157,
+      "python": "3.11.16"
+    },
+    "actual157_worker_before_products": {
+      "executable": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "expected_total": 157,
+      "installed_total": 157,
+      "installed_unique_total": 157,
+      "python": "3.11.16"
+    },
+    "complete": true,
+    "launcher_source_bound": true,
+    "scope": "ACTUAL_OBSERVED_WINDOWS_NOT_FULL_LIFETIME_BINARY_IMAGE_OR_RUNTIME",
+    "status": "VERIFIED_OBSERVED_WINDOWS",
+    "transient_closure_verified": true,
+    "worker_exitcode": 0,
+    "worker_pid_source_binding_verified": true
+  },
+  "kernel_control": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 2901,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/kernel-supervision.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/kernel-supervision.json",
+    "sha256": "c9b1cefddffa353e570c7551c1ae115b85878a98a7c0a889b3e0bc25bbc44208",
+    "stat11_after": {
+      "st_atime_ns": 1791318099948079473,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318099952047753,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706442,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099952047753,
+      "st_nlink": 1,
+      "st_size": 2901,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318099948079473,
+      "st_blocks": 8,
+      "st_ctime_ns": 1791318099952047753,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706442,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099952047753,
+      "st_nlink": 1,
+      "st_size": 2901,
+      "st_uid": 1000
+    }
+  },
+  "material_gates_combined_qualified": false,
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_cli_exitcode": 1,
+  "native_cli_lifecycle": {
+    "child_infrastructure_finalization": {
+      "errors": [],
+      "finalization_thread_finished": true,
+      "forced_termination": false,
+      "forced_termination_attempted": false,
+      "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+      "inherited_tracker_preserved": false,
+      "initial": {
+        "forkserver_alive_fd": null,
+        "forkserver_pid": null,
+        "resource_tracker_fd": null,
+        "resource_tracker_pid": null
+      },
+      "joined_children": [],
+      "kernel_echild_before_phase_return": true,
+      "management_bound_seconds": 5,
+      "protocol_steps": [
+        {
+          "completed": true,
+          "stage": "nonnegative_stdlib_finalizers",
+          "wall_seconds": 1.0125000699190423e-05
+        },
+        {
+          "completed": true,
+          "stage": "join_owned_children",
+          "wall_seconds": 4.816996806766838e-06
+        },
+        {
+          "completed": true,
+          "stage": "stop_owned_forkserver",
+          "wall_seconds": 2.8439972084015608e-06
+        },
+        {
+          "completed": true,
+          "stage": "remaining_stdlib_finalizers",
+          "wall_seconds": 2.564000169513747e-06
+        },
+        {
+          "completed": true,
+          "stage": "stop_owned_resource_tracker",
+          "wall_seconds": 0.005932852000114508
+        },
+        {
+          "completed": true,
+          "stage": "verify_kernel_echild",
+          "wall_seconds": 2.3234002583194524e-05
+        }
+      ],
+      "signal_guard_installed_and_witnessed": true,
+      "signal_vetoed": false,
+      "status": "GREEN",
+      "stopped_owned_infrastructure": [
+        {
+          "kernel_identity": {
+            "PPid": "33093",
+            "Pid": "33098",
+            "Uid": "1000\t1000\t1000\t1000"
+          },
+          "kind": "resource_tracker",
+          "pid": 33098
+        }
+      ],
+      "termination_signal_attempts": [],
+      "unexpected_kernel_children": [],
+      "wall_seconds": 0.006392902996594785
+    },
+    "child_infrastructure_finalized_before_main_exit": true,
+    "cli_exit_code": 1,
+    "entry_module": "__main__",
+    "fresh_infrastructure_verified": true,
+    "inet_socket_attempts": [],
+    "inet_socket_constructor_requests": [
+      {
+        "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+        "event": "socket.__new__",
+        "family": 10,
+        "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+      }
+    ],
+    "infrastructure_before": {
+      "forkserver_alive_fd": null,
+      "forkserver_pid": null,
+      "resource_tracker_fd": null,
+      "resource_tracker_pid": null
+    },
+    "native_resource_exit_code": 1,
+    "offline_ipv6_creation_capability": {
+      "af_unix_ipc_functional": true,
+      "architecture": "x86_64",
+      "creation_denial_witnesses": [
+        {
+          "errno": 97,
+          "family": 10,
+          "operation": "socket_creation",
+          "socket_created": false
+        }
+      ],
+      "ipv4_creation_grants_operation_authority": false,
+      "kernel_errno": 97,
+      "native_socket_creation_denied_families": [
+        10
+      ],
+      "no_new_privileges": true,
+      "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+      "status": "INSTALLED_AND_KERNEL_WITNESSED",
+      "transitive_kernel_network_attestation": false
+    },
+    "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+    "original_inet_operation_audit_registration_witness_verified": true,
+    "parent_pid": 33055,
+    "pid": 33093,
+    "schema": "rc6.issue465.native-cli-lifecycle.v1",
+    "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE",
+    "status": "GREEN",
+    "subprocess_executable_counts": {
+      "git": 4
+    },
+    "unexpected_error": null
+  },
+  "native_completion_required": true,
+  "native_data_all11_unchanged": true,
+  "native_data_custody_after": {
+    "": {
+      "sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+      "st_atime_ns": 1791318084980147805,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791318084952147932,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706424,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318084952147932,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "native_data_custody_before": {
+    "": {
+      "sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+      "st_atime_ns": 1791318084980147805,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791318084952147932,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706424,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791318084952147932,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "native_data_main_and_sidecars_preserved": {
+    "absent_before_after_wal_shm_journal": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow/data/paper_v17/observer_v17.db-wal",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow/data/paper_v17/observer_v17.db-shm",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow/data/paper_v17/observer_v17.db-journal"
+    ],
+    "main": {
+      "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+      "bytes": 23162880,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow/data/paper_v17/observer_v17.db",
+      "raw_original_preserved": true,
+      "relative_path": "data-slow/data/paper_v17/observer_v17.db",
+      "sha256": "d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5",
+      "stat11_after": {
+        "st_atime_ns": 1791318084980147805,
+        "st_blocks": 45240,
+        "st_ctime_ns": 1791318084952147932,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1706424,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318084952147932,
+        "st_nlink": 1,
+        "st_size": 23162880,
+        "st_uid": 1000
+      },
+      "stat11_before": {
+        "st_atime_ns": 1791318084980147805,
+        "st_blocks": 45240,
+        "st_ctime_ns": 1791318084952147932,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1706424,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318084952147932,
+        "st_nlink": 1,
+        "st_size": 23162880,
+        "st_uid": 1000
+      }
+    },
+    "original_custody_all11_actual_receipt": true
+  },
+  "native_diagnostic_only": false,
+  "native_diagnostic_stack_file": null,
+  "native_fsync": {
+    "blocked_seconds": 0.0,
+    "fsync_completed": false,
+    "fsync_entered": false,
+    "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+  },
+  "native_resource_exitcode": 1,
+  "native_stdlib_finalization_bound5_actual_seconds": 0.006392902996594785,
+  "native_supervisor_did_not_read_data_payload": true,
+  "no_prior_red_or_alien_reclassified": true,
+  "observed_phases": [
+    "BOUNDED_READ"
+  ],
+  "original_native_receipt": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 1593778,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/native-big-result.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/native-big-result.json",
+    "sha256": "5088043ec19f480c0ad51dd63669e038b746abf08bb47b1c78ae0b1a494ed66f",
+    "stat11_after": {
+      "st_atime_ns": 1791318099872079820,
+      "st_blocks": 3120,
+      "st_ctime_ns": 1791318099875916661,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706446,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099875916661,
+      "st_nlink": 1,
+      "st_size": 1593778,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318099872079820,
+      "st_blocks": 3120,
+      "st_ctime_ns": 1791318099875916661,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706446,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318099875916661,
+      "st_nlink": 1,
+      "st_size": 1593778,
+      "st_uid": 1000
+    }
+  },
+  "postfin_indexing_process_reads_owned_data_only_after_actual_kernel_control": true,
+  "ppi_watch": "UNTOUCHED_OUT_OF_SCOPE",
+  "programming_gates_closed_by_this_run": [],
+  "programming_gates_pending": [
+    "families_original0.5_capture",
+    "canonical_full_PRE_OPEN_cycle90",
+    "actual5EXIT_during_slow_fsync",
+    "BIG_combined_original_resource_completion"
+  ],
+  "provider_requests": 0,
+  "raw_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow",
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "resource_gate_boolean_counts": {
+    "FAIL": 2,
+    "PASS": 4
+  },
+  "resource_gates": {
+    "actual_evidence_bytes": 516296,
+    "actual_rss_bytes": 503107584,
+    "actual_slow_fsync_exit_isolation": false,
+    "child_cleanup_completed": true,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "reported_worker_rss_bytes": 503107584,
+    "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "retry_count": 0,
+  "runtime_validated": false,
+  "schema": "rc6.native-direct-big.exact-terminal-summary.v2",
+  "single_execution_completed": true,
+  "source_after_capture": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 2644493,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/source-after.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/source-after.json",
+    "sha256": "8d97e977b83e3cec3f998ccc10150a43cdc20aecd209167622461a81b5f8c342",
+    "stat11_after": {
+      "st_atime_ns": 1791318101852070816,
+      "st_blocks": 5168,
+      "st_ctime_ns": 1791318101857618084,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706447,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318101857618084,
+      "st_nlink": 1,
+      "st_size": 2644493,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318101852070816,
+      "st_blocks": 5168,
+      "st_ctime_ns": 1791318101857618084,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706447,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318101857618084,
+      "st_nlink": 1,
+      "st_size": 2644493,
+      "st_uid": 1000
+    }
+  },
+  "source_before_capture": {
+    "all11_output_file_stats_unchanged_during_nofollow_noatime_read": true,
+    "bytes": 2644493,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow/source-before.json",
+    "raw_original_preserved": true,
+    "relative_path": "raw-slow/source-before.json",
+    "sha256": "2152ee3a39d46bbe078c631b8deee55d1b0dedb15c4514e5cbba25449ee732f7",
+    "stat11_after": {
+      "st_atime_ns": 1791318083096156362,
+      "st_blocks": 5168,
+      "st_ctime_ns": 1791318083100736208,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706418,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318083100736208,
+      "st_nlink": 1,
+      "st_size": 2644493,
+      "st_uid": 1000
+    },
+    "stat11_before": {
+      "st_atime_ns": 1791318083096156362,
+      "st_blocks": 5168,
+      "st_ctime_ns": 1791318083100736208,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1706418,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791318083100736208,
+      "st_nlink": 1,
+      "st_size": 2644493,
+      "st_uid": 1000
+    }
+  },
+  "source_file_count": 3680,
+  "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+  "source_literal_bytes_modes_rawgit_and_original10_unchanged": true,
+  "source_original_gc_calls_preserved": true,
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tar_sha256": "65e93c214ec23927875f70e602a22e3255b47031061eb75a229d474a661c051d",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "RED",
+  "utc": "2026-10-06T20:30:38.340078+00:00",
+  "worker_cycle_cpu_seconds": 13.442073299999999,
+  "worker_cycle_elapsed_seconds": 13.455293466999137
+}

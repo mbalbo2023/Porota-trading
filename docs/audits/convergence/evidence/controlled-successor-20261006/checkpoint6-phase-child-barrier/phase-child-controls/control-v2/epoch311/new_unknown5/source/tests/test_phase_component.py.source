@@ -1,0 +1,44 @@
+"""Real owned stdlib lifecycle; tiny component catalog, never Gov evidence."""
+import json
+import multiprocessing as mp
+from multiprocessing import util
+import os
+from pathlib import Path
+import time
+
+
+def owned_six_second_worker(connection):
+    connection.send({'pid': os.getpid(), 'ppid': os.getppid(),
+        'uid': os.getuid(), 'euid': os.geteuid(), 'pgid': os.getpgrp(),
+        'sid': os.getsid(0), 'sleep_seconds': 6, 'entered_monotonic': time.monotonic()})
+    connection.close()
+    time.sleep(6)
+
+
+def test_real_owned_stdlib_join_exceeds_original_finalizer_five_seconds():
+    context = mp.get_context('fork')
+    receive, send = context.Pipe(duplex=False)
+    worker = context.Process(target=owned_six_second_worker, args=(send,))
+    worker.start()
+    send.close()
+    assert receive.poll(2), 'OWN_WORKER_HANDSHAKE_NOT_OBSERVED'
+    identity = receive.recv()
+    receive.close()
+    assert identity['pid'] == worker.pid and identity['ppid'] == os.getpid()
+    assert identity['uid'] == os.getuid() and identity['euid'] == os.geteuid()
+    assert worker.daemon is False and worker.is_alive()
+    # Register a real stdlib lifecycle callback on the actual Process.join.
+    # The productive finalizer and its actual daemon thread are not replaced.
+    finalizer = util.Finalize(None, worker.join, exitpriority=0)
+    assert finalizer.still_active()
+    report = {'schema': 'rc6.phase-child-real-owned-worker-control.v1',
+        'component_only_not_Gov': True, 'phase_parent_pid': os.getpid(),
+        'actual_worker': identity, 'stdlib_finalize_registered': True,
+        'stdlib_exitpriority': 0, 'callback': 'ACTUAL_OWNED_PROCESS_JOIN',
+        'termination_calls': 0, 'real_orders_sent': 0}
+    path = Path(os.environ['RC6_COMPONENT_CONTROL_OUTPUT'])/'producer-control.json'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        stream.write((json.dumps(report, indent=2, sort_keys=True)+'\n').encode())
+        stream.flush()
+        os.fsync(stream.fileno())

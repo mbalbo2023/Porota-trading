@@ -1,0 +1,36 @@
+{
+  "argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/repository/docs/audits/convergence/evidence/native-big-1426b284-157/export-whole-source.py.source",
+    "--repo",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/repository",
+    "--sha",
+    "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "--source",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+    "--raw",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/pin"
+  ],
+  "big_executed": false,
+  "classification": "EXACT_WHOLE_RAW_GIT_SOURCE_EXPORT_NOT_GATE_EXECUTION",
+  "created_utc": "2026-10-06T20:08:23.364194+00:00",
+  "elapsed_seconds": 1.8752725070007727,
+  "exporter_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+  "no_overlay": true,
+  "schema": "rc6.exact-whole-source-export-preparation.v2",
+  "source_export": {
+    "overlay_count": 0,
+    "source": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/source",
+    "source_files": 3680,
+    "source_index": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/pin/source.index.json",
+    "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+    "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+    "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+    "tar_sha256": "65e93c214ec23927875f70e602a22e3255b47031061eb75a229d474a661c051d"
+  },
+  "stderr_bytes": 0,
+  "tests_executed": false,
+  "transport": "CANONICAL_GITHUB_HTTPS"
+}
