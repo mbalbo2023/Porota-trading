@@ -312,25 +312,37 @@ class _CaptureBuilder:
             self._publication_scope = None
 
     def _count(self, value):
-        if not isinstance(value, (dict, list, tuple)):
+        kind = type(value)
+        if (kind is not dict and kind is not list and kind is not tuple
+                and not isinstance(value, (dict, list, tuple))):
             return
         key = id(value)
         self.incoming[key] = self.incoming.get(key, 0)+1
         if key in self.objects:
             return
         self.objects[key] = value
-        for child in value.values() if isinstance(value, dict) else value:
+        for child in value.values() if kind is dict or isinstance(value, dict) else value:
             # Scalar leaves do not contribute a container identity or edge.
             # Keep alias arrivals and strong references in the recursive path.
-            if isinstance(child, (dict, list, tuple)):
+            kind = type(child)
+            if (kind is dict or kind is list or kind is tuple
+                    or kind is not str and kind is not int and kind is not float
+                    and kind is not bool and child is not None
+                    and isinstance(child, (dict, list, tuple))):
                 self._count(child)
 
     def _scalar(self, value):
-        if type(value) not in (type(None), bool, int, float, str):
-            return _canonical(value)
+        # Exact builtin values need no repeated type/equality dispatch. Unknown
+        # classes retain the original checks, including metaclass callbacks.
+        kind = type(value)
+        if kind is str or kind is int or kind is float or kind is bool or value is None:
+            key = kind, value.hex() if kind is float else value
+        else:
+            if type(value) not in (type(None), bool, int, float, str):
+                return _canonical(value)
+            key = type(value), value.hex() if type(value) is float else value
         # Python equates negative zero with positive zero; its JSON lexeme is
         # distinct and must remain distinct even inside a local byte cache.
-        key = type(value), value.hex() if type(value) is float else value
         if key not in self.scalars:
             self.scalars[key] = _canonical(value)
         return self.scalars[key]
@@ -363,7 +375,9 @@ class _CaptureBuilder:
         return Capture(_VOLATILE.sub(replace, _canonical(value)), tuple(literals))
 
     def _append(self, value, name, buffer, *, root=False):
-        container = isinstance(value, (dict, list, tuple))
+        kind = type(value)
+        container = (kind is dict or kind is list or kind is tuple
+                     or isinstance(value, (dict, list, tuple)))
         short_raw = None
         if container and not root and (
                 self.incoming.get(id(value), 0) >= 2 or name in _FIELDS):
@@ -391,7 +405,7 @@ class _CaptureBuilder:
                 and len(value) >= self._publication_scope.minimum_items
                 and self._publication_scope.append(self, value, name, buffer, root=root)):
             return
-        if isinstance(value, dict):
+        if kind is dict or isinstance(value, dict):
             buffer.append(b"{")
             for ordinal, key in enumerate(sorted(value)):
                 buffer.append((b"," if ordinal else b"")+self._scalar(key)+b":")
@@ -405,7 +419,7 @@ class _CaptureBuilder:
                 else:
                     self._append(child, key, buffer)
             buffer.append(b"}")
-        elif isinstance(value, (list, tuple)):
+        elif kind is list or kind is tuple or isinstance(value, (list, tuple)):
             buffer.append(b"[")
             for ordinal, child in enumerate(value):
                 if ordinal:

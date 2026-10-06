@@ -1,0 +1,123 @@
+{
+  "browser_environment_not_created": true,
+  "selected": [
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/playwright-1.62.0-py3-none-manylinux1_x86_64.whl.METADATA",
+      "metadata_sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e",
+      "name": "playwright",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/43/6b/b24aebc2b04bffcb342bccf96e287c78b363e1615bed5cea97500cc0393a/playwright-1.62.0-py3-none-manylinux1_x86_64.whl.metadata",
+      "requires_dist": [
+        "pyee<14,>=13",
+        "greenlet<4.0.0,>=3.1.1"
+      ],
+      "requires_python": ">=3.10",
+      "version": "1.62.0",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "a1443e21066f73be70ae0f5c21f6c61a830776104052e281ef5559475377071e"
+        },
+        "dist_info_metadata": null,
+        "filename": "playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+        "sha256": "ba33bae6a13b3d9d354c751cb618af357d20fe1d57767cbcce52079bbef17ad3",
+        "size": 47748926,
+        "upload_time_iso_8601": "2026-07-31T17:00:56.438925Z",
+        "url": "https://files.pythonhosted.org/packages/43/6b/b24aebc2b04bffcb342bccf96e287c78b363e1615bed5cea97500cc0393a/playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/pyee-13.0.1-py3-none-any.whl.METADATA",
+      "metadata_sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c",
+      "name": "pyee",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl.metadata",
+      "requires_dist": [
+        "typing-extensions",
+        "build; extra == \"dev\"",
+        "flake8; extra == \"dev\"",
+        "flake8-black; extra == \"dev\"",
+        "pytest; extra == \"dev\"",
+        "pytest-asyncio; python_version >= \"3.4\" and extra == \"dev\"",
+        "pytest-trio; python_version >= \"3.7\" and extra == \"dev\"",
+        "black; extra == \"dev\"",
+        "isort; extra == \"dev\"",
+        "jupyter-console; extra == \"dev\"",
+        "mkdocs; extra == \"dev\"",
+        "mkdocs-include-markdown-plugin; extra == \"dev\"",
+        "mkdocstrings[python]; extra == \"dev\"",
+        "mypy; extra == \"dev\"",
+        "sphinx; extra == \"dev\"",
+        "toml; extra == \"dev\"",
+        "tox; extra == \"dev\"",
+        "trio; extra == \"dev\"",
+        "trio; python_version > \"3.6\" and extra == \"dev\"",
+        "trio-typing; python_version > \"3.6\" and extra == \"dev\"",
+        "twine; extra == \"dev\"",
+        "twisted; extra == \"dev\"",
+        "validate-pyproject[all]; extra == \"dev\""
+      ],
+      "requires_python": ">=3.8",
+      "version": "13.0.1",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "7512d063d60cb405124a6c5fdd2c688d78a4c6b6841b8eeb00a59474ef59d43c"
+        },
+        "dist_info_metadata": null,
+        "filename": "pyee-13.0.1-py3-none-any.whl",
+        "sha256": "af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228",
+        "size": 15659,
+        "upload_time_iso_8601": "2026-02-14T21:12:26.263088Z",
+        "url": "https://files.pythonhosted.org/packages/a0/c4/b4d4827c93ef43c01f599ef31453ccc1c132b353284fc6c87d535c233129/pyee-13.0.1-py3-none-any.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.METADATA",
+      "metadata_sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38",
+      "name": "greenlet",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/51/2d/f2c928218ac52f26d7a2c188c171d1b7e728b23782cb3347e7b4fce1493a/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata",
+      "requires_dist": [
+        "Sphinx; extra == \"docs\"",
+        "furo; extra == \"docs\"",
+        "objgraph; extra == \"test\"",
+        "psutil; extra == \"test\"",
+        "setuptools; extra == \"test\""
+      ],
+      "requires_python": ">=3.10",
+      "version": "3.5.5",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "16de87de070796e2e1f18019f963c3ba5972bb9bfca1b856b83096bf73c61f38"
+        },
+        "dist_info_metadata": null,
+        "filename": "greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "74cc6df89ec5302337adc9cf096221cbed2510fd444b0e0f1586cf0470740864",
+        "size": 624562,
+        "upload_time_iso_8601": "2026-08-10T13:40:48.064926Z",
+        "url": "https://files.pythonhosted.org/packages/51/2d/f2c928218ac52f26d7a2c188c171d1b7e728b23782cb3347e7b4fce1493a/greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "yanked": false
+      }
+    },
+    {
+      "metadata_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/typing_extensions-4.16.0-py3-none-any.whl.METADATA",
+      "metadata_sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46",
+      "name": "typing_extensions",
+      "official_metadata_url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl.metadata",
+      "requires_dist": [],
+      "requires_python": ">=3.9",
+      "version": "4.16.0",
+      "wheel": {
+        "core_metadata": {
+          "sha256": "b05084ca1d50879865178d9fff9fabeab61bdfb1f361bfbde95421ffc8f9be46"
+        },
+        "dist_info_metadata": null,
+        "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "size": 45571,
+        "upload_time_iso_8601": "2026-07-02T08:40:04.659120Z",
+        "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+        "yanked": false
+      }
+    }
+  ],
+  "wheel_bytes_not_downloaded": true
+}

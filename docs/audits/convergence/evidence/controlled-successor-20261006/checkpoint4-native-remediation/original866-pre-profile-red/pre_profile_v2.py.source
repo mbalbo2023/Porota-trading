@@ -1,0 +1,553 @@
+"""One bounded native PRE CPU diagnosis; never an acceptance gate.
+
+Uses the frozen legacy fixture and original native functions. cProfile does
+not replace code, functions, modules or input graphs. No OPEN or recovery runs.
+"""
+from __future__ import annotations
+
+import argparse
+from contextlib import closing
+import cProfile
+import hashlib
+import json
+import marshal
+import os
+from pathlib import Path
+import platform
+import pstats
+import re
+import resource
+import signal
+import sqlite3
+import stat
+import sys
+import threading
+import time
+
+EPOCH = Path(__file__).absolute().parent
+BASE = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum')
+FROZEN = BASE/'rc6-canonical-big-86615-MSpFSS9s'
+SOURCE = FROZEN/'source'
+REPOSITORY = FROZEN/'repository'
+PIN = FROZEN/'pin/source.index.json'
+RAW = EPOCH/'raw'
+DATA = EPOCH/'data'
+DATABASE = DATA/'source.db'
+EVIDENCE = DATA/'evidence'
+PYTHON = str(BASE/'venv311/bin/python')
+SHA = '86615bd8c669209e8d391d114016d923fe084dc0'
+TREE = 'ad192bb7f707b082e680a699e1f00f9efabc755f'
+INDEX_SHA256 = '614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779'
+LIMIT_SECONDS = 90
+RSS_LIMIT = 2*1024**3
+EVIDENCE_LIMIT = 128*1024**2
+STABLE_FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+                 'st_size', 'st_blocks', 'st_mtime_ns', 'st_ctime_ns')
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(SOURCE))
+from scripts import rc6_controlled_governed_runner as gov
+
+
+def publish(name, value):
+    gov.publish(RAW/name, gov.canonical(value))
+
+
+def failure(error, stage):
+    row = {'stage': stage, 'class': type(error).__name__}
+    reason = str(error).partition(':')[0]
+    row['reason'] = reason if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}', reason) else 'NON_LITERAL_EXCEPTION'
+    if isinstance(error, OSError) and type(error.errno) is int:
+        row['errno'] = error.errno
+    return row
+
+
+def binding():
+    from scripts.rc6_native_import_provenance import prepare_binding
+    wire, _attributes = gov.capture(PIN)
+    gov.require(hashlib.sha256(wire).hexdigest() == INDEX_SHA256, 'EXACT_SOURCE_INDEX_REQUIRED')
+    return prepare_binding(source_root=str(SOURCE), source_repo=str(REPOSITORY),
+        source_sha=SHA, source_tree=TREE, source_index=str(PIN))
+
+
+def source_snapshot():
+    bound = binding()
+    index_wire, index_attributes = gov.capture(PIN)
+    index = json.loads(index_wire)
+    physical_before = gov.physical_namespace(SOURCE)
+    rows = {}
+    for name, expected in bound['files'].items():
+        wire, attributes = gov.capture(SOURCE/name)
+        blob = hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()
+        mode = '100'+format(stat.S_IMODE(attributes['st_mode']), '03o')
+        gov.require(hashlib.sha256(wire).hexdigest() == expected['sha256']
+                    and blob == expected['blob_id'] and mode == expected['mode'],
+                    'PHYSICAL_SOURCE_PIN_MISMATCH')
+        rows[name] = {'sha256': expected['sha256'], 'git_blob': blob,
+                      'git_mode': mode, 'bytes': len(wire), 'stat_fields': attributes}
+    physical_after = gov.physical_namespace(SOURCE)
+    gov.require(physical_before == physical_after and set(rows) == set(physical_after['files']),
+                'PHYSICAL_NAMESPACE_CHANGED_OR_NONLITERAL')
+    for name, row in rows.items():
+        gov.require(row['stat_fields'] == physical_after['files'][name], 'PHYSICAL_STAT_CAPTURE_MISMATCH')
+    return {'source_sha': SHA, 'source_tree': TREE, 'source_index_sha256': INDEX_SHA256,
+            'files': rows, 'physical_directories': physical_after['directories'],
+            'git_metadata': {'source_repo': str(REPOSITORY), 'source_index_sha256': INDEX_SHA256,
+                'raw_git_commit_sha256': index['raw_git_commit_sha256'], 'source_index_stat': index_attributes},
+            'overlay_count': 0, 'scope': 'LITERAL_RAW_GIT_PHYSICAL_WHOLE_SOURCE_CODE10STABLE_SEPARATE_ATIME'}
+
+
+def setup(phase):
+    gov.require(sys.executable == PYTHON and platform.python_version() == '3.11.16'
+                and os.getuid() == os.geteuid() != 0, 'EXACT_NATIVE_NONROOT_LOCKED311_REQUIRED')
+    namespace = gov.phase_namespace(SOURCE, RAW, phase)
+    capability = gov.restrict_inet_creation()
+    observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+                    'subprocess_executable_counts': {}}
+    gov.install_phase_audit(observations)
+    publish(phase+'.namespace.json', namespace)
+    publish(phase+'.offline-capability.json', capability)
+    publish(phase+'.installed-closure.json', gov.installed_closure(SOURCE))
+    return observations
+
+
+class NativeDeadlineInterrupted(BaseException):
+    pass
+
+
+class PreDiagnosticStop(BaseException):
+    """Expected diagnostic boundary after seal; never a completed tick."""
+
+
+class ConstructorProbe:
+    """Observe original queue events without replacing product functions."""
+    def __init__(self, stress, packed, commit):
+        self.helper_code = stress._shadow_child_work.__code__
+        self.constructor_code = packed._PREPARED_CONSTRUCTOR_CODE
+        self.commit_code = commit.__code__
+        self.operation_codes = tuple(code for code in self.helper_code.co_consts
+                                     if type(code) is type(self.helper_code) and code.co_name == 'operation')
+        self.events, self.profiles = [], []
+        self.current = self.published = None
+        self.stop_after_seal = False
+        self.read_counts = self.worker_settings = None
+        self.actual_shadow_final = None
+        self.closed = False
+
+    def put(self, message):
+        frame = sys._getframe(1)
+        try:
+            event, name = message.get('_probe_event'), message.get('handler_name')
+            caller_name = frame.f_locals.get('_name')
+            row = {'event': event, 'handler_name': name,
+                   'original_handler_name': caller_name,
+                   'received_at_monotonic': time.monotonic(),
+                   'entered_at_monotonic': message.get('entered_at_monotonic'),
+                   'child_cpu_seconds': message.get('child_cpu_seconds'),
+                   'child_elapsed_seconds': message.get('elapsed_seconds'),
+                   'phases': list(message.get('phases', []))}
+            gov.require(len(self.events) < 256, 'DIAGNOSTIC_PROBE_EVENT_BOUND_EXCEEDED')
+            self.events.append(row)
+            if event in ('ENTER', 'PROGRESS') and caller_name == 'storage_prepare':
+                gov.require(any(frame.f_code is code for code in self.operation_codes)
+                            and frame.f_code.co_filename == str(SOURCE/'scripts/rc6_issue465_stress.py')
+                            and frame.f_locals['_original'].__code__ is self.constructor_code,
+                            'ORIGINAL_CONSTRUCTOR_DELEGATE_CODE_REQUIRED')
+                if event == 'ENTER':
+                    gov.require(self.current is None, 'NESTED_STORAGE_PROFILE_UNSUPPORTED_RED')
+                    arguments = frame.f_locals['args']
+                    graph = arguments[1]
+                    owner = frame.f_back
+                    role = owner.f_locals.get('role') if owner is not None else None
+                    role = role if role in ('report', 'checkpoint', 'status') else 'funnel_checkpoint'
+                    ordinal = len(self.profiles)+1
+                    gov.require(ordinal <= 4, 'ORIGINAL_PRE_CONSTRUCTOR_BOUND_EXCEEDED')
+                    metadata = {'ordinal': ordinal, 'role': role,
+                        'native_graph_identity': id(graph), 'native_instance_identity': id(arguments[0]),
+                        'engines_identity': id(graph['engines']) if 'engines' in graph else None,
+                        'durable_limit': frame.f_locals['kwargs']['durable_limit'],
+                        'expansion_limit': frame.f_locals['kwargs']['expansion_limit'],
+                        'original_constructor_code_identity_verified': True,
+                        'original_constructor_code_sha256': hashlib.sha256(marshal.dumps(self.constructor_code)).hexdigest(),
+                        'wall_started': time.monotonic(), 'cpu_started': time.process_time()}
+                    profile = cProfile.Profile()
+                    self.current = (profile, metadata)
+                    profile.enable()
+                else:
+                    gov.require(self.current is not None, 'STORAGE_PROFILE_EXIT_WITHOUT_ENTRY')
+                    profile, metadata = self.current
+                    profile.disable()
+                    self.current = None
+                    metadata.update(wall_seconds=time.monotonic()-metadata.pop('wall_started'),
+                        cpu_seconds=time.process_time()-metadata.pop('cpu_started'),
+                        returned_normally='value' in frame.f_locals,
+                        peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024)
+                    filename = 'ctor-%02d-%s.pstats' % (metadata['ordinal'], metadata['role'])
+                    profile.dump_stats(str(RAW/filename))
+                    metadata['pstats_filename'] = filename
+                    self.profiles.append(metadata)
+                    publish('ctor-%02d.metadata.json' % metadata['ordinal'], metadata)
+                return
+            if event == 'FINAL':
+                self.actual_shadow_final = message
+            if event == 'PROGRESS' and caller_name == 'publication':
+                gov.require(any(frame.f_code is code for code in self.operation_codes)
+                            and frame.f_locals['_original'].__code__ is self.commit_code,
+                            'ORIGINAL_PUBLICATION_DELEGATE_CODE_REQUIRED')
+                value = frame.f_locals.get('value')
+                if value is not None:
+                    gov.require(self.current is None and len(self.profiles) == 4,
+                                'ORIGINAL_PRE_FOUR_CONSTRUCTORS_REQUIRED')
+                    gov.require(value['pointer']['sequence'] == 1, 'ORIGINAL_PRE_SEALED_SEQUENCE_REQUIRED')
+                    self.published = value  # Strong reference, never a graph clone/round-trip.
+                    cursor = frame.f_back
+                    while cursor is not None and cursor.f_code is not self.helper_code:
+                        cursor = cursor.f_back
+                    gov.require(cursor is not None, 'ORIGINAL_NATIVE_HELPER_FRAME_REQUIRED')
+                    data, worker = cursor.f_locals['data'], cursor.f_locals['worker']
+                    self.read_counts = {'catalog_returned': len(data['catalog']),
+                        'observations_returned': len(data['observations']),
+                        'observation_read_truncated': data['observation_read_truncated']}
+                    self.worker_settings = {'query_budget_seconds': worker.query_budget_seconds,
+                        'maximum_bytes': worker.maximum_bytes, 'source_roots': list(map(str, worker.source_roots)),
+                        'evidence_root': str(worker.root), 'archive_root': str(worker.files.archive_root)}
+                    self.stop_after_seal = True
+                    raise PreDiagnosticStop('PRE_DIAGNOSTIC_STOP_AFTER_SEALED_PUBLICATION')
+        finally:
+            del frame
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        if self.current is not None:
+            profile, metadata = self.current
+            profile.disable()
+            self.current = None
+            filename = 'ctor-%02d-%s-interrupted.pstats' % (metadata['ordinal'], metadata['role'])
+            profile.dump_stats(str(RAW/filename))
+            metadata.update(pstats_filename=filename, interrupted=True,
+                wall_seconds=time.monotonic()-metadata.pop('wall_started'),
+                cpu_seconds=time.process_time()-metadata.pop('cpu_started'), returned_normally=False)
+            self.profiles.append(metadata)
+        publish('child.constructor-profiles.json', self.profiles)
+        publish('child.original-probe-events.json', self.events)
+        if self.actual_shadow_final is not None:
+            publish('child.original-shadow-final.json', self.actual_shadow_final)
+
+
+def child():
+    observations = setup('execution')
+    initial = gov.child_infrastructure_snapshot()
+    gov.require(all(value is None for value in initial.values()), 'FRESH_CHILD_INFRASTRUCTURE_REQUIRED')
+    publish('child.infrastructure-before.json', initial)
+    observer = None
+    probe = None
+    errors = []
+    result = None
+    before = after = None
+    profile_saved = False
+    started = time.monotonic()
+    cpu = time.process_time()
+    interrupted = []
+
+    def interrupt(signum, _frame):
+        interrupted.append(int(signum))
+        raise NativeDeadlineInterrupted('NATIVE_PARENT_DEADLINE_INTERRUPTED')
+
+    signal.signal(signal.SIGTERM, interrupt)
+    signal.signal(signal.SIGINT, interrupt)
+    try:
+        from scripts.rc6_native_import_provenance import NativeImportObserver
+        observer = NativeImportObserver(binding(), role='DIAGNOSTIC_NATIVE_PRE_COMPONENT')
+        publish('child.import-before.json', observer.initial_receipt())
+        from scripts import rc6_issue465_stress as stress
+        from rc6_shadow_runtime import persistence
+        from rc6_shadow_runtime import packed_storage as packed
+        from rc6_shadow_runtime import publication_storage, serialization
+        originals = {'constructor': packed.PreparedPackedStorage.__init__.__code__,
+            'native_helper': stress._shadow_child_work.__code__,
+            'shape': serialization._shape.__code__, 'count': packed._CaptureBuilder._count.__code__,
+            'append': packed._CaptureBuilder._append.__code__,
+            'frame_snapshot': publication_storage._Snapshot.__init__.__code__,
+            'publication': persistence.EvidenceFiles.commit_generation.__code__}
+        gov.require(originals['constructor'] is packed._PREPARED_CONSTRUCTOR_CODE,
+                    'FROZEN_UNWRAPPED_CONSTRUCTOR_CODE_REQUIRED')
+        code_proofs = {name: hashlib.sha256(marshal.dumps(code)).hexdigest() for name, code in originals.items()}
+        publish('child.original-codes-before.json', code_proofs)
+        before = stress.source_custody_snapshot(DATABASE)
+        publish('child.data-before.json', before)
+        probe = ConstructorProbe(stress, packed, persistence.EvidenceFiles.commit_generation)
+        try:
+            # Original helper owns its original wrappers and native PRE call.
+            # The adapter adds no wrappers, module assignments or aliases.
+            stress._shadow_child_work(DATABASE, EVIDENCE, threading.Event(), threading.Event(),
+                probe, False, EVIDENCE_LIMIT, False, None, None, None)
+        except PreDiagnosticStop:
+            gov.require(probe.stop_after_seal and probe.published is not None,
+                        'DIAGNOSTIC_STOP_BEFORE_PUBLICATION_FORBIDDEN')
+        probe.close()
+        profile_saved = bool(probe.profiles)
+        gov.require(probe.published is not None, 'NATIVE_PRE_PUBLICATION_NOT_COMPLETED')
+        report = probe.published['report']
+        gov.require(report['provider_requests'] == report['real_orders_sent'] == 0
+                    and report['real_routes'] == 'NOT_CALLED'
+                    and report['source_database_effect'] == 'READ_ONLY'
+                    and report['as_of'] == stress.PRE.isoformat(), 'NATIVE_PRE_SAFETY_OR_CLOCK_MISMATCH')
+        # Original verifier and its original one-second deadline. The result
+        # is a PRE component custody witness, not deploy-artifact validation.
+        committed = persistence.read_committed_projection(EVIDENCE, deadline=time.monotonic()+1)
+        gov.require(committed['pointer']['sequence'] == 1
+                    and committed['report']['generation_id'] == report['generation_id']
+                    and committed['report']['as_of'] == report['as_of'], 'NATIVE_PRE_COMMIT_MISMATCH')
+        members = committed['manifest']['files']
+        result = {'status': report['status'], 'as_of': report['as_of'], 'phase': report['phase'],
+            'generation_id': report['generation_id'], 'sequence': committed['pointer']['sequence'],
+            'manifest_sha256': committed['pointer']['manifest_sha256'],
+            'role_proofs': {key: {name: value[name] for name in ('sha256', 'payload_digest', 'logical_bytes')
+                                if name in value} for key, value in members.items()},
+            **probe.read_counts, **probe.worker_settings,
+            'canonical_runtime': False, 'PRE_published': True, 'OPEN_called': False,
+            'original_tick_returned': False, 'original_helper_cycle_completed': False,
+            'diagnostic_stop_boundary': 'ORIGINAL_PUBLICATION_PROGRESS_AFTER_CURRENT_AND_LINEAGE_SEAL',
+            'recovery_called': False, 'real_orders_sent': 0, 'provider_requests': 0,
+            'real_routes': 'NOT_CALLED', 'source_database_effect': 'READ_ONLY'}
+        # Underlying original delegates remain identical. The helper itself
+        # installed its preexisting source wrappers; those are not new code.
+        gov.require(stress._shadow_child_work.__code__ is originals['native_helper']
+                    and serialization._shape.__code__ is originals['shape']
+                    and packed._CaptureBuilder._count.__code__ is originals['count']
+                    and packed._CaptureBuilder._append.__code__ is originals['append']
+                    and publication_storage._Snapshot.__init__.__code__ is originals['frame_snapshot']
+                    and packed._PREPARED_CONSTRUCTOR_CODE is originals['constructor'],
+                    'ORIGINAL_SOURCE_CODE_IDENTITY_CHANGED')
+        publish('child.original-codes-after.json', code_proofs)
+        publish('child.native-pre.json', result)
+        probe.published = None
+    except BaseException as error:
+        errors.append(failure(error, 'native_pre'))
+    finally:
+        if probe is not None:
+            try:
+                probe.close()
+                profile_saved = bool(probe.profiles)
+            except BaseException as error:
+                errors.append(failure(error, 'profile_save'))
+        if before is not None:
+            try:
+                from scripts import rc6_issue465_stress as stress
+                after = stress.source_custody_snapshot(DATABASE)
+                publish('child.data-after.json', after)
+                gov.require(before == after, 'SOURCE_DATABASE_ALL11_CUSTODY_CHANGED')
+            except BaseException as error:
+                errors.append(failure(error, 'data_after'))
+        if observer is not None:
+            try:
+                import_proof = observer.finish()
+                publish('child.import-final.json', import_proof)
+            except BaseException as error:
+                errors.append(failure(error, 'import_finish'))
+            finally:
+                observer.deactivate()
+        finalization = gov.finalize_child_infrastructure(initial, limit=5)
+        publish('child.finalization.json', finalization)
+        complete = bool(result is not None and before == after and not errors and not interrupted
+                        and finalization['status'] == 'GREEN' and not observations['inet_socket_attempts'])
+        publish('child.final.json', {'diagnostic_only': True, 'gate_qualified': False,
+            'native_PRE_publication_complete': complete, 'original_tick_returned': False,
+            'OPEN_called': False, 'recovery_called': False, 'profile_saved': profile_saved,
+            'interruption_signals': interrupted, 'errors': errors, 'observations': observations,
+            'wall_seconds': time.monotonic()-started, 'cpu_seconds': time.process_time()-cpu,
+            'self_peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+            'real_orders_sent': 0, 'PPI_Watch': 'UNTOUCHED'})
+    return 0 if complete else 1
+
+
+def profile_rows(stats):
+    rows = []
+    for (filename, line, function), (primitive, total, exclusive, cumulative, callers) in stats.stats.items():
+        rows.append({'filename': filename, 'line': line, 'function': function,
+            'primitive_calls': primitive, 'total_calls': total,
+            'exclusive_profile_seconds': exclusive, 'cumulative_profile_seconds': cumulative,
+            'caller_count': len(callers)})
+    return rows
+
+
+def summarize_profile():
+    records = json.loads(gov.capture(RAW/'child.constructor-profiles.json')[0])
+    gov.require(type(records) is list and 1 <= len(records) <= 4, 'BOUNDED_CONSTRUCTOR_PROFILES_REQUIRED')
+    aggregate, proofs, constructors = None, [], []
+    for metadata in records:
+        filename = metadata['pstats_filename']
+        gov.require(re.fullmatch(r'ctor-0[1-4]-(?:funnel_checkpoint|report|checkpoint|status)(?:-interrupted)?\.pstats', filename),
+                    'LITERAL_PROFILE_FILENAME_REQUIRED')
+        wire, attributes = gov.capture(RAW/filename)
+        stats = pstats.Stats(str(RAW/filename))
+        rows = profile_rows(stats)
+        proof = {'filename': filename, 'sha256': hashlib.sha256(wire).hexdigest(), 'stat': attributes}
+        proofs.append(proof)
+        constructors.append({'constructor': metadata, 'pstats': proof,
+            'total_profiled_function_exclusive_seconds': stats.total_tt,
+            'native_shadow_functions': sorted([row for row in rows if row['filename'].startswith(str(SOURCE/'rc6_shadow_runtime'))],
+                                              key=lambda row: row['exclusive_profile_seconds'], reverse=True),
+            'top30_exclusive': sorted(rows, key=lambda row: row['exclusive_profile_seconds'], reverse=True)[:30],
+            'top30_cumulative': sorted(rows, key=lambda row: row['cumulative_profile_seconds'], reverse=True)[:30]})
+        if aggregate is None:
+            aggregate = stats
+        else:
+            aggregate.add(stats)
+    rows = profile_rows(aggregate)
+    relevant = [row for row in rows if row['filename'].startswith(str(SOURCE/'rc6_shadow_runtime'))]
+    report = {'pstats_files': proofs, 'constructors': constructors,
+        'timer': 'CPROFILE_INTERNAL_C_TIMER', 'aggregate_profiled_constructor_exclusive_seconds': aggregate.total_tt,
+        'profile_seconds_interpretation': 'INSTRUMENTAL_ELAPSED_WALL_ATTRIBUTION; NOT_EXACT_PER_FUNCTION_CPU',
+        'actual_process_cpu_seconds_measured_separately_outside_profiler': True,
+        'cumulative_times_overlap_and_must_not_be_summed': True,
+        'recursive_calls_and_audit_profiler_overhead_remain_observed': True,
+        'native_shadow_functions': sorted(relevant, key=lambda row: row['exclusive_profile_seconds'], reverse=True),
+        'top50_exclusive': sorted(rows, key=lambda row: row['exclusive_profile_seconds'], reverse=True)[:50],
+        'top50_cumulative': sorted(rows, key=lambda row: row['cumulative_profile_seconds'], reverse=True)[:50]}
+    publish('profile-summary.json', report)
+    return proofs
+
+
+def parent():
+    for path in (EPOCH, SOURCE, REPOSITORY, PIN, Path(__file__)):
+        gov.safe_path(path)
+    gov.require(not RAW.exists() and not DATA.exists(), 'FRESH_RAW_AND_DATA_REQUIRED')
+    RAW.mkdir(mode=0o700)
+    DATA.mkdir(mode=0o700)
+    observations = setup('collection')
+    before = source_snapshot()
+    publish('parent.source-before.json', before)
+    from scripts.rc6_native_import_provenance import NativeImportObserver
+    observer = NativeImportObserver(binding(), role='DIAGNOSTIC_ORIGINAL_FIXTURE_PARENT')
+    publish('parent.import-before.json', observer.initial_receipt())
+    from scripts import rc6_issue465_stress as stress
+    stress.fixture_database(DATABASE, catalog_count=12000, observations_per_identity=5)
+    with closing(sqlite3.connect(DATABASE)) as connection:
+        counts = {'catalog': connection.execute('SELECT count(*) FROM financial_instrument_catalog').fetchone()[0],
+                  'observations': connection.execute('SELECT count(*) FROM ppi_intraday_points').fetchone()[0],
+                  'open_positions': connection.execute("SELECT count(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0]}
+    gov.require(counts == {'catalog': 12000, 'observations': 60000, 'open_positions': 5},
+                'EXACT_ORIGINAL_NATIVE_FIXTURE_COUNTS_REQUIRED')
+    fixture_before = stress.source_custody_snapshot(DATABASE)
+    publish('parent.fixture-before.json', fixture_before)
+    publish('parent.fixture-counts.json', counts)
+    publish('parent.import-final.json', observer.finish())
+    observer.deactivate()
+    command = [PYTHON, '-I', '-B', str(Path(__file__).absolute()), '--child']
+    env = {'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1',
+           'LC_ALL': 'C.UTF-8', 'LANG': 'C.UTF-8', 'TZ': 'UTC',
+           'DATA_DIR': str(DATA), 'POROTA_DYNAMIC_CAPACITY_MODE': 'OFF'}
+    harness_wire, harness_attributes = gov.capture(Path(__file__))
+    publish('launch.json', {'diagnostic_only': True, 'gate_qualified': False,
+        'source_sha': SHA, 'source_tree': TREE, 'source_index_sha256': INDEX_SHA256,
+        'harness_sha256': hashlib.sha256(harness_wire).hexdigest(), 'harness_stat': harness_attributes,
+        'command': command, 'cwd': str(SOURCE), 'fixture': counts,
+        'child_deadline_seconds': LIMIT_SECONDS, 'strict_peak_rss_limit_bytes': RSS_LIMIT,
+        'peak_rss_validation': 'PID_SPECIFIC_ORIGINAL_WAIT4; NOT_RLIMIT_RSS_OR_AS',
+        'cleanup_management_seconds': 5, 'evidence_maximum_bytes': EVIDENCE_LIMIT,
+        'profiler': 'STDLIB_CPROFILE_INTERNAL_C_TIMER_ORIGINAL_STORAGE_PREPARE_ENTER_TO_PROGRESS_ONLY',
+        'profile_timer_python_callbacks': False,
+        'families_profiled': False, 'OPEN_called': False,
+        'recovery_called': False, 'adapter_code_overrides': 0,
+        'original_helper_installs_its_own_existing_handler_wrappers': True,
+        'graph_roundtrips': 0, 'gc_tuning': False,
+        'profiler_overhead_may_cause_original_deadline_RED': True,
+        'fixture_preparation_precedes_native_phase_deadline_as_in_original_stress': True,
+        'source_capture_only_prelaunch_and_post_actual_kernel_reap': True})
+    kernel = gov.subprocess_phase(command, SOURCE, RAW/'native.log', env, limit=LIMIT_SECONDS)
+    kernel['execution_subject'] = 'ONE_NATIVE_LEGACY_PRE_COMPONENT_CPROFILE_DIAGNOSTIC_ONLY'
+    publish('kernel-supervision.json', kernel)
+    # A reaped main PID alone does not make descendants or their IO quiescent.
+    # The original final ECHILD/PGID witnesses are required before SOURCE,
+    # DATA or partial RAW/pstats are read. Historical wait4-zero/residual RED
+    # stays RED even if original cleanup genuinely closes the kernel group.
+    post_main_echild = any(row.get('phase') == 'after_main_pid_reap' and row.get('outcome') == 'ECHILD'
+                          for row in kernel['kernel_owned_child_observations'])
+    postread_allowed = (kernel['actual_child_reaped'] is True
+        and kernel['owned_children_exhaustion_verified'] is True
+        and kernel['process_group_absent_after_reap'] is True
+        and kernel['remaining_owned_children'] == [] and post_main_echild)
+    publish('postread-kernel-barrier.json', {'postread_allowed': bool(postread_allowed),
+        'actual_main_pid_reaped': kernel['actual_child_reaped'],
+        'owned_children_exhaustion_verified': kernel['owned_children_exhaustion_verified'],
+        'owned_PGID_absent_after_reap': kernel['process_group_absent_after_reap'],
+        'remaining_owned_children': kernel['remaining_owned_children'],
+        'post_main_actual_kernel_ECHILD': post_main_echild,
+        'historical_residual_observations': kernel['residual_descendants_observed'],
+        'historical_residuals_closed_by_final_kernel_barrier': bool(postread_allowed),
+        'history_timeout_late_reap_and_residual_RED_is_never_reset': True})
+    errors = []
+    after = code_atime_changes = fixture_after = None
+    if postread_allowed:
+        try:
+            after = source_snapshot()
+            code_atime_changes = gov.compare_source(before, after)
+            publish('parent.source-after.json', after)
+            fixture_after = stress.source_custody_snapshot(DATABASE)
+            publish('parent.fixture-after.json', fixture_after)
+            gov.require(fixture_after == fixture_before, 'SOURCE_DATABASE_ALL11_CUSTODY_CHANGED')
+        except BaseException as error:
+            errors.append(failure(error, 'post_actual_kernel_reap'))
+    else:
+        errors.append({'stage': 'post_actual_kernel_reap', 'reason': 'KERNEL_NOT_QUIESCENT_NO_POSTREAD'})
+    profile_sha = None
+    try:
+        if postread_allowed:
+            profile_sha = summarize_profile()
+    except BaseException as error:
+        errors.append(failure(error, 'profile_summary'))
+    kernel_green = (kernel['returncode'] == 0 and not kernel['timed_out']
+        and kernel['actual_child_reaped'] and kernel['wait4_reaped_pid'] == kernel['pid']
+        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
+        and not kernel['kernel_wait4_zero_observed_irreversible_red']
+        and not kernel['late_observed_main_reap_irreversible_red']
+        and kernel['subreaper_restore_attempted_on_all_activated_paths'] is True
+        and kernel['actual_launch_to_pid_reap_wall_seconds'] <= LIMIT_SECONDS
+        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
+        and not kernel['adopted_descendants_reaped'] and not kernel['remaining_owned_children']
+        and not kernel['residual_descendants_observed']
+        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes'] < RSS_LIMIT)
+    import_windows = []
+    for filename in (('parent.import-final.json', 'child.import-final.json') if postread_allowed else ()):
+        try:
+            proof = json.loads(gov.capture(RAW/filename)[0])
+            import_windows.append({'file': filename, 'status': proof.get('status'),
+                'transient_closure_verified': proof.get('transient_closure_verified'),
+                'alias_or_ALIEN_DENIED_not_waived': True})
+        except BaseException as error:
+            errors.append(failure(error, 'import_window_readback'))
+    report = {'schema': 'rc6.controlled-native-pre-cprofile-diagnostic.v1', 'status': 'RED',
+        'DIAGNOSTIC_ONLY': True, 'gate_qualified': False, 'final_candidate_eligible': False,
+        'canonical_BIG_qualified': False, 'Gov_closed': False, 'families_500ms_qualified': False,
+        'artifact_validated': False, 'runtime_validated': False, 'source_sha': SHA, 'source_tree': TREE,
+        'kernel_protocol_and_original_resource_bounds_pass': bool(kernel_green),
+        'postread_kernel_barrier_closed': bool(postread_allowed),
+        'pstats_files': profile_sha, 'profile_available_after_reap': profile_sha is not None,
+        'code10stable_bytes_modes_rawgit_preserved': after is not None and code_atime_changes is not None,
+        'observed_code_atime_changes': code_atime_changes,
+        'source_data_all11_preserved': fixture_after is not None and fixture_before == fixture_after,
+        'parent_inet_audit_observations': observations, 'errors': errors,
+        'actual_import_windows': import_windows,
+        'foreign_kernel_worker_or_main_aliases_remain_RED_when_observed': True,
+        'audit_scope': 'DECLARED_PYTHON_WINDOWS; NO_KERNEL_BINARY_TRANSITIVE_NETWORK_ATTESTATION',
+        'profiler_overhead_not_acceptance': True, 'native_role_aliases_not_reconstructed': True,
+        'real_orders_sent': 0, 'PPI_Watch': 'UNTOUCHED', 'raw_root': str(RAW), 'data_root': str(DATA)}
+    publish('final.json', report)
+    print(json.dumps({key: report[key] for key in ('status', 'DIAGNOSTIC_ONLY', 'source_sha',
+        'kernel_protocol_and_original_resource_bounds_pass', 'profile_available_after_reap',
+        'code10stable_bytes_modes_rawgit_preserved', 'source_data_all11_preserved', 'raw_root')}), flush=True)
+    return 0 if kernel_green and not errors else 1
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--child', action='store_true')
+    options = parser.parse_args()
+    try:
+        raise SystemExit(child() if options.child else parent())
+    except Exception as error:
+        print(json.dumps({'DIAGNOSTIC_ONLY': True, 'status': 'RED', 'bootstrap_error': failure(error, 'bootstrap')}), flush=True)
+        raise SystemExit(1)

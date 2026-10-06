@@ -8,7 +8,6 @@ import os
 import shutil
 import sqlite3
 import sys
-import tempfile
 import time
 from queue import SimpleQueue
 
@@ -18,6 +17,7 @@ from scripts.rc6_issue465_stress import (AT, StressImportProofLimit, StressResou
                                        fixture_database, run_stress, sha256)
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_ppi_global_budget import BudgetBackpressure, GlobalPPIBudget, SCHEMA
+from tests.rc6_external_disk_fixture import external_disk_fixture
 
 
 def record(result, name):
@@ -121,8 +121,8 @@ def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerp
     from cg_paper_workspace import artifact_root
     from rc6_audit_evidence.sqlite_scratch import LOCK
     from scripts.rc6_sqlite_scratch_guard import runtime_settings
-    # Canonical scratch requires real disk, while pytest's /tmp may be tmpfs.
-    with tempfile.TemporaryDirectory(prefix=".rc6-canonical-stress-", dir=Path.cwd()) as directory:
+    # Canonical scratch requires real disk and an external owned fixture root.
+    with external_disk_fixture(prefix=".rc6-canonical-stress-") as directory:
         result = run_stress_recorded(Path(directory) / "canonical", "canonical-factory-stress",
             catalog_count=20, canonical_runtime=True, slow_disk=True)
         shadow = result["shadow"]

@@ -17,16 +17,62 @@ from cg_paper_workspace import artifact_root
 from rc6_audit_evidence.sqlite_snapshot import SnapshotError, readonly_copy, snapshot_peak_bytes
 from rc6_audit_evidence import sqlite_scratch as scratch
 from tests.test_rc6_history_snapshot_copy import inventory, wal_transport
+from tests.rc6_external_disk_fixture import SOURCE_ROOT, external_disk_fixture
+from tests.test_rc6_controlled_governed_runner import literal_tree as literal_tree
 
 
 @pytest.fixture
 def disk_root():
-    # pytest's standard /tmp can itself be tmpfs. The checkout's filesystem
-    # must be the same disk-backed kind required by the runtime root.
-    with tempfile.TemporaryDirectory(prefix=".rc6-scratch-test-", dir=Path.cwd()) as directory:
+    # Preserve real-disk runtime constraints without changing checkout custody.
+    with external_disk_fixture(prefix=".rc6-scratch-test-") as directory:
         root = Path(directory)/"private"
         root.mkdir(mode=0o700)
         yield root
+
+
+def test_external_disk_fixture_keeps_real_literal_source_and_stable_root_custody(literal_tree):
+    from scripts import rc6_controlled_governed_runner as governed
+    source, sha, tree = literal_tree
+    before = governed.source_pin(source, sha, tree)
+    root_before = SOURCE_ROOT.lstat()
+    with external_disk_fixture(prefix=".rc6-external-fixture-control-") as root:
+        info = root.lstat()
+        assert info.st_uid == os.geteuid() and info.st_mode & 0o777 == 0o700
+        assert info.st_dev == root_before.st_dev and not root.is_relative_to(SOURCE_ROOT)
+        assert scratch._storage_type(root) not in {"tmpfs", "ramfs"}
+        (root/"actual-fixture-member").write_bytes(b"native private fixture")
+        during = governed.source_pin(source, sha, tree)
+        governed.compare_source(before, during)
+    assert not root.exists()
+    after = governed.source_pin(source, sha, tree)
+    governed.compare_source(before, after)
+    root_after = SOURCE_ROOT.lstat()
+    assert all(getattr(root_before, key) == getattr(root_after, key)
+               for key in governed.STABLE_CODE_FIELDS)
+
+
+@pytest.mark.parametrize("kind", ("alias", "source_subtree", "wrong_device"))
+def test_configured_external_disk_fixture_parent_cannot_fall_back_after_custody_rejection(monkeypatch, kind):
+    base = "/dev/shm" if kind == "wrong_device" else SOURCE_ROOT.parent
+    with tempfile.TemporaryDirectory(prefix="rc6-fixture-parent-rejection-", dir=base) as directory:
+        private = Path(directory)
+        if kind == "alias":
+            parent = private/"alias"
+            parent.symlink_to(private, target_is_directory=True)
+            reason = "EXTERNAL_DISK_FIXTURE_LITERAL_PARENT_REQUIRED"
+        elif kind == "source_subtree":
+            parent = SOURCE_ROOT/"tests"
+            reason = "EXTERNAL_DISK_FIXTURE_LITERAL_PARENT_REQUIRED"
+        else:
+            parent = private
+            assert parent.lstat().st_dev != SOURCE_ROOT.lstat().st_dev
+            reason = "EXTERNAL_DISK_FIXTURE_SAME_FILESYSTEM_REQUIRED"
+        baseline = sorted(path.name for path in private.iterdir())
+        monkeypatch.setenv("TMPDIR", str(parent))
+        with pytest.raises(SnapshotError, match=reason):
+            with external_disk_fixture(prefix="rc6-rejected-fixture-"):
+                raise AssertionError("REJECTED_PARENT_CREATED_A_FIXTURE")
+        assert sorted(path.name for path in private.iterdir()) == baseline
 
 
 @pytest.fixture(autouse=True)

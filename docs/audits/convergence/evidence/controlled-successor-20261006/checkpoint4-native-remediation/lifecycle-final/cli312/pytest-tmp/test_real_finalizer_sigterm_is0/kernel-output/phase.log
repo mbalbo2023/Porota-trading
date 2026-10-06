@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/multiprocessing/util.py", line 303, in _run_finalizers
+    finalizer()
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/multiprocessing/util.py", line 227, in __call__
+    res = self._callback(*self._args, **self._kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-lifecycle-drain-focals-v0nrb2mk/cli312/pytest-tmp/test_real_finalizer_sigterm_is0/control.py", line 14, in actual_forbidden_signal
+    os.kill(pid, signal.SIGTERM)
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_controlled_governed_runner.py", line 180, in audit_finalization_signal
+    raise RuntimeError('CHILD_FINALIZATION_SIGNAL_DENIED_BEFORE_SYSCALL')
+RuntimeError: CHILD_FINALIZATION_SIGNAL_DENIED_BEFORE_SYSCALL
+ISSUE465_STRESS_EVIDENCE=/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-lifecycle-drain-focals-v0nrb2mk/cli312/pytest-tmp/test_real_finalizer_sigterm_is0/result.json

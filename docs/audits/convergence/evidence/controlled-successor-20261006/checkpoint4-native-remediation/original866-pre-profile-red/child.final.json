@@ -1,0 +1,31 @@
+{
+  "OPEN_called": false,
+  "PPI_Watch": "UNTOUCHED",
+  "cpu_seconds": 90.38802593700001,
+  "diagnostic_only": true,
+  "errors": [
+    {
+      "class": "NativeDeadlineInterrupted",
+      "reason": "NATIVE_PARENT_DEADLINE_INTERRUPTED",
+      "stage": "native_pre"
+    }
+  ],
+  "gate_qualified": false,
+  "interruption_signals": [
+    2
+  ],
+  "native_PRE_publication_complete": false,
+  "observations": {
+    "inet_socket_attempts": [],
+    "inet_socket_constructor_requests": [],
+    "subprocess_executable_counts": {
+      "git": 4
+    }
+  },
+  "original_tick_returned": false,
+  "profile_saved": true,
+  "real_orders_sent": 0,
+  "recovery_called": false,
+  "self_peak_rss_bytes": 1211416576,
+  "wall_seconds": 90.45047785499992
+}

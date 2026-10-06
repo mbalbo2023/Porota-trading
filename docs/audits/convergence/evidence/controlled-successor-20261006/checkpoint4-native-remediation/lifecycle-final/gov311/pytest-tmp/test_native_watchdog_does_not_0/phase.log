@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-lifecycle-drain-focals-v0nrb2mk/gov311/pytest-tmp/test_native_watchdog_does_not_0/phase-control.py", line 2, in <module>
+    time.sleep(10)
+KeyboardInterrupt

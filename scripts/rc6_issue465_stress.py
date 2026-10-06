@@ -820,16 +820,82 @@ def main(argv=None):
     if any(value is not None for value in source_values.values()) and not all(value is not None for value in source_values.values()):
         parser.error("Import provenance requires all five full source-binding arguments")
     source_provenance = source_values if all(value is not None for value in source_values.values()) else None
+    from scripts import rc6_controlled_governed_runner as lifecycle
+    output = lifecycle.safe_path(args.out)
+    lifecycle.require(not output.exists() and not output.is_relative_to(ROOT),
+                      "FRESH_EXTERNAL_NATIVE_CLI_RECEIPT_REQUIRED")
+    observations = {"inet_socket_attempts": [], "inet_socket_constructor_requests": [],
+                    "subprocess_executable_counts": {}}
+    initial = capability = finalization = result = unexpected = None
+    fresh_infrastructure = audit_witness_verified = False
     code = 0
     try:
+        initial = lifecycle.child_infrastructure_snapshot()
+        lifecycle.require(all(value is None for value in initial.values()),
+                          "FRESH_NATIVE_CLI_INFRASTRUCTURE_REQUIRED")
+        fresh_infrastructure = True
+        capability = lifecycle.restrict_inet_creation()
+        audit_witness_verified = lifecycle.install_phase_audit(observations)
+        lifecycle.require(audit_witness_verified is True, "NATIVE_CLI_INET_OPERATION_AUDIT_NOT_WITNESSED")
         result = run_stress(args.root, catalog_count=args.catalog_count,
                             observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
                             canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks,
                             **({"source_provenance":source_provenance} if source_provenance is not None else {}))
     except (StressResourceLimit,StressImportProofLimit) as error:
         result, code = error.evidence, 1
-    Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")
-    print("ISSUE465_STRESS_EVIDENCE="+str(Path(args.out)))
+    except BaseException as error:
+        unexpected, code = error, 1
+    finally:
+        if fresh_infrastructure:
+            try:
+                finalization = lifecycle.finalize_child_infrastructure(initial, limit=5)
+            except BaseException as error:
+                if unexpected is None:
+                    unexpected = error
+                code = 1
+    error_receipt = None
+    if unexpected is not None:
+        import re
+        reason = str(unexpected).partition(":")[0]
+        error_receipt = {"class": type(unexpected).__name__}
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", reason):
+            error_receipt["reason"] = reason
+        elif isinstance(unexpected, OSError) and type(unexpected.errno) is int:
+            error_receipt.update(reason="OS_ERROR", errno=unexpected.errno)
+        else:
+            error_receipt["reason"] = "NON_LITERAL_GUARD_EXCEPTION"
+    infrastructure_complete = bool(finalization is not None
+        and finalization["status"] == "GREEN" and finalization["finalization_thread_finished"] is True
+        and finalization["kernel_echild_before_phase_return"] is True
+        and finalization["signal_guard_installed_and_witnessed"] is True
+        and finalization["forced_termination_attempted"] is False and finalization["signal_vetoed"] is False
+        and not finalization["termination_signal_attempts"] and not finalization["errors"]
+        and finalization["wall_seconds"] <= 5)
+    lifecycle_complete = bool(capability is not None
+        and capability["status"] == "INSTALLED_AND_KERNEL_WITNESSED" and audit_witness_verified is True
+        and infrastructure_complete and not observations["inet_socket_attempts"] and unexpected is None)
+    native_code = code
+    if not lifecycle_complete:
+        code = 1
+    if result is None:
+        result = {"schema": "rc6.issue465.native-cli-failclosed.v1", "resource_result_produced": False,
+                  "business_resource_complete": False, "import_proof_complete": False}
+    result = {**result, "native_cli_lifecycle": {
+        "schema": "rc6.issue465.native-cli-lifecycle.v1", "status": "GREEN" if lifecycle_complete else "RED",
+        "native_resource_exit_code": native_code, "cli_exit_code": code,
+        "pid": os.getpid(), "parent_pid": os.getppid(), "entry_module": __name__,
+        "infrastructure_before": initial, "fresh_infrastructure_verified": fresh_infrastructure,
+        "offline_ipv6_creation_capability": capability,
+        "original_inet_operation_audit_registration_witness_verified": audit_witness_verified,
+        "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+        "child_infrastructure_finalization": finalization,
+        "child_infrastructure_finalized_before_main_exit": infrastructure_complete,
+        "unexpected_error": error_receipt, **observations,
+        "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE"}}
+    lifecycle.publish(output, lifecycle.canonical(result))
+    print("ISSUE465_STRESS_EVIDENCE="+str(output))
+    if unexpected is not None:
+        raise unexpected
     return code
 
 

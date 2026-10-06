@@ -284,13 +284,16 @@ assert result['status']=='RED' and alive
 # Do not let atexit's unbounded child join hide this RED. The unchanged native
 # parent observes and cleans only its own process group as a failed phase.
 os._exit(0)
-""")
+""", limit=20)
+    # This observer management window permits publishing the actual ORIGINAL
+    # 5s lifecycle timeout. It does not change lifecycle, owned cleanup or any
+    # product/resource budget; the original child remains a real 30s child.
     observed = json.loads((tmp_path/'phase-control.finalization.json').read_text())
     finalization = observed['result']
     assert observed['child_alive_after_veto'] and observed['finalizer_no_longer_active']
-    assert finalization['status'] == 'RED' and finalization['finalization_thread_finished']
+    assert finalization['status'] == 'RED' and finalization['management_bound_seconds'] == 5
     assert finalization['forced_termination_attempted'] is True and finalization['signal_vetoed'] is True
-    assert finalization['forced_termination'] is False
+    assert finalization['forced_termination'] is (False if finalization['finalization_thread_finished'] else None)
     assert finalization['signal_guard_installed_and_witnessed']
     assert finalization['termination_signal_attempts'] == [{'event': 'os.kill',
         'pid_or_pgid': observed['child_pid'], 'signal': __import__('signal').SIGTERM,

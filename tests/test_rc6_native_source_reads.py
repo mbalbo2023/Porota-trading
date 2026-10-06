@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-import tempfile
 import time
 
 import pytest
@@ -19,6 +18,7 @@ from rc6_performance.common import canonical, digest
 from rc6_shadow_runtime import entry_signals, families, lab, source_reads, stages
 from rc6_shadow_runtime.worker import ShadowRuntime
 from tests.rc6_dashboard_native_fixture import native_fixture
+from tests.rc6_external_disk_fixture import external_disk_fixture
 
 
 def source_inventory(database):
@@ -44,8 +44,8 @@ def source_inventory(database):
 
 @pytest.fixture(scope="module")
 def native():
-    # /tmp can be tmpfs. The canonical scratch policy requires actual disk.
-    with tempfile.TemporaryDirectory(prefix=".rc6-native-source-", dir=Path.cwd()) as directory:
+    # The canonical scratch policy requires actual disk, outside source custody.
+    with external_disk_fixture(prefix=".rc6-native-source-") as directory:
         fixture = native_fixture(Path(directory), count=5)
         # Keep a native, quiescent source connection alive so this guard also
         # covers real WAL/SHM files. It performs no operation after baseline.
@@ -225,7 +225,7 @@ def test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_co
     factory = ShadowRuntime.from_environment
     def incumbent_factory(cls, database, **kwargs):
         return factory(database, maximum_files=512, **kwargs)
-    with tempfile.TemporaryDirectory(prefix=".rc6-incumbent-512-", dir=Path.cwd()) as directory:
+    with external_disk_fixture(prefix=".rc6-incumbent-512-") as directory:
         with monkeypatch.context() as incumbent:
             incumbent.setattr(source_reads, "readonly_copy", incumbent_connection)
             incumbent.setattr(ShadowRuntime, "from_environment", classmethod(incumbent_factory))

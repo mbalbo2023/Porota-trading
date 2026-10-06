@@ -1,0 +1,72 @@
+{
+  "files": [
+    {
+      "frozen_original_sha256": "d5808446a1c4b964d10a4a5be6e52ab5ef8a69dc12171259df97b187b0e4fc99",
+      "proposed": {
+        "bytes": 19184,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/files/rc6_shadow_runtime/serialization.py",
+        "sha256": "e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a"
+      },
+      "repo_relative_path": "rc6_shadow_runtime/serialization.py"
+    },
+    {
+      "frozen_original_sha256": "bb2188ce9517107f337de4b6c17c6122028f5d7fe76b6780bab28e3a507b7048",
+      "proposed": {
+        "bytes": 35443,
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/files/rc6_shadow_runtime/packed_storage.py",
+        "sha256": "fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466"
+      },
+      "repo_relative_path": "rc6_shadow_runtime/packed_storage.py"
+    }
+  ],
+  "guards_constants_memo_incoming_and_identity_recording_unchanged": true,
+  "named_capture_cache_and_buffer_token_boundaries_unchanged": true,
+  "patch": {
+    "bytes": 6122,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/proposal.diff",
+    "sha256": "f7dec4a785659183d16a88ee8819c5b67222b910c2054582fe6a99ed64f08415"
+  },
+  "performance_effect_unmeasured_no_gate_claim": true,
+  "performance_executed": false,
+  "proposal_syntax_only_verified": true,
+  "protected_functions_ast_unchanged": [
+    "_CaptureBuffer.append",
+    "_CaptureBuffer.bind",
+    "_CaptureBuffer.boundary",
+    "_CaptureBuffer.flush",
+    "_CaptureBuilder._named",
+    "_CaptureBuilder._binding_scalar",
+    "_CaptureBuilder._capture_original"
+  ],
+  "protected_self_buffer_call_sites_ast_unchanged": true,
+  "publication_cap_unchanged": 1048576,
+  "raw_index": {
+    "bytes": 10481,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/raw-index.json",
+    "sha256": "15fadd85296de80f809d6ff78dc3816b5277816a3c59513d871de872eb533c99"
+  },
+  "scalar_cache_two_lookups_unchanged": true,
+  "selective_profiles": [
+    {
+      "bytes": 20166,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/selective-ctor-01-funnel_checkpoint.json",
+      "sha256": "8d7bd6522bc2eacfc2fbb0cc297bafebe2c485a61b2895ccb7bbf10301909175"
+    },
+    {
+      "bytes": 21003,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-proposal-86615-49xacman/selective-ctor-02-report.json",
+      "sha256": "4d132f7b1d61755b13d8642f6920fa87c37c8e59efacf8f595e371b26fc95938"
+    }
+  ],
+  "source_modified": false,
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "tests_executed": false,
+  "unknown_subclass_branches_keep_original_expressions": true,
+  "validation_before_source_apply": [
+    "review exact prior/publication byte-capture oracle and generic callback cases",
+    "source scope acquisition/update by sole writer root",
+    "bounded relevant original focal suites in 3.11/3.12 after root authorization",
+    "native original budget gate on a newly frozen SHA, no profile or excluded phases"
+  ]
+}

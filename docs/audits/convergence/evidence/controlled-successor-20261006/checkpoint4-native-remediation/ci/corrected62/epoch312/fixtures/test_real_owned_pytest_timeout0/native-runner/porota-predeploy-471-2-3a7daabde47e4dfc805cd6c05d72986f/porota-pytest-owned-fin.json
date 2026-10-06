@@ -1,0 +1,117 @@
+{
+  "context": {
+    "candidate_sha": "4cab57aebdee37d9ff0f0a6c530d22870f40653a",
+    "candidate_tree": "e4bf0419ffdf09cbcc7afc61029d92a7a20ddd66",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "final_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "initial_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "kernel": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 60.07044121299987,
+    "adopted_descendants_reaped": [],
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "-q",
+      "test_native_owned.py",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-pytest-471-2-3a7daabde47e4dfc805cd6c05d72986f/pytest",
+      "--junitxml=/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/native-owned-junit.xml"
+    ],
+    "cpu_system_seconds": 0.03426,
+    "cpu_user_seconds": 0.380262,
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "late_observed_main_reap_irreversible_red": true,
+    "launcher_management_deadline_seconds": 60,
+    "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+    "owned_children_exhaustion_verified": true,
+    "owned_cleanup_management_bound_seconds": 5,
+    "owned_group_signal_observations": [
+      {
+        "outcome": "SENT",
+        "pgid": 12434,
+        "signal": 15
+      }
+    ],
+    "peak_rss_bytes": 33808384,
+    "pid": 12434,
+    "proc_task_children_examined": false,
+    "process_group_absent_after_reap": true,
+    "process_group_absent_at_main_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "returncode": -15,
+    "scope": "EXACT_FULL1201_NATIVE_PRODUCER_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; MAX_NOT_SUM_OF_RSS",
+    "sigint_failure_grace_seconds": 0,
+    "subreaper_activation_readback_verified": true,
+    "subreaper_previous_state": 0,
+    "subreaper_restoration_readback_verified": true,
+    "subreaper_restore_attempted": true,
+    "supervisor_errors": [
+      {
+        "class": "RuntimeError",
+        "phase": "management_deadline",
+        "reason": "FULL1201_MANAGEMENT_DEADLINE_EXCEEDED"
+      }
+    ],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "12430",
+      "Tgid": "12430",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 12430,
+    "supervisor_pid": 12430,
+    "termination_reap_restore_cleanup_seconds": 0.0502961479996884,
+    "timed_out": true,
+    "wait4_reaped_pid": 12434,
+    "wall_seconds": 60.0706417399997
+  },
+  "launch_intent_sha256": "3e1a2be1a0e7b28aa2567f88784cd88bfca051942e8f910a4375ebad88e7719b",
+  "management_acceptance": false,
+  "management_seconds": 60,
+  "original_manager_source": {
+    "git_blob": "2c5709b25cc4548651e9e85aba50eba0eb5121cf",
+    "member": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source",
+    "sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec"
+  },
+  "owned_fin_closed": true,
+  "owner_uuid": "3a7daabde47e4dfc805cd6c05d72986f",
+  "phase": "execution",
+  "phase_green": false,
+  "post_fin_errors": [],
+  "retained_capacity_status": "GREEN",
+  "retention_receipt": "/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr/epoch312/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-3a7daabde47e4dfc805cd6c05d72986f/porota-pytest-retained.json",
+  "schema": "rc6.predeploy-pytest-owned-fin.v1",
+  "scope": "ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION",
+  "supervisor_pid": 12430
+}

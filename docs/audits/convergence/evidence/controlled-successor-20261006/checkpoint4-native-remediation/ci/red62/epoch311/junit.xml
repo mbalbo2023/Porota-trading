@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="62" time="21.707" timestamp="2026-10-06T16:30:10.137961+00:00" hostname="ef95cdb90b64"><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_productive_scope_is_repository_root_automatic_discovery" time="0.000" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal" time="2.882" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_predeploy_uses_bound_external_pytest_basetemp_and_reports_retention" time="0.019" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_every_exclusion_is_versioned_justified_and_has_a_successor" time="0.000" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_predeploy_reports_truthful_collection_and_execution_counts" time="0.000" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_all_six_negative_fixtures_are_executed_fail_closed" time="0.006" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_candidate_tree_mismatch_fails_closed" time="0.001" /><testcase classname="tests.test_ci_productive_predeploy_contract" name="test_predeploy_stays_off_droplet_and_builds_once" time="0.000" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_fifo_control_is_rejected_before_blocking_for_a_writer" time="0.001" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_cleanup_removes_only_bound_run_resources_and_measures_actual_delta" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_docker_removal_failure_is_red_and_retains_private_evidence[operation0]" time="0.008" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_docker_removal_failure_is_red_and_retains_private_evidence[operation1]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_successful_command_with_remaining_owned_image_is_red" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[tag]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[digest]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_shared_image_is_retained_without_removing_or_inspecting_foreign_resources[foreign_reference]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_missing_capture_after_finished_build_requires_complete_owned_image_binding" time="0.007" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.commit]" time="0.007" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.tree]" time="0.007" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-id]" time="0.007" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.predeploy.run-attempt]" time="0.008" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_uncaptured_image_with_any_wrong_origin_label_is_retained[porota.source-manifest-sha256]" time="0.007" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_early_failure_without_build_cleans_only_private_files_and_claims_no_image" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_early_phase_cannot_hide_an_unexpected_owned_image" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_foreign_candidate_tag_never_grants_cleanup_ownership" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_container_binding_is_verified_before_any_removal[labels]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_container_binding_is_verified_before_any_removal[image]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_container_binding_is_verified_before_any_removal[mount]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_private_namespace_alias_never_deletes_external_data[symlink]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_private_namespace_alias_never_deletes_external_data[hardlink]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_private_namespace_alias_never_deletes_external_data[same_device_mount]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_changed_source_manifest_is_retained_with_all_private_data" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[repo_root]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[runner_temp]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[private_root]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_rebound_control_cannot_redirect_cleanup_to_another_owned_directory[owner_uuid]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_cli_output_rejection_precedes_cleanup[wrong_path]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_cli_output_rejection_precedes_cleanup[existing]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_cli_output_rejection_precedes_cleanup[symlink]" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_cli_rejects_uuid_mismatch_before_mutating" time="0.005" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[2147483647-1000]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_post_cleanup_capacity_is_checked_without_raising_authorized_bounds[4294967296-199]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_negative_filesystem_delta_is_not_reported_as_reclaimed_bytes" time="0.003" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_total_deadline_expiry_cannot_certify_success_or_delete_remaining_evidence" time="0.008" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order" time="0.019" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_native_workspace_preserves_strict_guard_and_measures_retained_adversarial_fixtures" time="2.764" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_new_venv_seal_rejects_unproven_alias_without_unlinking[target]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_new_venv_seal_rejects_unproven_alias_without_unlinking[construction_identity]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_new_venv_seal_rejects_unproven_alias_without_unlinking[sibling_mode]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_new_venv_seal_rejects_unproven_alias_without_unlinking[alias_mount]" time="0.004" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_workspace_wrong_owner_uuid_is_rejected_before_native_creation" time="0.003" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_no_pytest_launch_has_no_producer_witness_and_allows_only_original_scope_guard" time="2.760" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_unknown_pytest_trace_never_opens_payload_or_source_and_is_irreversible[porota-pytest-owned-fin.json]" time="0.014" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_unknown_pytest_trace_never_opens_payload_or_source_and_is_irreversible[porota-pytest-progress.json]" time="0.010" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_unknown_pytest_trace_never_opens_payload_or_source_and_is_irreversible[porota-pytest-native.log]" time="0.010" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_exclusive_launch_intent_without_fin_blocks_postread_and_cannot_be_replaced" time="0.010" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_aliased_fin_is_never_followed_or_uploaded_as_a_control_receipt[symlink]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_aliased_fin_is_never_followed_or_uploaded_as_a_control_receipt[hardlink]" time="0.009" /><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_real_owned_pytest_direct_execution_has_fin_and_retained_adversarial_fixtures" time="3.290"><failure message="subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-af76ee8ac2d34a599c77e3123e880138/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({&quot;prefix&quot;:sys.prefix,&quot;base&quot;:sys.base_prefix,&quot;versions&quot;:expected}))']' returned non-zero exit status 1.">tmp_path = PosixPath('/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_direct_0')
+
+    def test_real_owned_pytest_direct_execution_has_fin_and_retained_adversarial_fixtures(tmp_path):
+&gt;       owned = native_owned_pytest_fixture(tmp_path, '''def test_real_payload(tmp_path):
+        import os
+        payload = tmp_path / 'payload'
+        payload.write_bytes(b'owned native fixture')
+        os.link(payload, tmp_path / 'second')
+        (tmp_path / 'link').symlink_to(payload)
+        assert payload.read_bytes() == b'owned native fixture'
+    ''')
+
+tests/test_rc6_predeploy_scoped_cleanup.py:789: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_predeploy_scoped_cleanup.py:757: in native_owned_pytest_fixture
+    observed = json.loads(subprocess.check_output([str(private / 'venv/bin/python'), '-I', '-B', '-c', check],
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:466: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = 10, check = True
+popenargs = (['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/p...(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))'],)
+kwargs = {'stdout': -1, 'env': {'SHELL': '/bin/bash', 'COLORTERM': '', 'no_proxy': 'localhost,127.0.0.1,::1', 'CODEX_EXEC_SERVER_REMOTE_BASE_URL': 'https://codex-cloud-environments.chatgpt.com/api', ...}, 'text': True}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output &amp; stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+&gt;               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_direct_0/native-runner/porota-predeploy-471-2-af76ee8ac2d34a599c77e3123e880138/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))']' returned non-zero exit status 1.
+
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:571: CalledProcessError</failure></testcase><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_real_owned_pytest_timeout_keeps_red_and_rejects_another_management_budget" time="3.222"><failure message="subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-003aafbde7ac4b5db5d6ec4e22227a1b/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({&quot;prefix&quot;:sys.prefix,&quot;base&quot;:sys.base_prefix,&quot;versions&quot;:expected}))']' returned non-zero exit status 1.">tmp_path = PosixPath('/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_timeout0')
+
+    def test_real_owned_pytest_timeout_keeps_red_and_rejects_another_management_budget(tmp_path):
+&gt;       owned = native_owned_pytest_fixture(tmp_path, 'def test_owned_timeout():\n    import time\n    time.sleep(65)\n')
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_predeploy_scoped_cleanup.py:832: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_predeploy_scoped_cleanup.py:757: in native_owned_pytest_fixture
+    observed = json.loads(subprocess.check_output([str(private / 'venv/bin/python'), '-I', '-B', '-c', check],
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:466: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = 10, check = True
+popenargs = (['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/p...(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))'],)
+kwargs = {'stdout': -1, 'env': {'SHELL': '/bin/bash', 'COLORTERM': '', 'no_proxy': 'localhost,127.0.0.1,::1', 'CODEX_EXEC_SERVER_REMOTE_BASE_URL': 'https://codex-cloud-environments.chatgpt.com/api', ...}, 'text': True}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output &amp; stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+&gt;               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_owned_pytest_timeout0/native-runner/porota-predeploy-471-2-003aafbde7ac4b5db5d6ec4e22227a1b/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))']' returned non-zero exit status 1.
+
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:571: CalledProcessError</failure></testcase><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_real_collection_failure_has_fin_and_execution_is_never_launched" time="3.278"><failure message="subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-8315c4a16a934de89c0b4bfa90a2d0a7/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({&quot;prefix&quot;:sys.prefix,&quot;base&quot;:sys.base_prefix,&quot;versions&quot;:expected}))']' returned non-zero exit status 1.">tmp_path = PosixPath('/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_collection_failure_h0')
+
+    def test_real_collection_failure_has_fin_and_execution_is_never_launched(tmp_path):
+&gt;       owned = native_owned_pytest_fixture(tmp_path, 'raise RuntimeError("CONTROLLED_COLLECTION_FAILURE")\n')
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_predeploy_scoped_cleanup.py:858: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_predeploy_scoped_cleanup.py:757: in native_owned_pytest_fixture
+    observed = json.loads(subprocess.check_output([str(private / 'venv/bin/python'), '-I', '-B', '-c', check],
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:466: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = 10, check = True
+popenargs = (['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_collection_failure_h0/native-runner/p...(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))'],)
+kwargs = {'stdout': -1, 'env': {'SHELL': '/bin/bash', 'COLORTERM': '', 'no_proxy': 'localhost,127.0.0.1,::1', 'CODEX_EXEC_SERVER_REMOTE_BASE_URL': 'https://codex-cloud-environments.chatgpt.com/api', ...}, 'text': True}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output &amp; stderr attributes if those streams
+        were captured.
+    
+        If timeout is given, and the process takes too long, a TimeoutExpired
+        exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+&gt;               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw/epoch311/pytest/test_real_collection_failure_h0/native-runner/porota-predeploy-471-2-8315c4a16a934de89c0b4bfa90a2d0a7/venv/bin/python', '-I', '-B', '-c', 'import importlib,importlib.metadata as m,json,sys;from pathlib import Path;expected={\'pytest\': \'9.1.1\', \'iniconfig\': \'2.3.0\', \'packaging\': \'26.3\', \'pluggy\': \'1.6.0\', \'pygments\': \'2.21.0\'};assert sys.prefix!=sys.base_prefix;assert all(m.version(n)==v for n,v in expected.items());assert all(Path(importlib.import_module(n).__file__).is_relative_to(sys.prefix) for n in expected);print(json.dumps({"prefix":sys.prefix,"base":sys.base_prefix,"versions":expected}))']' returned non-zero exit status 1.
+
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py:571: CalledProcessError</failure></testcase><testcase classname="tests.test_rc6_predeploy_scoped_cleanup" name="test_unknown_collection_blocks_execution_before_any_source_or_log_read" time="2.719" /></testsuite></testsuites>

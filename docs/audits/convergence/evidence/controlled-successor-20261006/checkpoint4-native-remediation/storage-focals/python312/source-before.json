@@ -1,0 +1,178 @@
+{
+  "rc6_shadow_runtime/packed_storage.py": {
+    "sha256": "fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466",
+    "stat": {
+      "st_atime_ns": 1791303382638343866,
+      "st_blocks": 72,
+      "st_ctime_ns": 1791303362678424669,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051115,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791303362678424669,
+      "st_nlink": 1,
+      "st_size": 35443,
+      "st_uid": 1000
+    }
+  },
+  "rc6_shadow_runtime/serialization.py": {
+    "sha256": "e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a",
+    "stat": {
+      "st_atime_ns": 1791303382638343866,
+      "st_blocks": 40,
+      "st_ctime_ns": 1791303362142426919,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051121,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791303362142426919,
+      "st_nlink": 1,
+      "st_size": 19184,
+      "st_uid": 1000
+    }
+  },
+  "scripts/rc6_controlled_governed_runner.py": {
+    "sha256": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404",
+    "stat": {
+      "st_atime_ns": 1791299170684987309,
+      "st_blocks": 128,
+      "st_ctime_ns": 1791299169248994201,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1084469,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791299169248994201,
+      "st_nlink": 1,
+      "st_size": 63403,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_funnel_storage_codec.py": {
+    "sha256": "154a86fc26a62990bce4d5ebd71c6a792066f43169d75b3fc351ca20ec207eb1",
+    "stat": {
+      "st_atime_ns": 1791290621677224630,
+      "st_blocks": 24,
+      "st_ctime_ns": 1791290621269226566,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051551,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621269226566,
+      "st_nlink": 1,
+      "st_size": 9310,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_packed_capture_allocations.py": {
+    "sha256": "89d0f3aec42785cf5f6041be746b000758765b3cdee0a85c24838af05c9df00c",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051596,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 16376,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_packed_scalar_dispatch.py": {
+    "sha256": "c68281bedf1789066465a03ef0679fc188616ee08471c8302b36c41c58ade951",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 40,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051597,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 18616,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_packed_small_container.py": {
+    "sha256": "414ad49484997a2b67f5ea2efb5398e98c32e842f2681369cd2a7f2914523348",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051598,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 13475,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_packed_storage.py": {
+    "sha256": "ed291efe9c1be1c405fd823ca722453677399a3d6eec830532107b542e5c60e4",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051599,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 15642,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_packed_volatile_scalars.py": {
+    "sha256": "33ffcf356cf0db8fa6e776af502872a35ce1edc6f6c89fb44c49cf4ef3282b05",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 40,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051600,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 16388,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_publication_storage.py": {
+    "sha256": "b50c672b59f704475b28e15eaf353edc14a90334b81780055730560ace37f44e",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 104,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051619,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 50921,
+      "st_uid": 1000
+    }
+  },
+  "tests/test_rc6_publication_type_identity.py": {
+    "sha256": "9574122512088c667625cb30bf212b55e7c712b381fab9a1ea1246a47675a30e",
+    "stat": {
+      "st_atime_ns": 1791290621681224611,
+      "st_blocks": 32,
+      "st_ctime_ns": 1791290621273226546,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1051620,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791290621273226546,
+      "st_nlink": 1,
+      "st_size": 13959,
+      "st_uid": 1000
+    }
+  }
+}

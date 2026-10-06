@@ -1,0 +1,123 @@
+{
+  "counting_rule": "Each interpreter executes the same case set in its scope; interpreter epochs are not distinct scenarios and overlapping focal scopes are not added into a distinct-scenario total.",
+  "deploy_owner": "NOT_ACQUIRED",
+  "final_candidate_eligible": false,
+  "fixes": [
+    "External identity-checked disk-backed native test fixtures prevent Source checkout-root custody mutation; original assertions preserved.",
+    "Direct native stress CLI witnesses original INET audit registration, refuses an existing receipt before work, preserves typed RED, and finalizes actual owned child infrastructure within the original five seconds.",
+    "Governed phase lifecycle drains JOIN/EOF after an error without losing prior RED, original signal veto, actual PID ownership or five-second deadline.",
+    "Exact builtin identity dispatch preserves original unknown-subclass/metaclass callbacks and original complete-role admission, literal tokens and MAX_ROLE_CONTAINERS cap.",
+    "Fresh native CI venv/workspace keeps original strict alias guard and separately witnesses collection/execution launch and physical FIN before payload postreads/upload/cleanup; unknown closure remains sticky RED.",
+    "CI native fixture includes actual pytest-owned py.py with its RECORD digest and real normal-private-prefix import assertions; installed-byte fixture is not wheel attestation."
+  ],
+  "focal_source_binding": "Reviewed fix-forward source bytes are bound in raw manifests; these are not full final governed runs of the next commit.",
+  "focals_same_cases_across_interpreters": [
+    {
+      "cases_each": 41,
+      "duplicates_each": 0,
+      "error_each": 0,
+      "failure_each": 0,
+      "pass_each": 41,
+      "python": [
+        "3.11.16",
+        "3.12.14"
+      ],
+      "scope": "external disk-backed fixtures",
+      "skip_each": 0
+    },
+    {
+      "cases_each": 21,
+      "duplicates_each": 0,
+      "error_each": 0,
+      "failure_each": 0,
+      "pass_each": 21,
+      "python": [
+        "3.11.16",
+        "3.12.14"
+      ],
+      "scope": "CLI6 plus governed lifecycle15",
+      "skip_each": 0
+    },
+    {
+      "cases_each": 478,
+      "duplicates_each": 0,
+      "error_each": 0,
+      "failure_each": 0,
+      "pass_each": 478,
+      "python": [
+        "3.11.16",
+        "3.12.14"
+      ],
+      "scope": "original storage/serialization eight files",
+      "skip_each": 0
+    },
+    {
+      "cases_each": 62,
+      "duplicates_each": 0,
+      "error_each": 0,
+      "failure_each": 0,
+      "junit_sha256_311": "7637988cfd7e84854a145380199b19dd0947d4a12a334be3a77dbd410957b254",
+      "junit_sha256_312": "75e8e7673956d6d0b74c177cb6460ed2b428c1b83b678bacd9ab852535eedb7a",
+      "native_receipt_sha256_311": "472b00f34d799e424466ee0ad8d81341ffc1333177ebd89d4b21f646aa774661",
+      "native_receipt_sha256_312": "7ad9c8a36deb8fa9a325e2c7776ca3d35ad78d676a6f0f3e60ace4e0eeaadaed",
+      "pass_each": 62,
+      "python": [
+        "3.11.16",
+        "3.12.14"
+      ],
+      "scope": "CI collection/execution/workspace controls",
+      "skip_each": 0
+    }
+  ],
+  "frozen_source_prs_or_branches_closed_or_deleted": false,
+  "material_gates_closed": [],
+  "material_gates_remaining": [
+    "U14",
+    "UX470-I01",
+    "UX470-I02",
+    "UX470-I03",
+    "UX470-I05",
+    "CANONICAL_BIG_12000_60000_ORIGINAL_BUDGETS_AND_SLOW_FSYNC",
+    "FULL_FINAL_GOV311",
+    "FULL_FINAL_GOV312",
+    "HORIZON_V3_1201_PLUS_RECOVERY",
+    "BROWSER_LARGE_COMPLETE_OPEN",
+    "EXACT_FINAL_SOURCE_ARTIFACT_DIGEST_IMAGE_BINDING",
+    "SUPERVISOR_PAPER_RUNTIME"
+  ],
+  "mode": "PAPER_SHADOW_ONLY_PRODUCTION_PAPER_SIMULATION",
+  "next_action": "Publish one coherent successor commit without changing frozen/product/ops refs; create an exact new complete whole-source pin, run direct native canonical BIG, then affected full governed and remaining material gates. New automatic PR Predeploy is observed without duplication or editing its active SHA.",
+  "parent_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "parent_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "performance_effect_unmeasured": true,
+  "ppi_watch": "UNTOUCHED",
+  "preserved_red": {
+    "ci_two_phase_preflight": {
+      "cases": 62,
+      "classification": "PYTEST_OWNED_PY_PY_OMITTED_BY_FIXTURE_SELECTION",
+      "duplicates": 0,
+      "errors": 0,
+      "failures": 3,
+      "junit_sha256": "42897147ed3c26924de875cc97c297926433f983bbe86f1fceb97c113fb6cbed",
+      "pass": 59,
+      "python": "3.11",
+      "rca_sha256": "61db0dce848cb6a57923bf69400c6e52ea7f0990d74e8bfc1d06182a42fde5c3",
+      "skips": 0
+    },
+    "original866_canonical_big": {
+      "families_wall_seconds": 0.521026254,
+      "import_launcher": "ALIEN_NOT_QUALIFIED",
+      "original_query_budget_seconds": 0.5,
+      "source_and_native_data_retained": true,
+      "status": "RED"
+    },
+    "original866_gc_diagnostic": "RED_90_SECOND_CYCLE_NO_GC_TUNING_NO_QUALIFICATION",
+    "original866_pre_profile": "RED_90_SECOND_NATIVE_DEADLINE_LATE_REAP_SIGNAL_RETAINED_NO_QUALIFICATION",
+    "previous_cli_focal_variants": true
+  },
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "runtime_attested": false,
+  "schema": "rc6.controlled-successor.checkpoint4-summary.v1",
+  "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC"
+}

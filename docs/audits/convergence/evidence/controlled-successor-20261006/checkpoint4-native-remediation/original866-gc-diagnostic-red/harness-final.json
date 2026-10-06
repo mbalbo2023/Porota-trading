@@ -1,0 +1,30 @@
+{
+  "artifact_validated": false,
+  "canonical_big_and_import_gates_closed": false,
+  "data_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/data-diagnostic",
+  "diagnostic_only": true,
+  "errors": [],
+  "final_candidate_eligible": false,
+  "kernel_protocol_green": false,
+  "known_launcher_mp_alias_foreign": true,
+  "native_business_and_import_green": false,
+  "native_import_scope": "OBSERVED_NATIVE_LAUNCHER_AND_WORKER_WINDOWS; BOOTSTRAP_AND_POSTBOUNDARY_FINALIZATION_OUTSIDE",
+  "network_scope": "TRACKED_LAUNCHER_PYTHON_AUDIT_AND_IPV6_CREATION_SECCOMP; NO_TRANSITIVE_NETWORK_ATTESTATION",
+  "observed_code_atime_changes": [
+    {
+      "after": 1791296848879911374,
+      "before": 1791294489000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/publication_storage.py"
+    }
+  ],
+  "raw_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/raw-diagnostic",
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.recovery.canonical-big-gc-diagnostic-harness.v1",
+  "source_code10stable_stats_and_bytes_modes_rawgit_unchanged": true,
+  "source_index_sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779",
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "RED"
+}

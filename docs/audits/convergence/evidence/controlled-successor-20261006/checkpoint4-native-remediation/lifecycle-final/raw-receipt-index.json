@@ -1,0 +1,435 @@
+{
+  "files": [
+    {
+      "bytes": 2410,
+      "path": "cli311/pytest-tmp/test_existing_native_receipt_i0/kernel-output/kernel.json",
+      "sha256": "0ae24d0f29164f66460ad0da7467647cfe38738483af0e0966ca55253fd08507"
+    },
+    {
+      "bytes": 618,
+      "path": "cli311/pytest-tmp/test_existing_native_receipt_i0/kernel-output/phase.log",
+      "sha256": "2b6f0063b1b2c6a2ce6ccbe1ef3d565467934b4d763880a173fdba3d5a599e45"
+    },
+    {
+      "bytes": 22,
+      "path": "cli311/pytest-tmp/test_existing_native_receipt_i0/result.json",
+      "sha256": "71cece504103b407c39f4d4242686489992e080335c763452d27bc909206bc56"
+    },
+    {
+      "bytes": 2356,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/control.py",
+      "sha256": "234ebb95c59c46b6a9234f597f8758bfc24c1ff5cd88279efb65980e5416ae96"
+    },
+    {
+      "bytes": 2042,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/kernel-output/kernel.json",
+      "sha256": "edb3f5d95dbb917774e6555fa3c4ab84fc6cb2ad05adb1dfbc28a16a898cdbb3"
+    },
+    {
+      "bytes": 1178,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/kernel-output/phase.log",
+      "sha256": "a633a651e5ad287fe8986836289e467bb482e2b9208a0e88d9c220ae3ae96c7f"
+    },
+    {
+      "bytes": 319,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/negative-control-observations.json",
+      "sha256": "1de2a2550c50cf7d76eda04546e57eaff652af61353a4a93d2fe84862e5b5b0b"
+    },
+    {
+      "bytes": 417,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/observed.json",
+      "sha256": "2b3087469ee93c6155a3586a7077e02613ffe59e246638599c4ece0e7a682dc6"
+    },
+    {
+      "bytes": 65884,
+      "path": "cli311/pytest-tmp/test_real_finalizer_sigterm_is0/result.json",
+      "sha256": "ee061e858f933b0c06add73b2d6fd643f4ba595b387cd0968740e0ae1c62aa02"
+    },
+    {
+      "bytes": 1087,
+      "path": "cli311/pytest-tmp/test_real_inet_bind_is_denied_0/control.py",
+      "sha256": "0e99253d1fd569d0029e90c4f2db5b34678d7e02514c2f5b7766d55a5b1e625d"
+    },
+    {
+      "bytes": 2048,
+      "path": "cli311/pytest-tmp/test_real_inet_bind_is_denied_0/kernel-output/kernel.json",
+      "sha256": "19cc97f3768b1439e7729aeb4235d0ac9eac96a252a0d2449463a39358b30f44"
+    },
+    {
+      "bytes": 172,
+      "path": "cli311/pytest-tmp/test_real_inet_bind_is_denied_0/kernel-output/phase.log",
+      "sha256": "4136898573ce9641bada8c1e9b2b17c1108dbea20fc795ad0ecee52fe8ae9c8d"
+    },
+    {
+      "bytes": 4088,
+      "path": "cli311/pytest-tmp/test_real_inet_bind_is_denied_0/result.json",
+      "sha256": "20eab185800834ba0a45d96007c57bf9aa46ef6b15408b6bcd3d3201438ca061"
+    },
+    {
+      "bytes": 1007,
+      "path": "cli311/pytest-tmp/test_silent_audit_registration0/control.py",
+      "sha256": "b167d80a380d936560104affa0080fb002aeb35a304d6e4974e5cdec231f3c00"
+    },
+    {
+      "bytes": 2048,
+      "path": "cli311/pytest-tmp/test_silent_audit_registration0/kernel-output/kernel.json",
+      "sha256": "87af0d4727d68718d64e0a284b5acdfbbf410cd7f5c28581299923abacabd878"
+    },
+    {
+      "bytes": 172,
+      "path": "cli311/pytest-tmp/test_silent_audit_registration0/kernel-output/phase.log",
+      "sha256": "bba037fe93d81f9c3cd672369a0bbe6639f710b108f7415565e759a857865cdc"
+    },
+    {
+      "bytes": 2013,
+      "path": "cli311/pytest-tmp/test_silent_audit_registration0/result.json",
+      "sha256": "dc325e6192a64f2e138c7e3086deef2dd52bde82bbb3010a615c6f25c8b8aa6f"
+    },
+    {
+      "bytes": 2406,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps0/kernel-output/kernel.json",
+      "sha256": "3abd92c82dde18cb2281735ab92d12b15d9bf1b6666e2ed62deb1be887b62b46"
+    },
+    {
+      "bytes": 172,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps0/kernel-output/phase.log",
+      "sha256": "1150588c36382c86dd6c7736324979191a4e8b7fd450f18e2ad02eef6b74849c"
+    },
+    {
+      "bytes": 65504,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps0/result.json",
+      "sha256": "56d229086c1c32e2dc75dc281b6fa711ed75d3f32a5ed75b347008a36387dfc7"
+    },
+    {
+      "bytes": 2425,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps1/kernel-output/kernel.json",
+      "sha256": "1dccf8b21aa92bf126e299c00ea2f708d69d44407ef3618850e2300ed2aa9746"
+    },
+    {
+      "bytes": 172,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps1/kernel-output/phase.log",
+      "sha256": "34806ee4cb257281c5d620e6cf6b36513af61855e9da4bb163e639163162d2df"
+    },
+    {
+      "bytes": 66292,
+      "path": "cli311/pytest-tmp/test_standard_native_cli_reaps1/result.json",
+      "sha256": "c5960fc03a61ac4da15c39feafecee45aefbb0bac993f39f2558fb1fc7024ae7"
+    },
+    {
+      "bytes": 2409,
+      "path": "cli312/pytest-tmp/test_existing_native_receipt_i0/kernel-output/kernel.json",
+      "sha256": "7d1ab3d7ea263755d8117e1546a0772883f5af3428de97a4b960895023e31e56"
+    },
+    {
+      "bytes": 618,
+      "path": "cli312/pytest-tmp/test_existing_native_receipt_i0/kernel-output/phase.log",
+      "sha256": "2b6f0063b1b2c6a2ce6ccbe1ef3d565467934b4d763880a173fdba3d5a599e45"
+    },
+    {
+      "bytes": 22,
+      "path": "cli312/pytest-tmp/test_existing_native_receipt_i0/result.json",
+      "sha256": "71cece504103b407c39f4d4242686489992e080335c763452d27bc909206bc56"
+    },
+    {
+      "bytes": 2356,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/control.py",
+      "sha256": "540470d6ebafcfcffa2f20b5f10f5696d65c13dc5cc262081c6c9748d7477154"
+    },
+    {
+      "bytes": 2034,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/kernel-output/kernel.json",
+      "sha256": "d80d49cb01c112663212eabb910658a03a38fb9f96dc001e027a493395715ef7"
+    },
+    {
+      "bytes": 1178,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/kernel-output/phase.log",
+      "sha256": "a691ee53fa0883acd35ffa0df8858d4ce2479f7d24e92d5af445c17086362753"
+    },
+    {
+      "bytes": 319,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/negative-control-observations.json",
+      "sha256": "1de2a2550c50cf7d76eda04546e57eaff652af61353a4a93d2fe84862e5b5b0b"
+    },
+    {
+      "bytes": 417,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/observed.json",
+      "sha256": "30bd2550cb0826ae577eb81c3b4e21f73fbf6c0c5065e548743013319e3169d0"
+    },
+    {
+      "bytes": 65923,
+      "path": "cli312/pytest-tmp/test_real_finalizer_sigterm_is0/result.json",
+      "sha256": "c09190aacab03d38816f0f9ae0a3ad8eed22ad846def20a22b194439a4c6a2b5"
+    },
+    {
+      "bytes": 1087,
+      "path": "cli312/pytest-tmp/test_real_inet_bind_is_denied_0/control.py",
+      "sha256": "6afcfc637e0467936d6e4e436babcdafae4b4491dd6085a3aabdc91c0b27ffb5"
+    },
+    {
+      "bytes": 2035,
+      "path": "cli312/pytest-tmp/test_real_inet_bind_is_denied_0/kernel-output/kernel.json",
+      "sha256": "58c2462c47e629a25dcb9ef498dd145541fd59d8f1579263f8ea254f7004c95b"
+    },
+    {
+      "bytes": 172,
+      "path": "cli312/pytest-tmp/test_real_inet_bind_is_denied_0/kernel-output/phase.log",
+      "sha256": "5dbdb97e0fd8ece0cf26f056cebd1a2abd5a88a8c0e3b1873801d55b748787a2"
+    },
+    {
+      "bytes": 4089,
+      "path": "cli312/pytest-tmp/test_real_inet_bind_is_denied_0/result.json",
+      "sha256": "eff7e7735425a79dbc1f8d1a0cf8fd71e0f76cb1c055cede24c31e79ea95b4a6"
+    },
+    {
+      "bytes": 1007,
+      "path": "cli312/pytest-tmp/test_silent_audit_registration0/control.py",
+      "sha256": "96cd8257b8e663843e428802483214cf9d7f1172781793f3b0f0a016cc49415a"
+    },
+    {
+      "bytes": 2032,
+      "path": "cli312/pytest-tmp/test_silent_audit_registration0/kernel-output/kernel.json",
+      "sha256": "11f16f5a1daa30f6d14c33299da2642f9b76a6ac92e98fb2af619adc3d3e3bea"
+    },
+    {
+      "bytes": 172,
+      "path": "cli312/pytest-tmp/test_silent_audit_registration0/kernel-output/phase.log",
+      "sha256": "46a0400bba5ebe88b7c24ab80ba9b10b643c3492bc17d3545ab936e9ff047ff2"
+    },
+    {
+      "bytes": 2013,
+      "path": "cli312/pytest-tmp/test_silent_audit_registration0/result.json",
+      "sha256": "b3a1a64939975d4bc1a17d71e3c541be32ebc7bde0f4774891743eb321f8e18b"
+    },
+    {
+      "bytes": 2417,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps0/kernel-output/kernel.json",
+      "sha256": "db08bad6c2ba46e13047825a6aa424630dff0a866922b000e1a63191de8262b8"
+    },
+    {
+      "bytes": 172,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps0/kernel-output/phase.log",
+      "sha256": "767e3e200da65906c9bcf2a24ecf1022fa01960bd7f1f8cf113e3b730a1a7892"
+    },
+    {
+      "bytes": 65578,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps0/result.json",
+      "sha256": "6e06cf6f14032c1e23be053af3686a5ffed7c4c2494e0fca8a21e53d44cab3a3"
+    },
+    {
+      "bytes": 2437,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps1/kernel-output/kernel.json",
+      "sha256": "2e31b07261aa6e399cc4d8297463c9db012e290b2fb2fbfb878749e50256fc15"
+    },
+    {
+      "bytes": 172,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps1/kernel-output/phase.log",
+      "sha256": "bc5267224354b9b5155b817a3c35f07e1be0ecedc4c777377fd1f4d7dafc781b"
+    },
+    {
+      "bytes": 66248,
+      "path": "cli312/pytest-tmp/test_standard_native_cli_reaps1/result.json",
+      "sha256": "04f0773044110257cf288968098ce59ba99875229095b573e6845d5b222bd610"
+    },
+    {
+      "bytes": 1138,
+      "path": "gov311/pytest-tmp/test_inherited_tracker_is_pres0/inherited-control.py",
+      "sha256": "91debec0362d48a449c2c2afacf610772d2bfea5db467eebf3f2c81fcea6a13e"
+    },
+    {
+      "bytes": 1615,
+      "path": "gov311/pytest-tmp/test_inherited_tracker_is_pres0/inherited-result.json",
+      "sha256": "dc39dae196e5fa5a59f143391a50ef3f8da2136271772a5779c1324270293896"
+    },
+    {
+      "bytes": 2734,
+      "path": "gov311/pytest-tmp/test_kernel_live_orphan_stays_0/phase-control.custody.json",
+      "sha256": "e9fe4883a164ee389861c66548e99aecd97938f57fd4d2cd914e4d42178c8e61"
+    },
+    {
+      "bytes": 80,
+      "path": "gov311/pytest-tmp/test_kernel_live_orphan_stays_0/phase-control.py",
+      "sha256": "0268d88664905d4884cb2c38f4670593065991cc7e97a88fe27f03e469f1f12c"
+    },
+    {
+      "bytes": 0,
+      "path": "gov311/pytest-tmp/test_kernel_live_orphan_stays_0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2136,
+      "path": "gov311/pytest-tmp/test_native_watchdog_does_not_0/phase-control.custody.json",
+      "sha256": "674ad147fe46ae8d7fd2c6474f6341446b9fc6221efbf7b4a04fe9ffc61232b9"
+    },
+    {
+      "bytes": 27,
+      "path": "gov311/pytest-tmp/test_native_watchdog_does_not_0/phase-control.py",
+      "sha256": "fb7f08c90f4813077a6764b43e0c521ecfef80e0dcbba6d0c119a3812f83b342"
+    },
+    {
+      "bytes": 254,
+      "path": "gov311/pytest-tmp/test_native_watchdog_does_not_0/phase.log",
+      "sha256": "3276e6763de799cc696bc0ec07f23bb7702bcbc996c50299e90ac7e78212caf4"
+    },
+    {
+      "bytes": 2057,
+      "path": "gov311/pytest-tmp/test_owned_forkserver_protocol0/phase-control.custody.json",
+      "sha256": "ae60690e44f177342c6d2645907edd9a043bdd5f8a872191a9561b78e5af2acb"
+    },
+    {
+      "bytes": 1615,
+      "path": "gov311/pytest-tmp/test_owned_forkserver_protocol0/phase-control.finalization.json",
+      "sha256": "1beca79278d73f8b0a37b0eafb0e5801c135b8f507fcad4c919b345c5e42e55a"
+    },
+    {
+      "bytes": 716,
+      "path": "gov311/pytest-tmp/test_owned_forkserver_protocol0/phase-control.py",
+      "sha256": "9c40a49bffbbc52eda252f39fa49b3f568c134a1621397b1882ea0b9ea03651b"
+    },
+    {
+      "bytes": 0,
+      "path": "gov311/pytest-tmp/test_owned_forkserver_protocol0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2041,
+      "path": "gov311/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.custody.json",
+      "sha256": "d2b325089826d5cb7b3bb98460ec332a02cf4f3b714e3e09966da10da8d27ab6"
+    },
+    {
+      "bytes": 1511,
+      "path": "gov311/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.finalization.json",
+      "sha256": "946c9ab5ac79c583816ec47abbdfa1b2dc6ede30794fbeee064e5cecfba82d8c"
+    },
+    {
+      "bytes": 585,
+      "path": "gov311/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.py",
+      "sha256": "76d91dfd43aab65c430e6c954eaa986c61447ad54c6b99ffd06dd598d7b83ea8"
+    },
+    {
+      "bytes": 0,
+      "path": "gov311/pytest-tmp/test_owned_tracker_and_child_a0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2722,
+      "path": "gov311/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.custody.json",
+      "sha256": "7be25385f299b69d48c6a069cd5f6906cca32d4c064917481d1a95084d9401ba"
+    },
+    {
+      "bytes": 1268,
+      "path": "gov311/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.finalization.json",
+      "sha256": "a2364d5f5ef11f60b94ee853b6b0aaf3c8face706d2f5a97bcd31f21f5860889"
+    },
+    {
+      "bytes": 1179,
+      "path": "gov311/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.py",
+      "sha256": "285e623998df9779e348e1fbfe23a826aed534d70d4b721036da1fc09b8daeaa"
+    },
+    {
+      "bytes": 781,
+      "path": "gov311/pytest-tmp/test_swallowed_stdlib_finalize0/phase.log",
+      "sha256": "7ed384153b403ac204868fcb4a52cf37791085440a042a50a726459381483796"
+    },
+    {
+      "bytes": 1138,
+      "path": "gov312/pytest-tmp/test_inherited_tracker_is_pres0/inherited-control.py",
+      "sha256": "91debec0362d48a449c2c2afacf610772d2bfea5db467eebf3f2c81fcea6a13e"
+    },
+    {
+      "bytes": 1614,
+      "path": "gov312/pytest-tmp/test_inherited_tracker_is_pres0/inherited-result.json",
+      "sha256": "c8d429cef9b5df7f0e6875ce425b1bf73553675b770425783f16446c2aa1d484"
+    },
+    {
+      "bytes": 2691,
+      "path": "gov312/pytest-tmp/test_kernel_live_orphan_stays_0/phase-control.custody.json",
+      "sha256": "4d1931fdda893b77120e839b59ccfd42bd37e74776c5f3d13583a5291c75a52f"
+    },
+    {
+      "bytes": 80,
+      "path": "gov312/pytest-tmp/test_kernel_live_orphan_stays_0/phase-control.py",
+      "sha256": "0268d88664905d4884cb2c38f4670593065991cc7e97a88fe27f03e469f1f12c"
+    },
+    {
+      "bytes": 0,
+      "path": "gov312/pytest-tmp/test_kernel_live_orphan_stays_0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2124,
+      "path": "gov312/pytest-tmp/test_native_watchdog_does_not_0/phase-control.custody.json",
+      "sha256": "97730044d1e32ae744eb56a08842a2fc3a76b7566d73ca00a61feaeb02e732b6"
+    },
+    {
+      "bytes": 27,
+      "path": "gov312/pytest-tmp/test_native_watchdog_does_not_0/phase-control.py",
+      "sha256": "fb7f08c90f4813077a6764b43e0c521ecfef80e0dcbba6d0c119a3812f83b342"
+    },
+    {
+      "bytes": 254,
+      "path": "gov312/pytest-tmp/test_native_watchdog_does_not_0/phase.log",
+      "sha256": "c79e63de3f94c5f06c1d86d1c4c34705ff4618983e1ca30a8ba468dc3080fe73"
+    },
+    {
+      "bytes": 2047,
+      "path": "gov312/pytest-tmp/test_owned_forkserver_protocol0/phase-control.custody.json",
+      "sha256": "dcd6e4810ff4f02394fbab9803c6c888eb314ca8138c30aacf20c1bf0d415ce0"
+    },
+    {
+      "bytes": 1616,
+      "path": "gov312/pytest-tmp/test_owned_forkserver_protocol0/phase-control.finalization.json",
+      "sha256": "2fc87a4cd5eca1eb0c44a31407e64dcd591161f7779c697f1886bd3b58b65006"
+    },
+    {
+      "bytes": 716,
+      "path": "gov312/pytest-tmp/test_owned_forkserver_protocol0/phase-control.py",
+      "sha256": "9c40a49bffbbc52eda252f39fa49b3f568c134a1621397b1882ea0b9ea03651b"
+    },
+    {
+      "bytes": 0,
+      "path": "gov312/pytest-tmp/test_owned_forkserver_protocol0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2059,
+      "path": "gov312/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.custody.json",
+      "sha256": "1ce885a2e72cf257e536e36d8b5a131a3e24805364318e1454b1e5c790f2944c"
+    },
+    {
+      "bytes": 1516,
+      "path": "gov312/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.finalization.json",
+      "sha256": "0121d345f2446f21b7e8be9d326514b8c92353e666e8e8ff75117af8bb8e5842"
+    },
+    {
+      "bytes": 585,
+      "path": "gov312/pytest-tmp/test_owned_tracker_and_child_a0/phase-control.py",
+      "sha256": "76d91dfd43aab65c430e6c954eaa986c61447ad54c6b99ffd06dd598d7b83ea8"
+    },
+    {
+      "bytes": 0,
+      "path": "gov312/pytest-tmp/test_owned_tracker_and_child_a0/phase.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2691,
+      "path": "gov312/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.custody.json",
+      "sha256": "b3e968d13a6c7bdef3ff31b656758b0e79c4e3243df15df889345196a68dd2a2"
+    },
+    {
+      "bytes": 1270,
+      "path": "gov312/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.finalization.json",
+      "sha256": "197aef426d176b36a17ae842ebcad7aeeddeadf89172396b5502beacd1a47de3"
+    },
+    {
+      "bytes": 1179,
+      "path": "gov312/pytest-tmp/test_swallowed_stdlib_finalize0/phase-control.py",
+      "sha256": "285e623998df9779e348e1fbfe23a826aed534d70d4b721036da1fc09b8daeaa"
+    },
+    {
+      "bytes": 781,
+      "path": "gov312/pytest-tmp/test_swallowed_stdlib_finalize0/phase.log",
+      "sha256": "3a5e1df7c7a3c33fa7b456971cae0be1344b3018bdb8aed84d8127c5e374cb08"
+    }
+  ],
+  "schema": "rc6.lifecycle.focal.raw-receipt-index.v1"
+}

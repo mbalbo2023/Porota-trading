@@ -6,7 +6,6 @@ from pathlib import Path
 import shutil
 import socket
 import sqlite3
-import tempfile
 from time import monotonic, process_time
 
 import pytest
@@ -18,6 +17,7 @@ from rc6_audit_evidence import sqlite_scratch
 from rc6_shadow_runtime import preopen
 from tests.test_rc6_history_snapshot_copy import inventory
 from tests.test_rc6_shadow_preopen_runtime import _make_database, AS_OF, OPEN, CUT
+from tests.rc6_external_disk_fixture import make_external_disk_fixture
 
 
 @pytest.fixture(autouse=True)
@@ -29,9 +29,8 @@ def offline(monkeypatch):
 
 @pytest.fixture(scope="module")
 def large_native_history(tmp_path_factory):
-    # Native runtime scratch must use disk. /tmp in this execution environment
-    # is tmpfs, so keep this source and its PRIMARY artifact root on checkout FS.
-    root = Path(tempfile.mkdtemp(prefix=".rc6-native-12k-60k-", dir=Path.cwd()))
+    # Keep native source and PRIMARY artifacts on checkout FS, outside its root.
+    root = make_external_disk_fixture(prefix=".rc6-native-12k-60k-")
     assets = [{"ticker": f"L{index:05d}", "instrument_type": "ACCIONES", "market": "BYMA",
                "currency": "ARS", "settlement": "A-24HS"} for index in range(12000)]
     trading = _make_database(root/"trading.sqlite", catalogue=assets)

@@ -1,0 +1,202 @@
+{
+  "active_edges": [
+    {
+      "from": "playwright",
+      "requirement": "pyee<14,>=13",
+      "satisfied": true,
+      "selected_version": "13.0.1",
+      "to": "pyee"
+    },
+    {
+      "from": "playwright",
+      "requirement": "greenlet<4.0.0,>=3.1.1",
+      "satisfied": true,
+      "selected_version": "3.5.5",
+      "to": "greenlet"
+    },
+    {
+      "from": "pyee",
+      "requirement": "typing-extensions",
+      "satisfied": true,
+      "selected_version": "4.16.0",
+      "to": "typing-extensions"
+    }
+  ],
+  "all_active_requirements_satisfied": true,
+  "exact_active_distributions": {
+    "greenlet": "3.5.5",
+    "playwright": "1.62.0",
+    "pyee": "13.0.1",
+    "typing-extensions": "4.16.0"
+  },
+  "inactive_extra_requirements": [
+    {
+      "from": "pyee",
+      "requirement": "build; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "flake8; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "flake8-black; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "pytest; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "pytest-asyncio; python_version >= \"3.4\" and extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "pytest-trio; python_version >= \"3.7\" and extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "black; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "isort; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "jupyter-console; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "mkdocs; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "mkdocs-include-markdown-plugin; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "mkdocstrings[python]; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "mypy; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "sphinx; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "toml; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "tox; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "trio; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "trio; python_version > \"3.6\" and extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "trio-typing; python_version > \"3.6\" and extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "twine; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "twisted; extra == \"dev\""
+    },
+    {
+      "from": "pyee",
+      "requirement": "validate-pyproject[all]; extra == \"dev\""
+    },
+    {
+      "from": "greenlet",
+      "requirement": "Sphinx; extra == \"docs\""
+    },
+    {
+      "from": "greenlet",
+      "requirement": "furo; extra == \"docs\""
+    },
+    {
+      "from": "greenlet",
+      "requirement": "objgraph; extra == \"test\""
+    },
+    {
+      "from": "greenlet",
+      "requirement": "psutil; extra == \"test\""
+    },
+    {
+      "from": "greenlet",
+      "requirement": "setuptools; extra == \"test\""
+    }
+  ],
+  "marker_environment": {
+    "extra": "",
+    "implementation_name": "cpython",
+    "implementation_version": "3.11.16",
+    "os_name": "posix",
+    "platform_machine": "x86_64",
+    "platform_python_implementation": "CPython",
+    "platform_release": "6.18.44",
+    "platform_system": "Linux",
+    "platform_version": "#1 SMP Sat Sep 26 20:02:31 UTC 2026",
+    "python_full_version": "3.11.16",
+    "python_version": "3.11",
+    "sys_platform": "linux"
+  },
+  "scope": "OFFICIAL_METADATA_PLAN_NOT_INSTALLED_ENVIRONMENT",
+  "target": {
+    "implementation": "CPython",
+    "libc": [
+      "glibc",
+      "2.41"
+    ],
+    "machine": "x86_64",
+    "python": "3.11.16",
+    "sys_platform": "linux"
+  },
+  "wheel_checks": [
+    {
+      "compatible_native_tags": [
+        "py3-none-manylinux1_x86_64"
+      ],
+      "filename": "playwright-1.62.0-py3-none-manylinux1_x86_64.whl",
+      "official_sha256": "ba33bae6a13b3d9d354c751cb618af357d20fe1d57767cbcce52079bbef17ad3",
+      "requires_python_satisfied": true
+    },
+    {
+      "compatible_native_tags": [
+        "py3-none-any"
+      ],
+      "filename": "pyee-13.0.1-py3-none-any.whl",
+      "official_sha256": "af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228",
+      "requires_python_satisfied": true
+    },
+    {
+      "compatible_native_tags": [
+        "cp311-cp311-manylinux_2_24_x86_64",
+        "cp311-cp311-manylinux_2_28_x86_64"
+      ],
+      "filename": "greenlet-3.5.5-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "official_sha256": "74cc6df89ec5302337adc9cf096221cbed2510fd444b0e0f1586cf0470740864",
+      "requires_python_satisfied": true
+    },
+    {
+      "compatible_native_tags": [
+        "py3-none-any"
+      ],
+      "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "official_sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "requires_python_satisfied": true
+    }
+  ]
+}

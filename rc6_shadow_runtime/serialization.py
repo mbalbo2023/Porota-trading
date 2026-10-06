@@ -71,7 +71,9 @@ def _shape(value, *, memo=None):
     def visit(node, depth=0):
         if depth > MAX_DEPTH:
             raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
-        if not isinstance(node, (dict, list, tuple)): return 1, 0
+        kind = type(node)
+        if (kind is not dict and kind is not list and kind is not tuple
+                and not isinstance(node, (dict, list, tuple))): return 1, 0
         key = id(node)
         if key in active: raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
         if key in memo:
@@ -81,11 +83,12 @@ def _shape(value, *, memo=None):
             return count, height
         active.add(key)
         try:
-            if isinstance(node, dict):
-                if any(not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
+            if kind is dict or isinstance(node, dict):
+                if any(type(name) is not str and not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
                 values = node.values()
             else: values = node
-            if type(node) in (dict, list, tuple):
+            if (kind is dict or kind is list or kind is tuple
+                    or type(node) in (dict, list, tuple)):
                 # Count all children as leaves once, then add each container's
                 # descendants. Every alias occurrence contributes its full
                 # logical expansion; scalar loops do not need recursive calls.
@@ -93,7 +96,11 @@ def _shape(value, *, memo=None):
                 if count > MAX_NODES or node and depth+1 > MAX_DEPTH:
                     raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
                 for item in values:
-                    if isinstance(item, (dict, list, tuple)):
+                    kind = type(item)
+                    if (kind is dict or kind is list or kind is tuple
+                            or kind is not str and kind is not int and kind is not float
+                            and kind is not bool and item is not None
+                            and isinstance(item, (dict, list, tuple))):
                         child_count, child_height = visit(item, depth+1)
                         count += child_count-1
                         if child_height+1 > height: height = child_height+1
