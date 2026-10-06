@@ -1,0 +1,38 @@
+{
+  "after": {
+    "bytes": 63436,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/gov-runner-after.py.source",
+    "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67"
+  },
+  "before": {
+    "bytes": 63403,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/gov-runner-before.py.source",
+    "sha256": "b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404"
+  },
+  "big_executed": false,
+  "budgets_unchanged": {
+    "observations_cap": 1024,
+    "owned_cleanup_seconds": 5,
+    "phase_maximum_seconds": 5400,
+    "zero_wait4_irreversible_red": true
+  },
+  "changes": [
+    "continue immediately after positive adopted wait4 record; loop rechecks original time/cap before every next wait4; original sleep remains on zero branch",
+    "move both original main phase requires verbatim before source_pin/compare/publish post-index"
+  ],
+  "classification": "EXTERNAL_PROPOSAL_ONLY_NOT_APPLIED_OR_EXECUTED",
+  "diff": {
+    "bytes": 2044,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/proposal.diff",
+    "sha256": "9673e03c24b92b2699dc70517c04d82c06053623575e8631281807627160abc2"
+  },
+  "github_writes": false,
+  "requires_ast_exact_same_predicates_and_order": true,
+  "schema": "rc6.gov.ready-wait4-drain.proposal.v1",
+  "source_capture_closure_inet_finalizer_ast_unchanged": true,
+  "source_edits": false,
+  "source_path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source/scripts/rc6_controlled_governed_runner.py",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "tests_executed": false
+}

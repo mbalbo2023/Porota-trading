@@ -1,0 +1,65 @@
+--- a/tests/test_rc6_predeploy_scoped_cleanup.py
++++ b/tests/test_rc6_predeploy_scoped_cleanup.py
+@@ -924,3 +924,62 @@
+     assert all(not os.path.lexists(owned['root'] / value)
+                for key, value in test_workspace.phase_controls('execution').items()
+                if key in {'launch', 'fin', 'progress', 'log'})
++
++
++def test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green(tmp_path):
++    from test_rc6_controlled_native_child_manager import PRODUCER_SOURCE
++
++    body = ('def test_controlled_ready_burst(tmp_path):\n'
++            '    import os, subprocess, sys\n'
++            '    child_root = tmp_path / "ready-burst"\n'
++            '    os.mkdir(child_root, 0o700)\n'
++            '    path = child_root / "producer.py"\n'
++            '    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)\n'
++            '    with os.fdopen(fd, "w") as stream:\n'
++            '        stream.write(' + repr(PRODUCER_SOURCE) + ')\n'
++            '    completed = subprocess.run([sys.executable, "-I", "-B", str(path),\n'
++            '        "--case", "ready100", "--receipt", str(child_root / "producer-control.json"),\n'
++            '        "--exit-code", "1"], check=False, timeout=30)\n'
++            '    assert completed.returncode == 1\n'
++            '    raise AssertionError("CONTROLLED_FAILED_READY100_NOT_GOV_PASS")\n')
++    owned = native_owned_pytest_fixture(tmp_path, body)
++    assert execute_native_pytest_cli(owned, phase='collection')[0] == 0
++    rc, supervisor = execute_native_pytest_cli(owned)
++    assert rc == 1
++    custody = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
++    kernel = custody['kernel']
++    assert custody['supervisor_pid'] == supervisor == kernel['supervisor_pid']
++    assert custody['original_manager_source']['member'] == test_workspace.DRIVER
++    assert custody['original_manager_source']['sha256'] == test_workspace.ORIGINAL_DRIVER_SHA256
++    assert custody['owned_fin_closed'] is True
++    assert custody['phase_green'] is custody['management_acceptance'] is False
++    assert kernel['returncode'] == 1 and kernel['owned_children_exhaustion_verified'] is True
++    assert kernel['process_group_absent_after_reap'] is True
++    assert kernel['subreaper_restoration_readback_verified'] is True
++    assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
++    assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
++    assert kernel['owned_cleanup_management_bound_seconds'] == 5
++    assert kernel['termination_reap_restore_cleanup_seconds'] < 5
++    assert len(kernel['adopted_descendants_reaped']) == 100
++    assert all(row['exit_code'] == 0 for row in kernel['adopted_descendants_reaped'])
++    postread = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
++                                         expected_management_seconds=60)
++    assert postread['safe_postread'] is True and postread['classification'] == 'FIN_REAL_CLOSED'
++    assert postread['phase_results']['execution']['pytest_phase_green'] is False
++    assert postread['phase_results']['execution']['management_acceptance'] is False
++    # Only actual same-supervisor FIN permits these retained fixture/JUnit reads.
++    retained = json.loads(cleanup.read_file(owned['private'] / test_workspace.RETAINED, mode=0o600)[0])
++    assert retained['owned_fin_closed'] is True and retained['pytest_phase_green'] is False
++    assert retained['resources_removed'] == retained['payload_files_read'] == 0
++    fixture_root = test_workspace.workspace_path(owned['control']) / 'pytest'
++    receipts = list(fixture_root.glob('**/ready-burst/producer-control.json'))
++    assert len(receipts) == 1
++    producer = json.loads(cleanup.read_file(receipts[0], mode=0o600)[0])
++    assert producer['all100_verified_zombie_before_producer_exit'] is True
++    assert producer['child_reaps_by_producer'] == 0
++    assert {row['pid'] for row in producer['children']} == {row['pid'] for row in kernel['adopted_descendants_reaped']}
++    import xml.etree.ElementTree as ET
++    junit_raw, _ = cleanup.read_file(owned['private'] / 'native-owned-junit.xml', mode=0o644)
++    cases = list(ET.fromstring(junit_raw).iter('testcase'))
++    assert len(cases) == 1 and len(cases[0].findall('failure')) == 1
++    assert not cases[0].findall('error') and not cases[0].findall('skipped')

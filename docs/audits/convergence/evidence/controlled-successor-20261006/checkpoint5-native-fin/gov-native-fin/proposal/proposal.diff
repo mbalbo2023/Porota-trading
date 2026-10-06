@@ -1,0 +1,30 @@
+--- a/scripts/rc6_controlled_governed_runner.py
++++ b/scripts/rc6_controlled_governed_runner.py
+@@ -738,6 +738,7 @@
+                         row = child_row(found, child_status, child_usage)
+                         descendants.append(row)
+                         observations.append({'phase': 'after_main_pid_reap', 'outcome': 'PID_REAPED', **row})
++                        continue
+                     else:
+                         pending = ['KERNEL_ACTIVE_OWN_CHILD_WITHOUT_PID']
+                         if not wait4_zero:
+@@ -945,9 +946,6 @@
+             publish(output/(phase+'.parent-source-before.index.json'), canonical(phase_before))
+             phases[phase] = subprocess_phase(common+['--phase', phase], root, output/(phase+'.log'), env, args.timeout_seconds)
+             publish(output/(phase+'.kernel.json'), canonical(phases[phase]))
+-            phase_after = source_pin(root, args.source_sha, args.source_tree)
+-            compare_source(before, phase_after)
+-            publish(output/(phase+'.parent-source-after.index.json'), canonical(phase_after))
+             require(phases[phase]['returncode'] == 0 and phases[phase]['timed_out'] is False,
+                     'ACTUAL_GOVERNED_PHASE_NOT_GREEN:'+phase)
+             require(phases[phase]['actual_child_reaped'] is True
+@@ -964,6 +962,9 @@
+                     and phases[phase]['residual_descendants_observed'] == []
+                     and phases[phase]['supervisor_errors'] == [],
+                     'ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED:'+phase)
++            phase_after = source_pin(root, args.source_sha, args.source_tree)
++            compare_source(before, phase_after)
++            publish(output/(phase+'.parent-source-after.index.json'), canonical(phase_after))
+         collect = json.loads(capture(output/'collection.observations.json')[0])
+         execution = json.loads(capture(output/'execution.observations.json')[0])
+         require(all(row['offline_inet_creation_capability']['status'] == 'INSTALLED_AND_KERNEL_WITNESSED'

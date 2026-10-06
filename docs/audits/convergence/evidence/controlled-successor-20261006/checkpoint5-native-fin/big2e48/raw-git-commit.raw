@@ -1,0 +1,6 @@
+tree e4cb00d2846ddf873a18530697d5fbaa029ced33
+parent 86615bd8c669209e8d391d114016d923fe084dc0
+author Martin Balbo <mbalbo@gmail.com> 1791306381 +0000
+committer Martin Balbo <mbalbo@gmail.com> 1791306381 +0000
+
+RC6: preserve native lifecycle custody and optimize exact builtin serialization

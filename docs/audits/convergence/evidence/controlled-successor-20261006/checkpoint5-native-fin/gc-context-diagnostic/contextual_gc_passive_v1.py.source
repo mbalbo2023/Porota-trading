@@ -1,0 +1,168 @@
+"""Passive contextual GC diagnosis; never a material or import qualification.
+
+A normal external __main__/spawn __mp_main__ registers gc.callbacks only.
+The untouched tracked stress.main runs the original native12000x5 PAPER
+fixture, canonical runtime,0.5 reads,90 cycle and5 cleanup/unchanged quotas.
+No Source overlay, function/global/module impersonation, profiler/tracer,
+dummy heap, GC policy change, SQL probe, browser or deploy occurs.
+"""
+from __future__ import annotations
+
+import argparse
+import atexit
+import gc
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import re
+import resource
+import stat
+import sys
+import time
+
+BASE=Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum')
+FROZEN=BASE/'rc6-native-big-2e48f6f-y4vztl0q'
+FROZEN_SOURCE=FROZEN/'source'
+REPOSITORY=FROZEN/'repository'
+ORIGINAL_PIN=FROZEN/'pin/source.index.json'
+ORIGINAL_DATABASE=FROZEN/'data-slow/data/paper_v17/observer_v17.db'
+EPOCH=Path(__file__).absolute().parent
+SOURCE=EPOCH/'source'
+PIN=EPOCH/'pin/source.index.json'
+RAW=EPOCH/'raw'
+DATA=EPOCH/'data'
+PYTHON=str(BASE/'venv311/bin/python')
+SHA='2e48f6f005f38f68b9dd9a75677fb67e52f23a18'
+TREE='e4cb00d2846ddf873a18530697d5fbaa029ced33'
+INDEX_SHA='44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756'
+ORIGINAL_DATABASE_SHA='ed2243464807d6c202f292b504a84b3ecdb035aef3a7ea6ca847b6dcf6878e36'
+LIMIT_SECONDS=300 # Original DIRECT2e outer management; native cycle remains90.
+RSS_LIMIT=2*1024**3
+EVIDENCE_LIMIT=128*1024**2
+MAX_PID_GC_BYTES=64*1024**2
+MAX_GC_EVENTS=100000
+FIELDS=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks',
+        'st_atime_ns','st_mtime_ns','st_ctime_ns')
+STABLE=tuple(key for key in FIELDS if key!='st_atime_ns')
+GC_OBSERVER=None
+gov=None
+sys.dont_write_bytecode=True
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def read_owned(path, limit=128*1024**2):
+    """Descriptor read only; preserve and compare all eleven file fields."""
+    path = Path(path).absolute()
+    require(path.resolve(strict=True) == path and not any(p.is_symlink() for p in path.parents),
+            'REGULAR_UNALIASED_FILE_REQUIRED')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid == os.geteuid() and before.st_size <= limit,
+                'OWNED_BOUNDED_REGULAR_FILE_REQUIRED')
+        parts, total = [], 0
+        while block := os.read(fd, min(1024**2, limit+1-total)):
+            parts.append(block); total += len(block)
+            require(total <= limit, 'FILE_BOUND_EXCEEDED')
+        after, location = os.fstat(fd), path.lstat()
+        require(total == before.st_size and all(getattr(before, key) == getattr(after, key)
+                == getattr(location, key) for key in FIELDS), 'FILE_CHANGED_DURING_NOATIME_CAPTURE')
+        return b''.join(parts), {key: getattr(before, key) for key in FIELDS}
+    finally:
+        os.close(fd)
+
+
+def write_new(path, wire, mode=0o600):
+    path = Path(path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(wire); stream.flush(); os.fchmod(stream.fileno(), mode); os.fsync(stream.fileno())
+
+
+def publish(name, value):
+    gov.publish(RAW/name, gov.canonical(value))
+
+
+def failure(error, stage):
+    literal = str(error).partition(':')[0]
+    row = {'stage': stage, 'class': type(error).__name__,
+           'reason': literal if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}', literal) else 'NON_LITERAL_EXCEPTION'}
+    if isinstance(error, OSError) and type(error.errno) is int:
+        row['errno'] = error.errno
+    return row
+
+
+def data_custody(path):
+    result = {}
+    for suffix in ('', '-wal', '-shm', '-journal'):
+        member = Path(str(path)+suffix)
+        try:
+            member.lstat()
+        except FileNotFoundError:
+            require(bool(suffix), 'SOURCE_DATABASE_MISSING')
+            continue
+        wire, fields = read_owned(member, limit=512*1024**2)
+        result[suffix] = {**fields, 'sha256': hashlib.sha256(wire).hexdigest()}
+    return result
+
+
+def load_governed():
+    global gov
+    require(sys.executable == PYTHON and platform.python_version() == '3.11.16'
+            and os.getuid() == os.geteuid() != 0, 'EXACT_NONROOT_LOCKED311_REQUIRED')
+    require(str(SOURCE) not in sys.path, 'NO_PREEXISTING_DIAGNOSTIC_SOURCE_ALIAS')
+    sys.path.insert(0, str(SOURCE))
+    from scripts import rc6_controlled_governed_runner
+    gov = rc6_controlled_governed_runner
+    require(Path(gov.__file__).absolute() == SOURCE/'scripts/rc6_controlled_governed_runner.py',
+            'ORIGINAL_TRACKED_GOVERNED_HELPER_REQUIRED')
+
+
+def setup(phase):
+    namespace = gov.phase_namespace(SOURCE, RAW, phase)
+    capability = gov.restrict_inet_creation()
+    observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+                    'subprocess_executable_counts': {}}
+    gov.install_phase_audit(observations)
+    publish(phase+'.namespace.json', namespace)
+    publish(phase+'.offline-capability.json', capability)
+    publish(phase+'.installed-closure.json', gov.installed_closure(SOURCE))
+    return observations
+
+
+def binding():
+    from scripts.rc6_native_import_provenance import prepare_binding
+    require(hashlib.sha256(gov.capture(PIN)[0]).hexdigest() == INDEX_SHA, 'EXACT_SOURCE_INDEX_REQUIRED')
+    return prepare_binding(source_root=str(SOURCE), source_repo=str(REPOSITORY),
+                           source_sha=SHA, source_tree=TREE, source_index=str(PIN))
+
+
+def source_snapshot(root, bound):
+    physical_before = gov.physical_namespace(root)
+    records = {}
+    for name, expected in bound['files'].items():
+        wire, attrs = gov.capture(root/name)
+        blob = hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()
+        mode = '100'+format(stat.S_IMODE(attrs['st_mode']), '03o')
+        require(hashlib.sha256(wire).hexdigest() == expected['sha256']
+                and blob == expected['blob_id'] and mode == expected['mode'], 'PHYSICAL_SOURCE_PIN_MISMATCH')
+        records[name] = {'sha256': expected['sha256'], 'git_blob': blob, 'git_mode': mode,
+                         'bytes': len(wire), 'stat_fields': attrs}
+    physical_after = gov.physical_namespace(root)
+    require(physical_before == physical_after and set(records) == set(physical_after['files']),
+            'PHYSICAL_SOURCE_NAMESPACE_CHANGED_OR_NONLITERAL')
+    return {'source_sha': SHA, 'source_tree': TREE, 'source_index_sha256': INDEX_SHA,
+            'files': records, 'physical_directories': physical_after['directories'], 'overlay_count': 0,
+            'git_metadata': {'source_repo': str(REPOSITORY),
+                             'raw_git_commit_sha256': json.loads(gov.capture(PIN)[0])['raw_git_commit_sha256'],
+                             'source_index_sha256': INDEX_SHA},
+            'scope': 'ALL_LITERAL_BYTES_MODES_RAW_GIT_CODE10_STABLE_WITH_SEPARATE_ATIME'}
+

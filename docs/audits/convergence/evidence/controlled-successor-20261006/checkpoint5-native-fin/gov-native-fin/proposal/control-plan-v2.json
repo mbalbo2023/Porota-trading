@@ -1,0 +1,74 @@
+{
+  "all_payload_reads_after_sameparent_echild_and_pgid_only": true,
+  "cases": [
+    {
+      "case": "ready100Red",
+      "expected": "Original5s bound RED/noECHILD witness despite100 actualreadyZ reap; later independent realFIN never relabels",
+      "variant": "old"
+    },
+    {
+      "case": "ready100Red",
+      "expected": "Actual100readyZ drain+ECHILD/PGID underoriginal5; return1 remains phaseRED",
+      "variant": "new"
+    },
+    {
+      "case": "simpleExit0",
+      "expected": "Actualkernelclosed andreturn0",
+      "variant": "new"
+    },
+    {
+      "case": "liveDetached6",
+      "expected": "Original5 expires andwait4zero permanentRED; natural6s child then separate observerECHILD withoutsignals",
+      "variant": "new"
+    },
+    {
+      "case": "mainUnknown",
+      "expected": "RealUNKNOWN5 + Sourcepostattempt vetoed BEFORE anyphysicalread; no Sourcepostindex",
+      "variant": "old"
+    },
+    {
+      "case": "mainUnknown",
+      "expected": "SameRealUNKNOWN5, exactcustodyrequirefails BEFORE Sourcepostspycall; zeroattempt/noindex",
+      "variant": "new"
+    }
+  ],
+  "classification": "PREPARED_NOT_EXECUTED_NO_SOURCE_EDITS",
+  "control_source_root_template": "Fresh exact2e48 Gitworktree, no source writes, external output names unique",
+  "corrections": [
+    "Gov child_row adopted receipt uses exit_code; only its assertion field corrected, separate observer locally-defined exitcode stays unchanged",
+    "Use already prepared complete Gov Gitclone for actual source_pin/closure157/A3FIP; no writes or fetches to that clone"
+  ],
+  "default_and_main_preflight_repo_root": "/workspace/scratch/rc6g2e-eabh7h8t/epoch311/source",
+  "driver": {
+    "bytes": 11402,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/real_gov_component_control_v2.py",
+    "sha256": "4df63c3df5c46d519a80abae0681d3e58f68c62929edb98a1a12feeeee62c125"
+  },
+  "existing_focal_suite_untouched": "tests/test_rc6_controlled_governed_runner.py (same15 scenarios)",
+  "gov100_separate_session_explicit_and_differs_from_ci100_inherited": true,
+  "main_preflight_repo_status": "ROOT_PREPARED_EXACT2E48_FULL_REQUIRED19OBJECTS_PREFLIGHTS_PASS_NO_NEW_FETCH",
+  "no_tests_or_fixture_processes_started": true,
+  "observer_management20_does_not_change_original5_5400": true,
+  "producer": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/owned_process_control.py",
+    "sha256": "797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43"
+  },
+  "python_epochs": [
+    "3.11.16 locked157",
+    "3.12.14 locked157"
+  ],
+  "schema": "rc6.gov.wait4-controls.proposed-run-plan.v2",
+  "source_edits": false,
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "spy_is_read_observer_not_fake_kernel_pass": true,
+  "superseded_v1_preserved_not_executed": {
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/real_gov_component_control.py",
+    "sha256": "ae8ea3a9464ed478cb1bfe3acbc1493bd6a237720db24117c0b140ca94e450ad"
+  },
+  "v1_to_v2_diff": {
+    "bytes": 1504,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gov-ready-drain-proposal-2e48-9ckbpv3v/control-v1-to-v2.diff",
+    "sha256": "7071c798a5c7241e2e86dd202ef69e91ec6dd911f9f9fc036060167d29276ed1"
+  }
+}

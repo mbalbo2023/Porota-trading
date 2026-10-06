@@ -1,0 +1,106 @@
+"""Owned native process controls only; no product/source/data/network operations."""
+from __future__ import annotations
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import time
+
+
+def proc_identity(pid):
+    proc = Path('/proc') / str(pid)
+    fields = {key: value.strip() for key, value in
+              (line.split(':', 1) for line in (proc/'status').read_text().splitlines() if ':' in line)}
+    tail = (proc/'stat').read_text().rsplit(')', 1)[1].split()
+    return {'pid': int(fields['Pid']), 'ppid': int(fields['PPid']),
+            'state': fields['State'].split()[0], 'uid': [int(x) for x in fields['Uid'].split()],
+            'pgid': int(tail[2]), 'session': int(tail[3])}
+
+
+def publish_control(path, receipt):
+    assert path.parent.is_dir() and stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    data = (json.dumps(receipt, sort_keys=True, indent=2)+'\n').encode()
+    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(data)
+    assert path.stat().st_nlink == 1
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--case', choices=('ready100', 'liveDetached6', 'simpleExit'), required=True)
+    parser.add_argument('--receipt', type=Path, required=True)
+    parser.add_argument('--exit-code', type=int, choices=(0, 1), required=True)
+    parser.add_argument('--separate-session', action='store_true')
+    args = parser.parse_args()
+    assert os.getuid() == os.geteuid() != 0
+    assert not args.receipt.exists()
+    rows = []
+    witnesses = []
+    producer = proc_identity(os.getpid())
+    if args.case == 'ready100':
+        pids = []
+        for unused in range(100):
+            pid = os.fork()
+            if pid == 0:
+                try:
+                    if args.separate_session:
+                        os.setsid()
+                except BaseException:
+                    os._exit(95)
+                os._exit(0)
+            pids.append(pid)
+        for pid in pids:
+            result = os.waitid(os.P_PID, pid, os.WEXITED|os.WNOWAIT)
+            assert result.si_pid == pid and result.si_code == os.CLD_EXITED and result.si_status == 0
+            identity = proc_identity(pid)
+            assert identity['pid'] == pid and identity['ppid'] == os.getpid()
+            assert identity['state'] == 'Z' and identity['uid'] == producer['uid']
+            if args.separate_session:
+                assert identity['pgid'] == identity['session'] == pid
+            else:
+                assert identity['pgid'] == producer['pgid'] and identity['session'] == producer['session']
+            rows.append(identity)
+            witnesses.append({'pid': pid, 'si_code': result.si_code, 'si_status': result.si_status,
+                              'flags': 'WEXITED|WNOWAIT', 'reaped': False})
+        assert len(rows) == 100 and len({row['pid'] for row in rows}) == 100
+    elif args.case == 'liveDetached6':
+        assert not args.separate_session
+        reader, writer = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(reader)
+            os.setsid()
+            os.write(writer, b'R')
+            os.close(writer)
+            time.sleep(6)
+            os._exit(0)
+        os.close(writer)
+        assert os.read(reader, 1) == b'R'
+        os.close(reader)
+        identity = proc_identity(pid)
+        assert identity['pid'] == pid and identity['ppid'] == os.getpid()
+        assert identity['state'] not in ('Z', 'X') and identity['uid'] == producer['uid']
+        assert identity['pgid'] == identity['session'] == pid
+        rows.append(identity)
+    else:
+        assert not args.separate_session
+    receipt = {'schema': 'rc6.real-owned-process-control.v1',
+               'classification': 'PROCESS_CONTROL_ONLY_NOT_GOV_BIG_IMAGE_RUNTIME_QUALIFICATION',
+               'case': args.case, 'producer': producer, 'children': rows,
+               'waitid_wnowait_witnesses': witnesses,
+               'separate_session': args.separate_session,
+               'all100_verified_zombie_before_producer_exit': args.case == 'ready100',
+               'live_detached_seconds': 6 if args.case == 'liveDetached6' else None,
+               'live6_does_not_change_cleanup5_or_phase_budget': True,
+               'producer_exit_code': args.exit_code, 'child_reaps_by_producer': 0,
+               'termination_signals_sent': [], 'source_or_data_reads': False,
+               'network_operations': False}
+    publish_control(args.receipt, receipt)
+    os._exit(args.exit_code)
+
+
+if __name__ == '__main__':
+    main()

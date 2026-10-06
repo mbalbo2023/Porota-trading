@@ -1,0 +1,47 @@
+{
+  "classification": "PYTEST_PRODUCER_LAUNCH_ATTEMPTED_NOT_ACCEPTED",
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "test_native_owned.py",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "context": {
+    "candidate_sha": "649a4e90468598f679c63b6ac71516b0e2cab9f7",
+    "candidate_tree": "4a39a21dc8e7bf76a69a2cff1b4c6b0fc7079467",
+    "event": "pull_request",
+    "repository": "mbalbo2023/Porota-trading",
+    "run_attempt": "2",
+    "run_id": "471",
+    "workflow_path": ".github/workflows/porota-predeploy-v2.yml"
+  },
+  "failed_cleanup_maximum_seconds": 5,
+  "initial_actual_own_kernel": {
+    "kernel_echild_verified": true,
+    "scope": "THIS_SUPERVISOR_ONLY; NO_GLOBAL_PROC_SCAN_OR_STATE_MUTATION",
+    "subreaper_state_after": 0,
+    "subreaper_state_before": 0
+  },
+  "management_seconds": 60,
+  "original_management_maximum_seconds": 5400,
+  "original_manager_source": {
+    "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+    "member": "scripts/rc6_controlled_native_child_manager.py",
+    "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+  },
+  "owner_uid": 1000,
+  "owner_uuid": "af243396ab394adeba719cd094071a19",
+  "phase": "collection",
+  "progress_poll_seconds": 5,
+  "real_orders_sent": 0,
+  "schema": "rc6.predeploy-pytest-launch-intent.v1",
+  "supervisor_effective_uid": 1000,
+  "supervisor_native_tid": 22628,
+  "supervisor_pid": 22628,
+  "supervisor_real_uid": 1000,
+  "terminate_grace_seconds": 2
+}

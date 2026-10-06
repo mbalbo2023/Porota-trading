@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25702.642777539,
+  "owned_log_bytes_fstat_only": 0,
+  "phase": "component-old-ready100Red",
+  "pid": 23705,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "poll",
+  "wall_seconds": 5.010756641000626
+}

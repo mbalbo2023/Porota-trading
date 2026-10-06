@@ -1,0 +1,383 @@
+def copy_literal_source():
+    require(not SOURCE.exists() and not RAW.exists() and not DATA.exists()
+            and not PIN.parent.exists(), 'FRESH_PRIVATE_DIAGNOSTIC_NAMESPACE_REQUIRED')
+    wire, _ = read_owned(ORIGINAL_PIN)
+    require(hashlib.sha256(wire).hexdigest()==INDEX_SHA,'EXACT_SOURCE_INDEX_REQUIRED')
+    pin=json.loads(wire)
+    require(pin['source_sha']==SHA and pin['source_tree']==TREE
+            and pin['overlay_count']==0 and len(pin['files'])==3192,'WHOLE_LITERAL_SOURCE_REQUIRED')
+    SOURCE.mkdir(mode=0o755);os.chmod(SOURCE,0o755)
+    directories=set()
+    for name in pin['files']:
+        require(Path(name).as_posix()==name and not Path(name).is_absolute()
+                and '..' not in Path(name).parts and '\\' not in name,'LITERAL_SOURCE_PATH_REQUIRED')
+        directories.update(p for p in Path(name).parents if p!=Path('.'))
+    for name in sorted(directories,key=lambda p:(len(p.parts),str(p))):
+        (SOURCE/name).mkdir(mode=0o755);os.chmod(SOURCE/name,0o755)
+    for name,expected in pin['files'].items():
+        blob,attrs=read_owned(FROZEN_SOURCE/name)
+        mode=pin['modes'][name]
+        require(mode in ('100644','100755') and hashlib.sha256(blob).hexdigest()==expected
+                and hashlib.sha1(b'blob '+str(len(blob)).encode()+b'\0'+blob).hexdigest()==pin['blob_ids'][name]
+                and stat.S_IMODE(attrs['st_mode'])==(0o755 if mode=='100755' else 0o644),
+                'SOURCE_BYTES_MODE_BLOB_MISMATCH')
+        write_new(SOURCE/name,blob,0o755 if mode=='100755' else 0o644)
+    RAW.mkdir(mode=0o700);DATA.mkdir(mode=0o700);PIN.parent.mkdir(mode=0o700)
+    write_new(PIN,wire,0o644)
+
+
+class PassiveGCObserver:
+    """Write passive events durably. No line/profile/policy hooks are used."""
+    def __init__(self,process_root):
+        self.root=process_root
+        self.path=process_root/'gc-events.jsonl'
+        self.fd=os.open(self.path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        self.pid=os.getpid();self.sequence=0;self.bytes=0;self.closed=False
+        self.errors=[];self.callback_wall_ns=0;self.callback_cpu_ns=0
+        self.initial_enabled=gc.isenabled();self.initial_thresholds=gc.get_threshold()
+        self.initial_other_callbacks=len(gc.callbacks)
+        self.generations={str(g):{'start':0,'stop':0} for g in (0,1,2)}
+        self.native_source_frames=0
+        self.emit({'record_kind':'GC_OBSERVER_START','pid':self.pid,'parent_pid':os.getppid(),
+            'entry_module':__name__,'source_sha':SHA,'DIAGNOSTIC_ONLY':True,'gate_qualified':False,
+            'gc_enabled_before':self.initial_enabled,'gc_thresholds_before':self.initial_thresholds,
+            'other_callbacks_preserved_count':self.initial_other_callbacks,
+            'sys_profile_before':sys.getprofile() is not None,'sys_trace_before':sys.gettrace() is not None,
+            'no_gc_policy_threshold_collect_disable_freeze_changes':True})
+
+    def emit(self,row):
+        blob=(json.dumps(row,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+        if self.bytes+len(blob)>MAX_PID_GC_BYTES:
+            raise ValueError('GC_PRIVATE_RAW_BYTE_LIMIT')
+        written=os.write(self.fd,blob)
+        self.bytes+=written
+        require(written==len(blob),'GC_RAW_SHORT_WRITE')
+
+    def context(self):
+        frame=sys._getframe(2)
+        result={};examined=0
+        try:
+            while frame is not None and examined<32:
+                examined+=1
+                module=frame.f_globals.get('__name__')
+                name=frame.f_code.co_name
+                expected={
+                    'rc6_shadow_runtime.families':'rc6_shadow_runtime/families.py',
+                    'rc6_audit_evidence.sqlite_snapshot':'rc6_audit_evidence/sqlite_snapshot.py',
+                    'scripts.rc6_issue465_stress':'scripts/rc6_issue465_stress.py'}
+                if module in expected and frame.f_code.co_filename==str(SOURCE/expected[module]):
+                    if module=='scripts.rc6_issue465_stress' and name=='measured':
+                        values=frame.f_locals
+                        if values.get('_name')=='families':
+                            result['original_active_families_handler']={
+                                'entered_at_monotonic':values.get('wall'),
+                                'entered_at_process_cpu':values.get('process'),'line':frame.f_lineno}
+                    elif module=='rc6_shadow_runtime.families' and name in ('_read','family_reports'):
+                        row={'function':name,'line':frame.f_lineno}
+                        if name=='_read':
+                            deadline=frame.f_locals.get('deadline')
+                            if type(deadline) in (int,float) and math.isfinite(deadline):
+                                row['deadline']=deadline
+                                row['budget_start_inferred_from_literal_point_five']=deadline-.5
+                                row['remaining_seconds_observed_in_callback']=deadline-time.monotonic()
+                        result['original_families_'+name]=row
+                    elif module=='rc6_audit_evidence.sqlite_snapshot' and name in ('_read','readonly_copy','_check'):
+                        row={'function':name,'line':frame.f_lineno}
+                        values=frame.f_locals
+                        deadline=values.get('deadline')
+                        if type(deadline) in (int,float) and math.isfinite(deadline):row['deadline']=deadline
+                        consumed=values.get('consumed')
+                        if type(consumed) is int:row['consumed_bytes']=consumed
+                        if name=='_read':row['writing_private_copy']=values.get('destination') is not None
+                        result.setdefault('original_snapshot_frames',[]).append(row)
+                frame=frame.f_back
+        finally:
+            del frame
+        result['frames_examined_bound32']=examined
+        return result
+
+    def __call__(self,phase,info):
+        begin_wall=time.perf_counter_ns();begin_cpu=time.process_time_ns()
+        self.sequence+=1
+        seq=self.sequence
+        try:
+            require(seq<=MAX_GC_EVENTS,'GC_EVENT_LIMIT')
+            generation=info.get('generation')
+            require(phase in ('start','stop') and type(generation) is int and generation in (0,1,2),
+                    'NATIVE_GC_PHASE_GENERATION_REQUIRED')
+            self.generations[str(generation)][phase]+=1
+            at,at_cpu=time.monotonic(),time.process_time()
+            context=self.context()
+            if 'original_families__read' in context:self.native_source_frames+=1
+            row={'record_kind':'GC','sequence':seq,'pid':self.pid,'phase':phase,
+                'generation':generation,'at_monotonic':at,'at_process_cpu':at_cpu,
+                'peak_self_rss_bytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+                'collected':info.get('collected'),'uncollectable':info.get('uncollectable'),
+                'numeric_native_context':context}
+            self.emit(row)
+            wall_ns=time.perf_counter_ns()-begin_wall
+            cpu_ns=time.process_time_ns()-begin_cpu
+            self.callback_wall_ns+=wall_ns;self.callback_cpu_ns+=cpu_ns
+            self.emit({'record_kind':'GC_CALLBACK_BODY_COST','sequence':seq,'pid':self.pid,
+                'observed_wall_seconds':wall_ns/1e9,'observed_cpu_seconds':cpu_ns/1e9,
+                'scope':'CALLBACK_BODY_THROUGH_PRIMARY_GC_EVENT_WRITE; EXCLUDES_DISPATCH_AND_THIS_COST_RECORD_WRITE',
+                'lower_bound_not_total_callback_overhead':True})
+        except BaseException as error:
+            # CPython swallows GC-hook exceptions. A durable sticky counter,
+            # partial JSONL and missing footer remain diagnostic RED, not PASS.
+            if len(self.errors)<16:self.errors.append(failure(error,'gc_callback'))
+
+    def finish(self):
+        if self.closed:return
+        if self in gc.callbacks:gc.callbacks.remove(self)
+        summary={'record_kind':'GC_OBSERVER_FIN','pid':self.pid,'parent_pid':os.getppid(),
+            'entry_module':__name__,'DIAGNOSTIC_ONLY':True,'gate_qualified':False,
+            'callbacks_seen':self.sequence,'generation_counts':self.generations,
+            'native_families_read_context_events':self.native_source_frames,
+            'callback_body_observed_wall_seconds':self.callback_wall_ns/1e9,
+            'callback_body_observed_cpu_seconds':self.callback_cpu_ns/1e9,
+            'cost_observations_lower_bound_not_subtracted_to_qualify':True,
+            'gc_enabled_after':gc.isenabled(),'gc_thresholds_after':gc.get_threshold(),
+            'gc_policy_observed_equal':self.initial_enabled==gc.isenabled()
+                and self.initial_thresholds==gc.get_threshold(),
+            'sys_profile_after':sys.getprofile() is not None,'sys_trace_after':sys.gettrace() is not None,
+            'errors':self.errors,'instrumentation_allocations_and_IO_can_shift_GC_positions':True}
+        try:
+            self.emit(summary)
+            os.fsync(self.fd)
+        finally:
+            os.close(self.fd);self.closed=True
+        write_new(self.root/'gc-observer-final.json',(json.dumps(summary,sort_keys=True,indent=2)+'\n').encode())
+
+
+def install_native_entry_observer():
+    global GC_OBSERVER
+    load_governed()
+    require(sys.getprofile() is None and sys.gettrace() is None,'NO_PROFILE_OR_TRACE_REQUIRED')
+    process_root=RAW/('process-'+str(os.getpid()))
+    process_root.mkdir(mode=0o700)
+    namespace=gov.phase_namespace(SOURCE,process_root,'execution')
+    capability=gov.restrict_inet_creation()
+    observations={'inet_socket_attempts':[],'inet_socket_constructor_requests':[],
+                  'subprocess_executable_counts':{}}
+    gov.install_phase_audit(observations)
+    gov.publish(process_root/'namespace.json',gov.canonical(namespace))
+    gov.publish(process_root/'offline-capability.json',gov.canonical(capability))
+    GC_OBSERVER=PassiveGCObserver(process_root)
+    gc.callbacks.append(GC_OBSERVER)
+    def finish_observer():
+        GC_OBSERVER.finish()
+        gov.publish(process_root/'inet-audit-final.json',gov.canonical(observations))
+    atexit.register(finish_observer)
+
+
+def native_entry():
+    # Spawn reimports this external file naturally as __mp_main__; only the
+    # original __main__ entry invokes the original tracked CLI. No aliases.
+    from scripts import rc6_issue465_stress as stress
+    require(stress.ROOT==SOURCE and Path(stress.__file__).absolute()==SOURCE/'scripts/rc6_issue465_stress.py',
+            'ORIGINAL_TRACKED_STRESS_MODULE_REQUIRED')
+    args=['--root',str(DATA),'--out',str(RAW/'native-stress-result.json'),
+        '--catalog-count','12000','--observations-per-identity','5','--canonical-runtime','--slow-disk',
+        '--source-root',str(SOURCE),'--source-repo',str(REPOSITORY),'--source-sha',SHA,
+        '--source-tree',TREE,'--source-index',str(PIN)]
+    try:
+        return stress.main(args)
+    finally:
+        GC_OBSERVER.finish()
+
+
+def closed_raw_join(native):
+    """Called only after real kernel FIN. No SQL, reexecution or graph copy."""
+    imports=native.get('import_provenance',{})
+    worker_pid=imports.get('worker_pid')
+    shadow=native.get('shadow',{})
+    entries=[r for r in shadow.get('probe_event_receipts',[]) if r.get('event')=='ENTER'
+             and r.get('handler_name')=='families']
+    handler=shadow.get('handler_resources',{}).get('families',{})
+    exact_windows=[]
+    if len(entries)==1 and handler.get('calls')==1 and type(handler.get('elapsed_seconds')) in (int,float):
+        start=entries[0]['entered_at_monotonic']
+        exact_windows=[{'begin':start,'end':start+handler['elapsed_seconds'],
+                       'scope':'ONE_ORIGINAL_HANDLER_ENTER_PLUS_ITS_SINGLE_CALL_ELAPSED'}]
+    paths=sorted(RAW.glob('process-*/gc-events.jsonl'))
+    datasets=[];all_pairs=[];raw_hashes={}
+    for path in paths:
+        wire,attrs=read_owned(path)
+        raw_hashes[str(path.relative_to(RAW))]={'sha256':hashlib.sha256(wire).hexdigest(),
+                                              'bytes':len(wire),'stat_fields':attrs}
+        events=[];costs={};pending={};pairs=[];errors=[];footer=None
+        for line_number,line in enumerate(wire.splitlines(),1):
+            try:row=json.loads(line)
+            except ValueError:
+                errors.append({'reason':'PARTIAL_OR_INVALID_GC_JSONL','line':line_number});continue
+            kind=row.get('record_kind')
+            if kind=='GC_CALLBACK_BODY_COST':costs[row['sequence']]=row
+            elif kind=='GC_OBSERVER_FIN':footer=row
+            elif kind=='GC':
+                events.append(row)
+                key=(row['pid'],row['generation'])
+                if row['phase']=='start':
+                    if key in pending:errors.append({'reason':'UNMATCHED_GC_START','generation':row['generation']})
+                    pending[key]=row
+                else:
+                    start=pending.pop(key,None)
+                    if start is None:
+                        errors.append({'reason':'GC_STOP_WITHOUT_START','generation':row['generation']});continue
+                    pairs.append({'pid':row['pid'],'generation':row['generation'],
+                        'start':start['at_monotonic'],'stop':row['at_monotonic'],
+                        'observed_interval_wall_seconds':row['at_monotonic']-start['at_monotonic'],
+                        'observed_interval_cpu_seconds':row['at_process_cpu']-start['at_process_cpu'],
+                        'start_sequence':start['sequence'],'stop_sequence':row['sequence'],
+                        'start_numeric_context':start['numeric_native_context'],
+                        'stop_numeric_context':row['numeric_native_context']})
+        for pair in pairs:
+            pair['callback_cost_start']=costs.get(pair['start_sequence'])
+            pair['callback_cost_stop']=costs.get(pair['stop_sequence'])
+            pair['overlap_exact_family_handler_windows_seconds']=[max(0.,min(pair['stop'],w['end'])
+                -max(pair['start'],w['begin'])) for w in exact_windows if pair['pid']==worker_pid]
+            read=pair['start_numeric_context'].get('original_families__read',{})
+            if type(read.get('deadline')) in (int,float):
+                deadline=read['deadline'];begin=deadline-.5
+                pair['associated_original_family_read_deadline']=deadline
+                pair['overlap_point_five_budget_window_seconds']=max(0.,min(pair['stop'],deadline)-max(pair['start'],begin))
+                pair['GC_interval_crossed_original_family_deadline']=pair['start']<deadline<pair['stop']
+        datasets.append({'path':str(path),'event_count':len(events),'pair_count':len(pairs),
+            'unmatched_start_count':len(pending),'missing_cost_record_count':sum(e['sequence'] not in costs for e in events),
+            'footer':footer,'errors':errors})
+        all_pairs.extend(pairs)
+    family_pairs=[p for p in all_pairs if p['pid']==worker_pid and
+        (p.get('associated_original_family_read_deadline') is not None
+         or any(p.get('overlap_exact_family_handler_windows_seconds',[])))]
+    return {'schema':'rc6.passive-gc-context.closed-fin-join.v1','status':'RED','DIAGNOSTIC_ONLY':True,
+        'gate_qualified':False,'worker_pid':worker_pid,'native_handler_families':handler,
+        'original_ENTER_families':entries,'exact_family_handler_windows':exact_windows,
+        'two_or_more_handler_calls_have_no_invented_per_call_elapsed':len(entries)>1,
+        'gc_event_streams':datasets,'all_pair_count':len(all_pairs),'family_associated_pairs':family_pairs,
+        'largest_gc_pairs':sorted(all_pairs,key=lambda p:p['observed_interval_wall_seconds'],reverse=True)[:20],
+        'raw_hashes':raw_hashes,'native_import_status':imports.get('status'),
+        'native_import_qualification_always_false_for_external_diagnosis':True,
+        'copy_SQL_timing_not_invented':'Only native GC stack function/line/deadline/consumed facts if observed; no new SELECT or probe',
+        'timing_overlap_scope':'GC start-to-stop contains start-callback body; stop-body lies after stop. Cost records are lower bounds, not subtracted for qualification.',
+        'causality_limits':['Instrumented allocation/IO may shift GC positions; original clean BIG is not reclassified',
+            'No exact intrinsic collector cost or unobserved read start/end is claimed',
+            'No family GC in this diagnosis does not prove absent GC in original canonical BIG'],
+        'real_orders_sent':0,'PPI_Watch':'UNTOUCHED'}
+
+
+def parent():
+    require(sys.executable==PYTHON and platform.python_version()=='3.11.16'
+            and os.getuid()==os.geteuid()!=0,'EXACT_NATIVE_NONROOT_LOCKED311_REQUIRED')
+    copy_literal_source()
+    load_governed();observations=setup('collection')
+    bound=binding()
+    before=source_snapshot(SOURCE,bound);original_code_before=source_snapshot(FROZEN_SOURCE,bound)
+    original_data_before=data_custody(ORIGINAL_DATABASE)
+    require(original_data_before['']['sha256']==ORIGINAL_DATABASE_SHA,'ORIGINAL_BIG_DATA_PIN_REQUIRED')
+    publish('parent.source-before.json',before);publish('parent.original-source-before.json',original_code_before)
+    publish('parent.original-data-before.json',original_data_before)
+    command=[PYTHON,'-I','-B',str(Path(__file__).absolute()),'--native-entry']
+    env={'PATH':os.defpath,'LC_ALL':'C.UTF-8','LANG':'C.UTF-8','TZ':'UTC',
+         'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1','DATA_DIR':str(DATA/'data'),
+         'POROTA_DYNAMIC_CAPACITY_MODE':'OFF'}
+    script_wire,script_attrs=read_owned(Path(__file__))
+    publish('launch.json',{'status':'RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False,'source_sha':SHA,
+        'source_tree':TREE,'source_index_sha256':INDEX_SHA,'script_sha256':hashlib.sha256(script_wire).hexdigest(),
+        'script_stat':script_attrs,'command':command,'cwd':str(SOURCE),'source_overlay_count':0,
+        'original_native_cli':'scripts.rc6_issue465_stress.main with normal imports, no main-module impersonation',
+        'fixture_native_count':12000,'fixture_native_observations_per_identity':5,
+        'canonical_runtime':True,'slow_disk':True,'original_family_read_seconds':.5,
+        'original_native_cycle_seconds':90,'original_cleanup_seconds':5,'original_quotas_unchanged':True,
+        'maximum_rss_bytes':RSS_LIMIT,'maximum_evidence_bytes':EVIDENCE_LIMIT,
+        'parent_management_seconds':300,'same_parent300_as_original_DIRECT2e':True,
+        'only_business_observation':'gc.callbacks passive numeric stack context, timestamps, CPU, generation and observed callback cost',
+        'no_sys_setprofile_settrace_dummyheap_GC_policy_threshold_collect_source_or_function_changes':True,
+        'native_optional_diagnostic_stacks_flag':False,'native_raw_diagnostic_only_false_is_not_qualification':True,
+        'external_main_and_natural_spawn_mp_main_are_declared_ALIEN':True,
+        'native_import_proof_qualified':False,'canonical_BIG_qualified':False,'real_orders_sent':0})
+    print(json.dumps({'stage':'PASSIVE_CONTEXTUAL_GC_START','supervisor_pid':os.getpid(),
+                      'source_sha':SHA,'DIAGNOSTIC_ONLY':True,'command':command}),flush=True)
+    kernel=gov.subprocess_phase(command,SOURCE,RAW/'native.log',env,limit=300)
+    publish('kernel-supervision.json',kernel)
+    post_echild=any(r.get('phase')=='after_main_pid_reap' and r.get('outcome')=='ECHILD'
+                   for r in kernel['kernel_owned_child_observations'])
+    postread=(kernel['actual_child_reaped'] is True and kernel['owned_children_exhaustion_verified'] is True
+              and kernel['process_group_absent_after_reap'] is True and kernel['remaining_owned_children']==[]
+              and post_echild)
+    publish('postread-kernel-barrier.json',{'postread_allowed':bool(postread),'actual_reap':kernel['actual_child_reaped'],
+        'owned_exhaustion':kernel['owned_children_exhaustion_verified'],'PGID_absent':kernel['process_group_absent_after_reap'],
+        'post_main_actual_ECHILD':post_echild,'remaining_children':kernel['remaining_owned_children'],
+        'historical_timeout_signal_late_reap_or_residual_RED_never_reset':True})
+    errors=[];atimes={};code_preserved=False;data_preserved=False;native_hash=None;join=None
+    if postread:
+        try:
+            after=source_snapshot(SOURCE,bound);original_code_after=source_snapshot(FROZEN_SOURCE,bound)
+            atimes['clone']=gov.compare_source(before,after)
+            atimes['original_export']=gov.compare_source(original_code_before,original_code_after)
+            publish('parent.source-after.json',after);publish('parent.original-source-after.json',original_code_after)
+            code_preserved=True
+            original_data_after=data_custody(ORIGINAL_DATABASE)
+            publish('parent.original-data-after.json',original_data_after)
+            require(original_data_before==original_data_after,'ORIGINAL_BIG_DATABASE_ALL11_CHANGED')
+            native_wire,native_attrs=read_owned(RAW/'native-stress-result.json')
+            native_hash={'sha256':hashlib.sha256(native_wire).hexdigest(),'bytes':len(native_wire),'stat_fields':native_attrs}
+            native=json.loads(native_wire)
+            require(native.get('real_orders_sent')==0 and native.get('provider_requests')==0
+                    and native.get('real_routes')=='NOT_CALLED','PAPER_REAL_ROUTES_INVARIANT_RED')
+            database=Path(native['database'])
+            require(database==DATA/'data/paper_v17/observer_v17.db','EXACT_NATIVE_SYNTHETIC_DATABASE_REQUIRED')
+            actual_data=data_custody(database)
+            publish('parent.native-data-after-fin.json',actual_data)
+            require(actual_data==native['source_custody_before']==native['source_custody_after']
+                    and native['source_database_unchanged'] is True,'NATIVE_DATA_ALL11_CHANGED')
+            data_preserved=True
+            join=closed_raw_join(native);publish('closed-gc-context-join.json',join)
+        except BaseException as error:errors.append(failure(error,'post_real_FIN_source_data_GC'))
+    else:errors.append({'stage':'postread','reason':'KERNEL_NOT_QUIESCENT_NO_SOURCE_DATA_RAW_READ'})
+    kernel_closed=(kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
+        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
+        and not kernel['kernel_wait4_zero_observed_irreversible_red']
+        and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['timed_out']
+        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
+        and not kernel['residual_descendants_observed'] and not kernel['remaining_owned_children']
+        and not kernel['adopted_descendants_reaped'] and kernel['termination_reap_restore_cleanup_seconds']<=5
+        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes']<RSS_LIMIT)
+    raw_bytes=(sum(p.lstat().st_size for p in RAW.rglob('*') if p.is_file()) if postread else None)
+    report={'schema':'rc6.passive-contextual-gc-diagnostic.final.v1','status':'RED','DIAGNOSTIC_ONLY':True,
+        'gate_qualified':False,'canonical_BIG_qualified':False,'final_candidate_eligible':False,
+        'native_import_proof_qualified':False,'Gov_closed':False,'artifact_validated':False,'runtime_validated':False,
+        'source_sha':SHA,'source_tree':TREE,'source_index_sha256':INDEX_SHA,
+        'kernel_protocol_and_original_bounds_closed':bool(kernel_closed),'kernel_returncode':kernel['returncode'],
+        'postread_kernel_barrier_closed':bool(postread),'Source_bytes_modes_rawGit_code10_preserved':code_preserved,
+        'Source_atime_changes_disclosed':atimes,'original_and_native_fixture_data_all11_preserved':data_preserved,
+        'native_result_not_rewritten':native_hash,'raw_evidence_bytes_before_final_manifest':raw_bytes,
+        'raw_evidence_within_128MiB':raw_bytes is not None and raw_bytes<EVIDENCE_LIMIT,
+        'gc_join_produced':join is not None,'parent_inet_audit':observations,'errors':errors,
+        'ALIEN_external_main_spawn_mp_main_retained':True,'no_original_RED_or_diagnostic_qualified_GREEN':True,
+        'causality_scope':'ONE_INSTRUMENTED_NATIVE_HEAP_CONTEXT; CALLBACK_ALLOCATIONS_IO_CAN_SHIFT_GC; NO_UNOBSERVED_ORIGINAL_GC_CAUSALITY_CLAIM',
+        'audit_scope':'DECLARED_PYTHON_WINDOWS; NO_BINARY_KERNEL_TRANSITIVE_NETWORK_PROOF',
+        'real_orders_sent':0,'PPI_Watch':'UNTOUCHED'}
+    publish('final.json',report)
+    print(json.dumps({k:report[k] for k in ('status','DIAGNOSTIC_ONLY','source_sha','kernel_returncode',
+        'postread_kernel_barrier_closed','Source_bytes_modes_rawGit_code10_preserved',
+        'original_and_native_fixture_data_all11_preserved','gc_join_produced')}),flush=True)
+    return 1
+
+
+# Normal executable bootstrap also runs when multiprocessing imports the
+# external path as __mp_main__. No sys.modules/module/global alias is changed.
+if '--native-entry' in sys.argv:
+    install_native_entry_observer()
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--native-entry',action='store_true')
+    args=parser.parse_args()
+    try:
+        raise SystemExit(native_entry() if args.native_entry else parent())
+    except Exception as error:
+        print(json.dumps({'status':'RED','DIAGNOSTIC_ONLY':True,
+                          'bootstrap_error':failure(error,'bootstrap')}),flush=True)
+        raise SystemExit(1)

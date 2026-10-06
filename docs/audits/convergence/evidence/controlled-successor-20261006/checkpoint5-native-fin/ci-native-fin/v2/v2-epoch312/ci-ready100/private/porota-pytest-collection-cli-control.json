@@ -1,0 +1,6 @@
+{
+  "pid": 23098,
+  "returncode": 0,
+  "scope": "ACTUAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN",
+  "stdout": "POROTA_OWNED_PYTEST=IN_PROGRESS|pid=23102|elapsed_seconds=0.001\n{\"owned_fin_closed\": true, \"phase\": \"collection\", \"pytest_phase_green\": true, \"receipt\": \"/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/pytest/test_real_owned_pytest_failed_0/native-runner/porota-predeploy-471-2-819307d4925940049839f8e54294764c/porota-pytest-collection-owned-fin.json\", \"retained_fixtures_removed\": false}\n"
+}

@@ -1,0 +1,172 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/contextual_gc_passive_v3.py"
+  ],
+  "classification": {
+    "BIG_or_runtime_or_artifact_qualifiedFalse": true,
+    "always_statusRED": true,
+    "external_main_and_natural_mp_main_ALIEN_declared_retained": true,
+    "native_diagnostic_only_false_field_means_original_stacksflag_absent_not_external_qualification": true,
+    "native_import_proof_qualificationFalse": true,
+    "native_original_JSON_unmodified": true
+  },
+  "context": {
+    "canonical_runtime": true,
+    "catalog_count": 12000,
+    "existing_native_handler_wrappers_preserved_not_replaced_by_adapter": true,
+    "external_main_normal_spawn_mp_main_source_aliases_not_impersonated": true,
+    "extra_SQL_count_probe_EXPLAIN_or_fixture": false,
+    "native_default_fixture_gc_collect_calls_preserved_not_added_or_relocated": true,
+    "no_dummy_heap_or_graph_roundtrip": true,
+    "normal_import": "from scripts import rc6_issue465_stress as stress; stress.main(originalargv)",
+    "observations_per_identity": 5,
+    "original_stress_main_call_line": 356,
+    "original_stress_main_calls_in_script": 1,
+    "slow_disk": true,
+    "source_binding_exact": true
+  },
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3",
+  "data_custody": {
+    "closed_original_native_RAW_key_confirmation": {
+      "before_after_members": [
+        ""
+      ],
+      "dict_shape_matches_data_custody_FIELDS_plus_sha256": true,
+      "main_keys": [
+        "sha256",
+        "st_atime_ns",
+        "st_blocks",
+        "st_ctime_ns",
+        "st_dev",
+        "st_gid",
+        "st_ino",
+        "st_mode",
+        "st_mtime_ns",
+        "st_nlink",
+        "st_size",
+        "st_uid"
+      ],
+      "native_before_equals_after": true,
+      "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-2e48f6f-y4vztl0q/raw-slow/native-big-result.json",
+      "sha256": "37ba6f845457fa16aac07393acd9b9a80b102cfa3c16158e68fd8c9679193043",
+      "verification_READ_ONLY_JSON_no_SQL_or_source_probe": true
+    },
+    "new_native_fixture_only_original_fixture_database_SQL": true,
+    "new_nativefixture_source_custody_original_all11_main_WAL_SHM_journal_before_after_and_actual_after_FIN_match": true,
+    "no_metadata_reset_alias_overlay": true,
+    "original_closed_BIG_source_NOATIME_hash_all11_before_after": true
+  },
+  "execution_state": {
+    "Source_edits": false,
+    "git_GitHub_ref_commits": false,
+    "no_Source_modules_imported_no_SQL_noGCcallback_execution": true,
+    "no_newclones_or_mass_scan_during_root_focals": true,
+    "only_textual_external_preparation_and_ast_syntax_checks": true
+  },
+  "gate_qualified": false,
+  "observation": {
+    "GC_policy_threshold_enable_disable_freeze_collect_calls": false,
+    "GC_raw_durable_EXCL_owned_perPID_JSONL": true,
+    "GCstart_stop_timestamps_monotonic_processCPU_generation_collected_uncollectable_peak_selfRSS": true,
+    "PID_event_bound": 100000,
+    "PID_log_bytes_bound": 67108864,
+    "all_generations_and_start_stop_logged": true,
+    "callback_cost_record_observed_body_wallCPU_through_primary_event_write": true,
+    "cost_is_lower_bound_excludes_dispatch_cost_record_write_and_final_accumulation": true,
+    "instrumentation_allocation_IO_and_flocals_can_shift_GC_positions": true,
+    "no_source_rows_or_SQL_in_callback": true,
+    "not_subtracted_or_extrapolated_to_qualify": true,
+    "numeric_original_frames_only_during_callback_max32": [
+      "families._read realdeadline/budget_start/deadline_headroom/line",
+      "family_reports line before_read_deadline",
+      "sqlite_snapshot._read/readonly_copy/_check realdeadline/consumedbytes/privatecopy_pass",
+      "original measured wrapper activefamilies wall/process timestamps"
+    ],
+    "only_business_hook": "gc.callbacks.append/exclusive observer removal after original process lifecycle",
+    "profile_or_line_tracer": false,
+    "swallowed_callback_errors_sticky_partial_missingfooter_RED_not_pass": true
+  },
+  "only_changes": "Move full kernel_closed before postreads, require all guards plus postECHILD and original subreaper restore attempt; receipt fields disclose these guards. No business/GC/limits/SQL changes.",
+  "post_FIN_join": {
+    "GC_copy_SQL_context_only_if_original_GCframes_available_no_newprobe": true,
+    "GC_pairs_byPID_generation_and_missingcost_footer_errors_preserved": true,
+    "GC_that_occurs_family_reports_before_deadline_is_not_assumed_to_consume_reader0.5": true,
+    "exact_original0.5window_from_deadline_only_when_originalfamilies_read_frame_active": true,
+    "ifzero_GC_within_family_no_inference_originalclean_BIG_hadzero_GC": true,
+    "multi_call_aggregate_not_split_by_invented_durations": true,
+    "native_ENTERfamilies_from_original_queue_receipts": true,
+    "original_activefamilies_wrapper_timestamps_at_GC_if_available": true,
+    "singlecall_window_enter_plus_original_elapsed_if_calls1": true
+  },
+  "preserved_V2": {
+    "plan_sha256": "ef7ad291d246c037b942333c88dbc30900b312352f5193bd7d5653c7f6ba902d",
+    "script_sha256": "828880de8e4d11c3c7621aee7878cdcb9affd7548ca362518c9cfb5e73e2fdf0"
+  },
+  "prior_evidence_preserved": {
+    "old866_gc_diagnostic_reused_only_for_barrier_design_not_rerun": true,
+    "original_BIG_RED37ba6f": true,
+    "previous_isolated_read_profile39b05b_marshal_binding_RED_and_ALIEN_retained": true
+  },
+  "process_safety": {
+    "diagnostic_RAW_bytes_maximum": 134217728,
+    "full_kernel_guard_calculated_before_any_source_data_RAW_postread": true,
+    "full_postread_guard_fields": [
+      "actual_main_reaped",
+      "wait4_pid_matches_main",
+      "pre_ECHILD",
+      "owned_exhaustion",
+      "PGID_absent_at_main_reap",
+      "PGID_absent_after_reap",
+      "no_wait4zero_irreversibleRED",
+      "no_late_reap_irreversibleRED",
+      "no_timeout",
+      "no_signals",
+      "no_supervisor_errors",
+      "no_residual_descendants",
+      "no_remaining_owned_children",
+      "no_adopted_descendants",
+      "cleanup<=5",
+      "peakRSS<2GiB",
+      "subreaper_restore_attempted_on_all_activated_paths",
+      "post_main_actual_ECHILD"
+    ],
+    "main_returncode_zero_not_required_for_ALIEN_diagnostic_but_no_guard_waived": true,
+    "native_cleanup_seconds": 5,
+    "native_cycle_seconds": 90,
+    "native_evidence_bytes_maximum": 134217728,
+    "native_finalization_SIGTERM_KILL_veto_guard_preserved": true,
+    "native_reader_budget_seconds": 0.5,
+    "native_rss_bytes_maximum": 2147483648,
+    "native_stress_main_original_INET_capability_audit_and_lifecycle_guards": true,
+    "noINETexception_or_guard_relaxation": true,
+    "no_Source_Data_RAW_payload_read_by_parent_while_child_active": true,
+    "original_failed_signals_timeout_residual_late_reap_retainRED": true,
+    "original_governed_parent_wait4_ECHILD_subreaper_PGID_exhaustion_before_postreads": true,
+    "parent300_is_original_DIRECT2e_not_extension_of_native90": true,
+    "parent_management_seconds": 300,
+    "postread_require_all_current_kernel_closed_guards_plus_postECHILD_and_original_restore_attempt": true,
+    "separate_each_spawn_observer_normal_Source_guard_registration": true
+  },
+  "real_orders_sent": 0,
+  "schema": "rc6.passive-contextual-gc-review-plan.v3",
+  "script": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-contextual-gc-plan-2e48-mi933bw3/contextual_gc_passive_v3.py",
+  "script_bytes": 33018,
+  "script_sha256": "2a3404b3c59d2916207dc341cfbcb5f94435765ce78b2c2a08ea3977ed74fa89",
+  "source": {
+    "code_atime_changes_separate": true,
+    "files": 3192,
+    "index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+    "overlay_count": 0,
+    "rawGit_mode_bytes_code10_before_after": true,
+    "sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+    "tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+    "whole_literal_descriptor_clone_after_authorization_only": true
+  },
+  "status": "PREPARED_NOT_EXECUTED_AWAIT_NEW_ROOT_AUTHORIZATION_AND_CPU_SLOT",
+  "v2_to_v3_diff_sha256": "87e5aafc27ec962fa526f20bbad54c2cba05f73a18765d057c4e28f937708cb4"
+}

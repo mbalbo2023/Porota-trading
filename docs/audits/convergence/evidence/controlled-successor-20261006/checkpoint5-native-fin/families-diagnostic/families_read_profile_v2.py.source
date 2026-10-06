@@ -1,0 +1,672 @@
+"""One native families._read diagnosis on copied CLOSED synthetic bytes.
+
+No SQL fixture preparation, extra SELECT, source edit, overlay, product alias,
+function/cursor/list replacement, GC change, browser or full BIG run occurs.
+The original 0.5 deadline and original capture/scratch guards remain active.
+All profiling and timing are instrumental, DIAGNOSTIC_ONLY and never a gate.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+import hashlib
+import json
+import marshal
+import os
+from pathlib import Path
+import platform
+import re
+import resource
+import signal
+import stat
+import sys
+import time
+from urllib.parse import unquote, urlsplit
+
+BASE = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum')
+FROZEN = BASE/'rc6-native-big-2e48f6f-y4vztl0q'
+FROZEN_SOURCE = FROZEN/'source'
+REPOSITORY = FROZEN/'repository'
+ORIGINAL_PIN = FROZEN/'pin/source.index.json'
+ORIGINAL_DATABASE = FROZEN/'data-slow/data/paper_v17/observer_v17.db'
+EPOCH = Path(__file__).absolute().parent
+SOURCE = EPOCH/'source'
+PIN = EPOCH/'pin/source.index.json'
+RAW = EPOCH/'raw'
+DATA = EPOCH/'data'
+DATABASE = DATA/'data/paper_v17/observer_v17.db'
+PYTHON = str(BASE/'venv311/bin/python')
+SHA = '2e48f6f005f38f68b9dd9a75677fb67e52f23a18'
+TREE = 'e4cb00d2846ddf873a18530697d5fbaa029ced33'
+INDEX_SHA = '44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756'
+ORIGINAL_DATABASE_SHA = 'ed2243464807d6c202f292b504a84b3ecdb035aef3a7ea6ca847b6dcf6878e36'
+LIMIT_SECONDS = 90
+RSS_LIMIT = 2*1024**3
+EVIDENCE_LIMIT = 128*1024**2
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+STABLE = tuple(key for key in FIELDS if key != 'st_atime_ns')
+TABLES = {'financial_instrument_catalog', 'market_snapshots',
+          'ppi_intraday_points', 'paper_equity_by_currency'}
+gov = None
+sys.dont_write_bytecode = True
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def read_owned(path, limit=128*1024**2):
+    """Descriptor read only; preserve and compare all eleven file fields."""
+    path = Path(path).absolute()
+    require(path.resolve(strict=True) == path and not any(p.is_symlink() for p in path.parents),
+            'REGULAR_UNALIASED_FILE_REQUIRED')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid == os.geteuid() and before.st_size <= limit,
+                'OWNED_BOUNDED_REGULAR_FILE_REQUIRED')
+        parts, total = [], 0
+        while block := os.read(fd, min(1024**2, limit+1-total)):
+            parts.append(block); total += len(block)
+            require(total <= limit, 'FILE_BOUND_EXCEEDED')
+        after, location = os.fstat(fd), path.lstat()
+        require(total == before.st_size and all(getattr(before, key) == getattr(after, key)
+                == getattr(location, key) for key in FIELDS), 'FILE_CHANGED_DURING_NOATIME_CAPTURE')
+        return b''.join(parts), {key: getattr(before, key) for key in FIELDS}
+    finally:
+        os.close(fd)
+
+
+def write_new(path, wire, mode=0o600):
+    path = Path(path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(wire); stream.flush(); os.fchmod(stream.fileno(), mode); os.fsync(stream.fileno())
+
+
+def publish(name, value):
+    gov.publish(RAW/name, gov.canonical(value))
+
+
+def failure(error, stage):
+    literal = str(error).partition(':')[0]
+    row = {'stage': stage, 'class': type(error).__name__,
+           'reason': literal if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}', literal) else 'NON_LITERAL_EXCEPTION'}
+    if isinstance(error, OSError) and type(error.errno) is int:
+        row['errno'] = error.errno
+    return row
+
+
+def data_custody(path):
+    result = {}
+    for suffix in ('', '-wal', '-shm', '-journal'):
+        member = Path(str(path)+suffix)
+        try:
+            member.lstat()
+        except FileNotFoundError:
+            require(bool(suffix), 'SOURCE_DATABASE_MISSING')
+            continue
+        wire, fields = read_owned(member, limit=512*1024**2)
+        result[suffix] = {**fields, 'sha256': hashlib.sha256(wire).hexdigest()}
+    return result
+
+
+def prepare_physical_copies():
+    """Copy only the literal complete pinned export and closed DB; no SQL."""
+    require(not SOURCE.exists() and not RAW.exists() and not DATA.exists()
+            and not PIN.parent.exists(), 'EXCLUSIVE_FRESH_DIAGNOSTIC_NAMESPACE_REQUIRED')
+    source_info = FROZEN_SOURCE.lstat()
+    original_db_before = data_custody(ORIGINAL_DATABASE)
+    require(set(original_db_before) == {''}
+            and original_db_before['']['sha256'] == ORIGINAL_DATABASE_SHA,
+            'EXACT_CLOSED_ORIGINAL_BIG_DATABASE_REQUIRED')
+    pin_wire, _ = read_owned(ORIGINAL_PIN)
+    require(hashlib.sha256(pin_wire).hexdigest() == INDEX_SHA, 'EXACT_SOURCE_INDEX_REQUIRED')
+    pin = json.loads(pin_wire)
+    require(pin['source_sha'] == SHA and pin['source_tree'] == TREE
+            and pin['overlay_count'] == 0 and len(pin['files']) == 3192,
+            'WHOLE_LITERAL_RAW_GIT_EXPORT_REQUIRED')
+    SOURCE.mkdir(mode=0o755)
+    os.chmod(SOURCE,0o755)
+    expected_directories = {'.'}
+    for name in pin['files']:
+        require(Path(name).as_posix() == name and not Path(name).is_absolute()
+                and '..' not in Path(name).parts and '\\' not in name, 'LITERAL_SOURCE_PATH_REQUIRED')
+        expected_directories.update(p.as_posix() for p in Path(name).parents if p != Path('.'))
+    for name in sorted(expected_directories- {'.'}, key=lambda x:(len(Path(x).parts),x)):
+        (SOURCE/name).mkdir(mode=0o755)
+        os.chmod(SOURCE/name,0o755)
+    for name, expected_hash in pin['files'].items():
+        wire, attrs = read_owned(FROZEN_SOURCE/name)
+        mode = pin['modes'][name]
+        require(mode in ('100644', '100755') and hashlib.sha256(wire).hexdigest() == expected_hash
+                and hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest() == pin['blob_ids'][name]
+                and stat.S_IMODE(attrs['st_mode']) == (0o755 if mode == '100755' else 0o644),
+                'LITERAL_SOURCE_BYTES_MODE_BLOB_REQUIRED')
+        write_new(SOURCE/name, wire, 0o755 if mode == '100755' else 0o644)
+    require(all(getattr(source_info, key) == getattr(FROZEN_SOURCE.lstat(), key) for key in STABLE),
+            'ORIGINAL_SOURCE_ROOT_CUSTODY_CHANGED_DURING_COPY')
+    RAW.mkdir(mode=0o700); DATA.mkdir(mode=0o700); PIN.parent.mkdir(mode=0o700)
+    write_new(PIN, pin_wire, 0o644)
+    DATABASE.parent.mkdir(mode=0o700, parents=True)
+    database_wire, database_fields = read_owned(ORIGINAL_DATABASE, limit=512*1024**2)
+    require({**database_fields, 'sha256': hashlib.sha256(database_wire).hexdigest()}
+            == original_db_before[''], 'ORIGINAL_DATABASE_CHANGED_BEFORE_COPY')
+    write_new(DATABASE, database_wire)
+    require(data_custody(ORIGINAL_DATABASE) == original_db_before, 'ORIGINAL_DATABASE_ALL11_CHANGED_DURING_COPY')
+    require(DATABASE.lstat().st_ino != ORIGINAL_DATABASE.lstat().st_ino
+            and DATABASE.lstat().st_nlink == 1
+            and DATABASE.lstat().st_dev == ORIGINAL_DATABASE.lstat().st_dev,
+            'PHYSICAL_NONALIASED_SAME_DISK_COPY_REQUIRED')
+    return original_db_before
+
+
+def load_governed():
+    global gov
+    require(sys.executable == PYTHON and platform.python_version() == '3.11.16'
+            and os.getuid() == os.geteuid() != 0, 'EXACT_NONROOT_LOCKED311_REQUIRED')
+    require(str(SOURCE) not in sys.path, 'NO_PREEXISTING_DIAGNOSTIC_SOURCE_ALIAS')
+    sys.path.insert(0, str(SOURCE))
+    from scripts import rc6_controlled_governed_runner
+    gov = rc6_controlled_governed_runner
+    require(Path(gov.__file__).absolute() == SOURCE/'scripts/rc6_controlled_governed_runner.py',
+            'ORIGINAL_TRACKED_GOVERNED_HELPER_REQUIRED')
+
+
+def setup(phase):
+    namespace = gov.phase_namespace(SOURCE, RAW, phase)
+    capability = gov.restrict_inet_creation()
+    observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+                    'subprocess_executable_counts': {}}
+    gov.install_phase_audit(observations)
+    publish(phase+'.namespace.json', namespace)
+    publish(phase+'.offline-capability.json', capability)
+    publish(phase+'.installed-closure.json', gov.installed_closure(SOURCE))
+    return observations
+
+
+def binding():
+    from scripts.rc6_native_import_provenance import prepare_binding
+    require(hashlib.sha256(gov.capture(PIN)[0]).hexdigest() == INDEX_SHA, 'EXACT_SOURCE_INDEX_REQUIRED')
+    return prepare_binding(source_root=str(SOURCE), source_repo=str(REPOSITORY),
+                           source_sha=SHA, source_tree=TREE, source_index=str(PIN))
+
+
+def source_snapshot(root, bound):
+    physical_before = gov.physical_namespace(root)
+    records = {}
+    for name, expected in bound['files'].items():
+        wire, attrs = gov.capture(root/name)
+        blob = hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()
+        mode = '100'+format(stat.S_IMODE(attrs['st_mode']), '03o')
+        require(hashlib.sha256(wire).hexdigest() == expected['sha256']
+                and blob == expected['blob_id'] and mode == expected['mode'], 'PHYSICAL_SOURCE_PIN_MISMATCH')
+        records[name] = {'sha256': expected['sha256'], 'git_blob': blob, 'git_mode': mode,
+                         'bytes': len(wire), 'stat_fields': attrs}
+    physical_after = gov.physical_namespace(root)
+    require(physical_before == physical_after and set(records) == set(physical_after['files']),
+            'PHYSICAL_SOURCE_NAMESPACE_CHANGED_OR_NONLITERAL')
+    return {'source_sha': SHA, 'source_tree': TREE, 'source_index_sha256': INDEX_SHA,
+            'files': records, 'physical_directories': physical_after['directories'], 'overlay_count': 0,
+            'git_metadata': {'source_repo': str(REPOSITORY),
+                             'raw_git_commit_sha256': json.loads(gov.capture(PIN)[0])['raw_git_commit_sha256'],
+                             'source_index_sha256': INDEX_SHA},
+            'scope': 'ALL_LITERAL_BYTES_MODES_RAW_GIT_CODE10_STABLE_WITH_SEPARATE_ATIME'}
+
+
+class DeadlineInterrupt(BaseException):
+    pass
+
+
+class NativeReadProbe:
+    """Observe existing calls; no line tracer, function aliases or input edits."""
+    def __init__(self, families, snapshots, source_reads, sqlite3):
+        self.read_code = families._read.__code__
+        self.mapping_code = families._mapping.__code__
+        self.loads_code = json.loads.__code__
+        self.check_code = snapshots._check.__code__
+        self.copy_read_code = snapshots._read.__code__
+        self.copy_code = snapshots.readonly_copy.__wrapped__.__code__
+        self.connection_code = source_reads.source_connection.__wrapped__.__code__
+        self.sqlite_connection_type = sqlite3.Connection
+        self.events_received = Counter()
+        self.callback_body_observed_wall_ns = 0
+        self.callback_calls = 0
+        self.boundaries = []
+        self.query_records = []
+        self.native_calls = Counter()
+        self.active_sql = {}
+        self.active_functions = {}
+        self.mapping_value_kinds = Counter()
+        self.mapping_input_bytes = 0
+        self.function_totals = {}
+        self.last_query = None
+        self.deadline = None
+        self.result_reference = None
+        self.read_return_was_dict = False
+        self.errors = []
+
+    def point(self, kind, frame, **facts):
+        require(len(self.boundaries) < 512, 'DIAGNOSTIC_BOUNDARY_EVENT_LIMIT')
+        self.boundaries.append({'kind': kind, 'at_monotonic': time.monotonic(),
+            'at_process_cpu': time.process_time(), 'native_function': frame.f_code.co_name,
+            'native_line': frame.f_lineno, **facts})
+
+    def table(self, frame):
+        value = frame.f_locals.get('table')
+        return value if type(value) is str and value in TABLES else None
+
+    def function_event(self, frame, event, kind):
+        key = (id(frame), kind)
+        if event == 'call':
+            self.native_calls[kind] += 1
+            self.active_functions[key] = (time.monotonic(), time.process_time())
+            if kind == '_mapping':
+                value = frame.f_locals.get('value')
+                classification = ('NONE' if value is None else 'EXACT_EMPTY_OBJECT_LITERAL'
+                    if type(value) is str and value == '{}' else 'OTHER_STRING'
+                    if type(value) is str else 'OTHER_TYPE')
+                self.mapping_value_kinds[classification] += 1
+                if type(value) is str:
+                    self.mapping_input_bytes += len(value.encode('utf-8'))
+        elif event == 'return':
+            began = self.active_functions.pop(key, None)
+            if began is not None:
+                row = self.function_totals.setdefault(kind, {'calls_completed': 0,
+                    'inclusive_instrumented_wall_seconds': 0., 'inclusive_instrumented_cpu_seconds': 0.})
+                row['calls_completed'] += 1
+                row['inclusive_instrumented_wall_seconds'] += time.monotonic()-began[0]
+                row['inclusive_instrumented_cpu_seconds'] += time.process_time()-began[1]
+
+    def _observe(self, frame, event, arg):
+        code = frame.f_code
+        if code is self.read_code:
+            if event == 'call':
+                self.native_calls['families._read'] += 1
+                self.point('READ_CALL', frame)
+            elif event == 'return':
+                self.result_reference = frame.f_locals.get('result')
+                self.read_return_was_dict = type(arg) is dict
+                self.point('READ_RETURN_OR_EXCEPTION_UNWIND', frame,
+                    native_return_is_dict=self.read_return_was_dict,
+                    partial_native_lengths={k:len(v) for k,v in (self.result_reference or {}).items()
+                        if type(v) is list})
+            elif event in ('c_call', 'c_return', 'c_exception'):
+                native_name = getattr(arg, '__name__', None)
+                if native_name == 'execute' and type(getattr(arg, '__self__', None)) is self.sqlite_connection_type:
+                    key = id(frame)
+                    if event == 'c_call':
+                        require(key not in self.active_sql, 'NATIVE_SQL_CALL_PAIR_COLLISION')
+                        row = {'table': self.table(frame), 'native_line': frame.f_lineno,
+                            'initial_execute_enter_monotonic': time.monotonic(),
+                            'initial_execute_enter_cpu': time.process_time(),
+                            'returned_or_raised': None}
+                        self.active_sql[key] = row
+                        self.query_records.append(row)
+                        self.native_calls['sqlite3.Connection.execute'] += 1
+                        if frame.f_lineno == 219:
+                            self.point('TABLE_TRANSFORM_END_NEXT_NATIVE_PRAGMA', frame,
+                                       table=self.table(frame), completed_lengths={k:len(v)
+                                           for k,v in frame.f_locals['result'].items() if type(v) is list})
+                    else:
+                        row = self.active_sql.pop(key, None)
+                        require(row is not None, 'NATIVE_SQL_RETURN_WITHOUT_CALL')
+                        row.update(initial_execute_exit_monotonic=time.monotonic(),
+                            initial_execute_exit_cpu=time.process_time(), returned_or_raised=event)
+                        if row['native_line'] == 224:
+                            self.last_query = row
+                elif event == 'c_call' and native_name == 'len' and frame.f_lineno == 228:
+                    rows = frame.f_locals.get('rows')
+                    require(type(rows) is list and self.last_query is not None
+                            and self.last_query['table'] == self.table(frame),
+                            'ORIGINAL_LIST_MATERIALIZATION_BOUNDARY_REQUIRED')
+                    self.last_query.update(list_materialization_end_monotonic=time.monotonic(),
+                        list_materialization_end_cpu=time.process_time(), returned_rowcount=len(rows))
+                    self.point('ORIGINAL_LEN_ROWS_AFTER_NATIVE_LIST', frame,
+                               table=self.table(frame), returned_rowcount=len(rows))
+        elif code in (self.mapping_code, self.loads_code, self.copy_read_code):
+            kind = ('_mapping' if code is self.mapping_code else 'json.loads'
+                    if code is self.loads_code else 'snapshot._read')
+            if event in ('call', 'return'):
+                self.function_event(frame, event, kind)
+                if code is self.copy_read_code:
+                    self.point('COPY_BYTE_PASS_'+event.upper(), frame,
+                        writing_private_copy=frame.f_locals.get('destination') is not None,
+                        consumed_bytes=frame.f_locals.get('consumed'))
+        elif code is self.check_code and event == 'call':
+            caller = frame.f_back
+            deadline = frame.f_locals.get('deadline')
+            if type(deadline) in (int,float):
+                self.deadline = deadline
+            self.native_calls['snapshot._check'] += 1
+            if caller is not None and caller.f_code is self.copy_code and caller.f_lineno in (162,164,172,174):
+                now = time.monotonic()
+                self.point('ORIGINAL_DEADLINE_CHECK', caller, deadline=deadline,
+                    observed_before_check_monotonic=now,
+                    remaining_seconds=(deadline-now if type(deadline) in (int,float) else None))
+        elif code in (self.copy_code, self.connection_code) and event in ('call', 'return'):
+            deadline = frame.f_locals.get('deadline')
+            if type(deadline) in (int,float):
+                self.deadline = deadline
+            self.point('CONTEXT_GENERATOR_'+event.upper(), frame,
+                       original_deadline=deadline,
+                       generator_resume_or_yield_is_not_a_second_read=True)
+
+    def __call__(self, frame, event, arg):
+        began = time.perf_counter_ns()
+        self.callback_calls += 1
+        self.events_received[event] += 1
+        try:
+            self._observe(frame, event, arg)
+        except BaseException as error:
+            self.errors.append(failure(error, 'profile_callback'))
+            raise
+        finally:
+            # This is observed callback-body WALL, not exact total profiling
+            # overhead. Dispatch, the final accumulator and clocks are not all
+            # included; no measured cost is subtracted to qualify the 0.5 gate.
+            self.callback_body_observed_wall_ns += time.perf_counter_ns()-began
+
+    def receipt(self):
+        return {'schema': 'rc6.native-read-call-event-profile.v1', 'DIAGNOSTIC_ONLY': True,
+            'gate_qualified': False, 'native_calls': dict(self.native_calls),
+            'events_received': dict(self.events_received), 'callback_calls': self.callback_calls,
+            'callback_body_observed_wall_seconds': self.callback_body_observed_wall_ns/1e9,
+            'callback_body_cost_is_lower_bound_not_total_overhead': True,
+            'callback_event_clock_calls': 2*self.callback_calls,
+            'function_totals': self.function_totals, 'mapping_value_kinds': dict(self.mapping_value_kinds),
+            'mapping_input_utf8_bytes_counted_in_callback': self.mapping_input_bytes,
+            'boundaries': self.boundaries, 'query_records': self.query_records,
+            'original_deadline': self.deadline,
+            'original_read_budget_start_inferred_from_deadline_minus_literal':
+                self.deadline-.5 if self.deadline is not None else None,
+            'native_return_is_dict': self.read_return_was_dict,
+            'native_result_retained_by_reference_not_cloned': self.result_reference is not None,
+            'retaining_partial_result_changes_diagnostic_lifetime_not_gc_policy': True,
+            'open_sql_pairs': len(self.active_sql), 'open_function_pairs': len(self.active_functions),
+            'errors': self.errors,
+            'timing_scope': 'INSTRUMENTED_NATIVE_CALLS_ONLY_NOT_CANONICAL_HANDLER_OR_GATE_TIMINGS',
+            'overlaps': ['_mapping includes any json.loads; do not add them',
+                'SQL execute is initial execute-to-return; list interval includes remaining cursor iteration',
+                'row transformation gaps include dict/zip/update, observer overhead, and loop overhead',
+                'callback observed wall overlaps native call intervals; never add or subtract to qualify'],
+            'per_row_line_tracer': False, 'cProfile_installed': False,
+            'original_functions_cursors_list_and_guards_replaced': False}
+
+
+def function_binding(families, snapshots, source_reads):
+    functions = {'families._read': families._read, 'families._mapping': families._mapping,
+        'snapshot.readonly_copy': snapshots.readonly_copy.__wrapped__, 'snapshot._read': snapshots._read,
+        'snapshot._check': snapshots._check, 'source_connection': source_reads.source_connection.__wrapped__}
+    return {name:{'function_identity': id(fn), 'code_identity': id(fn.__code__),
+        'code_marshal_sha256': hashlib.sha256(marshal.dumps(fn.__code__)).hexdigest(),
+        'module': fn.__module__, 'code_file': fn.__code__.co_filename,
+        'first_line': fn.__code__.co_firstlineno} for name,fn in functions.items()}
+
+
+def child_body(observations):
+    from scripts.rc6_native_import_provenance import NativeImportObserver
+    bound = binding()
+    observer = NativeImportObserver(bound, role='DIAGNOSTIC_SINGLE_NATIVE_FAMILIES_READ')
+    publish('child.import-before.json', observer.initial_receipt())
+    from scripts import rc6_issue465_stress as stress
+    from rc6_shadow_runtime import families, source_reads
+    from rc6_audit_evidence import sqlite_snapshot as snapshots
+    from cg_paper_workspace import artifact_root
+    from scripts.rc6_sqlite_scratch_guard import runtime_settings
+    import sqlite3
+    require(families.QUERY_BUDGET_SECONDS == .5 and families.MAX_ROWS == 20000
+            and stress.PRE == datetime(2026,10,5,13,20,tzinfo=timezone.utc),
+            'EXACT_ORIGINAL_BUDGET_CAP_AND_PRE_REQUIRED')
+    os.environ.update({'DATA_DIR':str(DATABASE.parent.parent), 'PAPER_V17_DB_PATH':str(DATABASE),
+                       'POROTA_DYNAMIC_CAPACITY_MODE':'OFF'})
+    scratch = artifact_root(DATABASE)/'sqlite-read-scratch'
+    scratch.mkdir(mode=0o700,parents=True,exist_ok=False)
+    os.environ.update(runtime_settings(scratch))
+    sql_audit = {'registered_and_witnessed':False, 'requests':[], 'denied':[],
+                 'source_sqlite_opened':False, 'scope':'PYTHON_SQLITE3_CONNECT_AUDIT_ONLY'}
+    witness = object()
+    def sqlite_open_guard(event, arguments):
+        if event == 'rc6.read_diagnostic.sqlite_guard' and arguments == (witness,):
+            sql_audit['registered_and_witnessed'] = True
+        if event != 'sqlite3.connect':
+            return
+        value = arguments[0]
+        uri = urlsplit(value) if type(value) is str else None
+        candidate = Path(unquote(uri.path)).absolute() if uri is not None and uri.scheme == 'file' else None
+        allowed = (candidate is not None and not uri.netloc and uri.query == 'mode=ro'
+            and candidate.is_relative_to(scratch) and candidate.name == 'snapshot.sqlite'
+            and candidate.parent.name.startswith('rc6-sqlite-copy-')
+            and candidate.resolve(strict=True) == candidate
+            and candidate not in (DATABASE,ORIGINAL_DATABASE)
+            and not any(parent.is_symlink() for parent in candidate.parents))
+        sql_audit['requests'].append({'private_derived_copy':bool(allowed),
+                                     'original_or_cloned_source':candidate in (DATABASE,ORIGINAL_DATABASE)})
+        if not allowed:
+            sql_audit['denied'].append('SOURCE_OR_NONDERIVED_SQLITE_CONNECT_DENIED')
+            raise RuntimeError('SOURCE_OR_NONDERIVED_SQLITE_CONNECT_DENIED')
+    sys.addaudithook(sqlite_open_guard)
+    sys.audit('rc6.read_diagnostic.sqlite_guard',witness)
+    require(sql_audit['registered_and_witnessed'], 'SQLITE_SOURCE_GUARD_NOT_INSTALLED')
+    codes_before = function_binding(families,snapshots,source_reads)
+    publish('child.function-binding-before.json',codes_before)
+    probe = NativeReadProbe(families,snapshots,source_reads,sqlite3)
+    read_errors = []
+    prior_signal = signal.getsignal(signal.SIGINT)
+    def interrupted(signum,frame):
+        raise DeadlineInterrupt()
+    signal.signal(signal.SIGINT,interrupted)
+    began,cpu = time.monotonic(),time.process_time()
+    result = None
+    try:
+        require(sys.getprofile() is None and sys.gettrace() is None, 'NO_PRIOR_PROFILE_OR_TRACE_REQUIRED')
+        sys.setprofile(probe)
+        try:
+            # ONE invocation. No SELECT/count/explain outside the original _read.
+            result = families._read(DATABASE,stress.PRE)
+        finally:
+            sys.setprofile(None)
+    except BaseException as error:
+        row = failure(error,'single_original_read')
+        frame = error.__traceback__
+        row['native_traceback'] = []
+        while frame is not None:
+            row['native_traceback'].append({'module':frame.tb_frame.f_globals.get('__name__'),
+                'function':frame.tb_frame.f_code.co_name,'line':frame.tb_lineno})
+            frame = frame.tb_next
+        read_errors.append(row)
+    finally:
+        sys.setprofile(None)
+        elapsed,used_cpu = time.monotonic()-began,time.process_time()-cpu
+        signal.signal(signal.SIGINT,prior_signal)
+    codes_after = function_binding(families,snapshots,source_reads)
+    publish('child.function-binding-after.json',codes_after)
+    profile = probe.receipt()
+    profile.update(instrumented_whole_read_wall_seconds=elapsed,instrumented_whole_read_cpu_seconds=used_cpu,
+                   native_read_errors=read_errors,unchanged_native_function_and_code_bindings=codes_before==codes_after,
+                   actual_profile_disabled=sys.getprofile() is None,actual_trace_not_installed=sys.gettrace() is None)
+    publish('child.call-profile.json',profile)
+    # Keep raw returned/partial native rows durable without a pre-call graph copy.
+    native = result if result is not None else probe.result_reference
+    if native is not None:
+        publish('child.native-result-or-partial.json',{'DIAGNOSTIC_ONLY':True,
+            'complete_original_return':result is not None,'partial_when_native_guard_failed':result is None,
+            'read_result':native})
+    publish('child.sqlite-connect-audit.json',sql_audit)
+    try:
+        import_final = observer.finish()
+        publish('child.import-final.json',import_final)
+    finally:
+        observer.deactivate()
+    errors = list(read_errors)
+    if codes_before != codes_after or observations['inet_socket_attempts'] or sql_audit['denied'] or probe.errors:
+        errors.append({'stage':'diagnostic_integrity','reason':'DIAGNOSTIC_GUARD_OR_BINDING_RED'})
+    body_report = {'status':'RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False,
+        'original_read_returned':result is not None,'source_sqlite_connect_requests':sql_audit,
+        'read_errors':read_errors,'diagnostic_errors':errors,'inet_audit':observations,
+        'profile_overhead_can_cause_original_deadline_RED':True,
+        'native_import_proof_qualified':False,'final_candidate_eligible':False,
+        'real_orders_sent':0,'PPI_Watch':'UNTOUCHED'}
+    publish('child.read-final.json',body_report)
+    return (1 if errors else 0),body_report
+
+
+def child():
+    load_governed()
+    observations = setup('execution')
+    initial_children = gov.child_infrastructure_snapshot()
+    body_code,body_report,body_error = 1,None,None
+    try:
+        body_code,body_report = child_body(observations)
+    except BaseException as error:
+        body_error = failure(error,'child_body')
+        publish('child.lifecycle-body-error.json',body_error)
+    finally:
+        # Run the genuine unchanged protocol on every activated body path.
+        finalization = gov.finalize_child_infrastructure(initial_children,limit=5)
+        publish('child.finalization.json',finalization)
+    report = {'status':'RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False,
+        'body_returncode':body_code,'body_error':body_error,'native_read_body':body_report,
+        'actual_child_finalization_status':finalization['status'],
+        'real_orders_sent':0,'PPI_Watch':'UNTOUCHED'}
+    publish('child.final.json',report)
+    return 1 if body_code or body_error is not None or finalization['status'] != 'GREEN' else 0
+
+
+def parent():
+    require(sys.executable == PYTHON and platform.python_version() == '3.11.16'
+            and os.getuid() == os.geteuid() != 0,'EXACT_NONROOT_LOCKED311_REQUIRED')
+    original_before = prepare_physical_copies()
+    load_governed()
+    observations = setup('collection')
+    bound = binding()
+    source_before = source_snapshot(SOURCE,bound)
+    frozen_source_before = source_snapshot(FROZEN_SOURCE,bound)
+    cloned_data_before = data_custody(DATABASE)
+    publish('parent.source-before.json',source_before)
+    publish('parent.frozen-source-before.json',frozen_source_before)
+    publish('parent.original-data-before.json',original_before)
+    publish('parent.cloned-data-before.json',cloned_data_before)
+    require(set(cloned_data_before)=={''} and cloned_data_before['']['sha256']==ORIGINAL_DATABASE_SHA,
+            'BYTE_EXACT_CLOSED_DIAGNOSTIC_SOURCE_REQUIRED')
+    command = [PYTHON,'-I','-B',str(Path(__file__).absolute()),'--child']
+    env = {'PATH':os.defpath,'LC_ALL':'C.UTF-8','LANG':'C.UTF-8','TZ':'UTC',
+        'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1',
+        'DATA_DIR':str(DATABASE.parent.parent),'PAPER_V17_DB_PATH':str(DATABASE),
+        'POROTA_DYNAMIC_CAPACITY_MODE':'OFF'}
+    wire,attrs = read_owned(Path(__file__))
+    publish('launch.json',{'schema':'rc6.single-families-read-diagnostic.launch.v1',
+        'status':'RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False,'source_sha':SHA,'source_tree':TREE,
+        'source_index_sha256':INDEX_SHA,'harness_sha256':hashlib.sha256(wire).hexdigest(),'harness_stat':attrs,
+        'command':command,'cwd':str(SOURCE),'source_overlay_count':0,'native_read_invocations_authorized':1,
+        'original_read_budget_seconds':.5,'outer_native_watchdog_seconds':LIMIT_SECONDS,
+        'cleanup_management_seconds':5,'maximum_rss_bytes':RSS_LIMIT,'maximum_evidence_bytes':EVIDENCE_LIMIT,
+        'original_closed_db_source_sha256':ORIGINAL_DATABASE_SHA,
+        'fixture_counts_from_existing_native_receipt_only':{'catalog':12000,'observations':60000,'open_positions':5},
+        'extra_sql_fixture_or_count_or_explain':False,'source_sqlite_open_allowed':False,
+        'profiler':'PYTHON_NATIVE_CALL_RETURN_AND_C_CALL_OBSERVER_NO_LINE_TRACER',
+        'profiler_overhead_included_in_original_deadline_can_cause_RED':True,
+        'overhead_not_subtracted_to_qualify_gate':True,'no_function_cursor_list_graph_or_gc_override':True,
+        'full_BIG_Gov_Horizon_browser_or_runtime_executed':False,
+        'parent_postreads_only_after_actual_reap_ECHILD_PGID_exhaustion':True,'real_orders_sent':0})
+    print(json.dumps({'stage':'NATIVE_SINGLE_READ_START','supervisor_pid':os.getpid(),'command':command,
+                      'DIAGNOSTIC_ONLY':True,'source_sha':SHA}),flush=True)
+    kernel = gov.subprocess_phase(command,SOURCE,RAW/'native.log',env,limit=LIMIT_SECONDS)
+    publish('kernel-supervision.json',kernel)
+    post_echild = any(row.get('phase')=='after_main_pid_reap' and row.get('outcome')=='ECHILD'
+                      for row in kernel['kernel_owned_child_observations'])
+    postread = (kernel['actual_child_reaped'] is True and kernel['owned_children_exhaustion_verified'] is True
+        and kernel['process_group_absent_after_reap'] is True and kernel['remaining_owned_children']==[]
+        and post_echild)
+    publish('parent.postread-kernel-barrier.json',{'postread_allowed':bool(postread),
+        'actual_main_pid_reaped':kernel['actual_child_reaped'],
+        'owned_children_exhaustion_verified':kernel['owned_children_exhaustion_verified'],
+        'owned_PGID_absent_after_reap':kernel['process_group_absent_after_reap'],
+        'post_main_actual_ECHILD':post_echild,'remaining_owned_children':kernel['remaining_owned_children'],
+        'historical_residuals_closed_by_final_kernel_barrier':bool(postread),
+        'historical_timeout_late_reap_or_residual_RED_never_reset':True})
+    errors,atimes,raw_index = [],{},{}
+    code_preserved = data_preserved = False
+    if postread:
+        try:
+            source_after = source_snapshot(SOURCE,bound)
+            frozen_source_after = source_snapshot(FROZEN_SOURCE,bound)
+            atimes['diagnostic_clone'] = gov.compare_source(source_before,source_after)
+            atimes['original_frozen_export'] = gov.compare_source(frozen_source_before,frozen_source_after)
+            publish('parent.source-after.json',source_after)
+            publish('parent.frozen-source-after.json',frozen_source_after)
+            code_preserved = True
+            original_after,clone_after = data_custody(ORIGINAL_DATABASE),data_custody(DATABASE)
+            publish('parent.original-data-after.json',original_after)
+            publish('parent.cloned-data-after.json',clone_after)
+            require(original_before==original_after and cloned_data_before==clone_after,
+                    'ORIGINAL_OR_CLONED_SOURCE_DATA_ALL11_CHANGED')
+            data_preserved = True
+            # Read RAW only now, after the original kernel closure barrier.
+            for name in ('child.call-profile.json','child.final.json','child.finalization.json',
+                         'child.sqlite-connect-audit.json','child.import-final.json',
+                         'child.native-result-or-partial.json','native.log'):
+                path = RAW/name
+                if not path.exists():
+                    errors.append({'stage':'post_fin_raw','reason':'EXPECTED_RAW_MISSING','file':name})
+                    continue
+                blob,attributes = read_owned(path)
+                raw_index[name] = {'sha256':hashlib.sha256(blob).hexdigest(),'bytes':len(blob),'stat_fields':attributes}
+        except BaseException as error:
+            errors.append(failure(error,'post_fin_source_data_raw'))
+    else:
+        errors.append({'stage':'post_fin','reason':'KERNEL_NOT_QUIESCENT_NO_POSTREAD'})
+    kernel_bounds = (kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
+        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
+        and not kernel['kernel_wait4_zero_observed_irreversible_red']
+        and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['timed_out']
+        and kernel['subreaper_restore_attempted_on_all_activated_paths'] is True
+        and kernel['actual_launch_to_pid_reap_wall_seconds']<=LIMIT_SECONDS
+        and kernel['termination_reap_restore_cleanup_seconds']<=5
+        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
+        and not kernel['adopted_descendants_reaped'] and not kernel['remaining_owned_children']
+        and not kernel['residual_descendants_observed']
+        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes']<RSS_LIMIT)
+    # Quota includes every retained RAW file, not the literal code export or DB.
+    actual_evidence_bytes = (sum(p.lstat().st_size for p in RAW.rglob('*') if p.is_file())
+                             if postread else None)
+    report = {'schema':'rc6.single-native-families-read.instrumental-diagnostic.final.v1',
+        'status':'RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False,'final_candidate_eligible':False,
+        'canonical_BIG_qualified':False,'families_500ms_qualified':False,'Gov_closed':False,
+        'artifact_validated':False,'runtime_validated':False,'source_sha':SHA,'source_tree':TREE,
+        'source_index_sha256':INDEX_SHA,'kernel_protocol_and_resource_bounds_closed':bool(kernel_bounds),
+        'kernel_returncode':kernel['returncode'],'postread_kernel_barrier_closed':bool(postread),
+        'original_and_cloned_Source_bytes_modes_rawgit_code10_preserved':code_preserved,
+        'all_code_atime_changes_disclosed':atimes,'original_and_cloned_source_data_all11_preserved':data_preserved,
+        'evidence_bytes_observed_before_final_manifest':actual_evidence_bytes,
+        'evidence_within_128MiB':(actual_evidence_bytes is not None and actual_evidence_bytes<EVIDENCE_LIMIT),
+        'raw_index':raw_index,'parent_inet_audit':observations,'errors':errors,
+        'source_sqlite_never_opened_claim_requires_child_actual_audit_receipt':True,
+        'profile_overhead_is_instrumental_never_subtracted_for_qualification':True,
+        'aliases_ALIEN_or_DENIED_import_receipts_retained_RED_not_impersonated':True,
+        'audit_scope':'DECLARED_PYTHON_WINDOWS; NO_KERNEL_BINARY_TRANSITIVE_NETWORK_ATTESTATION',
+        'real_orders_sent':0,'PPI_Watch':'UNTOUCHED'}
+    publish('final.json',report)
+    print(json.dumps({key:report[key] for key in ('status','DIAGNOSTIC_ONLY','source_sha',
+        'kernel_returncode','postread_kernel_barrier_closed',
+        'original_and_cloned_Source_bytes_modes_rawgit_code10_preserved',
+        'original_and_cloned_source_data_all11_preserved')}),flush=True)
+    # Diagnostic success is not an acceptance GREEN, even if _read returned.
+    return 1
+
+
+if __name__=='__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--child',action='store_true')
+    options = parser.parse_args()
+    try:
+        raise SystemExit(child() if options.child else parent())
+    except Exception as error:
+        print(json.dumps({'status':'RED','DIAGNOSTIC_ONLY':True,
+                          'bootstrap_error':failure(error,'bootstrap')}),flush=True)
+        raise SystemExit(1)
