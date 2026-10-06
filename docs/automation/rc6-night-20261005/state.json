@@ -29,7 +29,12 @@
     "released": false
   },
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "2026-10-06T14:43:25.543Z:aak8u2aq9jmuwsgoo7",
+    "owner": "HOURLY_SUPERVISOR",
+    "acquired_at": "2026-10-06T14:43:25.543Z",
+    "expires_at": "2026-10-06T15:03:25.543Z"
+  },
   "pending_action": "WAIT_FOR_SUCCESSOR_PREDEPLOY_AND_FIX_FORWARD_RELEASE",
   "predeploy": {
     "run_id": 37461053027,
@@ -198,7 +203,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T14:26:21.916Z",
+  "last_observed_at": "2026-10-06T14:43:25.543Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
