@@ -7965,6 +7965,429 @@
         "U29"
       ]
     },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/CUSTODY.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/PACKET_SOURCE_INVENTORY.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/dispatch/dispatch.source-only.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/dispatch/kernel.wait4.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/dispatch/stderr.raw": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/dispatch/stdout.raw": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/ADOPTED_ALIVE/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/ADOPTED_ALIVE/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/BASELINE_F4_ORPHAN/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/BASELINE_F4_ORPHAN/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/EXIT_ONE/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/EXIT_ONE/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/LATE_OBSERVED_REAP/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/LATE_OBSERVED_REAP/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/LOG_EXIT_ERROR/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/LOG_EXIT_ERROR/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/NORMAL_ZERO/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/NORMAL_ZERO/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/PRESPAWN_OWN_CHILD/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/SIGNAL_ERROR/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/SIGNAL_ERROR/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/SPAWN_ERROR/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/SPAWN_ERROR/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/TIMEOUT/actual-phase.resources.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/TIMEOUT/phase.log": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/baseline.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/candidate.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/controlled-process.receipt.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/driver.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/source-after.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/raw/source-before.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/root_launchers/rc6-governed-v3-process-controls-20261006-launcher-v2.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/root_launchers/rc6-governed-v3-process-controls-20261006-launcher.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_governed_v3_owned_process_controls_candidate.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_governed_v3_owned_process_controls_candidate_v2.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_governed_v3_owned_process_controls_source_plan.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_governed_v3_owned_process_controls_source_plan_v2.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_governed_v3_owned_process_controls_v2.diff.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_run_frozen_governed_v2.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_run_frozen_governed_v3_candidate.diff.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_run_frozen_governed_v3_candidate.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_inputs/rc6_run_frozen_governed_v3_source_plan.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_preparation/README.md": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_preparation/publication-incident.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_preparation/rc6_governed_v3_controls_forward_source_builder.py.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_preparation/rc6_governed_v3_owned_phase.source": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/governed-owned-process-v3-controls-20261006/source_preparation/replacement-recipe.json": {
+      "reason": "Preserve pinned immutable f4 baseline, Source-only c430 successor and c262 actual synthetic process-control driver, exact original RAW, receipt0628 and outerkernel1e98. ONE actual stdlib dispatch10 unique controls: one normal accepted, eight adverse rejected and one actual oldf4 own-orphan gap reproduced then cleaned. Pre/postkernelECHILD, mainPID243403 realwait4 exit0 wall1.230476s RSS25264128B, own-group absence and noresidue establish this controlled process scope; no product157 import, fullGov311/312, financial, image or runtime qualification. Wholec430 main/module remains unexecuted and futurefinalC recipe preserves rootdot discovery, originalA3exclusion/assertions/locks/parser/case joins and originalphase5400 caps. RAWinitial atime inspection incident is explicit; all11 copy-time custody is not inferred from execution end. No finalSource/Gov/build permission or count summation.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
     "docs/audits/convergence/evidence/issue465-budget-successors-readonly-9d51af45.json": {
       "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
       "requirement_ids": [
@@ -20444,6 +20867,19 @@
       "requirement_ids": [
         "UX470-I02",
         "UX470-I03",
+        "UX470-I05"
+      ]
+    },
+    "rc6_trader_dashboard/design_system.py": {
+      "reason": "Preserve the full #470 approved UI and aliases while consuming native verified same-cut contracts, family financial states, factual freshness and explicit annual/Greeks limits.",
+      "requirement_ids": [
+        "AUD-468-14",
+        "AUD-468-15",
+        "AUD-468-16",
+        "UX470-I01",
+        "UX470-I02",
+        "UX470-I03",
+        "UX470-I04",
         "UX470-I05"
       ]
     },
