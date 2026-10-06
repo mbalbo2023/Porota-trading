@@ -1,0 +1,146 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "big_acceptance_complete": false,
+  "big_blocker": "Full LARGE producer complete OPEN within original90, business/resource/reap, required import proofs and exact Source/custody still required separately; SMALL never substitutes.",
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6_root_normal_browser_supervisor_efa69894.py",
+    "--output-root",
+    "/workspace/rc6-root-efa69894-browser-20261006-raw",
+    "--phase",
+    "both"
+  ],
+  "conditional_raw_members": [
+    "supervisor-start.json",
+    "normal-supervision.log",
+    "normal-supervision.json",
+    "normal-source-before.json",
+    "normal-driver-start.json",
+    "normal-driver.log",
+    "normal-source-after.json",
+    "normal-stage.json",
+    "browser-normal/browser-gate.json or browser-normal/browser-failure.json",
+    "browser-normal seven screenshots when produced",
+    "browser-normal-native-fixture/native-fixture.json",
+    "browser-normal-native-fixture/progress.jsonl",
+    "browser-normal-native-fixture-transport/launcher.json",
+    "browser-normal-native-fixture-transport/stdout.raw",
+    "browser-normal-native-fixture-transport/stderr.raw",
+    "health-supervision.log",
+    "health-supervision.json",
+    "health-source-before.json",
+    "health-driver-start.json",
+    "health-driver.log",
+    "health-source-after.json",
+    "health-stage.json",
+    "health-live-small/health-gate.json",
+    "supervisor-final.json",
+    "Root external dispatch stdout/stderr/receipt if captured"
+  ],
+  "custody": "Physical whole Git files and directories via dirfd NOATIME/NOFOLLOW, raw commit and binary subtree hashes. All11 metadata stable within each capture; CODE atime differences across phases observed separately, never restored. Index/TAR all11 and SHA unchanged. Native DATA all11+SHA proofs retained independently.",
+  "environment_roles": {
+    "before_fixtures": "Exact lock metadata, prefix, executable and complete Git Source checks; driver does not import product.",
+    "driver": "/workspace/venv_rc6/bin/python",
+    "driver_packages": 158,
+    "product": "/workspace/venv_rc6_frozen311/bin/python",
+    "product_locked_packages": 157,
+    "product_python": "3.11.16"
+  },
+  "execution_owner": "Root",
+  "execution_raw": "/workspace/rc6-root-efa69894-browser-20261006-raw",
+  "gov_qualification_claim": false,
+  "management_caps_seconds": {
+    "failure_cleanup": 5,
+    "failure_sigint_grace": 20,
+    "health_total_stage": 120,
+    "normal_total_stage": 600
+  },
+  "native_caps_unchanged": {
+    "health_total_roundtrip_seconds": 2,
+    "html_and_json_each_max_bytes": 4194304,
+    "prepared_fixture_infrastructure_seconds": 90,
+    "render_total_roundtrip_seconds": 1,
+    "rpc_seconds": 20
+  },
+  "native_fixture": {
+    "actual_producer_ticks": 10,
+    "catalog_total": 318,
+    "future_contract_name": "DLR2026",
+    "future_contracts": 3,
+    "generation_requirement": "Real PREOPEN then OPEN; original GC and all writers closed before custody. DATA_READY producer and observed exit0/reaped/noForced launcher receipt; PREPARED_SMALL only.",
+    "other_families": 9,
+    "rows_per_other_family": 35,
+    "variant": "MULTIFAMILY"
+  },
+  "normal_expected_coverage": {
+    "accessibility_scope": "DOM accessible names, IDs, focus and browser interactions; no actual Windows Voice Access execution claim.",
+    "canonical_viewport_checks": 294,
+    "canonical_views": 49,
+    "families": 10,
+    "height": 980,
+    "interactions": [
+      "focus and scroll preservation",
+      "manual refresh",
+      "details/menu Escape",
+      "dirty filter input",
+      "interaction during outstanding fetch",
+      "automatic refresh pauses while focused",
+      "deeplinks",
+      "currency/channel/cohort/full-five-identity/cut/selection/order/total consistency"
+    ],
+    "legacy_checks": 22,
+    "max_dom_table_rows": 10,
+    "pagination": "Every actual family/cohort; three pages only when actual scoped population >=30. FUT actual three-contract catalog is preserved, with factual cohort count.",
+    "widths": [
+      1440,
+      1280,
+      1024,
+      800,
+      600,
+      360
+    ]
+  },
+  "result": "No browser/native execution by UX. Root ONEBOTH launch is independent execution whose receipts determine the result. No missing conditional member asserted present.",
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-final-source-plan.v1",
+  "separate_health_scope": {
+    "actual_pid_and_reap_required": true,
+    "big_render_acceptance_claim": false,
+    "commercial_ready_claim": false,
+    "fixture": "New private native current-UTC SHADOW-only child and canonical health publication; independent dataset from normal and BIG.",
+    "started_before_cut": true
+  },
+  "source_comparison": {
+    "baseline_plan_source": "b477779cd7123e03fc09845da93095fe25c90ab5",
+    "canonical_routes": 49,
+    "component_content_delta": "All sixteen reviewed runner/fixture/IPC/coverage/navigation/lock components byte-identical in prior Git Source review. Whole Root Source differs and is independently pinned.",
+    "legacy_aliases": 22,
+    "prior_own_95": "OWN9e36 qualification retained separately; no ROOT95 qualification inferred.",
+    "reviewed_component_count": 16
+  },
+  "source_index": "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.index.json",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_repo": "/workspace/porota_rc6_convergence",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tar": "/workspace/rc6-root-efa69894-browser-20261006-source-raw/source.tar",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "SOURCE_ONLY_REVIEWED_NATIVE_PENDING",
+  "supervision": "Literal reviewed c430 require/subprocess_phase through AST; own subreaper, actual pre/post ECHILD, PID-specific wait4/WNOHANG, owned PGID, bounded cleanup. Stage cap includes admission, CLI, capture and cleanup. Late cap/reap/residual is irreversible RED.",
+  "supervisor": {
+    "bytes": 46008,
+    "mode": "0600",
+    "native_execution_by_ux": false,
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894.py",
+    "sha256": "2df7eb90097e709eb06600bd6368894ec1f848faed67a530b0079a356eb90613",
+    "source_only_ro": [
+      "Root",
+      "Finance"
+    ]
+  },
+  "tar_authority": "Literal tar_sha256 in the exact pinned complete-archive index; wrapper verifies all11 metadata and SHA256.",
+  "whole_git_files": 2398,
+  "whole_source": "/workspace/rc6-root-efa69894-browser-20261006-source"
+}

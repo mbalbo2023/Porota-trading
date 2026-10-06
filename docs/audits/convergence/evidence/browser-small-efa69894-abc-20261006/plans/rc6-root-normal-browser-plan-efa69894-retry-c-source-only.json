@@ -1,0 +1,64 @@
+{
+  "acceptance_complete": false,
+  "big_acceptance_complete": false,
+  "caps_unchanged": {
+    "health_total_roundtrip": 2,
+    "html_and_json_each_max_bytes": 4194304,
+    "normal_management": 600,
+    "prepare": 90,
+    "render_total_roundtrip": 1,
+    "rpc": 20
+  },
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6_root_normal_browser_supervisor_efa69894_v3.py",
+    "--output-root",
+    "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c",
+    "--phase",
+    "normal"
+  ],
+  "control_raw": "/workspace/rc6-root-efa69894-browser-20261006-source-raw-retry-c",
+  "execution_owner": "Root",
+  "expected_source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "expected_whole_git_files": 2398,
+  "export_owner": "Root; new physical export and raw commit outside Source only, old exports/RAWs immutable",
+  "gov_qualification_claim": false,
+  "native_driver_contract": "Exact runtime154 from Source plus setuptools84.0.0/greenlet3.5.6/pyee13.0.1/playwright1.63.0; full PRODUCT311157 remains separate and unchanged.",
+  "native_result": null,
+  "physical_new_export_observed_by_ux": false,
+  "preserved_previous_attempts": [
+    "v1 driver preflight RED before Source/native/Chrome",
+    "v2 preparation raw Git control RED before native fixture/Chrome and independent live-small health GREEN"
+  ],
+  "previous_actual_health": "Root reported real independent GREEN on retryB; remains that exact epoch and fixture only, not rerun or transferred into retryC native result.",
+  "references": [
+    "/tmp/rc6-root-normal-browser-plan-efa69894-source-only.json",
+    "/tmp/rc6-root-normal-browser-plan-efa69894-driver-v2-source-only.json",
+    "/tmp/rc6-root-efa69894-browser-export-controls-source-only.json"
+  ],
+  "requested_scope": "NORMAL_SMALL_MULTIFAMILY_ONLY:294 viewport checks,22aliases,10 actual families/cohorts and original focused/fetch/a11y/currency/channel/cut/pagination contracts",
+  "required_export_siblings": {
+    "source.commit.raw": "Exact efa raw commit object, matches declared SHA256/Git SHA1/tree line",
+    "source.index.json": "Exact complete pin9e44",
+    "source.tar": "Exact tar_sha256 declared by index"
+  },
+  "required_readiness_before_launch": "Root validates new complete physical Source/index/TAR/raw commit and exact Source RO of v3, then grants exclusive Native launch. Missing control remains failclosed; no product guard waived.",
+  "schema": "rc6.root-small-browser-retry-c-source-plan.v1",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "status": "SOURCE_READY_PHYSICAL_EXPORT_AND_NATIVE_PENDING",
+  "supervisor": {
+    "bytes": 46704,
+    "delta_from_v2": [
+      "SOURCE path",
+      "PIN_PATH path"
+    ],
+    "mode": "0600",
+    "path": "/workspace/rc6_root_normal_browser_supervisor_efa69894_v3.py",
+    "sha256": "05b1d1609d0b2b56f14d56b6b6e66d9d0d30ab2cd6eed352f4ef5e14e991f1e2",
+    "source_only_unexecuted_by_ux": true
+  },
+  "whole_source": "/workspace/rc6-root-efa69894-browser-20261006-source-retry-c"
+}
