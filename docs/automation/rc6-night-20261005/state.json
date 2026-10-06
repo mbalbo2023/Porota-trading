@@ -29,13 +29,8 @@
     "released": false
   },
   "deploy_owner": null,
-  "lease": {
-    "token": "2026-10-06T16:23:20.602Z:e8d9c7yzejmuww16hn",
-    "owner": "HOURLY_SUPERVISOR",
-    "acquired_at": "2026-10-06T16:23:20.602Z",
-    "expires_at": "2026-10-06T16:43:20.603Z"
-  },
-  "pending_action": "WAIT_FOR_SUCCESSOR_FIX_FORWARD_NEW_SHA_AND_PREDEPLOY",
+  "lease": null,
+  "pending_action": "WAIT_FOR_SUCCESSOR_COMMIT_NEW_SHA_AND_AUTOMATIC_PREDEPLOY",
   "predeploy": {
     "run_id": 37461053027,
     "attempt": 1,
@@ -192,13 +187,21 @@
       "failures": 1,
       "errors": 0,
       "final_artifact": "NOT_CREATED"
+    },
+    {
+      "type": "successor_focal_repairs_and_performance_cause_checkpoint",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844",
+      "comment_id": 6020451844,
+      "observed_at": "2026-10-06T16:23:54.852Z",
+      "pr": 476,
+      "remote_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+      "released": false
     }
   ],
   "blockers": [
     "ACTIVE_CONTROLLED_SUCCESSOR",
-    "SUCCESSOR_PREDEPLOY_1_FAILURE",
-    "SHADOW_CONSERVATIVE_CYCLE_DEADLINE",
-    "LOCAL_CLEANUP_PRIVATE_NAMESPACE_ALIAS",
+    "SUCCESSOR_REPAIR_NOT_COMMITTED",
+    "NEW_PREDEPLOY_NOT_STARTED",
     "FINAL_ARTIFACT_NOT_CREATED",
     "DEPLOY_NOT_STARTED",
     "RUNTIME_NOT_VERIFIED"
@@ -216,7 +219,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T16:23:20.602Z",
+  "last_observed_at": "2026-10-06T16:23:54.852Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
@@ -309,7 +312,7 @@
     "automation_prompt_readback_verified": true
   },
   "last_waiting_owner_observation": {
-    "observed_at": "2026-10-06T14:44:26.429Z",
+    "observed_at": "2026-10-06T16:23:54.852Z",
     "candidate_sha": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
     "candidate_tree": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
     "production_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
@@ -324,12 +327,14 @@
     "integration_owner_status": "ACTIVE_CONTROLLED_SUCCESSOR",
     "exact_release_observed": false,
     "material_change": true,
-    "external_mutations": "CONTROL_STATE_ONLY_EXISTING_OWNER_RECEIPTS_DEDUPED",
-    "material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6018757923",
+    "external_mutations": "CONTROL_STATE_ONLY_OWNER_RECEIPT_DEDUPED",
+    "material_receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844",
     "successor_predeploy_conclusion": "failure",
     "governed_discovered": 5972,
     "governed_failures": 1,
-    "governed_errors": 0
+    "governed_errors": 0,
+    "focal_repairs_validated_not_committed": true,
+    "pre_cpu_diagnostic": "RED_CAUSE_LOCALIZED"
   },
   "candidate_tree_observed": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
   "automation_disabled_at": null,
@@ -440,5 +445,42 @@
       "foreign_resources": "NOT_INSPECTED_NOT_REMOVED"
     },
     "url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37475359176"
+  },
+  "latest_successor_checkpoint": {
+    "observed_at": "2026-10-06T16:23:54.852Z",
+    "session": "CODEX_SUCCESSOR_RC6_20261006_1246UTC",
+    "remote_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+    "remote_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+    "pr": 476,
+    "released": false,
+    "deploy_owner": "NOT_ACQUIRED",
+    "local_repair_status": "FOCAL_VALIDATED_NOT_COMMITTED_NOT_FINAL",
+    "focal_results": {
+      "external_fixture_cpython311": "41/41 PASS",
+      "external_fixture_cpython312": "41/41 PASS",
+      "cli_cpython311": "6/6 PASS",
+      "cli_cpython312": "6/6 PASS",
+      "governed_controls_cpython311": "15/15 PASS",
+      "governed_controls_cpython312": "15/15 PASS"
+    },
+    "pre_cpu_diagnostic": {
+      "status": "RED_DIAGNOSTIC_ONLY",
+      "timeout_seconds": 90,
+      "rss_bytes": 1211416576,
+      "source_unchanged": true,
+      "data_unchanged": true,
+      "cause": "1,153,148 dict.values calls from _count after new identity/strongref registration; container lower bound exceeds cap 1,048,576",
+      "proposed_diff_sha256": "f7dec4a785659183d16a88ee8819c5b67222b910c2054582fe6a99ed64f08415",
+      "retry_same_diagnostic": false
+    },
+    "next_scope": [
+      "exact builtin type identity dispatch and type(value) reuse without changing caps/data/GC/aliases",
+      "pytest collection FIN and barrier in canonical predeploy",
+      "scoped workspace namespace cleanup without global prune",
+      "publish one fast-forward successor commit after ownership/ref reread",
+      "automatic Predeploy on new SHA"
+    ],
+    "receipt_id": 6020451844,
+    "receipt_url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6020451844"
   }
 }
