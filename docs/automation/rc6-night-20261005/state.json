@@ -16,7 +16,12 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "rc6-hourly-2026-10-06T11:57:05.278Z-s1eqbq26bh",
+    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-06T11:57:05.278Z",
+    "expires_at": "2026-10-06T12:17:05.278Z"
+  },
   "pending_action": "WAIT_FOR_RECOVERED_CODEX_FINAL_DELIVERY_AND_OWNER_RELEASE",
   "predeploy": null,
   "deploy": null,
@@ -114,7 +119,7 @@
     "frequency": "HOURLY"
   },
   "runbook_sha": "e51876cdebaa6f198a4912ffb0289479d27253fa",
-  "last_observed_at": "2026-10-06T10:21:29.378Z",
+  "last_observed_at": "2026-10-06T11:57:05.278Z",
   "bootstrap_observation": {
     "candidate_prs_found": 0,
     "candidate_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
