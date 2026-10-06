@@ -152,6 +152,19 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          BOOTSTRAP_PYTHON="$(command -v python)"
+          echo "POROTA_PREDEPLOY_BOOTSTRAP_PYTHON=$BOOTSTRAP_PYTHON" >> "$GITHUB_ENV"
+          "$BOOTSTRAP_PYTHON" -m venv --copies "${POROTA_PREDEPLOY_TMP}/venv"
+          export PATH="${POROTA_PREDEPLOY_TMP}/venv/bin:$PATH"
+          echo "${POROTA_PREDEPLOY_TMP}/venv/bin" >> "$GITHUB_PATH"
+          python - <<'PY_VENV'
+          import sys
+          assert sys.prefix != sys.base_prefix, 'governed native imports require an actual private venv'
+          PY_VENV
+          export HYPOTHESIS_STORAGE_DIRECTORY="${POROTA_PREDEPLOY_TMP}/hypothesis"
+          export LOG_DIR="${POROTA_PREDEPLOY_TMP}/logs"
+          export TMPDIR="${POROTA_PREDEPLOY_TMP}/tmp"
+          mkdir -m 700 "$HYPOTHESIS_STORAGE_DIRECTORY" "$LOG_DIR" "$TMPDIR"
           python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements.build.lock.txt
           python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: \
             --no-binary=msgpack,ppi-client,signalrcoreppi,ta --no-build-isolation -r requirements.lock.txt
@@ -184,9 +197,9 @@ jobs:
           print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
           PY
           mapfile -t TEST_ARGS < "${POROTA_PREDEPLOY_TMP}/porota-test-args.txt"
-          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > "${POROTA_PREDEPLOY_TMP}/porota-test-collection.txt"
+          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" -p no:cacheprovider > "${POROTA_PREDEPLOY_TMP}/porota-test-collection.txt"
           set +e
-          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml="${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"
+          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" -p no:cacheprovider --basetemp="${POROTA_PREDEPLOY_TMP}/pytest-private" --junitxml="${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
@@ -670,7 +683,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python scripts/porota_predeploy_cleanup.py cleanup \
+          "${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}" scripts/porota_predeploy_cleanup.py cleanup \
             --scope "${RUNNER_TEMP}/porota-predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.owner.json" \
             --receipt "${RUNNER_TEMP}/porota-predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.cleanup.json"
 
@@ -679,7 +692,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python - <<'PY_CLEANUP_SUMMARY'
+          "${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}" - <<'PY_CLEANUP_SUMMARY'
           import json, os
           from scripts.porota_predeploy_cleanup import read_file, RECEIPT_SCHEMA
           raw, _ = read_file(os.environ['POROTA_PREDEPLOY_CLEANUP_RECEIPT'], maximum=1048576, mode=0o600)

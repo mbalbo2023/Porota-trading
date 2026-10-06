@@ -123,7 +123,7 @@ def test_native_environment_factory_configures_private_archive_and_fingerprint_r
     assert original.files.archive_maximum_bytes == shadow_archive_maximum_bytes() == 512 * 1024**2
     assert not archive.exists()
     first = original.tick(PRE)
-    inventory = inspect_archive(archive)
+    inventory = inspect_archive(archive, owner_uid=os.geteuid())
     assert inventory["files"] == 1 and inventory["occupied_bytes"] == 0
     cut = read_committed_generation(root)
     assert first["configuration_fingerprint"] == cut["manifest"]["configuration_fingerprint"] == original.configuration_fingerprint(PRE)

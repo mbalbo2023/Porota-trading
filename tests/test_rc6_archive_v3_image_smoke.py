@@ -1,5 +1,6 @@
 """Native private codec fixtures and receipt guards; never CI image approval."""
 from copy import deepcopy
+import io
 import json
 import os
 from pathlib import Path
@@ -64,6 +65,9 @@ def synthetic_receipt(source, frozen):
         "legacy_baseline": deepcopy(smoke.BASELINE), "execution_uid": 1000, "execution_gid": 1000,
         "network_attempts": 0, "provider_requests": 0, "real_orders_sent": 0, "real_routes": "NOT_CALLED",
         "elapsed_seconds": 1.0, "deadline_seconds": 30, "rss_peak_bytes": 32 * 1024**2,
+        "rss_current_bytes": 16 * 1024**2, "rss_observation_pid": 123,
+        "rss_observation_scope": smoke.RSS_SCOPE,
+        "signal_lifetime_rss_peak_bytes": 64 * 1024**2,
         "scratch_allocated_bytes": 1024**2, "output_limit_bytes": 65536,
         "cases": cases, "case_count": 11, "runtime_approval": False,
         "nine_hour_archive_capacity": "PENDING_SEPARATE_NATIVE_GATE",
@@ -120,6 +124,69 @@ def test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependenc
     assert report["cases"][smoke.CASE_IDS[9]]["origin_deleted"] is False
     receipt = path.parent / "native-cli.json"
     receipt.write_bytes(completed.stdout); receipt.chmod(0o644)
+
+
+def test_exec_memory_peak_excludes_launcher_peak_and_retains_own_freed_allocation():
+    child = """
+import json, resource
+from scripts.rc6_archive_v3_image_smoke import current_exec_rss
+before = current_exec_rss()
+allocated = bytearray(32 * 1024**2)
+for offset in range(0, len(allocated), 4096):
+    allocated[offset] = 1
+during = current_exec_rss()
+del allocated
+after = current_exec_rss()
+print(json.dumps({'before': before, 'during': during, 'after': after,
+    'signal_lifetime_rss_peak_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024}))
+"""
+    parent = """
+import subprocess, sys
+allocated = bytearray(64 * 1024**2)
+for offset in range(0, len(allocated), 4096):
+    allocated[offset] = 1
+completed = subprocess.run([sys.executable, '-B', '-c', CHILD],
+    capture_output=True, timeout=10, check=True)
+sys.stdout.buffer.write(completed.stdout)
+""".replace("CHILD", repr(child))
+    completed = subprocess.run([sys.executable, "-I", "-S", "-c", parent], cwd=ROOT,
+        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"), capture_output=True, timeout=15, check=True)
+    report = json.loads(completed.stdout)
+    before, during, after = (report[name] for name in ("before", "during", "after"))
+    assert before["rss_observation_scope"] == smoke.RSS_SCOPE
+    assert before["rss_observation_pid"] == during["rss_observation_pid"] == after["rss_observation_pid"]
+    assert report["signal_lifetime_rss_peak_bytes"] > before["rss_peak_bytes"] + 32 * 1024**2
+    assert during["rss_peak_bytes"] >= before["rss_peak_bytes"] + 24 * 1024**2
+    assert after["rss_peak_bytes"] >= during["rss_peak_bytes"] - 1024**2
+    assert after["rss_current_bytes"] < during["rss_current_bytes"] - 24 * 1024**2
+    assert after["rss_peak_bytes"] <= smoke.MAX_RSS == 512 * 1024**2
+
+
+@pytest.mark.parametrize("status", [
+    "Pid: 122\nVmHWM: 32 kB\nVmRSS: 16 kB\n",
+    "Pid: 123\nVmRSS: 16 kB\n",
+    "Pid: 123\nVmHWM: 32 kB\nVmHWM: 32 kB\nVmRSS: 16 kB\n",
+    "Pid: 123\nVmHWM: 32 MB\nVmRSS: 16 kB\n",
+    "Pid: 123\nVmHWM: -32 kB\nVmRSS: 16 kB\n",
+    "Pid: 123\nVmHWM: 0 kB\nVmRSS: 0 kB\n",
+    "Pid: 123\nVmHWM: 16 kB\nVmRSS: 32 kB\n",
+    "Pid: 123\nVmHWM: 32 kB\nVmRSS: 16 kB\n" + "x" * smoke.MAX_PROCESS_STATUS,
+])
+def test_current_exec_rss_rejects_unbound_inconsistent_or_unavailable_peak_metadata(status):
+    with pytest.raises(smoke.SmokeError, match="RSS_OBSERVATION_INVALID"):
+        smoke.parse_current_exec_rss(status, expected_pid=123)
+
+
+def test_current_exec_rss_keeps_original_limit_and_fails_closed_when_proc_unavailable(monkeypatch):
+    status = f"Pid: {os.getpid()}\nVmHWM: {smoke.MAX_RSS // 1024 + 1} kB\nVmRSS: 16 kB\n"
+    monkeypatch.setattr(smoke, "open", lambda *_args, **_kwargs: io.StringIO(status), raising=False)
+    with pytest.raises(smoke.SmokeError, match="SMOKE_RSS_LIMIT"):
+        smoke.current_exec_rss()
+    def unavailable(*_args, **_kwargs):
+        raise OSError("private process metadata unavailable")
+    monkeypatch.setattr(smoke, "open", unavailable)
+    with pytest.raises(smoke.SmokeError, match="RSS_OBSERVATION_UNAVAILABLE"):
+        smoke.current_exec_rss()
 
 
 @pytest.mark.parametrize("mutation,signature", [("drift", "COMPONENT_MISMATCH"),

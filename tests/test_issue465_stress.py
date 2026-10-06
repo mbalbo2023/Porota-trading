@@ -14,7 +14,8 @@ from queue import SimpleQueue
 
 import pytest
 
-from scripts.rc6_issue465_stress import (AT, fixture_database, run_stress, sha256)
+from scripts.rc6_issue465_stress import (AT, StressImportProofLimit, StressResourceLimit,
+                                       fixture_database, run_stress, sha256)
 from rc6_dynamic_universe.runtime import read_runtime
 from rc6_ppi_global_budget import BudgetBackpressure, GlobalPPIBudget, SCHEMA
 
@@ -36,9 +37,52 @@ def record(result, name):
                 shutil.copyfile(source, Path(root)/evidence_name)
 
 
+def run_stress_recorded(root, name, **options):
+    try:
+        result = run_stress(root, **options)
+    except (StressResourceLimit, StressImportProofLimit) as error:
+        # A resource/import RED carries its complete native receipt. Preserve
+        # it for the existing Actions upload without changing that failure.
+        record(error.evidence, name)
+        raise
+    record(result, name)
+    return result
+
+
+@pytest.mark.parametrize("error_type", [StressResourceLimit, StressImportProofLimit])
+def test_typed_stress_red_persists_exact_evidence_and_remains_raised(tmp_path, monkeypatch, error_type):
+    root = tmp_path/"evidence"
+    monkeypatch.setenv("ISSUE465_EVIDENCE_DIR", str(root))
+    evidence = {"schema": "rc6.issue465.synthetic-stress.v2", "catalog_count": 12000,
+        "observations_materialized": 60000, "real_orders_sent": 0,
+        "resource_gates": {"complete_committed_cycle": False, "child_cleanup_completed": False},
+        "shadow": {"reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE", "phases": ["BOUNDED_READ"],
+            "handler_resources": {"publication": {"calls": 1, "elapsed_seconds": 45.}},
+            "probe_event_receipts": [{"event": "ENTER", "handler_name": "publication"}]},
+        "import_provenance": {"source_sha": "a"*40, "source_tree": "b"*40,
+            "transient_closure_verified": False}}
+    error = error_type(evidence)
+    calls = []
+    def fail(path, **options):
+        calls.append((path, options))
+        raise error
+    monkeypatch.setattr(sys.modules[__name__], "run_stress", fail)
+    source = tmp_path/"uncreated-source"
+    with pytest.raises(error_type) as caught:
+        run_stress_recorded(source, "typed-red", catalog_count=12000)
+    assert caught.value is error and caught.value.evidence is evidence
+    assert calls == [(source, {"catalog_count": 12000})] and not source.exists()
+    assert (root/"typed-red.json").read_bytes() == (json.dumps(evidence, indent=2, sort_keys=True)+"\n").encode()
+    if error_type is StressResourceLimit:
+        summary = json.loads(str(caught.value))
+        assert summary["resource_gates"] == evidence["resource_gates"]
+        assert summary["observed_phases"] == evidence["shadow"]["phases"]
+        assert summary["handler_resources"] == evidence["shadow"]["handler_resources"]
+        assert summary["last_probe_event_receipt"] == evidence["shadow"]["probe_event_receipts"][-1]
+
+
 def test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_exits(tmp_path):
-    result = run_stress(tmp_path / "load")
-    record(result, "catalog10x-observations5x")
+    result = run_stress_recorded(tmp_path / "load", "catalog10x-observations5x")
     assert result["catalog_multiplier"] == 10 and result["observation_multiplier"] == 5
     assert result["observations_materialized"] == 60000
     assert result["shadow"]["full_pipeline_exercised"], json.dumps(result["shadow"])
@@ -53,9 +97,8 @@ def test_10x_catalog_5x_observations_exercises_all_shadow_labs_and_five_factual_
 
 @pytest.mark.parametrize("quota", [128*1024**2, 1024])
 def test_slow_disk_or_shadow_quota_failure_cannot_block_actual_exit_supervisor(tmp_path, quota):
-    result = run_stress(tmp_path / "isolation", catalog_count=100,
-                        slow_disk=True, maximum_bytes=quota, allow_fail_closed=quota == 1024)
-    record(result, "slow-disk-quota-"+str(quota))
+    result = run_stress_recorded(tmp_path / "isolation", "slow-disk-quota-"+str(quota),
+        catalog_count=100, slow_disk=True, maximum_bytes=quota, allow_fail_closed=quota == 1024)
     assert result["factual_exits"]["closed"] == result["factual_exits"]["sell_fills"] == 5
     assert result["source_database_unchanged"]
     if quota == 1024:
@@ -80,7 +123,8 @@ def test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerp
     from scripts.rc6_sqlite_scratch_guard import runtime_settings
     # Canonical scratch requires real disk, while pytest's /tmp may be tmpfs.
     with tempfile.TemporaryDirectory(prefix=".rc6-canonical-stress-", dir=Path.cwd()) as directory:
-        result = run_stress(Path(directory) / "canonical", catalog_count=20, canonical_runtime=True, slow_disk=True)
+        result = run_stress_recorded(Path(directory) / "canonical", "canonical-factory-stress",
+            catalog_count=20, canonical_runtime=True, slow_disk=True)
         shadow = result["shadow"]
         assert result["canonical_runtime_requested"] and shadow["canonical_factory"] and shadow["cycle_completion"]
         assert result["source_database_unchanged"] and result["slow_fsync_exit_isolation_proven"]

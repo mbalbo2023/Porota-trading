@@ -1,4 +1,9 @@
 from pathlib import Path
+import json
+import os
+import shutil
+import subprocess
+import sys
 
 import yaml
 
@@ -23,6 +28,36 @@ def test_productive_scope_is_repository_root_automatic_discovery():
     assert "tests/test_porota_*.py" not in PREDEPLOY
     assert 'python -m pytest --collect-only -q "${TEST_ARGS[@]}"' in PREDEPLOY
     assert 'python -m pytest -q "${TEST_ARGS[@]}"' in PREDEPLOY
+
+
+def test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal(tmp_path):
+    workflow = yaml.safe_load(PREDEPLOY)
+    steps = workflow['jobs']['artifact-gate']['steps']
+    governed = next(step for step in steps if step['name'] == 'Governed automatic test discovery and execution')
+    setup = governed['run'].split('python -m pip install', 1)[0]
+    private = tmp_path / 'owned-private'
+    private.mkdir(mode=0o700)
+    env = dict(os.environ, POROTA_PREDEPLOY_TMP=str(private),
+               GITHUB_ENV=str(tmp_path / 'github-env'), GITHUB_PATH=str(tmp_path / 'github-path'))
+    env['PATH'] = str(Path(sys.executable).parent) + os.pathsep + env['PATH']
+    subprocess.run(['bash', '-c', setup], env=env, check=True, capture_output=True, timeout=30)
+    observed = subprocess.check_output([str(private / 'venv/bin/python'), '-I', '-B', '-c',
+        'import json,sys;print(json.dumps([sys.prefix,sys.base_prefix]))'], text=True)
+    prefix, base = json.loads(observed)
+    assert prefix == str(private / 'venv') and prefix != base
+    bootstrap = (tmp_path / 'github-env').read_text().strip().split('=', 1)[1]
+    assert Path(bootstrap).samefile(sys.executable)
+    assert (tmp_path / 'github-path').read_text().strip() == str(private / 'venv/bin')
+    cleanup = next(step for step in steps if step['name'] == 'Local cleanup')
+    summary = next(step for step in steps if step['name'] == 'Predeploy summary')
+    assert cleanup['if'] == 'always()'
+    assert cleanup['run'].splitlines()[1].startswith('"${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}"')
+    assert summary['run'].splitlines()[1].startswith('"${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}"')
+    shutil.rmtree(private)  # Only this test's owned new venv, as the real cleanup does.
+    env['POROTA_PREDEPLOY_BOOTSTRAP_PYTHON'] = bootstrap
+    env['PATH'] = str(private / 'venv/bin') + os.pathsep + env['PATH']
+    subprocess.run(['bash', '-c', '"${POROTA_PREDEPLOY_BOOTSTRAP_PYTHON:-python}" -I -B -c "import sys;assert sys.version_info[:2] in ((3,11),(3,12))"'],
+                   env=env, check=True, capture_output=True, timeout=5)
 
 
 def test_every_exclusion_is_versioned_justified_and_has_a_successor():

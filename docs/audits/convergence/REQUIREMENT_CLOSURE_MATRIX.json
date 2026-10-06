@@ -6113,7 +6113,7 @@
       ]
     },
     ".github/workflows/porota-predeploy-v2.yml": {
-      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards.",
+      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards. Controlled successor20261006: Use an actual exclusively owned venv for the native import guard; preserve hash-locked closure and automatic root discovery. Keep pytest/hypothesis/log/temp outputs outside source and retain a bootstrap interpreter for cleanup after the owned venv is removed.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -9124,6 +9124,130 @@
         "U04",
         "U13",
         "U24",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py311.anchor-recheck.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py311.initial.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py312.anchor-recheck.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/archive-py312.initial.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/budget-py311.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/budget-py312.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py311.initial.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py311.namespace-recheck.xml": {
+      "reason": "Preserve the exact bounded recheck after CI outputs were moved to the owned private namespace; uncommitted diagnostic only, not final source/artifact or complete Gov qualification.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py312.initial.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/ci-py312.namespace-recheck.xml": {
+      "reason": "Preserve the exact bounded recheck after CI outputs were moved to the owned private namespace; uncommitted diagnostic only, not final source/artifact or complete Gov qualification.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/receipt.json": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/rss-fork-exec-witness.json": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/typed-red-py311.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U29"
+      ]
+    },
+    "docs/audits/convergence/evidence/controlled-successor-20261006/checkpoint1-diagnostics/typed-red-py312.xml": {
+      "reason": "Preserve exact uncommitted diagnostic bytes, including earlier RED and bounded recheck, with honest non-qualification scope; these receipts do not close pending material programming gates or authenticate an artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
         "U25",
         "U29"
       ]
@@ -23473,7 +23597,7 @@
       ]
     },
     "rc6_ppi_global_budget.py": {
-      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence.",
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence. Controlled successor20261006: Observe only an already committed pending exact-identity flight with read-only bounded SQLite snapshots; cache service, new flight authority, policy and demand admission still re-enter the original authoritative write. Preserve original 50ms fail-closed lock wait, cadence and provider single-flight.",
       "requirement_ids": [
         "AUD-468-04",
         "U01",
@@ -23976,7 +24100,7 @@
       ]
     },
     "scripts/rc6_archive_v3_image_smoke.py": {
-      "reason": "Provide bounded offline native legacy/V2/page-pack/V3 corruption and missing-dependency controls for the single exact already-built image; ImageID arguments are never self-authenticating and physical BIG/horizon/browser acceptance remains separate.",
+      "reason": "Provide bounded offline native legacy/V2/page-pack/V3 corruption and missing-dependency controls for the single exact already-built image; ImageID arguments are never self-authenticating and physical BIG/horizon/browser acceptance remains separate. Controlled successor20261006: Measure verified own-PID Linux VmHWM for the unchanged512MiB current-executable smoke bound; separately disclose inherited signal-lifetime ru_maxrss and fail closed on unavailable/inconsistent kernel observations. This does not qualify physical BIG/horizon/browser capacity.",
       "requirement_ids": [
         "U11",
         "U17",
@@ -24083,7 +24207,7 @@
       ]
     },
     "scripts/rc6_issue465_stress.py": {
-      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards. Controlled successor20261006: Preserve typed RED and original budgets while including factual phases, handler resources and the last probe in the exception summary so bounded failures have actionable durable evidence.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -24444,6 +24568,14 @@
         "AUD-468-07"
       ]
     },
+    "tests/test_ci_productive_predeploy_contract.py": {
+      "reason": "Controlled successor20261006: Execute the actual workflow venv setup in a fresh private namespace and prove it is a real venv; prove cleanup can execute after its owned venv is removed. Keep whole-root discovery and original exclusions intact.",
+      "requirement_ids": [
+        "U11",
+        "U25",
+        "U29"
+      ]
+    },
     "tests/test_dashboard_ux_logs_cem_hf6.py": {
       "reason": "Retain all legacy dashboard assertions and correct annual labels for price-only fixed-income measures across current accessible aliases.",
       "requirement_ids": [
@@ -24552,7 +24684,7 @@
       ]
     },
     "tests/test_issue465_stress.py": {
-      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards. Controlled successor20261006: Persist the exact complete typed RED evidence and re-raise the same exception without a second invocation; preserve original stress assertions, dimensions, budgets and rejection semantics.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -24613,7 +24745,7 @@
       ]
     },
     "tests/test_rc6_archive_namespace.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Bind this synthetic owned archive fixture to its actual process UID; keep production defaultUID1000 and explicit wrong-owner/mode/link/custody negative controls unchanged.",
       "requirement_ids": [
         "U14",
         "U15",
@@ -24622,7 +24754,7 @@
       ]
     },
     "tests/test_rc6_archive_v3_image_smoke.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Permanently reproduce a high-memory launcher followed by a small fork-exec child and freed own allocation; prove the unchanged512MiB bound rejects excess or unbound metadata, while preserving original native image/codec controls.",
       "requirement_ids": [
         "U11",
         "U17",
@@ -24682,7 +24814,7 @@
       ]
     },
     "tests/test_rc6_budget_source_custody.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Reproduce an unrelated native reserved writer held beyond50ms while a committed EXIT follower waits; prove no repeated write competition and one fake wire/debt. An exclusive unreadable snapshot still fails closed without cache service or duplicate wire.",
       "requirement_ids": [
         "U04",
         "U05",
@@ -24722,7 +24854,7 @@
       ]
     },
     "tests/test_rc6_component_archive.py": {
-      "reason": "Exercise actual V3 publisher/archive/receipt/ACK/restart/restore, real corruption/missing bases, native temporary pins, contracted9h+1h boundaries and seven entered SIGKILL GC stages; small functional controls do not prove the full1200/6000 sustained horizon or BIG/UI performance.",
+      "reason": "Exercise actual V3 publisher/archive/receipt/ACK/restart/restore, real corruption/missing bases, native temporary pins, contracted9h+1h boundaries and seven entered SIGKILL GC stages; small functional controls do not prove the full1200/6000 sustained horizon or BIG/UI performance. Controlled successor20261006: Bind the native synthetic archive fixture owner explicitly to the creating process UID, leaving product defaults and corruption/missing dependency controls intact.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -24795,7 +24927,7 @@
       ]
     },
     "tests/test_rc6_convergence_persistence.py": {
-      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards.",
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards. Controlled successor20261006: Bind the newly created synthetic archive namespace to its actual UID without relaxing source stats, archival members, recovery or resource gates.",
       "requirement_ids": [
         "U04",
         "U13",
@@ -26215,7 +26347,8 @@
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_native_import_provenance.py",
         "scripts/rc6_shadow_live_namespace.py",
-        "scripts/rc6_sqlite_scratch_guard.py"
+        "scripts/rc6_sqlite_scratch_guard.py",
+        "tests/test_rc6_budget_source_custody.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "OFF/SHADOW/APPROVED config-only desde `porota_mode_manager`, sin credenciales en logs ni activaci\u00f3n autom\u00e1tica.",
@@ -26238,6 +26371,7 @@
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
         "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
@@ -26614,7 +26748,8 @@
         "scripts/rc6_archive_v3_image_smoke.py",
         "scripts/rc6_convergence_provenance.py",
         "scripts/rc6_issue465_audit_gate.py",
-        "scripts/rc6_prior_regression_successors.py"
+        "scripts/rc6_prior_regression_successors.py",
+        "tests/test_ci_productive_predeploy_contract.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Run exitoso de otro head, workflow hom\u00f3nimo, artifact de nombre igual, reemplazo externo y expiraci\u00f3n rechazados antes de promoci\u00f3n.",
@@ -26631,6 +26766,7 @@
       "rca": "Selecci\u00f3n del artifact ligada a run/head/workflow/path/event/attempt aprobados.",
       "remaining_uncertainty": "Promotion requires external approval trailers and exact GitHub tuple/completed successful attempt; evidence-only cannot bootstrap that approval. Published primary replay separates the unchanged HTTP30s request cap from the original600s total Docker load/import/inspect budget, retains codecmin(total,30)/64KiB and exact frozen ImageID/source bindings, checks expiry before/after commands and keeps owned cleanup/result write/flush inside the total gate. One wholeOWNbd69/frozen311157 focal passed45/45 collected/executed unique cases,1868 Git blobs/modes/namespace unchanged,16 own plus2 declared infrastructure imports,zero foreign/network/SQL/client execution; code-directory atime is observed separately. These injected-clock/subprocess protocol controls execute no actual Docker/artifact/HTTP/Gov/runtime, and the fixed current source still needs final C/same-image replay. Run-private UUID, exact owned labels/ImageID and no-follow directory/mount/file checks limit cleanup to proven owned resources. Shared image references, failed removal and residue remain RED; measured statvfs deltas are not causal Docker layer attribution. Uploads precede cleanup, final summary follows verified GREEN receipt and exit0. Exact OWN54048 controlled86 unique passes do not execute actual Docker/Actions or validate an immutable artifact.",
       "test_nodes": [
+        "tests/test_ci_productive_predeploy_contract.py::test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_is_exported_only_after_paper_safety",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
@@ -26854,7 +26990,8 @@
         "tests/rc6_browser_coverage.py",
         "tests/rc6_browser_ipc.py",
         "tests/rc6_browser_prepared.py",
-        "tests/rc6_dashboard_native_fixture.py"
+        "tests/rc6_dashboard_native_fixture.py",
+        "tests/test_rc6_budget_source_custody.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Spawn failure, crash loop, CURRENT ausente/stale; scanner heartbeat sano no basta. Preopen leg\u00edtimo no debe fingir READY.",
@@ -26915,6 +27052,7 @@
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
         "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
@@ -27180,7 +27318,10 @@
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_shadow_live_namespace.py",
         "scripts/rc6_sqlite_scratch_guard.py",
-        "tests/fixtures/rc6_publication_storage_e24.py.source"
+        "tests/fixtures/rc6_publication_storage_e24.py.source",
+        "tests/test_issue465_stress.py",
+        "tests/test_rc6_archive_v3_image_smoke.py",
+        "tests/test_rc6_budget_source_custody.py"
       ],
       "disposition": "MATERIAL_RESOURCE_GATE_PENDING_REMEDIATION",
       "fix": "Generation lifecycle/ACK/recovery with the original fixed512 files/128MiB live quota restored; canonical private512MiB archive V3 wired and fingerprinted; native1200 full-wheel physical capacity remains an active programming gate.",
@@ -27198,6 +27339,7 @@
       "remaining_uncertainty": "Historical three-role5ID ten-hour horizon is preserved separately, not four-role/current configured-source proof; Native normal1200 actual four cuts:3.07/5.01/4.77/5.44CPU seconds, archive1.557/1.832/1.846/1.845MB; no complete9h512MiB proof; Rejected original-compressedtar window/bit-alignment delta is exact-byte lossless but has no sufficient savings; no production delta implementation claimed; The final integrated configured-archive12k/60k two-cycle resource gate remains pending;18e prior native gatePASS is exact and separately attached; A static five-identity horizon does not certify12000 identities or dynamic quote arrival footprint; Contingent8192 default was never supported by the required full-wheel proof; original512 default is restored before final acceptance. The107a normal4 receipt uses8192 and is diagnostic only.; Normal4 exact107a nativeV3 bytes are restored, but source main atime/SHM metadata change through direct mode=ro connections; original source guard is RED until all native readers use a verified private NoAtime copy.; Offline synthetic local custody; hostile control of writer plus every independent authority is outside the demonstrated trust boundary. Final four-role horizon, stress, archive and consumer reruns remain required; deployed host power-loss/capacity and external WORM authenticity NO_VERIFICADO. The scalar-count prefilter has an independent frozen old-count oracle; its exact graph/incoming/strong-reference/order/capture/wire/reader controls passed113 cases on whole OWNad5/frozen311157 with1845 source bytes/modes/blobs intact and94 own imports, zero alien imports/network/sourceSQLite. The integrated4ba has the identical source tree. Its uninstrumented BIG90 completed PREOPEN and checkpoint restore, then entered OPEN orchestrator without completing the original90s; complete and cleanup remain false. This is not full BIG acceptance or an isolated percentage CPU saving. A separate exact-builtin small-container append fastpath preserves the old token stream only when the entire canonical block fits current remaining capacity without literals; otherwise all prior alias/FIELDS/cache/subclass/volatile/large-value paths remain fallback. Frozen old-append/capture oracles and original guards passed197/197 on wholeOWNd171/frozen311157,1847 Git blobs/modes unchanged,96 own imports and zero alien/network/SourceSQL.84 new cases are compatibility controls, not measured CPU savings or BIG90 completion. The latest uninstrumented wholeRoot9d32/frozen311157 BIG90 remainsRED after small-container compatibility197PASS: PREOPEN completed89.741s but no OPEN completion, original90s/GC/quotas unchanged. Actual5PAPEREXITs inside slowfsync passed and1912 Git blobs/modes plus eleven present MAIN stat attributes/SHA stayed unchanged; RSS1,657,999,360B is below2GiB. Completed inclusive publication56.736/prepare41.796/encode10.748/metrics3.729/restore8.995s are overlapping partial costs, not a full-cycle total or percentage saving. Fullworker/BIG OPEN/horizon/browser/finalGov/artifact/runtime remain pending. The bounded exact-builtin volatile scalar cache exists only within one capture and restores prior context on success or fault. WholeOWNd51b/frozen311157 passed271/271:74 volatile plus197 overlapping existing guards,1940 Git blobs/modes intact,97 own imports and zero alien/network/SourceSQLite. Independent frozen prior append/capture oracle binds typed values, literal occurrences, slots, cuts and entire wire;4096 entries/1MiB canonical bytes bound is not total Python heap or RSS. No cross-cut cache, GC/quota/deadline change or measured saving is inferred; final integrated BIG90 and horizon remain pending. The new uninstrumented integrated wholeRootd050/frozen311157 BIG after volatile compatibility271PASS remainsRED: PREOPEN completed83.599s, OPEN entered afterward but did not complete inside original90s, CLI1 and cleanupFalse.1973 Git blobs/modes/index/tar and eleven present MAIN stat attributes/SHA unchanged; RSS1,597,972,480B and36,884,119 evidence bytes within original caps. Actual five PAPER exits completed0.116562s inside slowfsync0.551785s. Inclusive publication51.347/prepare41.255/encode7.383/metrics2.943/restore7.621s are overlapping partial spans, not full-cycle performance or causal percentage savings. External wrapper does not independently audit native import closure. Full BIGOPEN/horizon/browser/Gov/artifact remain material pending gates. The next exact-builtin leaf fastpath only avoids recursive dispatch and retains the same scalar and individual buffer operations after volatile handling; all other methods AST unchanged. WholeOWN270/frozen311157 passed365/365 unique cases:94 new scalar dispatch plus271 overlapping prior controls,1975 Git blobs/modes intact,98 own imports, zero alien/network/SourceSQLite. Independent frozen d55e append/capture oracle checks exact append/bind/boundary/scalar order, cuts, literal slots, complete wire and full readers. This is equivalence, not measured performance, finalSource/BIG90 or horizon acceptance. The next uninstrumented integrated wholeRoot8764/frozen311157 BIG after scalar-dispatch365PASS remainsRED: PREOPEN85.034s, no completeOPEN in original90s, CLI1/cleanupFalse.2145 Git blobs/modes/index/TAR and eleven presentMAIN stat attributes/SHA unchanged; RSS1,606,672,384B/evidence36,883,757B within original caps and5PAPEREXIT0.103169s inside actualfsync pass. Inclusive prepare39.597/publication52.588/encode8.531/metrics3.875/restore8.266s are partial overlapping handler spans, not causal savings. Leaf fastpath compatibility did not close the full cycle; source RCA now targets material repeated section work, preserving alias/cuts/wire/context. FullBIGOPEN/1201/Chromium/finalGov/artifact remain pending; native import audit absent from this external wrapper is disclosed. Root integrated strengthened OWNed97 horizon wrapper with complete raw Git/source/import/157 preflight, original full30s clock including constructor/recovery and result publication, exact five-member manifest/CURRENT/public receipts, Python network/privateSQL guards and actual retention counters. Its28 controlled guards passed on exact OWNed97/frozen311157. Separate integrated whole d933 NORMAL4 completed PREOPEN+3OPEN and four exact restores in58.403s/RSS321,073,152B, with1866 source blobs/modes/import closure and SourceDB ten stat fields plus SHA unchanged; allocated blocks were not captured. Actual compaction, rotation and expired-prefix deletion counters are zero, not positive deletion exercises. Four cuts still cannot replace1201 actual postPRE calls plus PRE, restarts361/841, native stale-input behavior, full retention/quotas/cadence and final qualification; no ten-hour wallclock/OPEN/PPI-session claim. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. Source-only full1201 external driver OWN2e3468 and independent review are integrated but unexecuted. It requires its own rawGit member bytes, wholeSource/index/TAR/157 before fixtures,1202 real native calls,original30s/fullcut/quotas/GC,strict1202 read-clock/cut joins, stale based on cut,exact5 members,11stat+SHA and actual wait4 lifetimeRSS/reap. Watchdog ends at observed child reap; finalSource/log/proof/emission stay outside that management deadline and elapsed is explicitly partial. Static WIP gaps were repaired before Native, not hidden nativeRED or executed horizon/Gov/image/runtime. Exact built-in type identity applies only to newly introduced private eligibility/snapshot predicates; original frozen8764 type membership/callback trace stays unchanged. Noncandidate role prefilter avoids whole eligibility only when no cache candidate exists; candidates retain full after-count eligibility and both snapshot checks. Qualified OWN1e2 focal478 comprises ten new controls plus468 overlap, not946 or repeated epochs. Historical e24 full-helper oracle proves actual private metaclass callback corruption and fixed exact full-wire equivalence. This scope does not establish integrated BIG90, horizon1201, browser, finalGov or artifact acceptance. Private builtin collection subcaptures require identical frontier, graph alias context, literals, named dependencies and constants. Original full shape/count per role, plain named-cache lifetime and independent expanded proof remain. Exact Decimal and standard Counter are allowed only in whole-role callback eligibility; replayed snapshots contain only builtin graph values. Source review and compatibility controls do not establish BIG90 performance. Exact OWN e24 private publication compatibility has468 unique cases:103 new and365 overlapping prior controls. Corrected external Dfc7513a4/source-supportf4 passed468/468 on frozen311 literal157/whole2158 Git blobs, one collection and one pytest.main, exact call/setup/teardown/JUnit join with no fail/error/skip/xfail. ActualPID236544 exited0 and was wait4-reaped in34.252s, kernelRSS272,023,552B; exclusive supervisor236509 records prePopen and post-main ECHILD, absent ownedPGID and no residual or errors. Exactly one source/code/spec/node/call pinned urllib3 import probe attempted an IPv6 bind and was denied before the physical bind; privateSQL314, rejectedSQL/forbidden executable0. Source bytes/modes/blobs/ten stable stats/namespace/mounts/index/TAR stayed unchanged, Code-atime recorded separately. A stopped before Native on TAR-mode custody; B and C passed468 tests but remain HARNESS_RED. Repeated epochs and1404 phase reports are not additional independent scenarios. The wide historical workspace enumeration incident leaves current protected historical directory eleven-stat custody NOT_VERIFIED; execution-time RAW keeps its original temporal scope without reinspection or metadata restoration. No publisher savings, integrated BIG90, full1201, Chromium, finalGov/image/runtime acceptance follows from this scoped OWN focal. The integrated wholeRoot1426/frozen311157 canonical12000/60000 BIG after qualified private subcaptures remains RED. All2220 Git blobs/modes/stable ten stats/namespace/mounts/index/TAR and presentPRIMARY eleven stats plusSHA unchanged, Code-atime separate. Launcher236743 wait4-reaped1; worker236749 exited-15, onlyBOUNDED_READ phase complete and no fullPREOPEN/OPEN within original90s, childcleanupFalse. Actual5PAPEREXIT0.086539s inside slowfsync0.436278s passed, RSS1,649,008,640B and36,884,337 evidence bytes within original caps. Inclusive prepare49.283/publication59.720/encode7.759/metrics3.622 are partial overlapping observations, not causal savings. Actual native import proof requestedALL5 is incomplete: parentFinalUNVERIFIED_LIMITS, workerFinalNone and binding/closureFalse. EarlierBIG proof is not retroqualified; no1201/browser/finalGov/image/runtime acceptance.; Final material acceptance remains pending: actual normal1200/6000 V3 archive across nine hours plus one hour recovery, physical peak/all temporary residence and canonical BIG/browser gates have not completed. Earlier V2 cost exceeded512MiB and earlier large browser renders exceeded one second; neither result is reinterpreted as a measured outcome for the new codec/archive. Intermediate structural/native-small guards do not close these gates.",
       "test_nodes": [
         "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "tests/test_issue465_stress.py::test_typed_stress_red_persists_exact_evidence_and_remains_raised",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
         "tests/test_rc6_archive_namespace.py::test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes",
@@ -27208,9 +27350,13 @@
         "tests/test_rc6_archive_namespace.py::test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_claim",
         "tests/test_rc6_archive_namespace.py::test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blocks_without_writes",
         "tests/test_rc6_archive_namespace.py::test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_keeps_original_limit_and_fails_closed_when_proc_unavailable",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_rejects_unbound_inconsistent_or_unavailable_peak_metadata",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_exec_memory_peak_excludes_launcher_peak_and_retains_own_freed_allocation",
         "tests/test_rc6_budget_source_custody.py::test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects",
         "tests/test_rc6_budget_source_custody.py::test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline",
         "tests/test_rc6_budget_source_custody.py::test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline",
+        "tests/test_rc6_budget_source_custody.py::test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state",
         "tests/test_rc6_budget_source_custody.py::test_historical_metadata_schema_never_authorizes_an_unknown_current_scope",
         "tests/test_rc6_budget_source_custody.py::test_inherited_expired_deadline_never_captures_primary_or_becomes_zero",
         "tests/test_rc6_budget_source_custody.py::test_late_native_round_keeps_only_its_verified_first_admission_count",
@@ -28063,7 +28209,8 @@
         "tests/rc6_browser_coverage.py",
         "tests/rc6_browser_ipc.py",
         "tests/rc6_browser_prepared.py",
-        "tests/rc6_dashboard_native_fixture.py"
+        "tests/rc6_dashboard_native_fixture.py",
+        "tests/test_rc6_archive_v3_image_smoke.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Recomputa audit can\u00f3nico zero/N con schema/asof/count/status/pointers/perreport digest exactos.",
@@ -28082,6 +28229,9 @@
       "test_nodes": [
         "tests/test_rc6_archive_v3_image_smoke.py::test_bounded_noatime_reader_rejects_alias_hardlink_and_oversized_member",
         "tests/test_rc6_archive_v3_image_smoke.py::test_caught_network_attempt_cannot_leave_a_green_smoke_receipt",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_keeps_original_limit_and_fails_closed_when_proc_unavailable",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_rejects_unbound_inconsistent_or_unavailable_peak_metadata",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_exec_memory_peak_excludes_launcher_peak_and_retains_own_freed_allocation",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_legacy_fixtures_are_pinned_to_original_git_blobs_and_above_codec_threshold",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependency_controls",
         "tests/test_rc6_archive_v3_image_smoke.py::test_resealed_legacy_metadata_does_not_replace_original_fixture_bytes",
@@ -28529,7 +28679,10 @@
         "scripts/rc6_issue465_audit_gate.py",
         "scripts/rc6_issue465_stress.py",
         "scripts/rc6_native_import_provenance.py",
-        "scripts/rc6_prior_regression_successors.py"
+        "scripts/rc6_prior_regression_successors.py",
+        "tests/test_ci_productive_predeploy_contract.py",
+        "tests/test_issue465_stress.py",
+        "tests/test_rc6_archive_v3_image_smoke.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Mutaci\u00f3n0644\u21920666 con hash externo recalculado; revisar source/bundle/image. Los modos del artifact auditado estaban correctos.",
@@ -28546,11 +28699,13 @@
       "rca": "Validar permisos completos seg\u00fan policy y rechazar writable inesperado.",
       "remaining_uncertainty": "Exact full permission mask, including special bits, derived from trusted Git file modes. The latest uninstrumented wholeRoot9d32/frozen311157 BIG90 remainsRED after small-container compatibility197PASS: PREOPEN completed89.741s but no OPEN completion, original90s/GC/quotas unchanged. Actual5PAPEREXITs inside slowfsync passed and1912 Git blobs/modes plus eleven present MAIN stat attributes/SHA stayed unchanged; RSS1,657,999,360B is below2GiB. Completed inclusive publication56.736/prepare41.796/encode10.748/metrics3.729/restore8.995s are overlapping partial costs, not a full-cycle total or percentage saving. Fullworker/BIG OPEN/horizon/browser/finalGov/artifact/runtime remain pending. The new uninstrumented integrated wholeRootd050/frozen311157 BIG after volatile compatibility271PASS remainsRED: PREOPEN completed83.599s, OPEN entered afterward but did not complete inside original90s, CLI1 and cleanupFalse.1973 Git blobs/modes/index/tar and eleven present MAIN stat attributes/SHA unchanged; RSS1,597,972,480B and36,884,119 evidence bytes within original caps. Actual five PAPER exits completed0.116562s inside slowfsync0.551785s. Inclusive publication51.347/prepare41.255/encode7.383/metrics2.943/restore7.621s are overlapping partial spans, not full-cycle performance or causal percentage savings. External wrapper does not independently audit native import closure. Full BIGOPEN/horizon/browser/Gov/artifact remain material pending gates. The next uninstrumented integrated wholeRoot8764/frozen311157 BIG after scalar-dispatch365PASS remainsRED: PREOPEN85.034s, no completeOPEN in original90s, CLI1/cleanupFalse.2145 Git blobs/modes/index/TAR and eleven presentMAIN stat attributes/SHA unchanged; RSS1,606,672,384B/evidence36,883,757B within original caps and5PAPEREXIT0.103169s inside actualfsync pass. Inclusive prepare39.597/publication52.588/encode8.531/metrics3.875/restore8.266s are partial overlapping handler spans, not causal savings. Leaf fastpath compatibility did not close the full cycle; source RCA now targets material repeated section work, preserving alias/cuts/wire/context. FullBIGOPEN/1201/Chromium/finalGov/artifact remain pending; native import audit absent from this external wrapper is disclosed. Published primary replay separates the unchanged HTTP30s request cap from the original600s total Docker load/import/inspect budget, retains codecmin(total,30)/64KiB and exact frozen ImageID/source bindings, checks expiry before/after commands and keeps owned cleanup/result write/flush inside the total gate. One wholeOWNbd69/frozen311157 focal passed45/45 collected/executed unique cases,1868 Git blobs/modes/namespace unchanged,16 own plus2 declared infrastructure imports,zero foreign/network/SQL/client execution; code-directory atime is observed separately. These injected-clock/subprocess protocol controls execute no actual Docker/artifact/HTTP/Gov/runtime, and the fixed current source still needs final C/same-image replay. Optional five-argument raw-Git source binding qualifies actual launcher and worker before business imports. Bounded import/exec events and boundary snapshots distinguish opaque, overflow and unobserved bootstrap/tail windows. Actual child PID/source, partial nonzero failure evidence and conservative all-reaped-child kernel RSS cannot produce false completion. Controlled fork failures and retained focal imports do not certify full canonical-spawn BIG closure. Run-private UUID, exact owned labels/ImageID and no-follow directory/mount/file checks limit cleanup to proven owned resources. Shared image references, failed removal and residue remain RED; measured statvfs deltas are not causal Docker layer attribution. Uploads precede cleanup, final summary follows verified GREEN receipt and exit0. Exact OWN54048 controlled86 unique passes do not execute actual Docker/Actions or validate an immutable artifact. The integrated wholeRoot1426/frozen311157 canonical12000/60000 BIG after qualified private subcaptures remains RED. All2220 Git blobs/modes/stable ten stats/namespace/mounts/index/TAR and presentPRIMARY eleven stats plusSHA unchanged, Code-atime separate. Launcher236743 wait4-reaped1; worker236749 exited-15, onlyBOUNDED_READ phase complete and no fullPREOPEN/OPEN within original90s, childcleanupFalse. Actual5PAPEREXIT0.086539s inside slowfsync0.436278s passed, RSS1,649,008,640B and36,884,337 evidence bytes within original caps. Inclusive prepare49.283/publication59.720/encode7.759/metrics3.622 are partial overlapping observations, not causal savings. Actual native import proof requestedALL5 is incomplete: parentFinalUNVERIFIED_LIMITS, workerFinalNone and binding/closureFalse. EarlierBIG proof is not retroqualified; no1201/browser/finalGov/image/runtime acceptance.",
       "test_nodes": [
+        "tests/test_ci_productive_predeploy_contract.py::test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_is_exported_only_after_paper_safety",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy",
         "tests/test_issue465_provenance.py::test_predeploy_executes_strict_provenance_in_final_single_build",
+        "tests/test_issue465_stress.py::test_typed_stress_red_persists_exact_evidence_and_remains_raised",
         "tests/test_issue465_stress_audit_gate.py::test_bool_int_coercion_cannot_bless_false_safety_types",
         "tests/test_issue465_stress_audit_gate.py::test_claimed_green_cannot_hide_nonpass_or_duplicate_junit",
         "tests/test_issue465_stress_audit_gate.py::test_convergence_receipt_always_validates_counters_before_provenance",
@@ -28572,6 +28727,9 @@
         "tests/test_issue465_stress_audit_gate.py::test_uncommitted_disk_bytes_cannot_claim_frozen_git_head",
         "tests/test_rc6_archive_v3_image_smoke.py::test_bounded_noatime_reader_rejects_alias_hardlink_and_oversized_member",
         "tests/test_rc6_archive_v3_image_smoke.py::test_caught_network_attempt_cannot_leave_a_green_smoke_receipt",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_keeps_original_limit_and_fails_closed_when_proc_unavailable",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_rejects_unbound_inconsistent_or_unavailable_peak_metadata",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_exec_memory_peak_excludes_launcher_peak_and_retains_own_freed_allocation",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_legacy_fixtures_are_pinned_to_original_git_blobs_and_above_codec_threshold",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependency_controls",
         "tests/test_rc6_archive_v3_image_smoke.py::test_resealed_legacy_metadata_does_not_replace_original_fixture_bytes",
@@ -28953,7 +29111,10 @@
         "tests/rc6_browser_coverage.py",
         "tests/rc6_browser_ipc.py",
         "tests/rc6_browser_prepared.py",
-        "tests/rc6_dashboard_native_fixture.py"
+        "tests/rc6_dashboard_native_fixture.py",
+        "tests/test_ci_productive_predeploy_contract.py",
+        "tests/test_issue465_stress.py",
+        "tests/test_rc6_archive_v3_image_smoke.py"
       ],
       "disposition": "FIXED_WITH_GUARD_PENDING_FINAL_FROZEN_EXECUTION",
       "fix": "Actions por commit y dependencias con hashes/wheelhouse soportado; drift negativo. No declarar build herm\u00e9tico s\u00f3lo por pin de versi\u00f3n.",
@@ -28970,15 +29131,20 @@
       "rca": "Endurecer reproducibilidad de supply chain y explicitar l\u00edmites.",
       "remaining_uncertainty": "Real isolated pip hash installation157 distributions and wrong-SHA RED receipt separate. Reviewed Linuxx86_64 CPython3.11/3.12 glibc>=2.36; apt/runner/native sdist compilation explicitly nonhermetic. The standalone real-cut diagnostic defaults to no stack sampler and requires a complete exact-PID/phase/cut/manifest/import/zero-attempt native receipt before declaring completion. Its final34 controlled driver guards passed on whole OWN8d/frozen311157; original18 and21 are earlier overlapping driver epochs. DriverOWN and Product400 remain distinct explicit authorities. Real checkpoint restore completed8.192s; timed report capture crashed before PREPARE at10.237s, while one NONE control reached PREPARE but exhausted60s without a capture result. Fault cause and complete publisher capture cost remain unknown; there is no product/BIG90/horizon/final Source acceptance claim. The latest uninstrumented wholeRoot9d32/frozen311157 BIG90 remainsRED after small-container compatibility197PASS: PREOPEN completed89.741s but no OPEN completion, original90s/GC/quotas unchanged. Actual5PAPEREXITs inside slowfsync passed and1912 Git blobs/modes plus eleven present MAIN stat attributes/SHA stayed unchanged; RSS1,657,999,360B is below2GiB. Completed inclusive publication56.736/prepare41.796/encode10.748/metrics3.729/restore8.995s are overlapping partial costs, not a full-cycle total or percentage saving. Fullworker/BIG OPEN/horizon/browser/finalGov/artifact/runtime remain pending. The new uninstrumented integrated wholeRootd050/frozen311157 BIG after volatile compatibility271PASS remainsRED: PREOPEN completed83.599s, OPEN entered afterward but did not complete inside original90s, CLI1 and cleanupFalse.1973 Git blobs/modes/index/tar and eleven present MAIN stat attributes/SHA unchanged; RSS1,597,972,480B and36,884,119 evidence bytes within original caps. Actual five PAPER exits completed0.116562s inside slowfsync0.551785s. Inclusive publication51.347/prepare41.255/encode7.383/metrics2.943/restore7.621s are overlapping partial spans, not full-cycle performance or causal percentage savings. External wrapper does not independently audit native import closure. Full BIGOPEN/horizon/browser/Gov/artifact remain material pending gates. The next uninstrumented integrated wholeRoot8764/frozen311157 BIG after scalar-dispatch365PASS remainsRED: PREOPEN85.034s, no completeOPEN in original90s, CLI1/cleanupFalse.2145 Git blobs/modes/index/TAR and eleven presentMAIN stat attributes/SHA unchanged; RSS1,606,672,384B/evidence36,883,757B within original caps and5PAPEREXIT0.103169s inside actualfsync pass. Inclusive prepare39.597/publication52.588/encode8.531/metrics3.875/restore8.266s are partial overlapping handler spans, not causal savings. Leaf fastpath compatibility did not close the full cycle; source RCA now targets material repeated section work, preserving alias/cuts/wire/context. FullBIGOPEN/1201/Chromium/finalGov/artifact remain pending; native import audit absent from this external wrapper is disclosed. The two automatic maximum-member nodes passed on integrated whole c437/frozen311157 with1727 Git blobs/modes unchanged and one actual native execution:34 publications,33 archives/decodes, actualdepth32 and exact five original members without encoder. Native wall125.848s, launch-to-kernel-reap126.016s and realRSS342,335,488 bytes are inside original300s/2GiB; source11stats/hash,51 own imports, zero alien imports/network and quotas remain intact. The first isolated-Python collection failure launched no fixture and is preserved as infrastructure. The330s termination watchdog is not acceptance. This closes the automatic source memory guard, not fullworker/BIG90/horizon/browser/final governed/image or runtime. Published primary replay separates the unchanged HTTP30s request cap from the original600s total Docker load/import/inspect budget, retains codecmin(total,30)/64KiB and exact frozen ImageID/source bindings, checks expiry before/after commands and keeps owned cleanup/result write/flush inside the total gate. One wholeOWNbd69/frozen311157 focal passed45/45 collected/executed unique cases,1868 Git blobs/modes/namespace unchanged,16 own plus2 declared infrastructure imports,zero foreign/network/SQL/client execution; code-directory atime is observed separately. These injected-clock/subprocess protocol controls execute no actual Docker/artifact/HTTP/Gov/runtime, and the fixed current source still needs final C/same-image replay. The browser driver/product IPC split passed the same55 functional guards on whole OWN b6fd/frozen157 in311 and312, with all1638 source blobs/modes unchanged, zero failures/errors/skips and no orphan children. Playwright remains driver-only and native handlers require exact157 before fixture creation. Five initial static defects in output denial, final child exit, bounded sending, location-independent import auditing and exact full source-index authority were corrected; the earlier881 preparation had zero native runs. These overlapping OWN runs do not establish final integrated governed, BIG OPEN browser or large-render latency acceptance. New wholeOWN6d2a9/frozen311157 functional tranche produced65PASS/7ERROR with1776 source blobs/modes unchanged: original55 and new10 health controls passed, while7 multifamily controls timed out during native fixture setup in initialize20s before any of their render requests. Source-only fix preparation separates full native producer fixture creation from consumerIPC without increasing render1s/4MiB,health2s orRPC20s and preserves9families35+actualFUT3,ten original native ticks/full5/custody.312/newSource/browser/native large OPEN remain pending; this is not overall functional GREEN. Prepared-small SOURCE342 review closed without material blockers. Producer literal157 creates original NORMAL or9families35+FUT3/ten ticks/full5/custody outside consumerRPC20 with setup-only90s management cap; DATA_READY producer and actual exit0/reap/noForced launcher receipts are jointly bound before consumerSQL. Existing RPC20/render1s/4MiB/health2s/LARGE/native quotas remain unchanged. Five pre-fixture rejection controls passed on wholeOWN342/frozen311157 with1792 Git blobs/modes intact and zero foreign imports/network/SourceSQLite; these five are a subset of95/Python, not additional coverage. Full95/Python311/312, Chromium and actual complete native BIGOPEN remain pending. WholeOWN342 full311 wasRED with95 unique JUnit cases:93PASS/1FAIL/1ERROR(teardown),0skip/duplicate. Module-lifetime ProductClient blocked the separate direct157 health fixture SQLite before its tick and recorded the attempted access; no financial/publisher defect is inferred. Source9e36 changes only consumer fixture scope to function, producer still module318/10ticks. Its real family-to-health focal2PASS then exact95/95 in311 and95/95 in312 passed with identical node IDs,1792 Git blobs/modes intact, literal157 each, custody/import/offline/driver guards intact and processes reaped.95/Python are repeated compatible epochs, not190 independent scenarios; finalRoot Gov/Chromium/native large OPEN remain pending. Source-only review found the shared native stress/horizon database custody snapshot recorded ten stat attributes plusSHA, omitting st_blocks; historical NORMAL4 derived eleven-stat claims were corrected without changing RAW. One-line helper now captures eleven actual attributes, and physical PRIMARY/WAL/SHM plus sparse-to-allocated controls passed2/2 on wholeOWN3bad/frozen311157,1906 unchanged Git blobs/modes/index/tar, explicit eleven-value oracle, own imports and zero network/SQLite rejects. Two physical controls do not reattest old runs or prove the full worker/horizon/finalSource gates. Exact built-in type identity applies only to newly introduced private eligibility/snapshot predicates; original frozen8764 type membership/callback trace stays unchanged. Noncandidate role prefilter avoids whole eligibility only when no cache candidate exists; candidates retain full after-count eligibility and both snapshot checks. Qualified OWN1e2 focal478 comprises ten new controls plus468 overlap, not946 or repeated epochs. Historical e24 full-helper oracle proves actual private metaclass callback corruption and fixed exact full-wire equivalence. This scope does not establish integrated BIG90, horizon1201, browser, finalGov or artifact acceptance. Optional five-argument raw-Git source binding qualifies actual launcher and worker before business imports. Bounded import/exec events and boundary snapshots distinguish opaque, overflow and unobserved bootstrap/tail windows. Actual child PID/source, partial nonzero failure evidence and conservative all-reaped-child kernel RSS cannot produce false completion. Controlled fork failures and retained focal imports do not certify full canonical-spawn BIG closure. Run-private UUID, exact owned labels/ImageID and no-follow directory/mount/file checks limit cleanup to proven owned resources. Shared image references, failed removal and residue remain RED; measured statvfs deltas are not causal Docker layer attribution. Uploads precede cleanup, final summary follows verified GREEN receipt and exit0. Exact OWN54048 controlled86 unique passes do not execute actual Docker/Actions or validate an immutable artifact. Exact OWN e24 private publication compatibility has468 unique cases:103 new and365 overlapping prior controls. Corrected external Dfc7513a4/source-supportf4 passed468/468 on frozen311 literal157/whole2158 Git blobs, one collection and one pytest.main, exact call/setup/teardown/JUnit join with no fail/error/skip/xfail. ActualPID236544 exited0 and was wait4-reaped in34.252s, kernelRSS272,023,552B; exclusive supervisor236509 records prePopen and post-main ECHILD, absent ownedPGID and no residual or errors. Exactly one source/code/spec/node/call pinned urllib3 import probe attempted an IPv6 bind and was denied before the physical bind; privateSQL314, rejectedSQL/forbidden executable0. Source bytes/modes/blobs/ten stable stats/namespace/mounts/index/TAR stayed unchanged, Code-atime recorded separately. A stopped before Native on TAR-mode custody; B and C passed468 tests but remain HARNESS_RED. Repeated epochs and1404 phase reports are not additional independent scenarios. The wide historical workspace enumeration incident leaves current protected historical directory eleven-stat custody NOT_VERIFIED; execution-time RAW keeps its original temporal scope without reinspection or metadata restoration. No publisher savings, integrated BIG90, full1201, Chromium, finalGov/image/runtime acceptance follows from this scoped OWN focal. The integrated wholeRoot1426/frozen311157 canonical12000/60000 BIG after qualified private subcaptures remains RED. All2220 Git blobs/modes/stable ten stats/namespace/mounts/index/TAR and presentPRIMARY eleven stats plusSHA unchanged, Code-atime separate. Launcher236743 wait4-reaped1; worker236749 exited-15, onlyBOUNDED_READ phase complete and no fullPREOPEN/OPEN within original90s, childcleanupFalse. Actual5PAPEREXIT0.086539s inside slowfsync0.436278s passed, RSS1,649,008,640B and36,884,337 evidence bytes within original caps. Inclusive prepare49.283/publication59.720/encode7.759/metrics3.622 are partial overlapping observations, not causal savings. Actual native import proof requestedALL5 is incomplete: parentFinalUNVERIFIED_LIMITS, workerFinalNone and binding/closureFalse. EarlierBIG proof is not retroqualified; no1201/browser/finalGov/image/runtime acceptance.",
       "test_nodes": [
+        "tests/test_ci_productive_predeploy_contract.py::test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_is_exported_only_after_paper_safety",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_frozen_artifact_uses_exact_pr_head_and_cannot_be_skipped",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_governed_pytest_isolated_from_runner_entrypoints",
         "tests/test_deploy_v2_frozen_artifact_contract.py::test_ready_for_review_retriggers_final_predeploy",
         "tests/test_issue465_provenance.py::test_predeploy_executes_strict_provenance_in_final_single_build",
+        "tests/test_issue465_stress.py::test_typed_stress_red_persists_exact_evidence_and_remains_raised",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_admission_rejects_three_observed_near64mib_images_under_original_live128mib_without_mutation",
         "tests/test_rc6_archive_maximum_member_guard.py::test_native_near64mib_original_ancestor_depth32_restore_has_real_bounded_rss_and_exact_members",
         "tests/test_rc6_archive_v3_image_smoke.py::test_bounded_noatime_reader_rejects_alias_hardlink_and_oversized_member",
         "tests/test_rc6_archive_v3_image_smoke.py::test_caught_network_attempt_cannot_leave_a_green_smoke_receipt",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_keeps_original_limit_and_fails_closed_when_proc_unavailable",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_current_exec_rss_rejects_unbound_inconsistent_or_unavailable_peak_metadata",
+        "tests/test_rc6_archive_v3_image_smoke.py::test_exec_memory_peak_excludes_launcher_peak_and_retains_own_freed_allocation",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_legacy_fixtures_are_pinned_to_original_git_blobs_and_above_codec_threshold",
         "tests/test_rc6_archive_v3_image_smoke.py::test_native_tiny_cli_executes_all_legacy_v3_corruption_and_missing_dependency_controls",
         "tests/test_rc6_archive_v3_image_smoke.py::test_resealed_legacy_metadata_does_not_replace_original_fixture_bytes",

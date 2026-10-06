@@ -1031,6 +1031,38 @@ class GlobalPPIBudget:
         except (KeyError, TypeError, ValueError, InvalidOperation):
             return None
 
+    def _book_flight_pending(self, key, lease, authority, age, *, critical):
+        """Observe a committed wait without competing with its finishing writer.
+
+        This snapshot grants no cache, service, or send authority. A changed
+        flight/cache/pressure returns to the existing authoritative write,
+        which rechecks the clock, policy, circuits and retained envelopes.
+        """
+        with closing(self._connect()) as c:
+            c.execute("PRAGMA query_only=ON")
+            c.execute("BEGIN")
+            now = stamp(self.clock()).timestamp()
+            if now < self._get(c, "last_clock", now):
+                raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
+            if now >= stamp(self.policy["expires_at"]).timestamp():
+                raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+            circuits = self._get(c, "circuits", {})
+            if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
+                raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
+            cached = self._get(c, "critical_books", {}).get(key)
+            if (cached and cached["authority"] == authority
+                    and 0 <= now - cached["received_at"] <= age
+                    and self._safe_book(cached["book"], now, age) is not None):
+                return False
+            active = self._get(c, "critical_book_flights", {}).get(key)
+            if not active or active["lease"] != lease or active["until"] <= now:
+                return False
+            if critical:
+                pressure = self._get(c, "critical_exit_pressure", {}).get(key)
+                if not pressure or pressure.get("until", 0) <= now:
+                    return False
+            return True
+
     def coalesced_book(self, identity, fetch, *, consumer, priority):
         """Off-wire, exact-identity single-flight for critical opened books.
 
@@ -1110,12 +1142,19 @@ class GlobalPPIBudget:
                         break
                     if critical:
                         self._exit_waiting(c, key, now, active)
-                if time.monotonic() >= deadline:
-                    if critical:
-                        self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
-                        raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
-                    raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_BACKPRESSURE")
-                time.sleep(min(.005, max(0, deadline - time.monotonic())))
+                # The authority and waiting EXIT pressure above are committed.
+                # Rewriting them every poll needlessly competes with the owner
+                # and round observer. Poll only this same live flight; cache
+                # service or new leadership still requires the write above.
+                while True:
+                    if time.monotonic() >= deadline:
+                        if critical:
+                            self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
+                            raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
+                        raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_BACKPRESSURE")
+                    time.sleep(min(.005, max(0, deadline - time.monotonic())))
+                    if not self._book_flight_pending(key, active["lease"], authority, age, critical=critical):
+                        break
             monitor = None
             if critical:
                 monitor = threading.Timer(max(0, deadline - time.monotonic()),

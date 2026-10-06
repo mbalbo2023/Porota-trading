@@ -37,6 +37,8 @@ MAX_FILE = 8 * 1024**2
 MAX_ENTRIES = 256
 MAX_SCRATCH = 16 * 1024**2
 MAX_RSS = 512 * 1024**2
+RSS_SCOPE = "CURRENT_EXEC_OWN_PID_LINUX_VMHWM"
+MAX_PROCESS_STATUS = 64 * 1024
 SOURCE_SCHEMA = "porota.source-byte-provenance.v2"
 V3_LEVEL = "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE"
 V2_LEVEL = "LEGACY_V2_ALL_ORIGINAL_MEMBER_HASHES_AND_MANIFEST"
@@ -104,6 +106,47 @@ def require(condition, signature):
 
 def guard(deadline):
     require(time.monotonic() < deadline, "SMOKE_DEADLINE")
+
+
+def parse_current_exec_rss(raw, *, expected_pid):
+    """Validate the executing process's kernel memory high-water mark.
+
+    Linux rusage can retain the launcher address space's peak across exec.
+    VmHWM belongs to the current executable's mm, rather than that inherited
+    signal accounting. This observes this process only, never its children.
+    """
+    require(isinstance(raw, str) and 0 < len(raw) <= MAX_PROCESS_STATUS
+            and raw.isascii() and type(expected_pid) is int and expected_pid > 0,
+            "SMOKE_RSS_OBSERVATION_INVALID")
+    fields = {}
+    for line in raw.splitlines():
+        name, separator, value = line.partition(":")
+        if name not in {"Pid", "VmHWM", "VmRSS"}:
+            continue
+        require(separator and name not in fields, "SMOKE_RSS_OBSERVATION_INVALID")
+        pattern = r"\s*([0-9]+)\s*" if name == "Pid" else r"\s*([0-9]+)\s+kB\s*"
+        match = re.fullmatch(pattern, value)
+        require(match is not None, "SMOKE_RSS_OBSERVATION_INVALID")
+        fields[name] = int(match[1])
+    require(set(fields) == {"Pid", "VmHWM", "VmRSS"}
+            and fields["Pid"] == expected_pid
+            and 0 < fields["VmRSS"] <= fields["VmHWM"],
+            "SMOKE_RSS_OBSERVATION_INVALID")
+    return {"rss_peak_bytes": fields["VmHWM"] * 1024,
+            "rss_current_bytes": fields["VmRSS"] * 1024,
+            "rss_observation_pid": expected_pid, "rss_observation_scope": RSS_SCOPE}
+
+
+def current_exec_rss():
+    require(sys.platform == "linux", "SMOKE_PLATFORM_UNSUPPORTED")
+    try:
+        with open("/proc/self/status", encoding="ascii") as stream:
+            raw = stream.read(MAX_PROCESS_STATUS + 1)
+    except (OSError, UnicodeError) as error:
+        raise SmokeError("SMOKE_RSS_OBSERVATION_UNAVAILABLE") from error
+    observed = parse_current_exec_rss(raw, expected_pid=os.getpid())
+    require(observed["rss_peak_bytes"] <= MAX_RSS, "SMOKE_RSS_LIMIT")
+    return observed
 
 
 def canonical(value, *, ascii=False):
@@ -596,6 +639,12 @@ def validate_report(report, *, candidate_sha, tree_sha, image_id, source_manifes
     require(type(report.get("elapsed_seconds")) in {int, float} and 0 <= report["elapsed_seconds"] < MAX_SECONDS
             and type(report.get("deadline_seconds")) is int and report["deadline_seconds"] == MAX_SECONDS
             and type(report.get("rss_peak_bytes")) is int and 0 < report["rss_peak_bytes"] <= MAX_RSS
+            and report.get("rss_observation_scope") == RSS_SCOPE
+            and type(report.get("rss_observation_pid")) is int and report["rss_observation_pid"] > 0
+            and type(report.get("rss_current_bytes")) is int
+            and 0 < report["rss_current_bytes"] <= report["rss_peak_bytes"]
+            and type(report.get("signal_lifetime_rss_peak_bytes")) is int
+            and report["signal_lifetime_rss_peak_bytes"] > 0
             and type(report.get("scratch_allocated_bytes")) is int and 0 <= report["scratch_allocated_bytes"] <= MAX_SCRATCH
             and type(report.get("output_limit_bytes")) is int and report["output_limit_bytes"] == MAX_OUTPUT,
             "SMOKE_RECEIPT_BOUNDS")
@@ -767,17 +816,18 @@ def _run_smoke(root, manifest_path, *, candidate_sha, tree_sha, image_id, deadli
         require(allocated <= MAX_SCRATCH, "SMOKE_SCRATCH_LIMIT")
     guard(deadline)
     require(tuple(cases) == CASE_IDS, "SMOKE_CASE_CLOSURE")
-    # Linux reports ru_maxrss in KiB; the canonical image targets Linux only.
-    require(sys.platform == "linux", "SMOKE_PLATFORM_UNSUPPORTED")
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
-    require(rss <= MAX_RSS, "SMOKE_RSS_LIMIT")
+    rss = current_exec_rss()
+    # Preserve the inherited signal-lifetime reading as descriptive evidence;
+    # it cannot represent this executable's peak after a large launcher exec.
+    inherited_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
     imported = verify_imports(root, source_rows, deadline=deadline)
     report = {"schema": SCHEMA, "status": "GREEN", "scope": SCOPE,
         "candidate_sha": candidate_sha, "candidate_tree_sha": tree_sha,
         "image_id_argument": image_id, "image_id_authority": "CALLER_MUST_VERIFY_DOCKER_AND_EXTERNAL_GITHUB_TUPLE",
         **binding, "imported_source_modules": imported, "legacy_baseline": BASELINE,
         "cases": cases, "case_count": len(cases), "elapsed_seconds": time.monotonic() - started,
-        "deadline_seconds": MAX_SECONDS, "rss_peak_bytes": rss, "scratch_allocated_bytes": allocated,
+        "deadline_seconds": MAX_SECONDS, **rss,
+        "signal_lifetime_rss_peak_bytes": inherited_rss, "scratch_allocated_bytes": allocated,
         "output_limit_bytes": MAX_OUTPUT, "execution_uid": os.geteuid(), "execution_gid": os.getegid(),
         "network_attempts": 0, "provider_requests": 0, "real_orders_sent": 0, "real_routes": "NOT_CALLED",
         "runtime_approval": False, "nine_hour_archive_capacity": "PENDING_SEPARATE_NATIVE_GATE",

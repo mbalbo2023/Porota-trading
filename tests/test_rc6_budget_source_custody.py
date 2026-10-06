@@ -539,6 +539,98 @@ def test_native_concurrent_admission_cannot_share_frozen_round_authority_or_dupl
         reader.close()
 
 
+@pytest.mark.parametrize("writer_mode", ("IMMEDIATE", "EXCLUSIVE"))
+def test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state(native_ledger, wire, monkeypatch, writer_mode):
+    import requests
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+    identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    entered, release, polling, writer_held, polled_under_writer = [threading.Event() for _ in range(5)]
+    follower = {"thread": None, "write_begins": 0}
+    original_send = requests.adapters.HTTPAdapter.send
+    original_begin = budgets.GlobalPPIBudget._begin_write
+    original_pending = budgets.GlobalPPIBudget._book_flight_pending
+
+    def blocked_body(adapter, request, **kwargs):
+        if request.url.split("?", 1)[0].lower().endswith("/book"):
+            entered.set()
+            assert release.wait(5)
+        return original_send(adapter, request, **kwargs)
+
+    def traced_begin(budget, connection):
+        if threading.get_ident() == follower["thread"]:
+            follower["write_begins"] += 1
+        return original_begin(budget, connection)
+
+    def traced_pending(budget, *args, **kwargs):
+        result = original_pending(budget, *args, **kwargs)
+        if result and threading.get_ident() == follower["thread"]:
+            polling.set()
+            if writer_held.is_set():
+                polled_under_writer.set()
+        return result
+
+    def following_book():
+        follower["thread"] = threading.get_ident()
+        return scoped_book(reader, identity, "EXIT_CRITICAL")
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", blocked_body)
+    monkeypatch.setattr(budgets.GlobalPPIBudget, "_begin_write", traced_begin)
+    monkeypatch.setattr(budgets.GlobalPPIBudget, "_book_flight_pending", traced_pending)
+    try:
+        reader.login_once()
+        before = len(wire[1])
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+            assert entered.wait(5)
+            following = pool.submit(following_book)
+            try:
+                assert polling.wait(5), "Follower must commit its authority and EXIT pressure before polling"
+                assert follower["write_begins"] == 2
+                with closing(sqlite3.connect(runtime.path, timeout=.05)) as writer:
+                    writer.execute("BEGIN " + writer_mode)
+                    writer.execute("UPDATE budget_state SET value=value WHERE key='schema'")
+                    writer_held.set()
+                    if writer_mode == "IMMEDIATE":
+                        assert polled_under_writer.wait(1), "Committed waiting snapshot should remain readable"
+                        # Hold a real reserved writer beyond the original 50ms
+                        # write wait. No new admission or cached value is used.
+                        time.sleep(.075)
+                        assert not following.done()
+                        assert follower["write_begins"] == 2
+                    else:
+                        # An unreadable snapshot retains the original bounded
+                        # fail-closed behavior; polling cannot serve old bytes.
+                        started = time.monotonic()
+                        with pytest.raises(budgets.BudgetBackpressure, match="STATE_UNAVAILABLE") as denied:
+                            following.result(1)
+                        assert time.monotonic() - started < 1
+                        assert isinstance(denied.value.__cause__, sqlite3.OperationalError)
+                        assert denied.value.__cause__.sqlite_errorcode == sqlite3.SQLITE_BUSY
+                        assert follower["write_begins"] == 2
+                    assert len(wire[1]) == before
+                    writer.rollback()
+            finally:
+                writer_held.clear()
+                release.set()
+            assert first.result(5)["bids"]
+            if writer_mode == "IMMEDIATE":
+                assert following.result(5)["bids"]
+                assert follower["write_begins"] == 3
+        assert len(wire[1]) - before == 1
+        assert runtime.budget.metrics()["global"]["used"] == 1
+        observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+        assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+        assert observed["frozen_admission_scope"] is None
+        assert not observed["required_scope_verified_current"]
+    finally:
+        release.set()
+        reader.discard_exit_round_scope()
+        reader.close()
+
+
 def test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader(native_ledger):
     from datetime import timedelta
     from bd_ppi_readonly_guard import ProductionMarketReader

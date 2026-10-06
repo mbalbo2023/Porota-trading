@@ -383,7 +383,7 @@ def test_native_rolling_gc_preserves_full_wheel_recovery_transitive_bases_and_re
     with pytest.raises(ValueError, match="EXPIRED"):
         policy(root, archive)._advance_archive_checkpoint(expired)
     assert not (archive / "GC.json").exists()
-    assert inspect_archive(archive)["state"] == "WITHIN_QUOTA"
+    assert inspect_archive(archive, owner_uid=os.geteuid())["state"] == "WITHIN_QUOTA"
 
 
 def _kill_gc(root, archive, stage, pipe):

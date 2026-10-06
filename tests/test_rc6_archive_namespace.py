@@ -37,7 +37,7 @@ def inventory(root):
 def test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_without_metadata_writes(tmp_path):
     root = prepared(tmp_path)
     before = inventory(root)
-    empty = inspect_archive(root)
+    empty = inspect_archive(root, owner_uid=os.geteuid())
     assert empty["state"] == "WITHIN_QUOTA" and empty["occupied_bytes"] == 0
     assert empty["files"] == 0 and empty["inodes"] == 1
     assert before == inventory(root)
@@ -47,7 +47,7 @@ def test_empty_prepared_root_and_native_archive_have_bounded_honest_inventory_wi
     generation = next(live.glob("gen-*"))
     receipt = EvidenceRetention(live, archive_root=root).archive_generation(generation)
     before = inventory(root)
-    result = inspect_archive(root)
+    result = inspect_archive(root, owner_uid=os.geteuid())
     assert result["schema"] == SCHEMA and result["verification_level"] == LEVEL
     assert result["occupied_bytes"] == sum(info.st_size for name, info in before.items() if name != Path("."))
     assert result["allocated_bytes"] == sum(info.st_blocks * 512 for name, info in before.items() if name != Path("."))
@@ -66,7 +66,7 @@ def test_sparse_archive_residence_distinguishes_logical_quota_from_allocated_blo
     with path.open("r+b") as stream:
         stream.truncate(16 * 1024**2)
     before = inventory(root)
-    result = inspect_archive(root)
+    result = inspect_archive(root, owner_uid=os.geteuid())
     assert result["occupied_bytes"] == 16 * 1024**2
     assert result["allocated_bytes"] == sum(info.st_blocks * 512 for name, info in before.items() if name != Path("."))
     assert result["allocated_bytes"] < result["occupied_bytes"]
@@ -79,7 +79,7 @@ def test_recognized_interrupted_archive_is_counted_without_cleanup_or_semantic_c
     member(root, "archive.lock")
     temporary = member(root, ".archive-" + "a" * 32 + ".tmp", b"synthetic interrupted bytes")
     before = inventory(root)
-    result = inspect_archive(root)
+    result = inspect_archive(root, owner_uid=os.geteuid())
     assert result["state"] == "RECOVERY_REQUIRED"
     assert result["owned_temporary_count"] == 1 and result["occupied_bytes"] == temporary.stat().st_size
     assert before == inventory(root)
@@ -90,7 +90,7 @@ def test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair
     root = prepared(tmp_path)
     lock = member(root, "archive.lock")
     path = member(root, "a" * 32 + ".tar.gz", b"synthetic")
-    kwargs = {}
+    kwargs = {"owner_uid": os.geteuid()}
     if fault == "unknown": member(root, "unexpected.json")
     elif fault == "mode": path.chmod(0o644)
     elif fault == "hardlink": os.link(path, root / ("b" * 32 + ".tar.gz"))
@@ -108,15 +108,15 @@ def test_unknown_alias_custody_and_exhausted_capacity_fail_closed_without_repair
 def test_missing_root_root_alias_and_ancestor_alias_do_not_create_or_follow_namespace(tmp_path):
     missing = tmp_path / "missing"
     with pytest.raises(ValueError, match="ROOT_REQUIRED"):
-        inspect_archive(missing)
+        inspect_archive(missing, owner_uid=os.geteuid())
     assert not missing.exists()
     root = prepared(tmp_path)
     alias = tmp_path / "alias"; alias.symlink_to(root, target_is_directory=True)
     with pytest.raises(ValueError, match="ALIAS"):
-        inspect_archive(alias)
+        inspect_archive(alias, owner_uid=os.geteuid())
     parent_alias = tmp_path / "parent-alias"; parent_alias.symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(ValueError, match="ALIAS"):
-        inspect_archive(parent_alias / root.name)
+        inspect_archive(parent_alias / root.name, owner_uid=os.geteuid())
 
 
 def test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated(tmp_path):
@@ -127,7 +127,7 @@ def test_existing_writer_blocks_read_only_admission_and_lock_is_not_recreated(tm
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = inventory(root)
         with pytest.raises(ValueError, match="WRITER_ACTIVE"):
-            inspect_archive(root)
+            inspect_archive(root, owner_uid=os.geteuid())
         assert before == inventory(root)
     finally:
         os.close(descriptor)
@@ -146,7 +146,7 @@ def test_namespace_mutation_during_admission_is_rejected(tmp_path, monkeypatch):
         return original(name, *args, **kwargs)
     monkeypatch.setattr(archive_namespace.os, "stat", mutated)
     with pytest.raises(ValueError, match="NAMESPACE_CHANGED"):
-        inspect_archive(root)
+        inspect_archive(root, owner_uid=os.geteuid())
 
 
 @pytest.mark.parametrize("kwargs", [{"owner_uid": True}, {"owner_uid": -1}, {"max_bytes": True},
@@ -155,5 +155,5 @@ def test_namespace_mutation_during_admission_is_rejected(tmp_path, monkeypatch):
 def test_invalid_policy_is_rejected_before_opening_namespace(tmp_path, kwargs):
     root = tmp_path / "missing"
     with pytest.raises(ValueError, match="POLICY_INVALID"):
-        inspect_archive(root, **kwargs)
+        inspect_archive(root, **{"owner_uid": os.geteuid(), **kwargs})
     assert not root.exists()

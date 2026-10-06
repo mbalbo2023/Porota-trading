@@ -37,8 +37,13 @@ AT = OPEN + timedelta(minutes=5)
 class StressResourceLimit(AssertionError):
     def __init__(self, evidence):
         self.evidence = evidence
+        shadow = evidence["shadow"]
         super().__init__(json.dumps({"resource_gates": evidence["resource_gates"],
-            "shadow_reason": evidence["shadow"].get("reason")}, sort_keys=True))
+            "shadow_reason": shadow.get("reason"),
+            "observed_phases": shadow.get("phases", []),
+            "handler_resources": shadow.get("handler_resources", {}),
+            "last_probe_event_receipt": (shadow.get("probe_event_receipts") or [None])[-1]},
+            sort_keys=True))
 
 
 class StressImportProofLimit(AssertionError):
