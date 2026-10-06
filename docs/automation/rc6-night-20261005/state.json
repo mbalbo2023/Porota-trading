@@ -30,13 +30,7 @@
     "local_fix_status": "NEW_MINIMAL_PROCESS_CUSTODY_FIX_UNCOMMITTED_UNTESTED"
   },
   "deploy_owner": null,
-  "lease": {
-    "token": "rc6-2026-10-06T18:54:40.531Z-eolsspni87",
-    "holder": "WS-RC6-NIGHT-CONVERGENCE-20261005",
-    "acquired_at": "2026-10-06T18:54:40.531Z",
-    "expires_at": "2026-10-06T19:14:40.531Z",
-    "base_head": "b9b9df7f0e4def9649a68d6a66a87f0e107f491a"
-  },
+  "lease": null,
   "pending_action": "WAIT_FOR_OWNER_TO_RUN_67_FOCALS_15_GOV_CONTROLS_COMMIT_NEW_SHA_AND_AUTOMATIC_PREDEPLOY",
   "predeploy": {
     "run_id": 37461053027,
@@ -566,8 +560,8 @@
     }
   },
   "last_lease_release": {
-    "token": "rc6-2026-10-06T18:32:39.947Z-dc174f1pgx",
-    "released_at": "2026-10-06T18:33:56.852Z",
-    "state_commit_parent": "0b383e02ec4121b2c4194bfc46fe83654b4293d1"
+    "token": "rc6-2026-10-06T18:54:40.531Z-eolsspni87",
+    "released_at": "2026-10-06T18:55:06.212Z",
+    "state_commit_parent": "22e037f8777e75f5f5d2d5c0812d7675718782d3"
   }
 }
