@@ -1,6 +1,6 @@
 {
   "schema": "rc6.native-big-runtime-provenance-source-plan.v1",
-  "status": "DESARROLLADO_SOURCE_ONLY_NATIVE_NOT_EXECUTED",
+  "status": "SOURCE_FIX_FORWARD_WITH_PRESERVED_PRIOR_FOCAL_RED_CURRENT_SOURCE_NOT_EXECUTED",
   "base": {
     "sha": "793cc7039ecfb5d9c34999cf20691245776543e6",
     "tree": "c73d2caea93a88a57564bedb7bfe72e7f5806fc8"
@@ -125,6 +125,48 @@
     "governed_focal_execution": "PENDING_ROOT_EXCLUSIVE_SLOT",
     "big_or_horizon_execution": "NOT_AUTHORIZED_BY_THIS_PLAN",
     "final_frozen_artifact_or_runtime_acceptance": false
+  },
+  "prior_focal_native_result": {
+    "source_sha": "ce9323625e89fd8a10979d9b1eaf353c55c176e5",
+    "source_tree": "cedd0a34e444526b504d06329b3fe0c8ce9d9ec1",
+    "receipt_path": "/workspace/rc6-budget-runtime-provenance-ce932-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "c6f39ad5dbea8b9fcc4b29b96adb400c2acc6c638b70f808c88299bfdd88ffe8",
+    "junit_sha256": "320476f364e462e3ac3bf41924053e3606ffcf3ebbc245ea3834528c71e736ec",
+    "actual_cases": 43,
+    "passed": 41,
+    "failed": 2,
+    "errors": 0,
+    "skipped": 0,
+    "result": "RED_SCOPE_NOT_GREEN",
+    "source_unchanged": true,
+    "installed_metadata_total": 157,
+    "raw_selected_copy_reads_all11_unchanged": true,
+    "native_pytest_wall_seconds": 13.017769694008166,
+    "actual_wait4_observation_seconds": 15.318248436000431,
+    "actual_main_pid": 243502,
+    "actual_supervisor_pid": 243501,
+    "actual_main_reaped": true,
+    "kernel_pre_and_post_echild": true,
+    "final_process_group_absent": true,
+    "peak_main_and_adopted_rss_bytes": 109256704,
+    "failures": [
+      {
+        "node": "tests/test_rc6_native_big_import_provenance.py::test_cloned_factory_with_same_code_but_foreign_globals_is_rejected",
+        "actual_witness": "CalledProcessError: physical child returned1. The prior parent did not preserve its captured stdout/stderr.",
+        "source_rca": "FunctionType does not inherit namedtuple's positional/keyword defaults. The fixture omitted kwdefaults required by the real callable; a TypeError explains the source contract defect, but its actual child traceback is unavailable in the preserved prior RAW.",
+        "fix": "Copy the original positional/keyword defaults into the clone while preserving foreign globals and the unchanged UNVERIFIED assertion.",
+        "classification": "SOURCE_CONFIRMED_FIXTURE_CONTRACT_DEFECT_WITH_PRIOR_CHILD_TRACEBACK_GAP"
+      },
+      {
+        "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage",
+        "actual_witness": "KeyError cython_runtime: the actual child returned JSON, but the final qualified-module map lacked that key.",
+        "source_rca": "The prior parent did not preserve the returned child JSON. Exact selected-loader outcomes, errors and unresolved-boundary reason cannot be recovered from the existing XML/log alone.",
+        "fix": "Preserve actual future child stdout/stderr before parent assertions; retain the existing fail-closed provenance rules and original positive expectation until actual evidence identifies the missing lineage.",
+        "classification": "ACTUAL_POSITIVE_LINEAGE_GUARD_RED_EXACT_CHILD_REASON_NOT_RECORDED_NO_NAME_ALLOWLIST_FIX"
+      }
+    ],
+    "current_fix_forward_native_executions": 0,
+    "limits": "This is a separate scoped focal execution, not BIG performance, full horizon, final Gov, image or runtime authority. The original RED remains byte-exact; no missing child output is retroactively reconstructed."
   },
   "future_focal": {
     "python": "/workspace/venv_rc6_frozen311/bin/python",

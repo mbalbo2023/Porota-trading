@@ -515,7 +515,9 @@ def _runtime_control_child(root, private, case):
                 right: int
             assert ActualRuntimeRecord(3, 4).right == 4
         elif case == 'lookalike_factory':
-            false_factory = types.FunctionType(collections.namedtuple.__code__, dict(vars(collections)))
+            false_factory = types.FunctionType(collections.namedtuple.__code__, dict(vars(collections)),
+                                               argdefs=collections.namedtuple.__defaults__)
+            false_factory.__kwdefaults__ = dict(collections.namedtuple.__kwdefaults__ or {})
             assert false_factory('LookalikeRuntimeRecord', ('left',))(3).left == 3
         else:
             # Actual valid Python factory input exceeds the existing text bound.
@@ -611,15 +613,71 @@ def _runtime_control_child(root, private, case):
 def _physical_runtime_control(tmp_path, case):
     environment = {**os.environ,'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1'}
     environment.pop('PYTHONPATH', None)
-    completed = subprocess.run([sys.executable,'-I','-B',str(Path(__file__).resolve()),
-        '--runtime-provenance-control',str(ROOT),str(tmp_path),case], cwd=tmp_path,
-        env=environment,capture_output=True,text=True,timeout=20,check=True)
+    command = [sys.executable,'-I','-B',str(Path(__file__).resolve()),
+        '--runtime-provenance-control',str(ROOT),str(tmp_path),case]
+    try:
+        completed = subprocess.run(command, cwd=tmp_path, env=environment,
+            capture_output=True,timeout=20,check=False)
+    except subprocess.TimeoutExpired as error:
+        _preserve_runtime_control_output(tmp_path, case, command, None,
+            error.stdout or b'', error.stderr or b'', output_complete=False)
+        raise
+    _preserve_runtime_control_output(tmp_path, case, command, completed.returncode,
+        completed.stdout, completed.stderr, output_complete=True)
+    completed.check_returncode()
     result = json.loads(completed.stdout)
     assert result['native_pid'] == result['native_child_pid'] == result['initial_native_pid']
     assert result['original_import_machinery_restored'] is True
     assert result['shared_evidence_record_count'] <= result['record_limit'] == 2048
     assert result['test_binding_scope'] == 'PHYSICAL_OBSERVER_UNIT_CONTROL_NOT_RAW_GIT_QUALIFICATION'
     return result
+
+
+def _preserve_runtime_control_output(tmp_path, case, command, returncode, stdout, stderr, *, output_complete):
+    """Persist actual private child bytes, including failed controls, before assertions."""
+    fields = ('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size',
+              'st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+    receipts = {}
+    for name, wire in (('stdout',stdout),('stderr',stderr)):
+        assert type(wire) is bytes
+        within_bound = len(wire) <= 4*1024**2
+        saved = wire if within_bound else wire[:4*1024**2]
+        path = tmp_path/('runtime-control-'+name+'.bin')
+        descriptor = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_NONBLOCK, 0o644)
+        try:
+            offset = 0
+            while offset < len(saved):
+                offset += os.write(descriptor, saved[offset:])
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        descriptor = os.open(path, os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK)
+        try:
+            before = tuple(getattr(os.fstat(descriptor), field) for field in fields)
+            observed = bytearray()
+            while block := os.read(descriptor, 65536):
+                observed.extend(block)
+            assert bytes(observed) == saved
+            assert tuple(getattr(os.fstat(descriptor), field) for field in fields) == before
+            assert tuple(getattr(path.lstat(), field) for field in fields) == before
+        finally:
+            os.close(descriptor)
+        receipts[name] = {'path':str(path),'sha256':hashlib.sha256(saved).hexdigest(),
+                         'saved_bytes':len(saved),'original_captured_bytes':len(wire),
+                         'byte_exact_complete_capture':output_complete and within_bound,
+                         'capture_limit_bytes':4*1024**2,'truncated':not within_bound,
+                         'copy_read_all11_unchanged':True}
+    destination = tmp_path/'runtime-control-output-receipt.json'
+    descriptor = os.open(destination, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o644)
+    with os.fdopen(descriptor, 'w') as stream:
+        json.dump({'schema':'rc6.private-import-control-output.v1','case':case,
+            'parent_native_pid':os.getpid(),'command':command,'actual_returncode':returncode,
+            'output_complete':output_complete,'stdout':receipts['stdout'],'stderr':receipts['stderr'],
+            'scope':'ACTUAL_SUBPROCESS_OUTPUT_BEFORE_PARENT_ASSERTIONS_NOT_PRIOR_RECONSTRUCTION'},stream,sort_keys=True)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    assert all(not row['truncated'] for row in receipts.values()), 'PRIVATE_CONTROL_OUTPUT_LIMIT_EXCEEDED'
 
 
 def test_exact_typing_public_aliases_are_classified_without_pretending_module_type(tmp_path):
