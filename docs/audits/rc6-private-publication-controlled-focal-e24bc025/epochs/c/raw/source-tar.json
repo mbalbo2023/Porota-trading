@@ -1,0 +1,20 @@
+{
+  "bytes": 79964160,
+  "commit": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+  "directories": 111,
+  "files": 2158,
+  "sha256": "754f34d63ef86c7fd8076f3f1ae265ce8ba99dd5e587d0a745d61a68326e07aa",
+  "stat_fields": {
+    "st_atime_ns": 1791243358772733602,
+    "st_blocks": 156184,
+    "st_ctime_ns": 1791243359080675745,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 928151,
+    "st_mode": 33188,
+    "st_mtime_ns": 1791243359080675745,
+    "st_nlink": 1,
+    "st_size": 79964160,
+    "st_uid": 1000
+  }
+}
