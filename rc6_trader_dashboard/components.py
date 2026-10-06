@@ -132,6 +132,13 @@ def pager(page, path, filters, table_id):
 
 
 def table(page, title, columns, extra=(), *, path="", filters=None, table_id="main-table"):
+    column_classes = [
+        " ".join(name for name, enabled in (
+            ("secondary", i > 2),
+            ("readiness-column", f.key == "readiness" and f.kind == "status"),
+        ) if enabled)
+        for i, f in enumerate(columns)
+    ]
     body = []
     for index, row in enumerate(page.rows[:10]):
         key = row.get("paper_id") or row.get("decision_key") or row.get("identity") or json.dumps(
@@ -146,13 +153,13 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
                    "session", "entry_hour_art", "hour_art", "channel", "regime") if name in row}
         key = json.dumps([key, context], sort_keys=True, default=str)
         row_id = table_id + "-" + hashlib.sha256(str(key).encode()).hexdigest()[:12]
-        cells = "".join(f"<td data-label='{e(f.label)}' class='{'secondary' if i > 2 else ''}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
+        cells = "".join(f"<td data-label='{e(f.label)}' class='{column_classes[i]}'>{value_html(row, f)}</td>" for i, f in enumerate(columns))
         drawer_fields = tuple(dict.fromkeys((*IDENTITY, *columns, *extra, *EVIDENCE)))
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
         message = "Sin registros en este scope." if page.state == "AVAILABLE" else "NO_VERIFICADO · evidencia aún no publicada o lectura no disponible."
         body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{e(message)}</td></tr>")
-    heads = "".join(f"<th scope='col' class='{'secondary' if i > 2 else ''}'>{e(f.label)}</th>" for i, f in enumerate(columns))
+    heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
     provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge(page.state)}"
     if page.as_of:
         provenance += f" · {e(clock(page.as_of))}"
