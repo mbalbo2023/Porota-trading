@@ -16,7 +16,12 @@
   "integration_owner_release_observed": false,
   "write_owner": null,
   "deploy_owner": null,
-  "lease": null,
+  "lease": {
+    "token": "rc6-hourly-2026-10-06T13:22:12.298Z-pncllo2b2q",
+    "holder": "SUPERVISOR_AUTOMATICO_GITHUB",
+    "acquired_at": "2026-10-06T13:22:12.298Z",
+    "expires_at": "2026-10-06T13:42:12.298Z"
+  },
   "pending_action": "WAIT_FOR_RECOVERED_CODEX_FINAL_DELIVERY_AND_OWNER_RELEASE",
   "predeploy": null,
   "deploy": null,
