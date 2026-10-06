@@ -187,9 +187,17 @@ def no_candidate_counter_roles():
         prior_child = {"kind": "before count", "typed": [False, 0, -0.0, 0.0, "Ñ/\0"]}
         counter = Counter(native=1)
         def callback(counter=counter, prior_child=prior_child, role=role):
-            trace.append((role, "Counter.values"))
-            prior_child["kind"] = "after original count callback"
-            del counter.values
+            caller = inspect.currentframe().f_back
+            try:
+                phase = caller.f_code.co_name
+                trace.append((role, "Counter.values", phase))
+                if phase == "_count":
+                    assert caller.f_locals["self"].objects[id(prior_child)] is prior_child
+                    prior_child["kind"] = "after original count callback"
+                    del counter.values
+                    trace.append((role, "mutated visited target", phase))
+            finally:
+                del caller
             return dict.values(counter)
         counter.values = callback
         # Distinct root members ensure no root pair is shared across roles.
@@ -214,7 +222,9 @@ def test_non_candidate_role_preserves_self_clearing_counter_count_mutation_and_f
     monkeypatch.setattr(publication._SectionScope, "eligible_role", observe)
     fixed = observed_roles(fixed_factory, fixed_values, fixed_trace)
     assert fixed == original
-    assert fixed[1] == tuple((role, "Counter.values") for role in fixed_values)
+    mutations = [event for event in fixed[1] if event[1] == "mutated visited target"]
+    assert mutations == [(role, "mutated visited target", "_count") for role in fixed_values]
+    assert any(event[1] == "Counter.values" and event[2] == "visit" for event in fixed[1])
     assert checks and all(not candidates and not eligible and objects for candidates, eligible, objects in checks)
 
 
@@ -236,9 +246,17 @@ def test_candidate_role_still_checks_final_children_after_original_count_callbac
                 return str(count)
         counter = Counter(native=1)
         def callback():
-            trace.append(("Counter.values",))
-            target["zz_callback"] = ObserveScalarState()
-            del counter.values
+            caller = inspect.currentframe().f_back
+            try:
+                phase = caller.f_code.co_name
+                trace.append(("Counter.values", phase))
+                if phase == "_count":
+                    assert caller.f_locals["self"].objects[id(target)] is target
+                    target["zz_callback"] = ObserveScalarState()
+                    del counter.values
+                    trace.append(("mutated visited target", phase))
+            finally:
+                del caller
             return dict.values(counter)
         counter.values = callback
         values["report"]["zz_counter"] = counter
@@ -257,7 +275,9 @@ def test_candidate_role_still_checks_final_children_after_original_count_callbac
     fixed = observed_roles(fixed_factory, fixed_values, fixed_trace)
     assert fixed == original
     assert checks and not any(checks)
-    assert any(event[0] == "Counter.values" for event in fixed[1])
+    assert [event for event in fixed[1] if event[0] == "mutated visited target"] == [
+        ("mutated visited target", "_count")]
+    assert any(event == ("Counter.values", "visit") for event in fixed[1])
     assert any(event[0] == "original default=str scalar count" for event in fixed[1])
 
 
