@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="6" time="1.788" timestamp="2026-10-05T06:21:47.176366+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source[False-False]" time="0.095"><failure message="AssertionError: assert {'history.sql...3630587, ...)} == {'history.sql...6406857, ...)}&#10;  &#10;  Differing items:&#10;  {'history.sqlite': ('83f98638f0aaf269f6b58fd1384d80e7e5c667989574ad2eac35714164bf5511', 33188, 12288, 1901682, 1791181308753728321, 1791181308753630587, ...)} != {'history.sqlite': ('3100ae2af5fcdf55a045af2867fb291df424c4db6edf9d941abb6f4e391a5005', 33188, 12288, 1901682, 1791181308686315786, 1791181308686406857, ...)}&#10;  Left contains 2 more items:&#10;  {'history.sqlite-shm': ('fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb',&#10;                          33188,&#10;                          32768,...&#10;  &#10;  ...Full output truncated (12 lines hidden), use '-vv' to show">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_repair_di0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c300d450&gt;
+wal = False, complete = False
+
+    @pytest.mark.parametrize("wal", [False, True])
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source(
+            tmp_path, monkeypatch, wal, complete):
+        folder, source = historical_marker(tmp_path, wal=wal, complete=complete)
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        before = inventory(folder)
+        assert observer._history_cutoff_repair_complete() is complete
+&gt;       assert inventory(folder) == before
+E       AssertionError: assert {'history.sql...3630587, ...)} == {'history.sql...6406857, ...)}
+E         
+E         Differing items:
+E         {'history.sqlite': ('83f98638f0aaf269f6b58fd1384d80e7e5c667989574ad2eac35714164bf5511', 33188, 12288, 1901682, 1791181308753728321, 1791181308753630587, ...)} != {'history.sqlite': ('3100ae2af5fcdf55a045af2867fb291df424c4db6edf9d941abb6f4e391a5005', 33188, 12288, 1901682, 1791181308686315786, 1791181308686406857, ...)}
+E         Left contains 2 more items:
+E         {'history.sqlite-shm': ('fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb',
+E                                 33188,
+E                                 32768,...
+E         
+E         ...Full output truncated (12 lines hidden), use '-vv' to show
+
+tests/test_rc6_observer_history_diagnostics.py:38: AssertionError</failure></testcase><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source[False-True]" time="0.011"><failure message="AssertionError: assert {'history.sql...7099858, ...)} == {'history.sql...7099858, ...)}&#10;  &#10;  Differing items:&#10;  {'history.sqlite-wal': ('370986c01ce1982a22cf6c575d6c634fde34486a9609f08b342b348af48fe3a1', 33188, 20632, 1901706, 1791181308847480019, 1791181308847144381, ...)} != {'history.sqlite-wal': ('370986c01ce1982a22cf6c575d6c634fde34486a9609f08b342b348af48fe3a1', 33188, 20632, 1901706, 1791181308847099858, 1791181308847144381, ...)}&#10;  {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977', 33188, 4096, 1901705, 1791181308847144381, 1791181308847099858, ...)} != {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af...&#10;  &#10;  ...Full output truncated (10 lines hidden), use '-vv' to show">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_repair_di1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c2da89d0&gt;
+wal = True, complete = False
+
+    @pytest.mark.parametrize("wal", [False, True])
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source(
+            tmp_path, monkeypatch, wal, complete):
+        folder, source = historical_marker(tmp_path, wal=wal, complete=complete)
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        before = inventory(folder)
+        assert observer._history_cutoff_repair_complete() is complete
+&gt;       assert inventory(folder) == before
+E       AssertionError: assert {'history.sql...7099858, ...)} == {'history.sql...7099858, ...)}
+E         
+E         Differing items:
+E         {'history.sqlite-wal': ('370986c01ce1982a22cf6c575d6c634fde34486a9609f08b342b348af48fe3a1', 33188, 20632, 1901706, 1791181308847480019, 1791181308847144381, ...)} != {'history.sqlite-wal': ('370986c01ce1982a22cf6c575d6c634fde34486a9609f08b342b348af48fe3a1', 33188, 20632, 1901706, 1791181308847099858, 1791181308847144381, ...)}
+E         {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977', 33188, 4096, 1901705, 1791181308847144381, 1791181308847099858, ...)} != {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+tests/test_rc6_observer_history_diagnostics.py:38: AssertionError</failure></testcase><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source[True-False]" time="0.008"><failure message="AssertionError: assert {'history.sql...1943062, ...)} == {'history.sql...1629795, ...)}&#10;  &#10;  Differing items:&#10;  {'history.sqlite': ('e588c7fa73aa01c94862aea8ebae13b59aa2efc00576a8e0f1745c85c053928d', 33188, 12288, 1901714, 1791181308872007812, 1791181308871943062, ...)} != {'history.sqlite': ('0df7de8dd3bd7a86e97461c83ba74ad0c5f42de19bdbe16f485c8f7cffdfa08c', 33188, 12288, 1901714, 1791181308871513728, 1791181308871629795, ...)}&#10;  Left contains 2 more items:&#10;  {'history.sqlite-shm': ('fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb',&#10;                          33188,&#10;                          32768,...&#10;  &#10;  ...Full output truncated (12 lines hidden), use '-vv' to show">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_repair_di2')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c2ef5410&gt;
+wal = False, complete = True
+
+    @pytest.mark.parametrize("wal", [False, True])
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source(
+            tmp_path, monkeypatch, wal, complete):
+        folder, source = historical_marker(tmp_path, wal=wal, complete=complete)
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        before = inventory(folder)
+        assert observer._history_cutoff_repair_complete() is complete
+&gt;       assert inventory(folder) == before
+E       AssertionError: assert {'history.sql...1943062, ...)} == {'history.sql...1629795, ...)}
+E         
+E         Differing items:
+E         {'history.sqlite': ('e588c7fa73aa01c94862aea8ebae13b59aa2efc00576a8e0f1745c85c053928d', 33188, 12288, 1901714, 1791181308872007812, 1791181308871943062, ...)} != {'history.sqlite': ('0df7de8dd3bd7a86e97461c83ba74ad0c5f42de19bdbe16f485c8f7cffdfa08c', 33188, 12288, 1901714, 1791181308871513728, 1791181308871629795, ...)}
+E         Left contains 2 more items:
+E         {'history.sqlite-shm': ('fd4c9fda9cd3f9ae7c962b0ddf37232294d55580e1aa165aa06129b8549389eb',
+E                                 33188,
+E                                 32768,...
+E         
+E         ...Full output truncated (12 lines hidden), use '-vv' to show
+
+tests/test_rc6_observer_history_diagnostics.py:38: AssertionError</failure></testcase><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source[True-True]" time="0.010"><failure message="AssertionError: assert {'history.sql...4201888, ...)} == {'history.sql...4201888, ...)}&#10;  &#10;  Differing items:&#10;  {'history.sqlite-wal': ('d13eb4a1f6bed0c35368eeef96eb4039c964216ef8645fff5665299f9c1fd82e', 33188, 20632, 1901726, 1791181308906525653, 1791181308904251432, ...)} != {'history.sqlite-wal': ('d13eb4a1f6bed0c35368eeef96eb4039c964216ef8645fff5665299f9c1fd82e', 33188, 20632, 1901726, 1791181308904201888, 1791181308904251432, ...)}&#10;  {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977', 33188, 4096, 1901725, 1791181308904251432, 1791181308904201888, ...)} != {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af...&#10;  &#10;  ...Full output truncated (10 lines hidden), use '-vv' to show">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_repair_di3')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c2edec50&gt;
+wal = True, complete = True
+
+    @pytest.mark.parametrize("wal", [False, True])
+    @pytest.mark.parametrize("complete", [False, True])
+    def test_native_observer_repair_diagnostic_reads_dated_flag_without_changing_source(
+            tmp_path, monkeypatch, wal, complete):
+        folder, source = historical_marker(tmp_path, wal=wal, complete=complete)
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        before = inventory(folder)
+        assert observer._history_cutoff_repair_complete() is complete
+&gt;       assert inventory(folder) == before
+E       AssertionError: assert {'history.sql...4201888, ...)} == {'history.sql...4201888, ...)}
+E         
+E         Differing items:
+E         {'history.sqlite-wal': ('d13eb4a1f6bed0c35368eeef96eb4039c964216ef8645fff5665299f9c1fd82e', 33188, 20632, 1901726, 1791181308906525653, 1791181308904251432, ...)} != {'history.sqlite-wal': ('d13eb4a1f6bed0c35368eeef96eb4039c964216ef8645fff5665299f9c1fd82e', 33188, 20632, 1901726, 1791181308904201888, 1791181308904251432, ...)}
+E         {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977', 33188, 4096, 1901725, 1791181308904251432, 1791181308904201888, ...)} != {'history.sqlite': ('0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+tests/test_rc6_observer_history_diagnostics.py:38: AssertionError</failure></testcase><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_missing_history_diagnostic_creates_no_database_or_directory" time="0.005"><failure message="AssertionError: assert not True&#10; +  where True = exists()&#10; +    where exists = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory').exists&#10; +      where PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory') = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory/history.sqlite').parent">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c3010a50&gt;
+
+    def test_native_observer_missing_history_diagnostic_creates_no_database_or_directory(tmp_path, monkeypatch):
+        source = tmp_path / "absent-directory" / "history.sqlite"
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        assert observer._history_cutoff_repair_complete() is False
+&gt;       assert not source.parent.exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory').exists
+E        +      where PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory') = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_missing_h0/absent-directory/history.sqlite').parent
+
+tests/test_rc6_observer_history_diagnostics.py:47: AssertionError</failure></testcase><testcase classname="tests.test_rc6_observer_history_diagnostics" name="test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed" time="0.004"><failure message="AssertionError: assert {'history.sql...8823039, ...)} == {'history.sql...8823039, ...)}&#10;  &#10;  Differing items:&#10;  {'history.sqlite': ('9701c5657ab50af3011d12e60aee872c1cf6b02731112723cd00e86e9d4bb16a', 33188, 21, 1901737, 1791181308952109754, 1791181308948823039, ...)} != {'history.sqlite': ('9701c5657ab50af3011d12e60aee872c1cf6b02731112723cd00e86e9d4bb16a', 33188, 21, 1901737, 1791181308948663678, 1791181308948823039, ...)}&#10;  Use -v to get more diff">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-248/test_native_observer_invalid_h0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f84c2edfb90&gt;
+
+    def test_native_observer_invalid_history_diagnostic_preserves_evidence_and_stays_closed(tmp_path, monkeypatch):
+        source = tmp_path / "history.sqlite"
+        source.write_bytes(b"not-a-sqlite-database")
+        monkeypatch.setenv("HIST_DB_PATH", str(source))
+        before = inventory(tmp_path)
+        assert observer._history_cutoff_repair_complete() is False
+&gt;       assert inventory(tmp_path) == before
+E       AssertionError: assert {'history.sql...8823039, ...)} == {'history.sql...8823039, ...)}
+E         
+E         Differing items:
+E         {'history.sqlite': ('9701c5657ab50af3011d12e60aee872c1cf6b02731112723cd00e86e9d4bb16a', 33188, 21, 1901737, 1791181308952109754, 1791181308948823039, ...)} != {'history.sqlite': ('9701c5657ab50af3011d12e60aee872c1cf6b02731112723cd00e86e9d4bb16a', 33188, 21, 1901737, 1791181308948663678, 1791181308948823039, ...)}
+E         Use -v to get more diff
+
+tests/test_rc6_observer_history_diagnostics.py:56: AssertionError</failure></testcase></testsuite></testsuites>

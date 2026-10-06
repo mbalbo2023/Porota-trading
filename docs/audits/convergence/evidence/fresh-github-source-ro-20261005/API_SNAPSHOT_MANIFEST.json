@@ -1,0 +1,631 @@
+{
+  "incorrect_guessed_ref_404_preserved": "integration.ref.json",
+  "operational_action_authorized": false,
+  "ownership_released_by_this_read": false,
+  "product_members": [
+    {
+      "bytes": 2777,
+      "git_blob": "4dfe11fbf8c0ea9bb8bdde3adff011ba0295ce75",
+      "git_mode": "100644",
+      "original_path": "AGENTS.md",
+      "raw_path": "product.source.AGENTS.md",
+      "sha256": "ec4ead8c78be4511851f2a5f9f94fdd083a116a0aafceaa4b41a70db6531b29e"
+    },
+    {
+      "bytes": 3885,
+      "git_blob": "b4ffad53345d88a7f6b94cac0db837bbcea33314",
+      "git_mode": "100644",
+      "original_path": "ops/policy/porota-policy.yaml",
+      "raw_path": "product.source.ops__policy__porota-policy.yaml",
+      "sha256": "dd88c6f09368323c93c13ede84225a15a8ae2e3348abec7f878f1a682c7af340"
+    },
+    {
+      "bytes": 2650,
+      "git_blob": "9c8f4869757ee434fa939d25e171e63695d93724",
+      "git_mode": "100644",
+      "original_path": "docs/releases/RC6_UNIFIED_HANDOFF_2026-10-02.md",
+      "raw_path": "product.source.docs__releases__RC6_UNIFIED_HANDOFF_2026-10-02.md",
+      "sha256": "30860e387cdd6946e4f0c59a52d531c55efa8b2e55e783521b6280403fda641a"
+    },
+    {
+      "bytes": 2887,
+      "git_blob": "4c0ca76e629bc813263f1d97d69f85a4fcb891df",
+      "git_mode": "100644",
+      "original_path": "docs/releases/RC6_UNIFIED_INPUTS_2026-10-02.json",
+      "raw_path": "product.source.docs__releases__RC6_UNIFIED_INPUTS_2026-10-02.json",
+      "sha256": "29cedc12d1b05d423daee9a6c7fd4651419c9e0a9392ca9d97e70b861e681f05"
+    },
+    {
+      "bytes": 4338,
+      "git_blob": "1ac2def49e32515f5f083e6c526383ef5506c42f",
+      "git_mode": "100644",
+      "original_path": "docs/RUNTIME_EVIDENCE_CHANNEL_RC6.md",
+      "raw_path": "product.source.docs__RUNTIME_EVIDENCE_CHANNEL_RC6.md",
+      "sha256": "b4b884a5d0ecc4bb179280d53e381e2763d55596513ebf580cd5ad4ea8e9277d"
+    }
+  ],
+  "product_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+  "queried_integration_branch": "integration/rc6-convergence-468-469-470-20261005",
+  "records": [
+    {
+      "bytes": 5798,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading"
+      ],
+      "completed_at": "2026-10-05T20:25:47.571031+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading",
+      "exit_code": 0,
+      "path": "repository.json",
+      "sha256": "897ed2faea635152346985d5758542784e1d53faeba30a6a7681c1f5bdd1e161",
+      "started_at": "2026-10-05T20:25:46.979522+00:00"
+    },
+    {
+      "bytes": 447,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915"
+      ],
+      "completed_at": "2026-10-05T20:25:47.545811+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915",
+      "exit_code": 0,
+      "path": "product.ref.json",
+      "sha256": "da41bebf419e6f4ee7de10a1786d548e436608343edb96eada46e61cd1e6537b",
+      "started_at": "2026-10-05T20:25:46.980156+00:00"
+    },
+    {
+      "bytes": 114,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/ref/heads/work/rc6-convergence-codex-20261005"
+      ],
+      "completed_at": "2026-10-05T20:25:47.560423+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/ref/heads/work/rc6-convergence-codex-20261005",
+      "exit_code": 1,
+      "path": "integration.ref.json",
+      "sha256": "e2e3c64edab172132f77ce89a0e8c190db1cd30936a096344f45893bd5b75f8a",
+      "started_at": "2026-10-05T20:25:46.980783+00:00"
+    },
+    {
+      "bytes": 21906,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/471"
+      ],
+      "completed_at": "2026-10-05T20:25:47.625249+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/471",
+      "exit_code": 0,
+      "path": "issue471.json",
+      "sha256": "f28f56d2b69450c31ccd7a3eda65740381dab861416a645ad5621928dded8479",
+      "started_at": "2026-10-05T20:25:46.981182+00:00"
+    },
+    {
+      "bytes": 6241,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/473"
+      ],
+      "completed_at": "2026-10-05T20:25:47.541071+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/473",
+      "exit_code": 0,
+      "path": "issue473.json",
+      "sha256": "e4ad94a2c072db07a7f82f532c32b99052f8490c5fbe05b3638f09727b220b40",
+      "started_at": "2026-10-05T20:25:46.981878+00:00"
+    },
+    {
+      "bytes": 20289,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/471/comments?per_page=100&page=1"
+      ],
+      "completed_at": "2026-10-05T20:25:47.932632+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/471/comments?per_page=100&page=1",
+      "exit_code": 0,
+      "path": "issue471.comments.page1.json",
+      "sha256": "7b2e7a7c379dcee38ff02e089dea890731653f7705a06568a7436a7b7f0bcadf",
+      "started_at": "2026-10-05T20:25:47.541262+00:00"
+    },
+    {
+      "bytes": 31988,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/473/comments?per_page=100&page=1"
+      ],
+      "completed_at": "2026-10-05T20:25:48.183568+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/473/comments?per_page=100&page=1",
+      "exit_code": 0,
+      "path": "issue473.comments.page1.json",
+      "sha256": "15e038c6ddc83084db2fb6737380e9e1aa77878640467186b2b88e24f49d56f1",
+      "started_at": "2026-10-05T20:25:47.545945+00:00"
+    },
+    {
+      "bytes": 786332,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/pulls?state=open&per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:25:48.470074+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/pulls?state=open&per_page=100",
+      "exit_code": 0,
+      "path": "open-pulls.json",
+      "sha256": "040f6c4c67ab3fce1fd5f7a89673bbe79f60f9f17ded0d49071b5852d5a3a384",
+      "started_at": "2026-10-05T20:25:47.560470+00:00"
+    },
+    {
+      "bytes": 398883,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs?per_page=30"
+      ],
+      "completed_at": "2026-10-05T20:25:49.230653+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs?per_page=30",
+      "exit_code": 0,
+      "path": "actions.recent-runs.json",
+      "sha256": "c285b497e6dd6c1ac3361a91011424d5b292646045802130b722e108b0cfee0d",
+      "started_at": "2026-10-05T20:25:47.571165+00:00"
+    },
+    {
+      "bytes": 260476,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs?branch=deploy%2Frc6-pr69-isolated-20260915&per_page=20"
+      ],
+      "completed_at": "2026-10-05T20:25:49.009919+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs?branch=deploy%2Frc6-pr69-isolated-20260915&per_page=20",
+      "exit_code": 0,
+      "path": "actions.product-runs.json",
+      "sha256": "fafcc60274c6050ec84f244cc0992b4fadc29d63c93c749535f40e580cee526e",
+      "started_at": "2026-10-05T20:25:47.625509+00:00"
+    },
+    {
+      "bytes": 61353,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/workflows?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:25:48.709094+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/workflows?per_page=100",
+      "exit_code": 0,
+      "path": "actions.workflows.json",
+      "sha256": "d60ca8adf990f9bba862965adb3bae41a98182bf51c3a2b4be1c281da6d2ed76",
+      "started_at": "2026-10-05T20:25:47.933041+00:00"
+    },
+    {
+      "bytes": 2,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/releases?per_page=10"
+      ],
+      "completed_at": "2026-10-05T20:25:48.594184+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/releases?per_page=10",
+      "exit_code": 0,
+      "path": "releases.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "started_at": "2026-10-05T20:25:48.184045+00:00"
+    },
+    {
+      "bytes": 258373,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/trees/da697c6e6c2274579f9e4a112fabc4327475dd35?recursive=1"
+      ],
+      "completed_at": "2026-10-05T20:25:50.080793+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/trees/da697c6e6c2274579f9e4a112fabc4327475dd35?recursive=1",
+      "exit_code": 0,
+      "path": "product.tree.json",
+      "sha256": "da82d9a3fd97c2d8f224b73e3b898918a189a2f98d5ef5c70713ee2aeae12c27",
+      "started_at": "2026-10-05T20:25:49.236195+00:00"
+    },
+    {
+      "bytes": 497,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/ref/heads/integration/rc6-convergence-468-469-470-20261005"
+      ],
+      "completed_at": "2026-10-05T20:27:50.565733+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/ref/heads/integration/rc6-convergence-468-469-470-20261005",
+      "exit_code": 0,
+      "path": "integration.actual.ref.json",
+      "sha256": "b0bb613dd755cc4956cf52db45b2f6fa34ff1f9cc2648af5e2b6062e3523a19b",
+      "started_at": "2026-10-05T20:27:49.912726+00:00"
+    },
+    {
+      "bytes": 36,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs?branch=integration%2Frc6-convergence-468-469-470-20261005&per_page=30"
+      ],
+      "completed_at": "2026-10-05T20:27:50.579397+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs?branch=integration%2Frc6-convergence-468-469-470-20261005&per_page=30",
+      "exit_code": 0,
+      "path": "actions.integration-runs.json",
+      "sha256": "a2790a384d7d281e7395679000c35d27768d89dbd7052f725b8f4688beb59915",
+      "started_at": "2026-10-05T20:27:49.913295+00:00"
+    },
+    {
+      "bytes": 3348,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/commits/da697c6e6c2274579f9e4a112fabc4327475dd35"
+      ],
+      "completed_at": "2026-10-05T20:27:50.603154+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/commits/da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "exit_code": 0,
+      "path": "product.commit.json",
+      "sha256": "bbb9d38410bfcd0738455d7dcd4fd08baee0cf00a24af6066017d9b48325067d",
+      "started_at": "2026-10-05T20:27:49.913917+00:00"
+    },
+    {
+      "bytes": 4975,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/comments/5986480121"
+      ],
+      "completed_at": "2026-10-05T20:27:50.710786+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/comments/5986480121",
+      "exit_code": 0,
+      "path": "issue471.owner.comment5986480121.json",
+      "sha256": "d40ab2e1190ec759bf7007487757449806965b30a67fa898da05e1cd83173bfe",
+      "started_at": "2026-10-05T20:27:49.915399+00:00"
+    },
+    {
+      "bytes": 5398,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/issues/comments/5986721421"
+      ],
+      "completed_at": "2026-10-05T20:27:50.678773+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/issues/comments/5986721421",
+      "exit_code": 0,
+      "path": "issue471.night.comment5986721421.json",
+      "sha256": "c3d1c22a816026f93db750b374434900bcaf6d9d9ee35d8353d6bb0673aabd00",
+      "started_at": "2026-10-05T20:27:49.915654+00:00"
+    },
+    {
+      "bytes": 447,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/ref/heads/ops/rc6-night-supervisor-20261005"
+      ],
+      "completed_at": "2026-10-05T20:27:51.168769+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/ref/heads/ops/rc6-night-supervisor-20261005",
+      "exit_code": 0,
+      "path": "night-supervisor.ref.json",
+      "sha256": "7ec3dc88a74ebb564506b2424df0149e41c267508f854aa0ec8dbeb50a02a1da",
+      "started_at": "2026-10-05T20:27:50.565877+00:00"
+    },
+    {
+      "bytes": 4119,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/blobs/4dfe11fbf8c0ea9bb8bdde3adff011ba0295ce75"
+      ],
+      "completed_at": "2026-10-05T20:27:51.150767+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/blobs/4dfe11fbf8c0ea9bb8bdde3adff011ba0295ce75",
+      "exit_code": 0,
+      "path": "product.blob.AGENTS.md.json",
+      "sha256": "455f2971454b647b8054b2c144075e889b3c19fdb2c8b425610e39e290129d51",
+      "started_at": "2026-10-05T20:27:50.580253+00:00"
+    },
+    {
+      "bytes": 5645,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/blobs/b4ffad53345d88a7f6b94cac0db837bbcea33314"
+      ],
+      "completed_at": "2026-10-05T20:27:51.262097+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/blobs/b4ffad53345d88a7f6b94cac0db837bbcea33314",
+      "exit_code": 0,
+      "path": "product.blob.ops__policy__porota-policy.yaml.json",
+      "sha256": "92a558aa578c3482f3a5be35612db246fa2f8639044a7a9c27237f65e323d5f8",
+      "started_at": "2026-10-05T20:27:50.603301+00:00"
+    },
+    {
+      "bytes": 3945,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/blobs/9c8f4869757ee434fa939d25e171e63695d93724"
+      ],
+      "completed_at": "2026-10-05T20:27:51.326815+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/blobs/9c8f4869757ee434fa939d25e171e63695d93724",
+      "exit_code": 0,
+      "path": "product.blob.docs__releases__RC6_UNIFIED_HANDOFF_2026-10-02.md.json",
+      "sha256": "6810cef855184158641ddcdf2a8e6d54d72c0616841d7f9bb16f198a6730b7bd",
+      "started_at": "2026-10-05T20:27:50.678967+00:00"
+    },
+    {
+      "bytes": 4273,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/blobs/4c0ca76e629bc813263f1d97d69f85a4fcb891df"
+      ],
+      "completed_at": "2026-10-05T20:27:51.211908+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/blobs/4c0ca76e629bc813263f1d97d69f85a4fcb891df",
+      "exit_code": 0,
+      "path": "product.blob.docs__releases__RC6_UNIFIED_INPUTS_2026-10-02.json.json",
+      "sha256": "45cf0666dbab1db8a4ba0a1e8a9cdd07a344890a26334aceaba2ee18c1af3497",
+      "started_at": "2026-10-05T20:27:50.711006+00:00"
+    },
+    {
+      "bytes": 6269,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/git/blobs/1ac2def49e32515f5f083e6c526383ef5506c42f"
+      ],
+      "completed_at": "2026-10-05T20:27:51.801050+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/git/blobs/1ac2def49e32515f5f083e6c526383ef5506c42f",
+      "exit_code": 0,
+      "path": "product.blob.docs__RUNTIME_EVIDENCE_CHANNEL_RC6.md.json",
+      "sha256": "57455e4b7fdeddc7aa20e7b8756555ff286aebb42f5a35f408d3593284a1efa1",
+      "started_at": "2026-10-05T20:27:51.150950+00:00"
+    },
+    {
+      "bytes": 12768,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308983612"
+      ],
+      "completed_at": "2026-10-05T20:27:51.863658+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308983612",
+      "exit_code": 0,
+      "path": "actions.run37308983612.run.json",
+      "sha256": "04fc11182f007e31cc13cccb88e5208baeade7d6b84c3fc6f12cc7424d60f79e",
+      "started_at": "2026-10-05T20:27:51.168977+00:00"
+    },
+    {
+      "bytes": 2685,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308983612/jobs?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.037256+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308983612/jobs?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37308983612.jobs.json",
+      "sha256": "070c517693c520701203767b071e608509d95282eb0e4eca3deab888fa9b7fe0",
+      "started_at": "2026-10-05T20:27:51.212094+00:00"
+    },
+    {
+      "bytes": 780,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308983612/artifacts?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:51.799739+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308983612/artifacts?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37308983612.artifacts.json",
+      "sha256": "6a41366a3ad66f3732616a1ddee8a9e57bcc21e591c34a6f6218c467d3dfe1cb",
+      "started_at": "2026-10-05T20:27:51.262228+00:00"
+    },
+    {
+      "bytes": 12783,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308106428"
+      ],
+      "completed_at": "2026-10-05T20:27:51.782554+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308106428",
+      "exit_code": 0,
+      "path": "actions.run37308106428.run.json",
+      "sha256": "decd26bea72b3abfc15d3b3711a37c48476d311ab4b10838b6af0e3362d2f004",
+      "started_at": "2026-10-05T20:27:51.327207+00:00"
+    },
+    {
+      "bytes": 1787,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308106428/jobs?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.459358+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308106428/jobs?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37308106428.jobs.json",
+      "sha256": "5b6f06020a890fcb18c7590e2b78a27064ed718cc1ed0ea8d09f16ea88577a1d",
+      "started_at": "2026-10-05T20:27:51.782753+00:00"
+    },
+    {
+      "bytes": 32,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37308106428/artifacts?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.262295+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37308106428/artifacts?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37308106428.artifacts.json",
+      "sha256": "244563f989470892c537c9a4622920af0d228ee4528f7d00c64a06d6cd95856c",
+      "started_at": "2026-10-05T20:27:51.799830+00:00"
+    },
+    {
+      "bytes": 12834,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37131712187"
+      ],
+      "completed_at": "2026-10-05T20:27:52.424140+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37131712187",
+      "exit_code": 0,
+      "path": "actions.run37131712187.run.json",
+      "sha256": "2af16f2267db8eb39af0758a8185fb55906586adf3008a64e9feea7e2dbf4717",
+      "started_at": "2026-10-05T20:27:51.801289+00:00"
+    },
+    {
+      "bytes": 5148,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37131712187/jobs?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.517057+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37131712187/jobs?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37131712187.jobs.json",
+      "sha256": "92c19a55d20bc8b5f2ac4d04bc9e74aad5cbcd0b08f9aebf3f5e06cb16e2004b",
+      "started_at": "2026-10-05T20:27:51.863897+00:00"
+    },
+    {
+      "bytes": 2309,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37131712187/artifacts?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.465187+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37131712187/artifacts?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37131712187.artifacts.json",
+      "sha256": "21185556b74000a0145781148f38710135a4650bd617f03f22c71682ba54021e",
+      "started_at": "2026-10-05T20:27:52.037402+00:00"
+    },
+    {
+      "bytes": 13117,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37125515526"
+      ],
+      "completed_at": "2026-10-05T20:27:52.786039+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37125515526",
+      "exit_code": 0,
+      "path": "actions.run37125515526.run.json",
+      "sha256": "0ac500874e297fd35c266f70f6495e359f716235db4893ca29a13eac0d95e4c5",
+      "started_at": "2026-10-05T20:27:52.262375+00:00"
+    },
+    {
+      "bytes": 3204,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37125515526/jobs?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:53.022780+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37125515526/jobs?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37125515526.jobs.json",
+      "sha256": "fac168e9bf717b47c3ae07734fe8fff2308cb8e72473d93fac5a393e4e15eee7",
+      "started_at": "2026-10-05T20:27:52.424371+00:00"
+    },
+    {
+      "bytes": 32,
+      "command": [
+        "gh",
+        "api",
+        "--method",
+        "GET",
+        "repos/mbalbo2023/Porota-trading/actions/runs/37125515526/artifacts?per_page=100"
+      ],
+      "completed_at": "2026-10-05T20:27:52.945303+00:00",
+      "endpoint": "repos/mbalbo2023/Porota-trading/actions/runs/37125515526/artifacts?per_page=100",
+      "exit_code": 0,
+      "path": "actions.run37125515526.artifacts.json",
+      "sha256": "244563f989470892c537c9a4622920af0d228ee4528f7d00c64a06d6cd95856c",
+      "started_at": "2026-10-05T20:27:52.459472+00:00"
+    }
+  ],
+  "root": "/workspace/rc6-sre-github-source-ro-20261005-202431",
+  "schema": "rc6.github-authority-source-readonly-snapshot.v1",
+  "scope": "GitHub read-only REST responses; no workflow launch/artifact/runtime/deploy validation",
+  "status": "READONLY_API_SOURCE_ONLY"
+}

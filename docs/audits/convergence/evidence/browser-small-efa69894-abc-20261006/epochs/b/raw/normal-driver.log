@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/workspace/rc6-root-efa69894-browser-20261006-source/tests/ci_trader_terminal_browser.py", line 215, in <module>
+    run(arguments.output, product_python=arguments.product_python, index=arguments.index,
+  File "/workspace/rc6-root-efa69894-browser-20261006-source/tests/ci_trader_terminal_browser.py", line 24, in run
+    prepared = prepare_native_fixture(product_python or sys.executable, output.with_name(output.name + "-native-fixture"),
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/rc6-root-efa69894-browser-20261006-source/tests/rc6_browser_prepared.py", line 264, in prepare_native_fixture
+    raise failure
+  File "/workspace/rc6-root-efa69894-browser-20261006-source/tests/rc6_browser_prepared.py", line 211, in prepare_native_fixture
+    require(monotonic() <= deadline and process.returncode == 0,
+  File "/workspace/rc6-root-efa69894-browser-20261006-source/tests/rc6_browser_ipc.py", line 45, in require
+    raise GateFailure(gate, details)
+tests.rc6_browser_ipc.GateFailure: NATIVE_PREPARATION_DID_NOT_EXIT_SUCCESSFULLY

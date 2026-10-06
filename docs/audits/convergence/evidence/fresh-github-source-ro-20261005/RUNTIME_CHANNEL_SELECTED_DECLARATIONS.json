@@ -1,0 +1,90 @@
+{
+  "blockers": [
+    "REAL_ROUTE_CALL_STATE_UNVERIFIED"
+  ],
+  "generated_at": "2026-10-05T19:50:26.104051+00:00",
+  "observer": {
+    "heartbeat_at": "2026-10-05T19:48:23.442003+00:00",
+    "last_market_data_at": "2026-10-05T19:47:57.498726+00:00",
+    "ppi_auth": "OK",
+    "process_state": "RUNNING",
+    "session_state": "MARKET_OPEN"
+  },
+  "observer_available_keys": [
+    "heartbeat_at",
+    "last_market_data_at",
+    "ppi_auth",
+    "process_state",
+    "session_state"
+  ],
+  "ppi_watch": {
+    "state": "NOT_PRESENT"
+  },
+  "ppi_watch_available_keys": [
+    "checked_at",
+    "contract_schema_version",
+    "enumeration_succeeded",
+    "mutation_attempted",
+    "owner",
+    "reason",
+    "state",
+    "systemd_presence_expectation",
+    "units"
+  ],
+  "provenance": {
+    "bundle_sha256": "e36325de597ab1c6c0c6a795eade793d885b01f4024e5983c982be69b637f8c2",
+    "candidate_sha": "9ca8cb13bfc6664597e313e5d1874710e3263ec4",
+    "deploy_sha": "NO_VERIFICADO",
+    "deploy_state_recorded_at": null,
+    "image_identity": "sha256:2c2c953081429c0e1cddef378531c3f18b8bb0494d02abb6a3364cde2bb157c7",
+    "image_tar_sha256": "3141b01932b9c81f27bb50e8040f4b47de835402bf120f3dc82c624125f9285d",
+    "manifest_schema_version": 1,
+    "tree_sha": "96a112a55ed779df3f7056b1e30d81aac8d0b791"
+  },
+  "provenance_available_keys": [
+    "bundle_sha256",
+    "candidate_sha",
+    "deploy_sha",
+    "deploy_state_recorded_at",
+    "image_identity",
+    "image_tar_sha256",
+    "manifest_schema_version",
+    "tree_sha"
+  ],
+  "provenance_missing": [
+    "deploy_sha",
+    "deploy_state_recorded_at"
+  ],
+  "publication": {
+    "consumer_contract": "FIX_COMMIT_AND_BLOB_SHA",
+    "latest_path": "runtime/evidence/latest.json",
+    "target_branch": "runtime-observability"
+  },
+  "publication_available_keys": [
+    "consumer_contract",
+    "latest_path",
+    "target_branch"
+  ],
+  "safety": {
+    "execution": "SIMULATED",
+    "mode": "PRODUCTION_PAPER",
+    "operation_mode": "PRODUCTION_PAPER",
+    "paper_shadow_only": true,
+    "real_order_route_capability": "BLOCKED",
+    "real_order_routes": "NO_VERIFICADO",
+    "real_orders_sent": 0
+  },
+  "safety_available_keys": [
+    "execution",
+    "mode",
+    "operation_mode",
+    "paper_shadow_only",
+    "real_order_route_capability",
+    "real_order_routes",
+    "real_orders_sent"
+  ],
+  "schema": "porota-runtime-evidence-v1",
+  "schema_version": 1,
+  "source_runtime_timestamp": "2026-10-05T19:48:23.442003+00:00",
+  "status": "BLOCKED"
+}

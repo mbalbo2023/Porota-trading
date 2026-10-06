@@ -1,0 +1,661 @@
+{
+  "actual_operational_master_NO_VERIFICADO": [
+    "Frozen actual dataset and hashes/member inventory",
+    "Exact actual schema ABI and rich field projection",
+    "Reviewed copy destination and shared actual runtime HIST_DB_PATH",
+    "Current consumer/cohort/session/cut and canonical coverage",
+    "Actual quote currency/provider units/factors/corporate actions/delisted series",
+    "Earlier-than2026 calendars",
+    "Actual current MAIN/WAL/SHM sizes and source write quiescence",
+    "Actual owning filesystem free bytes/inodes and runtime UID/modes",
+    "Actual compressed/unpacked image and concurrent bundle bytes",
+    "Actual retained partial copies/orphan occupation and growth margin",
+    "Financial cash/fee reserve per cash currency",
+    "Actual runtime cadence/latency/consumer benefit; no production performance or READY_PAPER claim"
+  ],
+  "automatic_initialization": [
+    {
+      "behavior": "Existing PAPER requires its own namespace/origin/dataset UUID and initial-capital profile. New PAPER is FRESH_EMPTY; historical data is never imported.",
+      "path": "cg_paper_workspace.py::runtime_store"
+    },
+    {
+      "behavior": "Parent initializer applies native PAPER DDL and missing runtime columns/indices. Children inherit POROTA_RUNTIME_SCHEMA_READY; this is not a history migration.",
+      "path": "be_paper_engine.py::PaperStore.init_db"
+    },
+    {
+      "behavior": "Canonical history initialization checks a copy, rejects legacy before source SQLite/WAL, applies native DDL only after validation, then negotiates WAL. It does not call migrate_copy.",
+      "path": "cv_history_store_adapter_hf6.py + cu_history_store_v2_hf6.py + ea_history_close_series_hf2.py"
+    },
+    {
+      "behavior": "Existing archive/provider rows pass CT validated full identity and commit before scheduling metrics. No function synthesizes 20 historical sessions from revision counts.",
+      "path": "bf_production_paper_observer.py::_download_histories_locked"
+    }
+  ],
+  "canonical_paths": {
+    "entrypoint": "porota_mode_manager.py -> Docker bv_paper_runtime.py (canonical GitHub workflow; not legacy compose entrypoint)",
+    "history_default_container": "/app/data/market_history.db",
+    "history_default_host": "/opt/porota-trading/data/market_history.db",
+    "history_override": "A future reviewed new copy target must be absolute, existing and beneath canonical DATA, shared by observer/dashboard/pretransfer. SRE owns explicit HIST_DB_PATH wiring; no target was selected here.",
+    "new_migration_destination": "NO_VERIFICADO; must be a new isolated path, never replace source or activate a partial copy.",
+    "paper_container": "/app/data/paper_v17/observer_v17.db",
+    "scratch": "artifact_root(primary PAPER database)/sqlite-read-scratch; shared by separate history captures"
+  },
+  "capacity_order": {
+    "fees_cash_reserve": "Separate financial evidence by cash currency; a filesystem byte reserve supplies no broker-fee/cash reserve proof.",
+    "future_transfer_and_migration_budget": "Measure source/copy/new destination and every retained partial/orphan + actual compressed/unpacked image + two simultaneous bundles + filesystem growth/margin + reserve on each owning filesystem. Deduct existing scratch occupation once, then add max(0,total scratch cap-occupied) as future growth. Do not count the same2GiB reserve twice.",
+    "host_residual_reserve_bytes": 2147483648,
+    "minimum_free_inode_percent": 10,
+    "read_peak_function": "snapshot_peak_bytes(MAIN,WAL,sourceSHM,allocation_unit=actual f_frsize)",
+    "reader_gate": "residual occupation + conservative next image peak <= total scratch cap; free bytes cover next allocation + reserve; free inodes retain10%. One nonblocking lease, with identified residue preserved.",
+    "static_runtime_scratch_cap_bytes": 536870912
+  },
+  "dry_run_costs": {
+    "eight_process_exits": [
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 79,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "VERSION_INSERT",
+        "wall_seconds": 0.06884137000088231
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 81,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "FULL_COMMIT",
+        "wall_seconds": 0.06106533300044248
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 84,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "FULL_CHECKPOINT",
+        "wall_seconds": 0.08034490900172386
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 82,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "CLOSE_COMMIT",
+        "wall_seconds": 0.06702083200070774
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 85,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "CLOSE_CHECKPOINT",
+        "wall_seconds": 0.06028309399698628
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 83,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "OBSERVER_ATTEMPT_COMMIT",
+        "wall_seconds": 0.06458461099828128
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 86,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "REJECTIONS_COMMIT",
+        "wall_seconds": 0.069293470998673
+      },
+      {
+        "after_retry_and_repeat": {
+          "history": {
+            "history_batch_attempts_v2": 1,
+            "history_batch_rows_v2": 1,
+            "history_canonical_v2": 1,
+            "history_close_canonical_v1": 1,
+            "history_close_versions_v1": 1,
+            "history_versions_v2": 1,
+            "saga_state": "OBSERVER_COMMITTED"
+          },
+          "observer": {
+            "history_attempt_ledger_v2": 1,
+            "history_row_rejections_v2": 1
+          }
+        },
+        "diagnostic_source_unchanged": true,
+        "exit_code": 87,
+        "repeat_new_close_versions": 0,
+        "repeat_new_versions": 0,
+        "stage": "FINAL_CHECKPOINT",
+        "wall_seconds": 0.07132708299832302
+      }
+    ],
+    "interpretation": "Synthetic offline fixture resource values, sampled every5ms plus phase captures. Default fixture scratch can be tmpfs; these are not real host disk/production capacity measurements. Disk-backed native73.6MB capture is separately measured in disk_scratch_native.json.",
+    "migration_crash_recovery": {
+      "exit_code": 88,
+      "partial_destination_counts": {
+        "history_batch_attempts_v2": 1,
+        "history_batch_rows_v2": 1,
+        "history_canonical_v2": 1,
+        "history_close_canonical_v1": 3,
+        "history_close_versions_v1": 3,
+        "history_versions_v2": 1
+      },
+      "partial_destination_preserved": true,
+      "partial_destination_publishable": false,
+      "provider_ingestion_repeated": false,
+      "resume_method": "NEW_DESTINATION_FROM_UNCHANGED_OFFLINE_SOURCE",
+      "resumed_content": {
+        "preserved": {
+          "history_close_versions_v1_legacy": 3,
+          "history_versions_v2_legacy": 9,
+          "unrelated_evidence": "preserved"
+        },
+        "quarantine_reasons": {
+          "history_close_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED"
+          ],
+          "history_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED",
+            "HISTORY_CURRENCY_AMBIGUOUS",
+            "HISTORY_CURRENCY_MAPPING_CONFLICT",
+            "HISTORY_CLOCK_AWARE_REQUIRED",
+            "HISTORY_OPEN_NONFINITE"
+          ]
+        },
+        "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+      },
+      "resumed_result": {
+        "close_only": {
+          "migrated_rows": 2,
+          "quarantined_rows": 1
+        },
+        "currency_mapping_sha256": "1084858cda56de4bbd638991c82da11fbde40ec146550e7050b1c5466f553cf1",
+        "full_ingestion_repeated": false,
+        "migrated_rows": 4,
+        "quarantined_rows": 5,
+        "source_mutation": false,
+        "source_rows": 9,
+        "state": "COPY_MIGRATED"
+      }
+    },
+    "migration_runs": [
+      {
+        "close_only": {
+          "migrated_rows": 2,
+          "quarantined_rows": 1
+        },
+        "content": {
+          "preserved": {
+            "history_close_versions_v1_legacy": 3,
+            "history_versions_v2_legacy": 9,
+            "unrelated_evidence": "preserved"
+          },
+          "quarantine_reasons": {
+            "history_close_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED"
+            ],
+            "history_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED",
+              "HISTORY_CURRENCY_AMBIGUOUS",
+              "HISTORY_CURRENCY_MAPPING_CONFLICT",
+              "HISTORY_CLOCK_AWARE_REQUIRED",
+              "HISTORY_OPEN_NONFINITE"
+            ]
+          },
+          "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+        },
+        "counts": {
+          "history_batch_attempts_v2": 4,
+          "history_batch_rows_v2": 4,
+          "history_canonical_v2": 3,
+          "history_close_canonical_v1": 2,
+          "history_close_versions_v1": 2,
+          "history_versions_v2": 4
+        },
+        "destination_inventory": {
+          "MAIN": {
+            "allocated_bytes": 151552,
+            "atime_ns": 1791181045312520174,
+            "bytes": 151552,
+            "ctime_ns": 1791181045313322844,
+            "inode": 1892990,
+            "mode": "0o100644",
+            "mtime_ns": 1791181045313322844,
+            "nlink": 1,
+            "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+          }
+        },
+        "migrated_rows": 4,
+        "quarantined_rows": 5,
+        "source_rows": 9,
+        "wall_seconds": 0.06736179700237699
+      },
+      {
+        "close_only": {
+          "migrated_rows": 2,
+          "quarantined_rows": 1
+        },
+        "content": {
+          "preserved": {
+            "history_close_versions_v1_legacy": 3,
+            "history_versions_v2_legacy": 9,
+            "unrelated_evidence": "preserved"
+          },
+          "quarantine_reasons": {
+            "history_close_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED"
+            ],
+            "history_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED",
+              "HISTORY_CURRENCY_AMBIGUOUS",
+              "HISTORY_CURRENCY_MAPPING_CONFLICT",
+              "HISTORY_CLOCK_AWARE_REQUIRED",
+              "HISTORY_OPEN_NONFINITE"
+            ]
+          },
+          "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+        },
+        "counts": {
+          "history_batch_attempts_v2": 4,
+          "history_batch_rows_v2": 4,
+          "history_canonical_v2": 3,
+          "history_close_canonical_v1": 2,
+          "history_close_versions_v1": 2,
+          "history_versions_v2": 4
+        },
+        "destination_inventory": {
+          "MAIN": {
+            "allocated_bytes": 151552,
+            "atime_ns": 1791181045365424057,
+            "bytes": 151552,
+            "ctime_ns": 1791181045365720224,
+            "inode": 1893042,
+            "mode": "0o100644",
+            "mtime_ns": 1791181045365720224,
+            "nlink": 1,
+            "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+          }
+        },
+        "migrated_rows": 4,
+        "quarantined_rows": 5,
+        "source_rows": 9,
+        "wall_seconds": 0.05765553599849227
+      },
+      {
+        "close_only": {
+          "migrated_rows": 2,
+          "quarantined_rows": 1
+        },
+        "content": {
+          "preserved": {
+            "history_close_versions_v1_legacy": 3,
+            "history_versions_v2_legacy": 9,
+            "unrelated_evidence": "preserved"
+          },
+          "quarantine_reasons": {
+            "history_close_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED"
+            ],
+            "history_migration_quarantine_v2": [
+              "HISTORY_CURRENCY_UNVERIFIED",
+              "HISTORY_CURRENCY_AMBIGUOUS",
+              "HISTORY_CURRENCY_MAPPING_CONFLICT",
+              "HISTORY_CLOCK_AWARE_REQUIRED",
+              "HISTORY_OPEN_NONFINITE"
+            ]
+          },
+          "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+        },
+        "counts": {
+          "history_batch_attempts_v2": 4,
+          "history_batch_rows_v2": 4,
+          "history_canonical_v2": 3,
+          "history_close_canonical_v1": 2,
+          "history_close_versions_v1": 2,
+          "history_versions_v2": 4
+        },
+        "destination_inventory": {
+          "MAIN": {
+            "allocated_bytes": 151552,
+            "atime_ns": 1791181045431554410,
+            "bytes": 151552,
+            "ctime_ns": 1791181045431718277,
+            "inode": 1893094,
+            "mode": "0o100644",
+            "mtime_ns": 1791181045431718277,
+            "nlink": 1,
+            "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+          }
+        },
+        "migrated_rows": 4,
+        "quarantined_rows": 5,
+        "source_rows": 9,
+        "wall_seconds": 0.056080175996612525
+      }
+    ],
+    "receipt": "rc6_audit_evidence/history_convergence/dry_run_canonical_initialization.json",
+    "resources": {
+      "available_local_disk_bytes": 6851788800,
+      "cpu_seconds_parent": 0.799323429,
+      "disk_sampler_status": "COMPLETED_WITHOUT_ERRORS",
+      "disk_samples_completed": 124,
+      "disk_sampling_interval_seconds": 0.005,
+      "peak_disk_allocated_bytes": 2215936,
+      "peak_disk_logical_bytes": 2208720,
+      "peak_rss_child_bytes": 24678400,
+      "peak_rss_parent_bytes": 58859520,
+      "probe_bundle_copies": [
+        {
+          "bytes": 2177,
+          "sha256": "a86cc4ff932e96a0b6adb62eab874b84051bcb3a6bb00f8ee0fa7111b0ee85ac"
+        },
+        {
+          "bytes": 2177,
+          "sha256": "a86cc4ff932e96a0b6adb62eab874b84051bcb3a6bb00f8ee0fa7111b0ee85ac"
+        }
+      ],
+      "production_capacity_gate": "NO_VERIFICADO; requires actual image + reserve + measured copy + two bundles",
+      "production_image_bytes": "NO_VERIFICADO",
+      "production_reserve_bytes": "NO_VERIFICADO",
+      "python_traced_peak_bytes": 2405425,
+      "wall_seconds": 0.8796389010021812
+    },
+    "sha256": "e85039bbd04292a4d682326c0f966e0536c20428d84861e4daf0954d355ec93b",
+    "source_after": {
+      "legacy-with-shm.sqlite": {
+        "-shm": {
+          "allocated_bytes": 32768,
+          "atime_ns": 1791181045261978765,
+          "bytes": 32768,
+          "ctime_ns": 1791181045262232143,
+          "inode": 1892983,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262232143,
+          "nlink": 1,
+          "sha256": "8d24635a698d622c367e6600eb0791556a734e2c42f3a697e8e83232ad7c1887"
+        },
+        "-wal": {
+          "allocated_bytes": 81920,
+          "atime_ns": 1791181045261724350,
+          "bytes": 78312,
+          "ctime_ns": 1791181045261978765,
+          "inode": 1892982,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045261978765,
+          "nlink": 1,
+          "sha256": "3db2c210da1c52508272b16eca46c769c1fb807c673f384ce0951ff003df6581"
+        },
+        "MAIN": {
+          "allocated_bytes": 4096,
+          "atime_ns": 1791181045260255589,
+          "bytes": 4096,
+          "ctime_ns": 1791181045261724350,
+          "inode": 1892981,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045261724350,
+          "nlink": 1,
+          "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+        }
+      },
+      "legacy-without-shm.sqlite": {
+        "-wal": {
+          "allocated_bytes": 81920,
+          "atime_ns": 1791181045262444549,
+          "bytes": 78312,
+          "ctime_ns": 1791181045262622843,
+          "inode": 1892985,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262622843,
+          "nlink": 1,
+          "sha256": "3db2c210da1c52508272b16eca46c769c1fb807c673f384ce0951ff003df6581"
+        },
+        "MAIN": {
+          "allocated_bytes": 4096,
+          "atime_ns": 1791181045262232143,
+          "bytes": 4096,
+          "ctime_ns": 1791181045262444549,
+          "inode": 1892984,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262444549,
+          "nlink": 1,
+          "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+        }
+      }
+    },
+    "source_before": {
+      "legacy-with-shm.sqlite": {
+        "-shm": {
+          "allocated_bytes": 32768,
+          "atime_ns": 1791181045261978765,
+          "bytes": 32768,
+          "ctime_ns": 1791181045262232143,
+          "inode": 1892983,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262232143,
+          "nlink": 1,
+          "sha256": "8d24635a698d622c367e6600eb0791556a734e2c42f3a697e8e83232ad7c1887"
+        },
+        "-wal": {
+          "allocated_bytes": 81920,
+          "atime_ns": 1791181045261724350,
+          "bytes": 78312,
+          "ctime_ns": 1791181045261978765,
+          "inode": 1892982,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045261978765,
+          "nlink": 1,
+          "sha256": "3db2c210da1c52508272b16eca46c769c1fb807c673f384ce0951ff003df6581"
+        },
+        "MAIN": {
+          "allocated_bytes": 4096,
+          "atime_ns": 1791181045260255589,
+          "bytes": 4096,
+          "ctime_ns": 1791181045261724350,
+          "inode": 1892981,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045261724350,
+          "nlink": 1,
+          "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+        }
+      },
+      "legacy-without-shm.sqlite": {
+        "-wal": {
+          "allocated_bytes": 81920,
+          "atime_ns": 1791181045262444549,
+          "bytes": 78312,
+          "ctime_ns": 1791181045262622843,
+          "inode": 1892985,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262622843,
+          "nlink": 1,
+          "sha256": "3db2c210da1c52508272b16eca46c769c1fb807c673f384ce0951ff003df6581"
+        },
+        "MAIN": {
+          "allocated_bytes": 4096,
+          "atime_ns": 1791181045262232143,
+          "bytes": 4096,
+          "ctime_ns": 1791181045262444549,
+          "inode": 1892984,
+          "mode": "0o100644",
+          "mtime_ns": 1791181045262444549,
+          "nlink": 1,
+          "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+        }
+      }
+    },
+    "source_unchanged": true
+  },
+  "explicit_copy_api": {
+    "abi_required_before_operation": "Inventory every column/type/constraint/index/trigger and metadata key from authorized actual source. The fixture migration recognizes the original 16-column FULL ABI. Provider clocks/volume kind/bases supplied as extra legacy columns are retained in the legacy table but are not automatically mapped into active FULL rows. Their projection requires explicit review before any future use.",
+    "crash_rule": "Preserve unpublished partial destination. Restart on a fresh destination from the same unchanged source; no provider request and no source rewrite.",
+    "default_row_ceiling": 1000000,
+    "default_seconds": 60,
+    "maximum_row_ceiling": 5000000,
+    "maximum_seconds": 300,
+    "native_current": "A currency-containing FULL table without legacy CLOSE_ONLY returns HISTORY_MIGRATION_ALREADY_CURRENT. This branch is not a complete native-ABI validation; required columns/constraints/indices and full-field projection still require source inventory before future operation.",
+    "path": "cu_history_store_v2_hf6.py::migrate_copy",
+    "preservation": "Transport verified MAIN+WAL; hash/stat SHM without transporting it; preserve legacy tables/unrelated data, quarantine and original-ID mapping.",
+    "source_byte_ceiling": 536870912
+  },
+  "future_operation_order": [
+    {
+      "gate": "Authorize a frozen actual offline source/cohort and record MAIN/WAL/SHM/journal hashes, mode, UID, inode, nlink, atime/mtime/ctime and complete member inventory.",
+      "step": 1
+    },
+    {
+      "gate": "Inspect actual schema/ABI and explicit quote currencies/bases/units/clocks on a verified copy. Compare current field projection; unknown/new ABI blocks compatibility and activation claims.",
+      "step": 2
+    },
+    {
+      "gate": "Measure actual source/copy/destination/image/bundle/residual byte costs, free bytes and inodes on owning filesystems. Establish financial reserves separately by cash currency.",
+      "step": 3
+    },
+    {
+      "gate": "Run reviewed migrate_copy once against a new unpublished destination with explicit mapping and bounded budgets. Retain source/legacy/quarantine/map/provenance and all physical-stage receipts.",
+      "step": 4
+    },
+    {
+      "gate": "Check exact counts and stored fields/PIT cuts, quarantine reasons, integrity, dedup/repetition and fresh-target crash recovery. Never turn revisions into missing bars or an invented20-session baseline.",
+      "step": 5
+    },
+    {
+      "gate": "Review source preservation and precise destination before any runtime switch. Pin the same reviewed HIST_DB_PATH and PRIMARY-scoped scratch root for observer/dashboard/pretransfer; missing nondefault target blocks.",
+      "step": 6
+    },
+    {
+      "gate": "Promote only the single exact artifact through existing Predeploy V2/GitHub workflow, with actual capacity/source evidence and no PPI Watch modification. This task authorizes no host/source promotion.",
+      "step": 7
+    },
+    {
+      "gate": "After an authorized future activation, verify actual consumer cohort/session/currency/bases/cut and cadence. Legacy cutoff COMPLETE/PK4 is advisory and cannot replace canonical five-field coverage or confer READY_PAPER.",
+      "step": 8
+    }
+  ],
+  "observed_integration_sha": "b2cd09efda3f42e9879ed5a6ad80e0b34cd15ccc",
+  "owned_scratch_sha": "82c8787a4b219d6dd2afa1499046bc87c8f5d157",
+  "reviewed_root_sha": "8ef58d5c016f4fbae9b6354e141e119521cdcb99",
+  "root_owned_diagnostic_fix": {
+    "receipt": "docs/audits/convergence/evidence/observer-history-diagnostic.json",
+    "root_sha": "6ccec25b",
+    "scope": "BF direct diagnostic now verified-copy read with1s budget; root owns six RED/GREEN nodes."
+  },
+  "schema": "rc6.history-future-deploy-plan.v1",
+  "scope": "REVIEW_ONLY_FUTURE_OPERATION_NO_HOST_WRITES",
+  "source_file_sha256": {
+    "cu_history_store_v2_hf6.py": "890de82a33a59dbee06bd776c5d7e41cd6554b703ab486a52b43f3a571d4b987",
+    "cv_history_store_adapter_hf6.py": "625a94f690144d61e9e00ea15400cbc3865e2f9eb6b67e0fa3ab3a823ad598d4",
+    "ea_history_close_series_hf2.py": "c50711fb49c275e3829b67ff1b7cf65706cb6fc18af58c1e767ebbe48a36fff8",
+    "rc6_audit_evidence/history_probe.py": "69327379de78fa1eb7b954b57fb1bc50ddce28a762a1a846e2233012c7ade302",
+    "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+    "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+    "tests/test_rc6_history_initialization_copy.py": "151ca150e4ad91f394ac751bc8a31327eeb4849b0ec5ae207f42f5411a2963f2",
+    "tests/test_rc6_sqlite_disk_scratch.py": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a"
+  }
+}

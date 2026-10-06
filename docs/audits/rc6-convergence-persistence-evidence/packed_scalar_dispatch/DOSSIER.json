@@ -1,0 +1,2092 @@
+{
+  "acceptance_complete": false,
+  "alien_imports": [],
+  "attempts": {
+    "network": 0,
+    "source_sqlite": 0
+  },
+  "base_sha": "d05078845cd40b37ef75744ea80a1695c2b37dbb",
+  "base_tree": "e852da3496e7356fbf0a11cc50c697d69309e6d4",
+  "big90_complete": false,
+  "change_scope": "ONLY_APPEND_EXACT_BUILTIN_CHILD_TERMINAL_DISPATCH",
+  "coverage_scope": "ONE_365_CASE_FOCAL_94_NEW_PLUS_271_OVERLAPPING_NOT_636_INDEPENDENT",
+  "current_unique_native_cases": 365,
+  "data400_opened": false,
+  "data400_scope": "Not an input to this focal; no original DATA400 all-stat snapshot is claimed.",
+  "distribution_count": 157,
+  "distribution_scope": "OWN_LOCK_NAMES_AND_VERSIONS_NOT_DISTRIBUTION_BYTE_PROOF",
+  "duplicate_native_nodes": 0,
+  "elapsed_seconds_including_pytest_setup": 10.657821763001266,
+  "existing_overlapping_native_cases": 271,
+  "horizon_complete": false,
+  "immutable_artifact_tested": false,
+  "imports_count": 98,
+  "junit": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 365
+  },
+  "junit_sha256": "b35a8255a8bf67f21c80581727e763245ddfca28355bc7bfba23738a0d08f172",
+  "launcher_argv": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-I",
+    "-B",
+    "/tmp/rc6-packed-scalar-270242dd-guards-raw/run.py"
+  ],
+  "module_cases": {
+    "tests/test_rc6_funnel_storage_codec.py": 22,
+    "tests/test_rc6_packed_capture_allocations.py": 43,
+    "tests/test_rc6_packed_scalar_dispatch.py": 94,
+    "tests/test_rc6_packed_small_container.py": 84,
+    "tests/test_rc6_packed_storage.py": 48,
+    "tests/test_rc6_packed_volatile_scalars.py": 74
+  },
+  "native_interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "native_nodes": [
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[rows-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.012,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[arrays-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.009,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[dag-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.009,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.009,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[fields-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_terminal_tokens_keep_prior_operations_cuts_bindings_entire_wire_and_full_reader[special-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_builtin_leaf_dispatch_keeps_the_exact_scalar_call_order",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[None--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[None-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[None-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[False--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[False-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[False-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[-0.0--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[-0.0-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[-0.0-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0.0--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0.0-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[0.0-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[\\xd1/~\\x00--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[\\xd1/~\\x00-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[\\xd1/~\\x00-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[2088777762826305013383505421433248765159928498094767560768466966567907815943114913697653623869995116681780213428878525675975146876371587214526472175702730555891913953087419996680723180268767436628856140023711892452752637678795425491344669368689173234993615817411607408142568097480237218228935955567196058013373877953763575571893811260380521881199158906865646938606053392886118050031944799735428431083387671119770582972636475828868993468175623745278992950200378082698016834123350187336667701102065944176539101539967232738823866030427593651674376183667313502442636985692736251100451996600824689569725191348984389234047613011826491221651463670760175217244205668540395396404626338035356013350390970159843272838740570750249568029814318270919965581026799223103588542213662268181168545768559583109699565908647069034130446538122789811975386004245926791375565757896881232014825891349839646101143284754309632642761262091805832273853416685712881460895799943803562931526946447700534506119799591992181598938403549249635436899734911318500356658140946238866331101615136443693143492746593769825639040634914004881853233821748296770156823859609045963714677955296206252171806002604826934379453346432983022263205841563476066872180487609416680806308380672--1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[2088777762826305013383505421433248765159928498094767560768466966567907815943114913697653623869995116681780213428878525675975146876371587214526472175702730555891913953087419996680723180268767436628856140023711892452752637678795425491344669368689173234993615817411607408142568097480237218228935955567196058013373877953763575571893811260380521881199158906865646938606053392886118050031944799735428431083387671119770582972636475828868993468175623745278992950200378082698016834123350187336667701102065944176539101539967232738823866030427593651674376183667313502442636985692736251100451996600824689569725191348984389234047613011826491221651463670760175217244205668540395396404626338035356013350390970159843272838740570750249568029814318270919965581026799223103588542213662268181168545768559583109699565908647069034130446538122789811975386004245926791375565757896881232014825891349839646101143284754309632642761262091805832273853416685712881460895799943803562931526946447700534506119799591992181598938403549249635436899734911318500356658140946238866331101615136443693143492746593769825639040634914004881853233821748296770156823859609045963714677955296206252171806002604826934379453346432983022263205841563476066872180487609416680806308380672-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_builtin_leaf_append_keeps_the_exact_remaining_capacity_cut[2088777762826305013383505421433248765159928498094767560768466966567907815943114913697653623869995116681780213428878525675975146876371587214526472175702730555891913953087419996680723180268767436628856140023711892452752637678795425491344669368689173234993615817411607408142568097480237218228935955567196058013373877953763575571893811260380521881199158906865646938606053392886118050031944799735428431083387671119770582972636475828868993468175623745278992950200378082698016834123350187336667701102065944176539101539967232738823866030427593651674376183667313502442636985692736251100451996600824689569725191348984389234047613011826491221651463670760175217244205668540395396404626338035356013350390970159843272838740570750249568029814318270919965581026799223103588542213662268181168545768559583109699565908647069034130446538122789811975386004245926791375565757896881232014825891349839646101143284754309632642761262091805832273853416685712881460895799943803562931526946447700534506119799591992181598938403549249635436899734911318500356658140946238866331101615136443693143492746593769825639040634914004881853233821748296770156823859609045963714677955296206252171806002604826934379453346432983022263205841563476066872180487609416680806308380672-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_container_subclass_iteration_getitem_and_scalar_order_remain_identical[dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_container_subclass_iteration_getitem_and_scalar_order_remain_identical[list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_container_subclass_iteration_getitem_and_scalar_order_remain_identical[tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonbuiltin_scalar_subclasses_keep_the_original_recursive_fallback[\\xd1/~\\x00]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonbuiltin_scalar_subclasses_keep_the_original_recursive_fallback[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonbuiltin_scalar_subclasses_keep_the_original_recursive_fallback[-0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_existing_named_and_scalar_cache_behavior_is_not_replaced_by_fresh_canonical_bytes",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-None]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-False]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value--0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-\\xd1/~\\x00]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[value-2088777762826305013383505421433248765159928498094767560768466966567907815943114913697653623869995116681780213428878525675975146876371587214526472175702730555891913953087419996680723180268767436628856140023711892452752637678795425491344669368689173234993615817411607408142568097480237218228935955567196058013373877953763575571893811260380521881199158906865646938606053392886118050031944799735428431083387671119770582972636475828868993468175623745278992950200378082698016834123350187336667701102065944176539101539967232738823866030427593651674376183667313502442636985692736251100451996600824689569725191348984389234047613011826491221651463670760175217244205668540395396404626338035356013350390970159843272838740570750249568029814318270919965581026799223103588542213662268181168545768559583109699565908647069034130446538122789811975386004245926791375565757896881232014825891349839646101143284754309632642761262091805832273853416685712881460895799943803562931526946447700534506119799591992181598938403549249635436899734911318500356658140946238866331101615136443693143492746593769825639040634914004881853233821748296770156823859609045963714677955296206252171806002604826934379453346432983022263205841563476066872180487609416680806308380672]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-None]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-False]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of--0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-\\xd1/~\\x00]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_scalar_root_capture_and_direct_append_remain_exact[as_of-2088777762826305013383505421433248765159928498094767560768466966567907815943114913697653623869995116681780213428878525675975146876371587214526472175702730555891913953087419996680723180268767436628856140023711892452752637678795425491344669368689173234993615817411607408142568097480237218228935955567196058013373877953763575571893811260380521881199158906865646938606053392886118050031944799735428431083387671119770582972636475828868993468175623745278992950200378082698016834123350187336667701102065944176539101539967232738823866030427593651674376183667313502442636985692736251100451996600824689569725191348984389234047613011826491221651463670760175217244205668540395396404626338035356013350390970159843272838740570750249568029814318270919965581026799223103588542213662268181168545768559583109699565908647069034130446538122789811975386004245926791375565757896881232014825891349839646101143284754309632642761262091805832273853416685712881460895799943803562931526946447700534506119799591992181598938403549249635436899734911318500356658140946238866331101615136443693143492746593769825639040634914004881853233821748296770156823859609045963714677955296206252171806002604826934379453346432983022263205841563476066872180487609416680806308380672]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaves_preserve_literal_occurrences_and_max_bindings_rejection[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaves_preserve_literal_occurrences_and_max_bindings_rejection[1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaves_preserve_literal_occurrences_and_max_bindings_rejection[2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaves_preserve_literal_occurrences_and_max_bindings_rejection[3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonfinite_leaf_keeps_original_rejection_and_cleans_up_binding_context[nan]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonfinite_leaf_keeps_original_rejection_and_cleans_up_binding_context[inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_nonfinite_leaf_keeps_original_rejection_and_cleans_up_binding_context[-inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_default_string_fault_order_and_reentrant_binding_context_keep_prior_behavior",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaf_path_keeps_original_public_durable_and_expansion_rejections[limits0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_direct_leaf_path_keeps_original_public_durable_and_expansion_rejections[limits1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_scalar_dispatch.py::test_prepared_static_sections_and_mutable_headers_keep_full_prior_wire_after_mutation",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[typed-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.009,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[aliases-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.01,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.011,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[large-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_cache_preserves_prior_cuts_slots_entire_wire_and_full_decode[special_keys-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[None-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[None-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[None-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[False-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[False-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[False-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[-0.0-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[-0.0-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[-0.0-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0.0-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0.0-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[0.0-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[2026-10-05T16:00:00.000001+00:00-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[2026-10-05T16:00:00.000001+00:00-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[2026-10-05T16:00:00.000001+00:00-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[\\xd1/\\x00-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[\\xd1/\\x00-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[\\xd1/\\x00-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[value7-as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[value7-payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_volatile_root_keeps_exact_single_literal_and_no_context_between_calls[value7-elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_binding_reuse_removes_only_repeat_canonical_dispatch_within_one_capture",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_cache_budget_exhaustion_only_falls_back_and_keeps_all_literals[0-1024]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_cache_budget_exhaustion_only_falls_back_and_keeps_all_literals[1-1024]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_cache_budget_exhaustion_only_falls_back_and_keeps_all_literals[16-0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_cache_budget_exhaustion_only_falls_back_and_keeps_all_literals[16-6]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_cache_budget_exhaustion_only_falls_back_and_keeps_all_literals[16-12]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[2026-10-05T16:00:00.000001+00:00]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[-0.0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1\\xd1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[1044388881413152506691752710716624382579964249047383780384233483283953907971557456848826811934997558340890106714439262837987573438185793607263236087851365277945956976543709998340361590134383718314428070011855946226376318839397712745672334684344586617496807908705803704071284048740118609114467977783598029006686938976881787785946905630190260940599579453432823469303026696443059025015972399867714215541693835559885291486318237914434496734087811872639496475100189041349008417061675093668333850551032972088269550769983616369411933015213796825837188091833656751221318492846368125550225998300412344784862595674492194617023806505913245610825731835380087608622102834270197698202313169017678006675195485079921636419370285375124784014907159135459982790513399611551794271106831134090584272884279791554849782954323534517065223269061394905987693002122963395687782878948440616007412945674919823050571642377154816321380631045902916136926708342856440730447899971901781465763473223850267253059899795996090799469201774624817718449867455659250178329070473119433165550807568221846571746373296884912819520317457002440926616910874148385078411929804522981857338977648103126085903001302413467189726673216491511131602920781738033436090243804708340403154190336]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[value5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_noneligible_binding_values_keep_fresh_original_canonical_fallback[value6]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_default_string_and_mutable_nested_bindings_are_not_reused_across_capture_calls",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_caller_named_cache_and_plain_scalar_cache_cannot_supply_binding_bytes",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_reuse_cannot_coalesce_or_remove_literal_slots_under_max_bindings[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_reuse_cannot_coalesce_or_remove_literal_slots_under_max_bindings[1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_reuse_cannot_coalesce_or_remove_literal_slots_under_max_bindings[2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_private_reuse_cannot_coalesce_or_remove_literal_slots_under_max_bindings[3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_nonfinite_binding_failure_retains_prior_rejection_and_discards_context[nan]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_nonfinite_binding_failure_retains_prior_rejection_and_discards_context[inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_nonfinite_binding_failure_retains_prior_rejection_and_discards_context[-inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_failed_default_string_discards_private_context_and_preserves_the_original_exception",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_reentrant_capture_restores_outer_context_after_inner_success_or_failure[False]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_reentrant_capture_restores_outer_context_after_inner_success_or_failure[True]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_volatile_scalars.py::test_prepared_sections_and_mutable_headers_preserve_prior_full_bytes_after_external_mutation",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False--1-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False--1-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False--1-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False--1-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False--1-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-0-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-0-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-0-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-0-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-0-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-1-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-1-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-1-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-1-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[False-1-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True--1-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True--1-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True--1-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True--1-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True--1-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-0-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-0-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-0-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-0-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-0-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-1-dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-1-list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-1-tuple]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-1-empty_dict]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_whole_plain_block_keeps_prior_cuts_at_exact_remaining_capacity[True-1-empty_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fitting_plain_scalar_block_removes_only_internal_append_dispatches",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_preexisting_oversized_token_keeps_prior_soft_target_flush[value0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_preexisting_oversized_token_keeps_prior_soft_target_flush[value1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_preexisting_oversized_token_keeps_prior_soft_target_flush[value2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_preexisting_oversized_token_keeps_prior_soft_target_flush[value3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_private_shortcut_bounds_still_preserve_prior_wire_at_their_last_eligible_value[value0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_private_shortcut_bounds_still_preserve_prior_wire_at_their_last_eligible_value[value1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_private_shortcut_bounds_still_preserve_prior_wire_at_their_last_eligible_value[value2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_private_shortcut_bounds_still_preserve_prior_wire_at_their_last_eligible_value[value3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value4]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value6]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value7]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value8]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value9]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value10]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value11]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value12]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value13]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_subclasses_bindings_nonjson_and_larger_values_keep_original_walk[value14]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[dag-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.005,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[subclasses-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.004,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-63]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-65]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fast_plain_append_preserves_alias_fields_full_envelope_and_public_decode[default_str-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fresh_short_named_plain_capture_is_reused_only_after_the_strict_filter",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_caller_cached_short_capture_cannot_supply_new_plain_bytes_or_hide_mutations",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fitting_plain_child_preserves_existing_pending_literal_capacity_guard[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fitting_plain_child_preserves_existing_pending_literal_capacity_guard[1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_fitting_plain_child_preserves_existing_pending_literal_capacity_guard[2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_plain_static_sections_freeze_and_mutable_roots_match_prior_entire_wire",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_canonical_plain_block_preserves_public_nonfinite_rejection[nan]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_canonical_plain_block_preserves_public_nonfinite_rejection[inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_small_container.py::test_canonical_plain_block_preserves_public_nonfinite_rejection[-inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[17-dag]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[17-subclasses]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.003,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[17-default_str]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[65536-dag]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[65536-subclasses]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_preserves_legacy_identity_graph_order_captures_and_wire[65536-default_str]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_skips_only_scalar_dispatches_while_preserving_all_container_arrivals",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_container_prefilter_keeps_cycle_metadata_finite_and_public_shape_rejection",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.015,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.012,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.012,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.006,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[typed-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.015,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.013,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.012,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.011,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[volatile-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[named-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-5]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-17]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.007,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_legacy_chunks_markers_and_compressed_wire[large_token-65536]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_volatile_root_sections_remain_single_exact_literal_capture[as_of]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_volatile_root_sections_remain_single_exact_literal_capture[payload]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_volatile_root_sections_remain_single_exact_literal_capture[elapsed_seconds]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_volatile_root_sections_remain_single_exact_literal_capture[known_at]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard[0]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard[1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard[2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard[3]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_combined_literal_capacity_guard[4]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.124,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_plain_token_allocations_are_bounded_by_output_chunks_not_json_tokens",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.002,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_prepared_capture_freezes_static_bytes_and_recaptures_mutable_headers",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_nonfinite_rejection[nan]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_nonfinite_rejection[inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_preserves_nonfinite_rejection[-inf]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion[cycle]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion[depth]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion[nodes]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_direct_capture_keeps_shape_limits_before_recursion[key]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 3.941,
+      "node_id": "tests/test_rc6_packed_capture_allocations.py::test_native_worker_publication_full_reader_and_projection_keep_the_same_cut",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.201,
+      "node_id": "tests/test_rc6_packed_storage.py::test_packed_native_aliases_preserve_all_occurrences_types_unicode_clocks_and_full_ascii_sha",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.257,
+      "node_id": "tests/test_rc6_packed_storage.py::test_prepared_packed_header_updates_are_exact_and_do_not_mutate_static_or_prior_encoded_values",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.089,
+      "node_id": "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema[rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.093,
+      "node_id": "tests/test_rc6_packed_storage.py::test_dual_reader_reports_the_actual_storage_schema[rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-False-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[False-True-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-False-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.008,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.009,
+      "node_id": "tests/test_rc6_packed_storage.py::test_both_storage_versions_preserve_signed_zero_nested_repetitions_and_scalar_types[True-True-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.119,
+      "node_id": "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.083,
+      "node_id": "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[False-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.087,
+      "node_id": "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v1]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.09,
+      "node_id": "tests/test_rc6_packed_storage.py::test_native_publisher_and_full_committed_reader_preserve_signed_zero_and_exact_role_digests[True-rc6.lossless-json-storage.v2]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.063,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[digest]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.035,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[boolean_size]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.034,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[small_size]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[template_count_bool]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.037,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[bindings_none]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.035,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[bindings_list]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.036,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_crc]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.041,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_base64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.036,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[packet_cid]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.041,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[array_crc]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[array_count_bool]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.037,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[ref_oob]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[ref_reorder]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[binding_oob]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_overlap]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_extra]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.037,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[instance_duplicate]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.04,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_key]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.034,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_codec]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[unknown_schema]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.036,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[trailing_packet]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_resealed_packed_wire_attacks_fail_closed_with_contractual_errors[directory_kind]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{ \"x\": 1 }]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{\"x\":1,\"x\":2}]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[{\"x\":NaN}]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_storage.py::test_full_reader_keeps_duplicate_nonfinite_depth_and_canonical_guards_after_valid_wire[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_packed_storage.py::test_marker_and_independent_entry_expansion_limits_precede_unbounded_materialization",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.055,
+      "node_id": "tests/test_rc6_packed_storage.py::test_wire_validates_each_template_plan_once_and_hashes_every_reference",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.042,
+      "node_id": "tests/test_rc6_packed_storage.py::test_durable_size_guard_counts_the_actual_complete_canonical_envelope_once",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.045,
+      "node_id": "tests/test_rc6_packed_storage.py::test_deadline_is_checked_inside_packets_and_references",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.038,
+      "node_id": "tests/test_rc6_packed_storage.py::test_original_envelope_gzip_frames_restore_every_field_without_an_encoder",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.167,
+      "node_id": "tests/test_rc6_packed_storage.py::test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_actual_role_proofs",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.082,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_lossless_storage_preserves_types_escaped_keys_every_row_and_logical_digest",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.032,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[digest]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.033,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[smaller_expansion]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.032,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[boolean_size]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.03,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[base64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.035,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[crc]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.032,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[duplicate_logical_key]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.056,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[future_schema]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.033,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[noncanonical_json]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.035,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[depth]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.039,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_rehashed_storage_cannot_override_logical_digest_types_expansion_or_keys[nodes]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 1.859,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_native_funnel_large_metadata_roundtrip_restarts_with_identical_complete_outputs",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.105,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_prepared_storage_is_exact_for_unicode_aliases_and_mutable_root_headers",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.001,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_shape_memo_counts_logical_alias_expansion_and_rejects_cycles",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.0,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bulk_shape_counts_every_scalar_and_enforces_depth_at_leaf_boundary",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.031,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[None]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.032,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[logical_digest]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.03,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[crc]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.052,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[deadline]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.03,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[expansion]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.03,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_bounded_parallel_hash_matches_serial_proof_and_joins_every_worker[base64]",
+      "passed": true
+    },
+    {
+      "elapsed_seconds": 0.107,
+      "node_id": "tests/test_rc6_funnel_storage_codec.py::test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_expanded_json",
+      "passed": true
+    }
+  ],
+  "new_cache_or_token_batching": false,
+  "new_native_cases": 94,
+  "overlay_count": 0,
+  "pid": 224746,
+  "post_run_process_observation": {
+    "native_pid_exists_in_proc": false,
+    "pid": 224746,
+    "receipt_returncode": 0,
+    "recorded_at": "2026-10-05T20:57:33.273091+00:00",
+    "schema": "rc6.packed-scalar-focal-process-observation.v1",
+    "scope": "FOCAL_MAIN_PID_EXIT_OBSERVATION_NOT_A_SYSTEM_WIDE_ORPHAN_SCAN"
+  },
+  "prior_271_focal_added_as_independent_cases": false,
+  "prior_oracle_blob": "d55e0164a7c7be6325ad3b12ef7bc2182cdc6bd2",
+  "publisher_performance_measured": false,
+  "pytest_argv": [
+    "-q",
+    "--strict-markers",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_rc6_packed_scalar_dispatch.py",
+    "tests/test_rc6_packed_volatile_scalars.py",
+    "tests/test_rc6_packed_small_container.py",
+    "tests/test_rc6_packed_capture_allocations.py",
+    "tests/test_rc6_packed_storage.py",
+    "tests/test_rc6_funnel_storage_codec.py",
+    "--basetemp=/workspace/rc6-packed-scalar-270242dd-fixtures",
+    "--junitxml=/tmp/rc6-packed-scalar-270242dd-guards-raw/guards.xml"
+  ],
+  "python_version": "3.11.16",
+  "receipt_sha256": "8144d39d70d054318ad6583463add9cdea97995e5c54add05f92affe4390aa2a",
+  "remaining_uncertainty": [
+    "Exact scalar branch frequency and wall/CPU cost in the native publisher remain unmeasured.",
+    "A fresh integrated uninstrumented 12000-identity PREOPEN plus OPEN caller must still complete within the original 90 seconds and 2 GiB RSS.",
+    "The normal 1201-tick horizon, recovery and 2000 archives must preserve every original logical/physical quota.",
+    "Complete UX/browser, health, immutable artifact and runtime gates remain separate.",
+    "Duplicate envelope materialization is only a source caller observation, without measured weight or implementation in this change.",
+    "The earlier TIMED auxiliary diagnostic SIGSEGV remains unattributed; its original RAW stays separate."
+  ],
+  "returncode": 0,
+  "saving_measured": false,
+  "schema": "rc6.packed-scalar-dispatch-native-dossier.v1",
+  "scope": "EXACT_SCALAR_TERMINAL_OPERATIONS_ORDER_CUTS_WIRE_AND_EXISTING_NATIVE_WRITER_READER_PROJECTION_GUARDS",
+  "source_binding": "EVERY_GIT_FILE_SHA256_MODE_AND_BLOB_ID",
+  "source_files": 1975,
+  "source_index_original_path": "/tmp/rc6-packed-scalar-270242dd-source-raw/source.index.json",
+  "source_index_sha256": "55e2684dc80566659a14398502178f79401a46f3a2c480298381339ead4194b4",
+  "source_tar_original_path": "/tmp/rc6-packed-scalar-270242dd-source-raw/source.tar",
+  "source_tar_sha256": "925666f78ae37d0879c2cbdcf2acc398f999a90d8da7d802929383715a44d322",
+  "source_unchanged": true,
+  "stored_original_count": 16,
+  "stored_originals": [
+    {
+      "classification": "EXACT_NATIVE_270_FOCAL_RAW",
+      "original_bytes": 5545,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/run.py",
+      "original_sha256": "0a4f43badd61ab519117706feb32bfe9859d2fecc20efd57faa83120ffbf7c3e",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 2300,
+      "stored_path": "run.py.gz",
+      "stored_sha256": "97a9dd3e25f2e74ed8b27a45fb463ae5b283000d7c4f5cb977a9ee8c46d1a8c6"
+    },
+    {
+      "classification": "EXACT_NATIVE_270_FOCAL_RAW",
+      "original_bytes": 1281,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/guard.log",
+      "original_sha256": "f552ec202faa5af85826208c2f388fa1b4f17bb5c14105b56c49dd2c24b51a0a",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 466,
+      "stored_path": "guard.log.gz",
+      "stored_sha256": "42e87bf49956a89c46b384fd1b6d68f4dd503ae87f70b003d259055356d8a2e6"
+    },
+    {
+      "classification": "EXACT_NATIVE_270_FOCAL_RAW",
+      "original_bytes": 11060,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/entry-preflight.json",
+      "original_sha256": "26264914f9fa6560b924ea32d74e143e2bd2ad7f161eeca23af1e7cd12390aa5",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 1990,
+      "stored_path": "entry-preflight.json.gz",
+      "stored_sha256": "86008a7bcbabd4d45532ec3afcc2743f9823da76689f4b40e6d062e08abf9313"
+    },
+    {
+      "classification": "EXACT_NATIVE_270_FOCAL_RAW",
+      "original_bytes": 71295,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/guards.xml",
+      "original_sha256": "b35a8255a8bf67f21c80581727e763245ddfca28355bc7bfba23738a0d08f172",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 5909,
+      "stored_path": "guards.xml.gz",
+      "stored_sha256": "3fef7a6b5a60aa46a982cf05aac7c6fbb9890d78bb4d6158f7d7584b05745cd9"
+    },
+    {
+      "classification": "EXACT_NATIVE_270_FOCAL_RAW",
+      "original_bytes": 36975,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/receipt.json",
+      "original_sha256": "8144d39d70d054318ad6583463add9cdea97995e5c54add05f92affe4390aa2a",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 8620,
+      "stored_path": "receipt.json.gz",
+      "stored_sha256": "6dd023fd897918a1141570da1fa56fadbd4e3dde892aad3160c101af09bee2ee"
+    },
+    {
+      "classification": "POST_RUN_MAIN_PID_OBSERVATION_NOT_PRODUCT_TEST",
+      "original_bytes": 276,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-guards-raw/post-run-process.json",
+      "original_sha256": "85d0fdb675a792d39073c7f4f7f2e5dc055ee9a98f473d80f00894a178164d64",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 241,
+      "stored_path": "post-run-process.json.gz",
+      "stored_sha256": "847c8dc5121f318f668eadf7e0c1f476ef67054323c37d718f98ae2f44dd9a94"
+    },
+    {
+      "classification": "EXACT_TESTED_WHOLE_GIT_SOURCE_INDEX",
+      "original_bytes": 617040,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-source-raw/source.index.json",
+      "original_sha256": "55e2684dc80566659a14398502178f79401a46f3a2c480298381339ead4194b4",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 190107,
+      "stored_path": "source.index.json.gz",
+      "stored_sha256": "47abbbde0c20a7895e9d504570b7b918512af977e2688f463f89f1e35877e362"
+    },
+    {
+      "classification": "EXACT_SOURCE_PREPARATION_DRIVER_NOT_NATIVE_PRODUCT",
+      "original_bytes": 4596,
+      "original_path": "/tmp/rc6-packed-scalar-270242dd-export-whole.py",
+      "original_sha256": "b71d2c1a9e4eacc679049a323fd248ff2a7d743ac0fb7cb43564ab9ffa2fbc56",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 1687,
+      "stored_path": "export-whole.py.source.gz",
+      "stored_sha256": "33090f5aad670409c35398e3efc8ae1cc388df4469ebfd4531c4523bfd0e6b23"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 31991,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/rc6_shadow_runtime/packed_storage.py",
+      "original_sha256": "f7754b12bd3b80da453e35b59aa0b5c6ac2c5d21b0f8be5a9f067a3d3633e5c5",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 8070,
+      "stored_path": "tested_packed_storage.py.source.gz",
+      "stored_sha256": "09a41d33efc40192840622abceab23b40598efd1d296b5a66addbe64437aa83d"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 18616,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/tests/test_rc6_packed_scalar_dispatch.py",
+      "original_sha256": "c68281bedf1789066465a03ef0679fc188616ee08471c8302b36c41c58ade951",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 5102,
+      "stored_path": "tested_scalar_guards.py.source.gz",
+      "stored_sha256": "04837feb5c02f466a0930be3dafa3686035cbba822973c3dd8e91c65ab0e7673"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 16388,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/tests/test_rc6_packed_volatile_scalars.py",
+      "original_sha256": "33ffcf356cf0db8fa6e776af502872a35ce1edc6f6c89fb44c49cf4ef3282b05",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 4509,
+      "stored_path": "tested_volatile_guards.py.source.gz",
+      "stored_sha256": "9d50b134231bc46e9f224884c5b9d61489275b70c938ef191d6b40a3a5a5048d"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 16376,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/tests/test_rc6_packed_capture_allocations.py",
+      "original_sha256": "89d0f3aec42785cf5f6041be746b000758765b3cdee0a85c24838af05c9df00c",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 4703,
+      "stored_path": "tested_allocation_guards.py.source.gz",
+      "stored_sha256": "09e648e978d54d0c20a36c1d4dba4cedf991c9782a88abccb44792e46a0db23f"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 5649,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/docs/audits/rc6-convergence-persistence-evidence/PACKED_SCALAR_DISPATCH_PLAN.md",
+      "original_sha256": "8c2e3c4ed7d270bfded5944963e5806bf04ecd3f507eb5849c27ccb2511706f4",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 2888,
+      "stored_path": "original_source_plan.md.gz",
+      "stored_sha256": "1026770a4e570c3ec068a2247d4c478851dac68ba1921c60c117e473149ff460"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 20883,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/requirements.lock.txt",
+      "original_sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 10197,
+      "stored_path": "requirements.lock.txt.gz",
+      "stored_sha256": "3ffcd13990308f035f561ba8e6fd0619a942ff435199e4d88c1e8e0005058eb7"
+    },
+    {
+      "classification": "EXACT_TESTED_270_GIT_BYTES",
+      "original_bytes": 458,
+      "original_path": "/workspace/rc6-packed-scalar-270242dd-source/requirements.build.lock.txt",
+      "original_sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 331,
+      "stored_path": "requirements.build.lock.txt.gz",
+      "stored_sha256": "1d6104386e6e7633597fe8f226e055a429aa449cf023923ccf74832f165d97ed"
+    },
+    {
+      "classification": "EXACT_BASELINE_ORACLE_SOURCE_NOT_NATIVE_CURRENT_CODE",
+      "original_bytes": 31553,
+      "original_path": "git:blob:d55e0164a7c7be6325ad3b12ef7bc2182cdc6bd2",
+      "original_sha256": "e437fbe6621617eef69e58a86af060e4a8b50afb6fce3e813a57acc6f34f2a6c",
+      "storage": "GZIP_MTIME_0_LOSSLESS",
+      "stored_bytes": 8003,
+      "stored_path": "prior_packed_storage.py.source.gz",
+      "stored_sha256": "35ea5b3ae717eccaa6d5ad7f156c34f3eac5910e2dd4b239ee1b5f116c921647"
+    }
+  ],
+  "structural_dispatch_counts_are_cpu_rss_or_savings_measurements": false,
+  "tested_source_sha": "270242ddd9e1f1fc8c158835304dd2ca186208f2",
+  "tested_source_tree": "6d6dc9461a772030daa2c7d614b1473ecf98903e",
+  "workstream_id": "RC6_PACKED_SCALAR_DISPATCH_20261005",
+  "wrapper_sha256": "0a4f43badd61ab519117706feb32bfe9859d2fecc20efd57faa83120ffbf7c3e"
+}

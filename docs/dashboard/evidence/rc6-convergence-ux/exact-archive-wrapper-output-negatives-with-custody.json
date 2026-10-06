@@ -1,0 +1,97 @@
+{
+  "acceptance_large_claim": false,
+  "cases": [
+    {
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-I",
+        "/workspace/porota_rc6_worktrees/ux/tests/ci_rc6_exact_archive_gate.py",
+        "--index",
+        "/tmp/rc6-ux-frozen-af71ff9e.index.json",
+        "--script",
+        "tests/ci_rc6_projection_large_browser.py",
+        "--proof",
+        "/tmp/rc6-native-18e9716d-full-slow/source.db",
+        "--",
+        "--database",
+        "/tmp/rc6-native-18e9716d-full-slow/source.db",
+        "--root",
+        "/tmp/rc6-native-18e9716d-full-slow/shadow",
+        "--output",
+        "/tmp/rc6-exact-wrapper-must-not-launch-40f"
+      ],
+      "exit_code": 2,
+      "rejected_before_harness": true
+    },
+    {
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-I",
+        "/workspace/porota_rc6_worktrees/ux/tests/ci_rc6_exact_archive_gate.py",
+        "--index",
+        "/tmp/rc6-ux-frozen-af71ff9e.index.json",
+        "--script",
+        "tests/ci_rc6_projection_large_browser.py",
+        "--proof",
+        "/tmp/rc6-native-18e9716d-full-slow/shadow/forbidden-proof.json",
+        "--",
+        "--database",
+        "/tmp/rc6-native-18e9716d-full-slow/source.db",
+        "--root",
+        "/tmp/rc6-native-18e9716d-full-slow/shadow",
+        "--output",
+        "/tmp/rc6-exact-wrapper-must-not-launch-40f"
+      ],
+      "exit_code": 2,
+      "rejected_before_harness": true
+    },
+    {
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-I",
+        "/workspace/porota_rc6_worktrees/ux/tests/ci_rc6_exact_archive_gate.py",
+        "--index",
+        "/tmp/rc6-ux-frozen-af71ff9e.index.json",
+        "--script",
+        "tests/ci_rc6_projection_large_browser.py",
+        "--proof",
+        "/workspace/porota_rc6_ux_frozen_af71ff9e/forbidden-proof.json",
+        "--",
+        "--database",
+        "/tmp/rc6-native-18e9716d-full-slow/source.db",
+        "--root",
+        "/tmp/rc6-native-18e9716d-full-slow/shadow",
+        "--output",
+        "/tmp/rc6-exact-wrapper-must-not-launch-40f"
+      ],
+      "exit_code": 2,
+      "rejected_before_harness": true
+    },
+    {
+      "command_argv": [
+        "/workspace/venv_rc6/bin/python",
+        "-I",
+        "/workspace/porota_rc6_worktrees/ux/tests/ci_rc6_exact_archive_gate.py",
+        "--index",
+        "/tmp/rc6-ux-frozen-af71ff9e.index.json",
+        "--script",
+        "tests/ci_rc6_projection_large_browser.py",
+        "--proof",
+        "/tmp/rc6-ux-large-reader-af71ff9e-source-proof.json",
+        "--",
+        "--database",
+        "/tmp/rc6-native-18e9716d-full-slow/source.db",
+        "--root",
+        "/tmp/rc6-native-18e9716d-full-slow/shadow",
+        "--output",
+        "/tmp/rc6-exact-wrapper-must-not-launch-40f"
+      ],
+      "exit_code": 2,
+      "rejected_before_harness": true
+    }
+  ],
+  "native_gate_invoked": false,
+  "probe_sha256": "d8c1df5dd6f5026b6ac84521779750359f88fbd9ae870621b9a6362e3bd313d3",
+  "schema": "rc6.exact-archive-wrapper-output-negative.v1",
+  "status": "GREEN"
+}

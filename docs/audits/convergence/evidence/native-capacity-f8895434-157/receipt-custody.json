@@ -1,0 +1,110 @@
+{
+  "schema": "rc6.native-diagnostic-raw-custody.v1",
+  "scope": "NATIVE_FROZEN157_DIAGNOSTIC_ONLY_NOT_FINAL_ACCEPTANCE",
+  "source_sha": "f8895434e216a5d8e9f13c833f1419e229a162bd",
+  "source_tree": "0b010d334b8d6b9d16a869eb1b46e9899c0ef1d9",
+  "source_files": 1557,
+  "overlay_count": 0,
+  "installed_distribution_count": 157,
+  "required_distribution_count": 157,
+  "native_returncode": 1,
+  "diagnostic_only": true,
+  "source_tar": {
+    "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/source.tar",
+    "bytes": 33382400,
+    "sha256": "3e205bd2bbbad9d50226d1501ae8467cbfd6cbba7a25ae8250486f2f23563386",
+    "packaged_in_this_receipt": false
+  },
+  "preserved_raw_files": [
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/big.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/big.log",
+      "bytes": 81,
+      "sha256": "15ccda6f6300ccefe31234f1d51dbf9d31adc5fdd2f9615591473b36008ecb2b",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/child-stacks.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/child-stacks.log",
+      "bytes": 2857,
+      "sha256": "e7e1eef4bc08f21d25756732643db132f226ba6187cb8abed4c4ffc9b681624a",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/entry-preflight.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/entry-preflight.json",
+      "bytes": 11412,
+      "sha256": "ca5ce570c563e5428f528e9bd22caa148e5cc3b2cd0d76027d2156e345d39e1f",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/native-big-result.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/native-big-result.json",
+      "bytes": 10390,
+      "sha256": "0c84715ad4fbd394d92853a4c82a419a02f8eed51e81a2c8056b2c43857b2f87",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/run-wrapper.py",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/run-wrapper.py",
+      "bytes": 8755,
+      "sha256": "bd6d9d5ca35817c384e2e048c758b16993d49b101f69c06e2c05601a4ed87731",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/source.index.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/source.index.json",
+      "bytes": 443900,
+      "sha256": "7409910d6a77248e455d3051247cb88cad830d962d9bda16583c34fad36f39a3",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/wrapper-before.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper-before.json",
+      "bytes": 12336,
+      "sha256": "aa40ed19146cfef84d1190e0e4540915157ee685b4d59fef14bf0a498ed360c1",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/wrapper-final.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper-final.json",
+      "bytes": 12738,
+      "sha256": "2e5d1d6b3225db4570a814416ad59484f5197e79bc30cde8fc7e20efd403ac08",
+      "byte_preserved": true
+    },
+    {
+      "original_path": "/tmp/rc6-v3-big-f8895434-157-raw/wrapper.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-f8895434-157/wrapper.log",
+      "bytes": 250,
+      "sha256": "d8ee6a044a60f3e6c05b8c2471c7e17f59f394326301c917b3c1fffc47a90ba1",
+      "byte_preserved": true
+    }
+  ],
+  "observed_failure": {
+    "class": "SnapshotError",
+    "caller": "evaluate_runtime_lab -> source_connection -> readonly_copy -> _read -> _check",
+    "stage": "PRIVATE_SOURCE_CAPTURE_BEFORE_LAB_SQL_BEFORE_FIRST_FSYNC_OR_CURRENT",
+    "lab_deadline_seconds": 0.25,
+    "child_elapsed_seconds": 16.330859005000093,
+    "peak_rss_bytes": 579264512,
+    "actual_probe_event_count": 11,
+    "complete_committed_cycle": false,
+    "actual_slow_fsync_exit_isolation": false
+  },
+  "custody_stat_fields": [
+    "st_dev",
+    "st_ino",
+    "st_uid",
+    "st_gid",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_atime_ns",
+    "st_mtime_ns",
+    "st_ctime_ns"
+  ],
+  "claim_boundary": "One instrumented diagnostic execution on whole committed source. The early native failure, stack and progress are preserved. Five PAPER exits occurred after FINAL and do not prove fsync isolation. No uninstrumented large pass, full horizon, final governed suite, image, artifact or runtime acceptance is claimed.",
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "runtime_validated": false
+}

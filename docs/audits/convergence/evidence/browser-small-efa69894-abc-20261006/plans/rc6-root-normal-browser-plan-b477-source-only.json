@@ -1,0 +1,413 @@
+{
+  "acceptance_complete": false,
+  "acceptance_scope": {
+    "does_not_close": [
+      "canonical12000/60000 BIG90 OPEN+resource+cleanup+bounded native import proof",
+      "LARGE request1s/4MiB on fresh BIG",
+      "artifact/runtime/Gov final aggregate"
+    ],
+    "normal_full_routes_independent_of_big": true,
+    "normal_script_requires_big_result": false,
+    "original_big_gate_unchanged": true,
+    "scope_if_success": "ROOT_SMALL_FULL_ROUTES_294_ALIASES22_INTERACTIONS_ALL_NATIVE_FAMILIES_AND_SEPARATE_HEALTH"
+  },
+  "artifact_validated": false,
+  "artifacts_expected_conditional": {
+    "browser": [
+      "PRIVATE_RAW/browser-normal/browser-gate.json or browser-failure.json",
+      "PRIVATE_RAW/browser-normal/instrumentos-{1440,1280,1024,800,600,360}.png",
+      "PRIVATE_RAW/browser-normal/native-capacity-off.png"
+    ],
+    "custody": "NoAtime Source/input/RAW reads before/after; preserve DATA stats and original artifacts; output dirs new/private/outside Source and datasets; no cleanup beyond fixture-owned lifecycle",
+    "external_dispatch": [
+      "full Source index/source.commit.raw/source.tar refs+hashes/modes",
+      "actual START/END/PIDs/env/commands/exit/reap receipts",
+      "actual stdout/stderr/JSON/XML inventories; conditional files only if present"
+    ],
+    "health": [
+      "PRIVATE_RAW/health-live-small/health-gate.json"
+    ],
+    "native95": [
+      "PRIVATE_RAW/native95-311/native95.xml and raw logs/receipt",
+      "PRIVATE_RAW/native95-312/native95.xml and raw logs/receipt"
+    ],
+    "producer": [
+      "PRIVATE_RAW/browser-normal-native-fixture/native-fixture.json (DATA_READY frame)",
+      "PRIVATE_RAW/browser-normal-native-fixture/progress.jsonl",
+      "PRIVATE_RAW/browser-normal-native-fixture/preparation-failure.json if emitted",
+      "PRIVATE_RAW/browser-normal-native-fixture-transport/launcher.json",
+      "PRIVATE_RAW/browser-normal-native-fixture-transport/stdout.raw",
+      "PRIVATE_RAW/browser-normal-native-fixture-transport/stderr.raw"
+    ]
+  },
+  "browser_coverage": {
+    "body_limit_bytes_strict": 4194304,
+    "cache_or_truncation_added": false,
+    "families": "all10 published families; first/second/final pages when actual cohort_total>=30; all pages when<30; cohort totals read from producer, not assumed equal catalog counts",
+    "futures_limit": "3 real DLR catalog contracts; observe actual published cohort population; no30-FUT stress claim",
+    "interactions": [
+      "manual refresh focus/scroll/details/currency/deep link",
+      "pending dirty filters retained",
+      "new interaction/focus while fetch outstanding retained",
+      "auto refresh paused under focused control at60s virtual clock",
+      "menu Escape",
+      "22 alias data-view",
+      "native FUT ACTIVE and durable WATCH_NO_QUOTE",
+      "exit lab and entry experiments populated",
+      "OFF capacity separate from OPEN/verification scope",
+      "cohort exact selection/aggregate stability/currency/channel/full5",
+      "unique element IDs and accessible names on all294 views"
+    ],
+    "paging": "offset0,10,total-10 when>=30; max10 groups/page; order/no overlap/selected counts stable; exact last cohort narrowed by actual currency/channel",
+    "render_limit_seconds": 1,
+    "render_scope": "driver roundtrip includes IPC/native SQLite snapshot/projection/render/HTML/UTF8 JSON",
+    "voice_scope": "DOM/accessibility and interaction behavior; no Windows Voice Access execution claim"
+  },
+  "commands_not_executed": {
+    "normal_full_browser_once_product311": "/workspace/venv_rc6/bin/python -I -B \"$ROOT_WHOLE/tests/ci_trader_terminal_browser.py\" --product-python /workspace/venv_rc6_frozen311/bin/python --product-python-version 3.11 --index \"$ROOT_INDEX\" --multifamily --output \"$PRIVATE_RAW/browser-normal\"",
+    "optional_final_root_native95": {
+      "311": "cd \"$ROOT_WHOLE\"\nGIT_DIR=/workspace/porota_rc6_convergence/.git GIT_WORK_TREE=\"$ROOT_WHOLE\" PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /workspace/venv_rc6_frozen311/bin/python -B -m pytest -vv -p no:cacheprovider tests/test_rc6_browser_product_ipc.py tests/test_rc6_projection_large_browser.py tests/test_rc6_projection_browser_diagnostic.py tests/test_rc6_browser_family_health_coverage.py tests/test_rc6_browser_prepared.py --basetemp \"$PRIVATE_RAW/native95-311/pytest\" --junitxml \"$PRIVATE_RAW/native95-311/native95.xml\"",
+      "312": "cd \"$ROOT_WHOLE\"\nGIT_DIR=/workspace/porota_rc6_convergence/.git GIT_WORK_TREE=\"$ROOT_WHOLE\" PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /workspace/venv_rc6_py312/bin/python -B -m pytest -vv -p no:cacheprovider tests/test_rc6_browser_product_ipc.py tests/test_rc6_projection_large_browser.py tests/test_rc6_projection_browser_diagnostic.py tests/test_rc6_browser_family_health_coverage.py tests/test_rc6_browser_prepared.py --basetemp \"$PRIVATE_RAW/native95-312/pytest\" --junitxml \"$PRIVATE_RAW/native95-312/native95.xml\""
+    },
+    "separate_small_live_health_once_product311": "/workspace/venv_rc6/bin/python -I -B \"$ROOT_WHOLE/tests/ci_rc6_browser_health.py\" --product-python /workspace/venv_rc6_frozen311/bin/python --product-python-version 3.11 --index \"$ROOT_INDEX\" --output \"$PRIVATE_RAW/health-live-small\""
+  },
+  "execution_environments": {
+    "driver": {
+      "executable": "/workspace/venv_rc6/bin/python",
+      "expected_installed_distributions": 158,
+      "extra": "playwright",
+      "native_product_imports_forbidden": true
+    },
+    "preflight": "actual Source/lock/env handshake before fixture or handlers; metadata names/versions only, not binary authentication",
+    "product311": {
+      "executable": "/workspace/venv_rc6_frozen311/bin/python",
+      "expected_installed_distributions": 157,
+      "expected_python": "3.11.16"
+    },
+    "product312": {
+      "executable": "/workspace/venv_rc6_py312/bin/python",
+      "expected_installed_distributions": 157,
+      "expected_python_major_minor": "3.12"
+    }
+  },
+  "health": {
+    "commercial_authority": "NO_VERIFICADO, orders0, NOT_CALLED",
+    "cut_is_not_normal_or_big_cut": true,
+    "health_wall_seconds": 2,
+    "normal_consumer_observation": "canonical conservative missing/stopped/stale NO_VERIFICADO within2s; never invent PID/READY",
+    "positive_gate": "ci_rc6_browser_health.py separate HEALTH_LIVE fixture, current actual UTC, actual dynamic_shadow child only, canonical health publication and cut after real started_at",
+    "producer_cleanup": "actual child exit0/reaped/no forced, consumer source/data custody unchanged; fixture no longer live after cleanup",
+    "transport_rpc_default_seconds": 20
+  },
+  "native95": {
+    "evidence_existing": "OWN9e36 actual95/95 per interpreter, separate Source epoch; no Root requalification",
+    "execution_policy": "Do not rerun now. On final Source run once only if required; if final governed suite already executes all95 with exact Source/env/closure receipts, use those results instead of a duplicate subset.",
+    "expected_unique_testcase_ids": 95,
+    "interpreters_sequential": [
+      "311",
+      "312"
+    ],
+    "modules_cases": {
+      "tests/test_rc6_browser_family_health_coverage.py": 18,
+      "tests/test_rc6_browser_prepared.py": 22,
+      "tests/test_rc6_browser_product_ipc.py": 35,
+      "tests/test_rc6_projection_browser_diagnostic.py": 13,
+      "tests/test_rc6_projection_large_browser.py": 7
+    }
+  },
+  "next_candidate": {
+    "raw_output": null,
+    "sha": null,
+    "source_index": null,
+    "tree": null,
+    "whole_source": null
+  },
+  "normal_native_preparation": {
+    "cap_scope": "new separate preparation infrastructure including startup/emission/flush/reap/proof; never BIG cycle SLA",
+    "catalog_total": 318,
+    "consumer_mode": "PREPARED_SMALL",
+    "final_phase": "OPEN",
+    "first_phase": "PREOPEN",
+    "fixture": "existing tests.rc6_dashboard_native_fixture.native_fixture; no handcrafted bundle/cut",
+    "future_catalog_rows": 3,
+    "future_symbols": [
+      "DLR/OCT26",
+      "DLR/NOV26",
+      "DLR/DIC26"
+    ],
+    "native_ticks": 10,
+    "non_future_family_count": 9,
+    "non_future_family_rows": 35,
+    "offline_routes": "all HTTP intercepted terminal.test; provider attempts0; orders0; NOT_CALLED; PPI Watch untouched",
+    "original_gc_policy_unchanged": true,
+    "preparation_cap_seconds": 90,
+    "producer_scope": "DATA_READY only; launcher actual exit0/reaped/no forced/COMPLETE required",
+    "sequence": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "source_and_cut_contract": "exact final Root whole RAW Git/index/modes/blobs; independent canonical full5 contracts; same CURRENT/seq10/as_of/four role digests for all browser renders",
+    "variant": "MULTIFAMILY",
+    "writers_closed_before_custody": true
+  },
+  "pending_entries": [
+    "Root final Source SHA/tree/whole index and read-only external Git authority bound to exactly that HEAD for Native95",
+    "fresh private output parents with enough reserve and actual environment preflight",
+    "Root exclusive execution slot; no simultaneous BIG/perf loads",
+    "fresh completed BIG90+both proofs remains prerequisite only for LARGE acceptance"
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.root-normal-browser-source-execution-plan.v1",
+  "scope": "SOURCE_ONLY_PLAN_NOT_EXECUTED",
+  "source_files": {
+    "rc6_trader_dashboard/navigation.py": {
+      "bytes": 4934,
+      "sha256": "29193381d9b826881ffee4af1acccb8d0b39e1c59c3626af7ab557455daf8b04",
+      "unchanged_from_own9e36": true
+    },
+    "requirements.build.lock.txt": {
+      "bytes": 458,
+      "sha256": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b",
+      "unchanged_from_own9e36": true
+    },
+    "requirements.lock.txt": {
+      "bytes": 20883,
+      "sha256": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce",
+      "unchanged_from_own9e36": true
+    },
+    "tests/ci_rc6_browser_health.py": {
+      "bytes": 4460,
+      "sha256": "3bfbf62c8126ef34fcb6f02db5973338976a5ee8299fd9d6292dca3e9ad6c90f",
+      "unchanged_from_own9e36": true
+    },
+    "tests/ci_rc6_browser_prepare.py": {
+      "bytes": 13843,
+      "sha256": "73cb1d29508612182ae58b19681b4b58c7d2c45e58138984dd8e065c2d93dd34",
+      "unchanged_from_own9e36": true
+    },
+    "tests/ci_rc6_browser_product.py": {
+      "bytes": 28393,
+      "sha256": "dd25bdaba846dfe4cac47353084b3d06fda17cddad923951fdcc5d4d1ccf3a45",
+      "unchanged_from_own9e36": true
+    },
+    "tests/ci_trader_terminal_browser.py": {
+      "bytes": 16625,
+      "sha256": "bdd7c3aff66d102464adf4accaa9bfef6948f458f602f7fdb341bf8e63d9ce8d",
+      "unchanged_from_own9e36": true
+    },
+    "tests/rc6_browser_coverage.py": {
+      "bytes": 8259,
+      "sha256": "6807789e2d3954c485bd4c4cda42b3460f751366748fb7cfa04bab7aaa1c43f9",
+      "unchanged_from_own9e36": true
+    },
+    "tests/rc6_browser_ipc.py": {
+      "bytes": 23894,
+      "sha256": "fcfd4f3e15493a1b866095ae4bb2795ea7623382faca2db42c4e0878e54f0f69",
+      "unchanged_from_own9e36": true
+    },
+    "tests/rc6_browser_prepared.py": {
+      "bytes": 17769,
+      "sha256": "004c7e2c1fca783bf68d53bd699db902472ffdaae7b05b95362af71b5b0d9ba7",
+      "unchanged_from_own9e36": true
+    },
+    "tests/rc6_dashboard_native_fixture.py": {
+      "bytes": 21193,
+      "sha256": "b857f25ab2cff55d72e062fe0e11274140d7fbd3a221cbfef2c6c4498e196643",
+      "unchanged_from_own9e36": true
+    },
+    "tests/test_rc6_browser_family_health_coverage.py": {
+      "bytes": 14731,
+      "sha256": "5845e98dec7c7da2dad196e6f642c231dfa10a080398241b8e33c83f6573e4fc",
+      "unchanged_from_own9e36": true
+    },
+    "tests/test_rc6_browser_prepared.py": {
+      "bytes": 11840,
+      "sha256": "c89e17a862b0d67d96c3778235c907615c329b89a54746cc8cdb06f05f959fa3",
+      "unchanged_from_own9e36": true
+    },
+    "tests/test_rc6_browser_product_ipc.py": {
+      "bytes": 17352,
+      "sha256": "682e9251cf1d222b9032bcdcd35b52907245ac2e343429f3c1a48e2d260c50ca",
+      "unchanged_from_own9e36": true
+    },
+    "tests/test_rc6_projection_browser_diagnostic.py": {
+      "bytes": 13197,
+      "sha256": "5d4dc9852f0db93e8d64e1aac20d52409abc259156388ec2930729c4c67ffcd6",
+      "unchanged_from_own9e36": true
+    },
+    "tests/test_rc6_projection_large_browser.py": {
+      "bytes": 2579,
+      "sha256": "09c06bf08821e3674efe4ad39a43f36c81d2ab99509031aeeae4c9c56ceda09a",
+      "unchanged_from_own9e36": true
+    }
+  },
+  "source_navigation": {
+    "aliases": {
+      "/ai-decisions": [
+        "en-vivo",
+        "decisiones"
+      ],
+      "/analisis": [
+        "analitica",
+        "performance"
+      ],
+      "/aprendizaje": [
+        "analitica",
+        "experimentos"
+      ],
+      "/config": [
+        "sistema",
+        "configuracion"
+      ],
+      "/dashboard/logs": [
+        "sistema",
+        "logs"
+      ],
+      "/historicos": [
+        "analitica",
+        "historico"
+      ],
+      "/informacion-financiera": [
+        "instrumentos",
+        "evidencia"
+      ],
+      "/infra": [
+        "sistema",
+        "resumen"
+      ],
+      "/inicio": [
+        "inicio",
+        "resumen"
+      ],
+      "/motor-trading": [
+        "trading",
+        "resumen"
+      ],
+      "/observacion": [
+        "universo",
+        "discovery"
+      ],
+      "/postcierre": [
+        "analitica",
+        "cierre-diario"
+      ],
+      "/reportes": [
+        "analitica",
+        "reportes"
+      ],
+      "/salud": [
+        "sistema",
+        "salud"
+      ],
+      "/scalping": [
+        "trading",
+        "scalping"
+      ],
+      "/scheduler": [
+        "sistema",
+        "scheduler"
+      ],
+      "/sre": [
+        "sistema",
+        "salud"
+      ],
+      "/telegram": [
+        "sistema",
+        "workers"
+      ],
+      "/testing": [
+        "sistema",
+        "evidencia"
+      ],
+      "/universo-operativo": [
+        "universo",
+        "resumen"
+      ],
+      "/validacion": [
+        "analitica",
+        "experimentos"
+      ],
+      "/vivo": [
+        "en-vivo",
+        "resumen"
+      ]
+    },
+    "canonical_paths": [
+      "/",
+      "/en-vivo",
+      "/en-vivo/oportunidades",
+      "/en-vivo/decisiones",
+      "/en-vivo/posiciones",
+      "/en-vivo/cierres",
+      "/en-vivo/capacidad",
+      "/en-vivo/workers",
+      "/en-vivo/fuentes",
+      "/trading",
+      "/trading/equity-spot",
+      "/trading/scalping",
+      "/trading/renta-fija",
+      "/trading/derivados",
+      "/trading/tesoreria",
+      "/universo",
+      "/universo/discovery",
+      "/universo/tradeability",
+      "/universo/coverage",
+      "/universo/excluidos",
+      "/universo/familias",
+      "/instrumentos",
+      "/instrumentos/ficha",
+      "/instrumentos/contrato",
+      "/instrumentos/mercado",
+      "/instrumentos/evidencia",
+      "/riesgo",
+      "/riesgo/exposicion",
+      "/riesgo/limites",
+      "/riesgo/posiciones",
+      "/riesgo/liquidez",
+      "/riesgo/pnl",
+      "/riesgo/event-risk",
+      "/analitica",
+      "/analitica/senales",
+      "/analitica/salidas",
+      "/analitica/historico",
+      "/analitica/experimentos",
+      "/analitica/cierre-diario",
+      "/analitica/reportes",
+      "/sistema",
+      "/sistema/salud",
+      "/sistema/workers",
+      "/sistema/integraciones",
+      "/sistema/scheduler",
+      "/sistema/evidencia",
+      "/sistema/backups",
+      "/sistema/logs",
+      "/sistema/configuracion"
+    ],
+    "destinations": 8,
+    "expected_canonical_viewport_checks": 294,
+    "expected_legacy_checks": 22,
+    "height": 980,
+    "widths": [
+      1440,
+      1280,
+      1024,
+      800,
+      600,
+      360
+    ]
+  },
+  "source_reference": {
+    "sha": "b477779cd7123e03fc09845da93095fe25c90ab5",
+    "sha_is_reference_not_next_candidate": true,
+    "tree": "c0b8b8814a9051517ae3e7d471a356eccaabd88d",
+    "whole_git_files": 2337
+  }
+}

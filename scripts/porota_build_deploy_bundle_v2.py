@@ -5,31 +5,25 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import io
 import json
-import subprocess
 import tarfile
 from pathlib import Path
 
 try:
-    from scripts.porota_validate_deploy_artifact import is_runtime_relevant
-except ModuleNotFoundError:
-    from porota_validate_deploy_artifact import is_runtime_relevant
-
-METADATA_PREFIXES = ("ops/policy/", "ops/state/")
-
-
-def tracked_files(repo_root: Path) -> list[str]:
-    out = subprocess.check_output(
-        ["git", "-C", str(repo_root), "ls-files", "-z"], text=False
+    from scripts.porota_artifact_provenance import (
+        BUNDLE_MANIFEST_NAME, SOURCE_MANIFEST_NAME, bundle_manifest, canonical_bytes,
+        create_source_manifest, is_bundle_path, verify_source_manifest,
     )
-    return sorted(x.decode("utf-8") for x in out.split(b"\0") if x)
+except ModuleNotFoundError:
+    from porota_artifact_provenance import (
+        BUNDLE_MANIFEST_NAME, SOURCE_MANIFEST_NAME, bundle_manifest, canonical_bytes,
+        create_source_manifest, is_bundle_path, verify_source_manifest,
+    )
 
 
 def select_bundle_paths(paths: list[str]) -> list[str]:
-    return sorted({
-        p for p in paths
-        if is_runtime_relevant(p) or p.startswith(METADATA_PREFIXES)
-    })
+    return sorted({p for p in paths if is_bundle_path(p)})
 
 
 def sha256(path: Path) -> str:
@@ -40,25 +34,16 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_bundle(repo_root: Path, output: Path, manifest_out: Path | None = None) -> dict:
-    selected = select_bundle_paths(tracked_files(repo_root))
+def build_bundle(repo_root: Path, output: Path, manifest_out: Path | None = None,
+                 source_manifest_path: Path | None = None) -> dict:
+    source = (verify_source_manifest(repo_root, source_manifest_path)
+              if source_manifest_path else create_source_manifest(repo_root))
+    selected = [row["path"] for row in source["files"] if row["bundle_required"]]
     missing = [p for p in selected if not (repo_root / p).is_file()]
     if missing:
         raise RuntimeError("TRACKED_BUNDLE_INPUT_MISSING:" + ",".join(missing))
 
-    manifest = {
-        "schema_version": 1,
-        "status": "GREEN",
-        "files": [
-            {
-                "path": p,
-                "sha256": sha256(repo_root / p),
-                "bytes": (repo_root / p).stat().st_size,
-            }
-            for p in selected
-        ],
-    }
-    manifest["file_count"] = len(manifest["files"])
+    manifest = bundle_manifest(source)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("wb") as raw:
@@ -74,11 +59,15 @@ def build_bundle(repo_root: Path, output: Path, manifest_out: Path | None = None
                     info.gname = ""
                     with src.open("rb") as f:
                         tar.addfile(info, f)
-                data=(json.dumps(manifest,sort_keys=True,indent=2)+"\n").encode()
-                info=tarfile.TarInfo("POROTA_DEPLOY_BUNDLE_MANIFEST.json")
-                info.size=len(data); info.mtime=0; info.uid=0; info.gid=0
-                import io
-                tar.addfile(info, io.BytesIO(data))
+                for name, data in ((BUNDLE_MANIFEST_NAME, canonical_bytes(manifest)),
+                                   (SOURCE_MANIFEST_NAME, canonical_bytes(source))):
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    info.mtime = 0
+                    info.uid = 0
+                    info.gid = 0
+                    info.mode = 0o644
+                    tar.addfile(info, io.BytesIO(data))
 
     manifest["bundle_sha256"] = sha256(output)
     if manifest_out:
@@ -91,11 +80,13 @@ def main() -> int:
     ap.add_argument("--repo-root",default=".")
     ap.add_argument("--output",required=True)
     ap.add_argument("--manifest-out")
+    ap.add_argument("--source-manifest")
     args=ap.parse_args()
     result=build_bundle(
         Path(args.repo_root).resolve(),
         Path(args.output).resolve(),
         Path(args.manifest_out).resolve() if args.manifest_out else None,
+        Path(args.source_manifest).resolve() if args.source_manifest else None,
     )
     print(json.dumps(result,indent=2,sort_keys=True))
     print(f"POROTA_DEPLOY_BUNDLE_V2=GREEN|files={result['file_count']}|sha256={result['bundle_sha256']}")

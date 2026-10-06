@@ -1,0 +1,350 @@
+{
+  "baseline_sha": "0d661a6e0c95f3f43a14c1ae1483b54b18a8e526",
+  "corpus": "SYNTHETIC_OFFLINE",
+  "external_limits": [
+    "Runtime launcher wiring belongs to SRE and is not certified by this isolated helper receipt.",
+    "Actual source size/schema, filesystem free bytes/inodes, image/bundle cost and provider units: NO_VERIFICADO.",
+    "The fixture has one real historical date per instrument and five revisions; it supplies no invented 20-session coverage or READY_PAPER authority."
+  ],
+  "finding": "NEW_RUNTIME_SCRATCH_32MiB_AND_KILLED_READER_RESIDUE",
+  "rca": "The runtime observer had a 32MiB /tmp tmpfs, while the verified-copy helper used the default temporary directory. The 73,646,080-byte native MAIN cannot fit that mount. Prior offline scale tests used a larger tmpfs and did not prove runtime disk scratch.",
+  "receipts": {
+    "GREEN_DISK_NATIVE": {
+      "failures": 0,
+      "junit_sha256": "eee2c676c5358ea2286f7a9f3a5504370baeeee983db8ec0907835f2924ad25e",
+      "testcases": [
+        {
+          "properties": {
+            "large_native_measurement": {
+              "accepted_history": 12000,
+              "cpu_seconds": 1.012506499999997,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "rows_read": 12000,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                14.0
+              ],
+              "wall_seconds": 1.0129896319995169
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_60k_revisions_select_exact_12k_bars_under_two_seconds",
+          "seconds": 23.924,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "large_native_measurement": {
+              "accepted_history": 12000,
+              "cpu_seconds": 0.9770204840000005,
+              "cutoff": "2026-10-01T16:00:02.999999Z",
+              "rows_read": 12000,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                12.0
+              ],
+              "wall_seconds": 0.9771248879987979
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_PIT_cut_selects_earlier_revision_without_counting_versions_as_sessions",
+          "seconds": 1.11,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "large_native_fixture_batches": [
+              {
+                "elapsed_seconds": 3.606533322999894,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 8.09443558500061,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 12.180084507999709,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 15.516337892000593,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 19.252311549000297,
+                "rows": 10000
+              },
+              {
+                "elapsed_seconds": 22.48364316399966,
+                "rows": 10000
+              }
+            ],
+            "large_native_measurement": {
+              "accepted_history": 0,
+              "cpu_seconds": 1.9181259490000002,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "rows_read": 2086,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [
+                "history:TIME_BUDGET_EXHAUSTED"
+              ],
+              "volumes": [],
+              "wall_seconds": 1.9183043230004841
+            },
+            "large_native_source_inventory": {
+              "history.sqlite": [
+                "ef2f4f20b5200126a49f79886567286ee85df2bfc68130404d97a7f99e2ccbc0",
+                33188,
+                73646080,
+                539878,
+                1791179824119628177,
+                1791179824047628972,
+                1791179824047628972
+              ]
+            },
+            "large_native_validations_before_deadline": 2086
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_large_native_processing_timeout_publishes_no_partial_history_and_preserves_source",
+          "seconds": 2.034,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "runtime_32MiB_rejection": {
+              "partial_history": 0,
+              "quota_bytes": 33554432,
+              "source_bytes": 73646080,
+              "source_unchanged": true,
+              "wall_seconds": 0.2490180619970488
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_32MiB_quota_rejects_73MB_native_source_without_partial_history",
+          "seconds": 0.251,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "runtime_disk_scratch": {
+              "accepted_history": 12000,
+              "cpu_seconds": 0.9031946479999995,
+              "cutoff": "2026-10-02T20:00:05+00:00",
+              "estimated_peak_bytes": 74711040,
+              "filesystem": "overlay",
+              "measured_peak_scratch_bytes": 73658368,
+              "owned_session_removed": true,
+              "quota_bytes": 536870912,
+              "required_free_inode_percent": 10,
+              "required_reserve_bytes": 2147483648,
+              "rows_read": 12000,
+              "source_bytes": 73646080,
+              "source_unchanged": true,
+              "status": "NO_VERIFICADO",
+              "truncated_sources": [],
+              "unavailable_sources": [],
+              "volumes": [
+                14.0
+              ],
+              "wall_seconds": 0.9034346959997492
+            }
+          },
+          "pytest_node": "tests/test_rc6_history_large_preopen.py::test_NEW_runtime_disk_scratch_reads_exact_12k_bars_with_total_budget_and_reserve",
+          "seconds": 1.027,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "scratch_occupied_bytes": 86016
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+          "seconds": 0.007,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[bytes]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[inodes]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[symlink]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[public_root]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[unknown_residue]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[aliased_lease]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+          "seconds": 0.104,
+          "status": "PASS"
+        },
+        {
+          "properties": {
+            "scratch_kill_restart": {
+              "child_exit": -9,
+              "inspection": {
+                "allocation_unit": 4096,
+                "filesystem": "overlay",
+                "free_bytes": 28485709824,
+                "free_inodes": 2006620,
+                "max_bytes": 134217728,
+                "min_free_inode_percent": 0,
+                "mode": "0700",
+                "occupied_bytes": 86016,
+                "owner_uid": 1000,
+                "reserve_bytes": 0,
+                "residual_sessions": 1,
+                "total_inodes": 2097152
+              },
+              "next_reader_estimated_peak_bytes": 1138688,
+              "quota_bytes": 134217728,
+              "residual_bytes": 86016,
+              "residual_preserved": true,
+              "source_unchanged": true,
+              "total_estimated_bytes": 1224704
+            }
+          },
+          "pytest_node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+          "seconds": 0.076,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_main_wal_without_shm_reads_pending_rows_and_changes_no_source_metadata",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_directory_and_files_with_no_write_permissions",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_copy_honors_deadline_and_byte_budget",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[inf]",
+          "seconds": 0.001,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_nonfinite_deadline_cannot_disable_the_time_budget[nan]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_source_change_during_stream_capture_is_not_certified",
+          "seconds": 0.004,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_growing_source_cannot_write_beyond_the_inventory_byte_budget",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_platform_without_atime_preservation_fails_closed",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[symlink]",
+          "seconds": 0.005,
+          "status": "PASS"
+        },
+        {
+          "properties": {},
+          "pytest_node": "tests/test_rc6_history_snapshot_copy.py::test_U24_sidecar_alias_is_rejected_before_sqlite[hardlink]",
+          "seconds": 0.001,
+          "status": "PASS"
+        }
+      ],
+      "tests": 28
+    }
+  },
+  "runtime_contract": {
+    "environment": [
+      "POROTA_SQLITE_SCRATCH_ROOT",
+      "POROTA_SQLITE_SCRATCH_MAX_BYTES",
+      "POROTA_SQLITE_SCRATCH_RESERVE_BYTES",
+      "POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT"
+    ],
+    "file_mode": "0600",
+    "lease": "one current reader/captured source; nonblocking flock",
+    "max_total_scratch_bytes": 536870912,
+    "minimum_free_inode_percent": 10,
+    "owner": "runtime euid, bot1000",
+    "primary_dataset_root": "artifact_root(cg_paper_workspace.database_path())/sqlite-read-scratch",
+    "required_free_space_reserve_bytes": 2147483648,
+    "residue_policy": "Preserve identified derived scratch, count it toward total quota, allow another copy only under measured headroom. Unknown custody fails closed without deletion.",
+    "root_mode": "0700",
+    "sqlite_temp_store": "MEMORY on scratch connection; captured sources are never opened by SQLite"
+  },
+  "schema_version": 1,
+  "source_code_sha256": {
+    "rc6_audit_evidence/sqlite_scratch.py": "6dffababd6d851b2d43774b9dcfa8caa5fdf77513582a9b2a228d7aedcc51634",
+    "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+    "tests/test_rc6_history_large_preopen.py": "b259b56597622566899c594e58203f1348271add0836483f7211bac256602c45",
+    "tests/test_rc6_sqlite_disk_scratch.py": "22044a428c2221a0f4f2c2e7f78e4d4f366539c6cba836346c75f2c6144ca11b"
+  }
+}

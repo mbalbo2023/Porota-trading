@@ -1,0 +1,730 @@
+#!/usr/bin/env python3
+"""Generate, but never run, a fresh Source-pinned native BIG wrapper.
+
+External harness only. Historical preparers and receipts remain untouched.
+The emitted wrapper must run with the exact frozen311 interpreter. Its child
+keeps the canonical stress cycle and the native import observer unchanged.
+"""
+import argparse
+import ast
+from contextlib import contextmanager
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+
+
+WRAPPER = r'''from pathlib import Path
+from contextlib import contextmanager
+import hashlib
+import importlib.metadata
+import json
+import os
+import platform
+import re
+import sqlite3
+import stat
+import subprocess
+import sys
+import time
+
+CONFIG = __CONFIG_LITERAL__
+SOURCE = Path(CONFIG['source'])
+SOURCE_REPO = Path(CONFIG['source_repo'])
+RAW = Path(CONFIG['raw'])
+DATA = Path(CONFIG['data'])
+PIN_PATH = Path(CONFIG['index'])
+TAR_PATH = PIN_PATH.parent / 'source.tar'
+INTERPRETER = '/workspace/venv_rc6_frozen311/bin/python'
+MAX_INDEX = 32 * 1024**2
+PIN_SCHEMA = 'rc6.complete-archive-source-pin.v1'
+
+def require(value, signature):
+    if not value:
+        raise ValueError(signature)
+
+def safe_path(value):
+    path = Path(value)
+    require(path.is_absolute() and path != Path('/')
+            and '..' not in path.parts, 'CANONICAL_ABSOLUTE_PATH_REQUIRED')
+    return path
+
+@contextmanager
+def directory(value, *, readable=False):
+    path = safe_path(value)
+    descriptor = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for position, name in enumerate(path.parts[1:]):
+            final = position == len(path.parts) - 2
+            flags = os.O_NOFOLLOW | os.O_DIRECTORY | os.O_CLOEXEC
+            flags |= os.O_RDONLY | os.O_NOATIME if final and readable else os.O_PATH
+            child = os.open(name, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+def mount_id(descriptor):
+    fd = os.open('/proc/self/fdinfo/' + str(descriptor),
+                 os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        raw = os.read(fd, 4096)
+        found = re.findall(rb'^mnt_id:\s*([0-9]+)$', raw, re.MULTILINE)
+        require(len(raw) < 4096 and len(found) == 1, 'MOUNT_ID_UNAVAILABLE')
+        return int(found[0])
+    finally:
+        os.close(fd)
+
+def details(value):
+    return dict(device=value.st_dev, inode=value.st_ino, uid=value.st_uid,
+                gid=value.st_gid, mode=value.st_mode, links=value.st_nlink,
+                size=value.st_size, blocks=value.st_blocks,
+                atime_ns=value.st_atime_ns, mtime_ns=value.st_mtime_ns,
+                ctime_ns=value.st_ctime_ns)
+
+def read_file(path, *, maximum):
+    path = safe_path(path)
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                     | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            initial = os.fstat(fd)
+            require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
+                    and initial.st_uid == os.geteuid(), 'UNALIASED_OWNED_FILE_REQUIRED')
+            require(mount_id(fd) == mount_id(parent), 'FILE_MOUNT_REJECTED')
+            require(initial.st_size <= maximum, 'FILE_BUDGET_EXCEEDED')
+            blocks, total = [], 0
+            while True:
+                block = os.read(fd, min(1048576, maximum + 1 - total))
+                if not block:
+                    break
+                blocks.append(block)
+                total += len(block)
+                require(total <= maximum, 'FILE_BUDGET_EXCEEDED')
+            require(details(initial) == details(os.fstat(fd))
+                    == details(os.stat(path.name, dir_fd=parent, follow_symlinks=False)),
+                    'FILE_CHANGED_DURING_CAPTURE')
+            return b''.join(blocks), details(initial)
+        finally:
+            os.close(fd)
+
+def unique_json(raw):
+    def pairs(items):
+        result = {}
+        for name, value in items:
+            require(name not in result, 'DUPLICATE_JSON_KEY')
+            result[name] = value
+        return result
+    def constant(_value):
+        raise ValueError('NONFINITE_JSON_VALUE')
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+
+def git(*arguments, input_data=None):
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith('GIT_')}
+    environment.update(GIT_NO_REPLACE_OBJECTS='1', GIT_NO_LAZY_FETCH='1',
+                       GIT_TERMINAL_PROMPT='0')
+    return subprocess.check_output(['git', '--no-replace-objects', '-C',
+        str(SOURCE_REPO), *arguments], env=environment, input=input_data, timeout=20)
+
+def raw_tree_namespace():
+    identifiers = {CONFIG['tree']}
+    for entry in git('ls-tree', '-r', '-t', '-z', '--full-tree', CONFIG['tree']).split(b'\0'):
+        if entry:
+            header, _ = entry.split(b'\t', 1)
+            _mode, kind, identifier = header.split()
+            if kind == b'tree':
+                identifiers.add(identifier.decode())
+    request = ''.join(identifier + '\n' for identifier in sorted(identifiers)).encode()
+    batch = git('cat-file', '--batch', input_data=request)
+    cursor, trees, receipts = 0, {}, {}
+    for identifier in sorted(identifiers):
+        end = batch.index(b'\n', cursor)
+        actual, kind, size = batch[cursor:end].split()
+        length = int(size)
+        require(actual.decode() == identifier and kind == b'tree' and 0 <= length <= MAX_INDEX,
+                'RAW_GIT_TREE_HEADER_REJECTED')
+        cursor = end + 1
+        wire = batch[cursor:cursor + length]
+        cursor += length
+        require(len(wire) == length and batch[cursor:cursor + 1] == b'\n', 'RAW_GIT_TREE_TRUNCATED')
+        cursor += 1
+        require(hashlib.sha1(b'tree ' + str(length).encode() + b'\0' + wire).hexdigest()
+                == identifier, 'RAW_GIT_TREE_OBJECT_ID_MISMATCH')
+        trees[identifier] = wire
+        receipts[identifier] = {'sha256': hashlib.sha256(wire).hexdigest(), 'bytes': length}
+    require(cursor == len(batch), 'RAW_GIT_TREE_BATCH_RESIDUE')
+    files, directories = {}, {'.'}
+    def expand(identifier, prefix, ancestry):
+        require(identifier in trees and identifier not in ancestry, 'RAW_GIT_TREE_LINK_REJECTED')
+        wire, position, names = trees[identifier], 0, set()
+        while position < len(wire):
+            end = wire.index(b'\0', position)
+            mode, name = wire[position:end].split(b' ', 1)
+            name = name.decode('utf-8')
+            require(name not in ('', '.', '..') and '/' not in name and name not in names,
+                    'RAW_GIT_TREE_PATH_REJECTED')
+            names.add(name)
+            object_bytes = wire[end + 1:end + 21]
+            require(len(object_bytes) == 20, 'RAW_GIT_TREE_LINK_TRUNCATED')
+            position = end + 21
+            relative = name if prefix == '.' else prefix + '/' + name
+            if mode == b'40000':
+                require(relative not in directories, 'RAW_GIT_DIRECTORY_DUPLICATE')
+                directories.add(relative)
+                expand(object_bytes.hex(), relative, ancestry | {identifier})
+            else:
+                require(mode in (b'100644', b'100755') and relative not in files,
+                        'RAW_GIT_FILE_MODE_OR_ALIAS_REJECTED')
+                files[relative] = {'mode': mode.decode(), 'blob': object_bytes.hex()}
+        require(position == len(wire), 'RAW_GIT_TREE_PARSE_RESIDUE')
+    expand(CONFIG['tree'], '.', set())
+    return files, directories, receipts
+
+def source_authority(pin):
+    require(pin.get('schema') == PIN_SCHEMA and pin.get('source_sha') == CONFIG['sha']
+            and pin.get('source_tree') == CONFIG['tree']
+            and type(pin.get('overlay_count')) is int and pin['overlay_count'] == 0,
+            'COMPLETE_RAW_SOURCE_PIN_REQUIRED')
+    files, modes, blobs = pin.get('files'), pin.get('modes'), pin.get('blob_ids')
+    require(all(type(value) is dict for value in (files, modes, blobs))
+            and 0 < len(files) <= 100000 and set(files) == set(modes) == set(blobs),
+            'COMPLETE_SOURCE_MAPS_REQUIRED')
+    for name in files:
+        path = Path(name)
+        require(type(name) is str and path.as_posix() == name and not path.is_absolute()
+                and name not in ('', '.') and '..' not in path.parts,
+                'GIT_PATH_REJECTED')
+        require(type(files[name]) is str and re.fullmatch('[0-9a-f]{64}', files[name])
+                and modes[name] in ('100644', '100755')
+                and type(blobs[name]) is str and re.fullmatch('[0-9a-f]{40}', blobs[name]),
+                'SOURCE_MAP_VALUE_REJECTED')
+    with directory(SOURCE_REPO) as repo:
+        require(stat.S_ISDIR(os.fstat(repo).st_mode), 'EXPLICIT_SOURCE_REPO_REQUIRED')
+    commit = git('cat-file', 'commit', CONFIG['sha'])
+    require(hashlib.sha1(b'commit ' + str(len(commit)).encode() + b'\0' + commit).hexdigest()
+            == CONFIG['sha'], 'RAW_GIT_COMMIT_ID_MISMATCH')
+    require(hashlib.sha256(commit).hexdigest() == pin.get('raw_git_commit_sha256')
+            and commit.splitlines()[0] == ('tree ' + CONFIG['tree']).encode(),
+            'RAW_GIT_COMMIT_OR_TREE_MISMATCH')
+    raw_files, raw_directories, tree_receipts = raw_tree_namespace()
+    expected = {}
+    for entry in git('ls-tree', '-r', '-l', '-z', '--full-tree', CONFIG['tree']).split(b'\0'):
+        if not entry:
+            continue
+        header, name = entry.split(b'\t', 1)
+        mode, kind, blob, size = header.split()
+        name = name.decode('utf-8')
+        require(kind == b'blob' and name not in expected, 'RAW_GIT_TREE_ENTRY_REJECTED')
+        expected[name] = {'mode': mode.decode(), 'blob': blob.decode(), 'size': int(size)}
+    require(set(expected) == set(files), 'RAW_GIT_NAMESPACE_MISMATCH')
+    require(set(raw_files) == set(expected) and all(
+        row['mode'] == raw_files[name]['mode'] and row['blob'] == raw_files[name]['blob']
+        for name, row in expected.items()), 'RAW_HASHED_TREE_EXPANSION_MISMATCH')
+    require(all(row['mode'] == modes[name] and row['blob'] == blobs[name]
+                for name, row in expected.items()), 'RAW_GIT_MODES_OR_BLOBS_MISMATCH')
+    return expected, raw_directories, tree_receipts
+
+def source_snapshot(expected, pin, wanted_dirs):
+    rows = {}
+    with directory(SOURCE.parent) as parent:
+        parent_mount = mount_id(parent)
+    with directory(SOURCE, readable=True) as root:
+        root_stat = os.fstat(root)
+        require(root_stat.st_uid == os.geteuid() and mount_id(root) == parent_mount,
+                'SOURCE_ROOT_OWNER_OR_MOUNT_REJECTED')
+        source_mount = mount_id(root)
+        source_device = root_stat.st_dev
+        def walk(fd, prefix):
+            initial = os.fstat(fd)
+            require(initial.st_dev == source_device and initial.st_uid == os.geteuid()
+                    and mount_id(fd) == source_mount, 'SOURCE_DIRECTORY_OWNER_OR_MOUNT_REJECTED')
+            names = sorted(os.listdir(fd))
+            rows[prefix] = {'kind': 'directory', 'stat': details(initial), 'mount_id': source_mount}
+            for name in names:
+                relative = name if prefix == '.' else prefix + '/' + name
+                value = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                require(value.st_uid == os.geteuid() and value.st_dev == source_device,
+                        'SOURCE_MEMBER_OWNER_OR_DEVICE_REJECTED')
+                flags = os.O_NOFOLLOW | os.O_CLOEXEC
+                if stat.S_ISDIR(value.st_mode):
+                    require(relative in wanted_dirs, 'SOURCE_EXTRA_DIRECTORY')
+                    child = os.open(name, flags | os.O_RDONLY | os.O_DIRECTORY | os.O_NOATIME,
+                                    dir_fd=fd)
+                    try:
+                        require(details(os.fstat(child)) == details(value)
+                                and mount_id(child) == source_mount, 'SOURCE_DIRECTORY_ALIAS_OR_MOUNT')
+                        walk(child, relative)
+                    finally:
+                        os.close(child)
+                else:
+                    require(stat.S_ISREG(value.st_mode) and value.st_nlink == 1
+                            and relative in expected, 'SOURCE_ALIAS_OR_EXTRA_MEMBER')
+                    specification = expected[relative]
+                    require(value.st_size == specification['size'], 'SOURCE_GIT_SIZE_MISMATCH')
+                    child = os.open(name, flags | os.O_RDONLY | os.O_NOATIME | os.O_NONBLOCK,
+                                    dir_fd=fd)
+                    try:
+                        require(details(os.fstat(child)) == details(value)
+                                and mount_id(child) == source_mount, 'SOURCE_FILE_ALIAS_OR_MOUNT')
+                        sha = hashlib.sha256()
+                        blob = hashlib.sha1(b'blob ' + str(value.st_size).encode() + b'\0')
+                        remaining = value.st_size
+                        while remaining:
+                            block = os.read(child, min(1048576, remaining))
+                            require(bool(block), 'SOURCE_FILE_TRUNCATED')
+                            remaining -= len(block)
+                            sha.update(block)
+                            blob.update(block)
+                        require(not os.read(child, 1) and details(os.fstat(child)) == details(value),
+                                'SOURCE_FILE_GREW_OR_CHANGED')
+                        row = {'kind': 'file', 'stat': details(value), 'mount_id': source_mount,
+                               'sha256': sha.hexdigest(), 'git_blob': blob.hexdigest(),
+                               'git_mode': '100' + format(stat.S_IMODE(value.st_mode), '03o')}
+                        require(row['sha256'] == pin['files'][relative]
+                                and row['git_blob'] == specification['blob']
+                                and row['git_mode'] == specification['mode'], 'SOURCE_BYTES_MODES_BLOBS_MISMATCH')
+                        rows[relative] = row
+                    finally:
+                        os.close(child)
+                require(details(os.stat(name, dir_fd=fd, follow_symlinks=False)) == details(value),
+                        'SOURCE_MEMBER_CHANGED')
+            require(details(os.fstat(fd)) == details(initial) and sorted(os.listdir(fd)) == names,
+                    'SOURCE_DIRECTORY_CHANGED')
+        walk(root, '.')
+    require({name for name, row in rows.items() if row['kind'] == 'file'} == set(expected)
+            and {name for name, row in rows.items() if row['kind'] == 'directory'} == wanted_dirs,
+            'COMPLETE_PHYSICAL_SOURCE_NAMESPACE_MISMATCH')
+    return rows
+
+def capture_archive(pin):
+    path = safe_path(TAR_PATH)
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                     | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+        try:
+            initial = os.fstat(fd)
+            require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
+                    and initial.st_uid == os.geteuid() and mount_id(fd) == mount_id(parent),
+                    'SOURCE_TAR_CUSTODY_REJECTED')
+            digest = hashlib.sha256()
+            remaining = initial.st_size
+            while remaining:
+                block = os.read(fd, min(1048576, remaining))
+                require(bool(block), 'SOURCE_TAR_TRUNCATED')
+                digest.update(block)
+                remaining -= len(block)
+            require(not os.read(fd, 1) and details(initial) == details(os.fstat(fd))
+                    == details(os.stat(path.name, dir_fd=parent, follow_symlinks=False)),
+                    'SOURCE_TAR_CHANGED')
+            require(digest.hexdigest() == pin.get('tar_sha256'), 'SOURCE_TAR_HASH_MISMATCH')
+            return {'stat': details(initial), 'sha256': digest.hexdigest()}
+        finally:
+            os.close(fd)
+
+def verify_source():
+    raw, index_stat = read_file(PIN_PATH, maximum=MAX_INDEX)
+    require(hashlib.sha256(raw).hexdigest() == CONFIG['index_sha256'], 'SOURCE_INDEX_CHANGED')
+    pin = unique_json(raw)
+    expected, directories, raw_trees = source_authority(pin)
+    return pin, {'schema': 'rc6.physical-source-custody.v2',
+        'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+        'source_index_sha256': CONFIG['index_sha256'], 'index_stat': index_stat,
+        'archive': capture_archive(pin), 'raw_git_tree_objects': raw_trees,
+        'namespace': source_snapshot(expected, pin, directories),
+        'scope': 'ALL_RAW_HASHED_GIT_TREES_FILES_DIRECTORIES_BYTES_MODES_BLOBS_STATS_MOUNT_IDS_NOATIME'}
+
+def normalized(name):
+    return re.sub(r'[-_.]+', '-', name).lower()
+
+def stable_code_custody(capture):
+    # Imports legitimately read code under relatime. Never restore atime. All
+    # eleven attributes still match twice DURING each capture; only observed
+    # CODE atime is excluded from the comparison between native phases.
+    result = dict(capture)
+    result['namespace'] = {name: {**row,
+        'stat': {key: value for key, value in row['stat'].items() if key != 'atime_ns'}}
+        for name, row in capture['namespace'].items()}
+    return result
+
+def observed_code_atime_changes(before, after):
+    return {name: {'kind': row['kind'], 'before_ns': row['stat']['atime_ns'],
+                   'after_ns': after['namespace'][name]['stat']['atime_ns']}
+        for name, row in before['namespace'].items()
+        if name in after['namespace']
+        and row['stat']['atime_ns'] != after['namespace'][name]['stat']['atime_ns']}
+
+def preflight():
+    installed = {}
+    for distribution in importlib.metadata.distributions():
+        name = normalized(distribution.metadata['Name'])
+        require(name not in installed, 'PREFLIGHT_DUPLICATE_DISTRIBUTION')
+        installed[name] = distribution.version
+    required, locks = {}, {}
+    for lock_name in ('requirements.lock.txt', 'requirements.build.lock.txt'):
+        raw, _ = read_file(SOURCE / lock_name, maximum=MAX_INDEX)
+        count = 0
+        for line in raw.decode().splitlines():
+            content = line.strip().removesuffix('\\').strip()
+            match = re.fullmatch(r'([A-Za-z0-9_.-]+)==([^\s;]+)', content)
+            if match is None:
+                require('==' not in content or content.startswith('#'), 'PREFLIGHT_UNSUPPORTED_LOCK_RECORD')
+                continue
+            name, version = normalized(match[1]), match[2]
+            require(name not in required, 'PREFLIGHT_DUPLICATE_LOCK_PIN')
+            required[name] = version
+            count += 1
+        locks[lock_name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'pins': count}
+    libc_name, libc_version = platform.libc_ver()
+    libc_parts = tuple(int(part) for part in libc_version.split('.')) if libc_version else ()
+    checks = {'schema': 'rc6.native-frozen311-entry-preflight.v2',
+        'interpreter': sys.executable, 'required_interpreter': INTERPRETER,
+        'prefix': sys.prefix, 'base_prefix': sys.base_prefix, 'python': platform.python_version(),
+        'sqlite': sqlite3.sqlite_version, 'system': platform.system(), 'machine': platform.machine(),
+        'libc_name': libc_name, 'libc_version': libc_version, 'locks': locks,
+        'distributions': [{'name': name, 'version': installed[name]} for name in sorted(installed)],
+        'distribution_count': len(installed), 'before_fixture': not DATA.exists(),
+        'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+        'scope': 'INSTALLED_NAMES_VERSIONS_PLATFORM_AND_HASHLOCKS_NOT_DISTRIBUTION_BINARY_AUTHENTICATION'}
+    checks['passed'] = (sys.executable == INTERPRETER
+        and sys.prefix == str(Path(INTERPRETER).parent.parent) and sys.prefix != sys.base_prefix
+        and platform.python_version() == '3.11.16' and platform.system() == 'Linux'
+        and platform.machine() == 'x86_64' and libc_name == 'glibc' and libc_parts >= (2, 36)
+        and len(installed) == len(required) == 157 and installed == required
+        and locks['requirements.lock.txt']['pins'] == 154
+        and locks['requirements.build.lock.txt']['pins'] == 3 and checks['before_fixture'])
+    write_new(RAW / 'entry-preflight.json', checks)
+    require(checks['passed'], 'FROZEN311_LITERAL157_PLATFORM_OR_LOCKS_REJECTED')
+    return checks
+
+def write_new(path, value):
+    path = safe_path(path)
+    with directory(path.parent) as parent:
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write((json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + '\n').encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+
+def check_paths():
+    protected = (SOURCE, SOURCE_REPO, PIN_PATH.parent)
+    for path in (SOURCE, SOURCE_REPO, RAW, DATA, PIN_PATH):
+        safe_path(path)
+    for path in (RAW, DATA):
+        require(all(path != root and root not in path.parents and path not in root.parents
+                    for root in protected), 'OUTPUT_OVERLAPS_PROTECTED_SOURCE')
+    require(RAW != DATA and RAW not in DATA.parents and DATA not in RAW.parents,
+            'RAW_DATA_OVERLAP')
+    with directory(RAW) as fd:
+        info = os.fstat(fd)
+        require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
+                'PRIVATE_RAW_ROOT_REQUIRED')
+        require([info.st_dev, info.st_ino, info.st_uid, info.st_gid] == CONFIG['raw_identity']
+                and mount_id(fd) == CONFIG['raw_mount_id'], 'RAW_ROOT_CHANGED_AFTER_PREPARATION')
+    with directory(DATA.parent) as fd:
+        require(not os.path.lexists(DATA), 'NEW_DATA_ROOT_REQUIRED')
+
+def proof_complete(result, native_pid):
+    proof = result.get('import_provenance')
+    require(type(proof) is dict and result.get('business_resource_complete') is True
+            and result.get('import_proof_complete') is True,
+            'BUSINESS_AND_IMPORT_PROOFS_BOTH_REQUIRED')
+    require(proof.get('requested') is True and proof.get('transient_closure_verified') is True
+            and proof.get('worker_pid_source_binding_verified') is True
+            and proof.get('source_sha') == CONFIG['sha']
+            and proof.get('source_tree') == CONFIG['tree']
+            and proof.get('source_index_sha256') == CONFIG['index_sha256']
+            and type(proof.get('launcher_pid')) is int and proof['launcher_pid'] == native_pid
+            and type(proof.get('launcher_parent_pid')) is int
+            and proof['launcher_parent_pid'] == os.getpid()
+            and type(proof.get('worker_exitcode')) is int and proof['worker_exitcode'] == 0
+            and proof.get('worker_cleanup_completed') is True,
+            'ACTUAL_NATIVE_WORKER_IMPORT_PROOF_REQUIRED')
+    require(result.get('catalog_count') == 12000 and result.get('observations_materialized') == 60000
+            and result.get('cycle_deadline_seconds') == 90 and result.get('diagnostic_only') is False
+            and result.get('canonical_runtime_requested') is True
+            and result.get('source_database_unchanged') is True
+            and result.get('slow_fsync_exit_isolation_proven') is True,
+            'ORIGINAL_CANONICAL_BIG_CONTRACT_REQUIRED')
+    require(type(result.get('source_custody_before')) is dict
+            and bool(result['source_custody_before'])
+            and result['source_custody_before'] == result.get('source_custody_after')
+            and result.get('source_custody_scope') ==
+                'MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME',
+            'PRIMARY_DATA_ALL_STAT_AND_HASH_CUSTODY_REQUIRED')
+    require(result.get('shadow', {}).get('cycle_completion') is True
+            and result['shadow'].get('child_cleanup_completed') is True
+            and result['shadow'].get('committed_sequence') == 2
+            and 'OPEN_CYCLE_COMPLETED' in result['shadow'].get('phases', []),
+            'COMPLETED_OPEN_AND_NATIVE_REAP_REQUIRED')
+
+def run():
+    check_paths()
+    pin, before = verify_source()
+    checks = preflight()
+    write_new(RAW / 'source-custody-before.json', before)
+    os.umask(0o077)
+    with directory(DATA.parent) as parent:
+        os.mkdir(DATA.name, mode=0o700, dir_fd=parent)
+    command = [INTERPRETER, '-B', '-u', str(SOURCE / 'scripts/rc6_issue465_stress.py'),
+        '--root', str(DATA), '--out', str(RAW / 'native-big-result.json'),
+        '--catalog-count', '12000', '--observations-per-identity', '5',
+        '--slow-disk', '--canonical-runtime', '--source-root', str(SOURCE),
+        '--source-repo', str(SOURCE_REPO), '--source-sha', CONFIG['sha'],
+        '--source-tree', CONFIG['tree'], '--source-index', str(PIN_PATH)]
+    environment = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1',
+                   'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONPATH': ''}
+    environment.pop('PYTHONHOME', None)
+    metadata = {'schema': 'rc6.native-big-whole-source-trial-wrapper.v3',
+        'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+        'source_index_sha256': CONFIG['index_sha256'], 'source_repo': str(SOURCE_REPO),
+        'tar_sha256': pin['tar_sha256'], 'overlay_count': 0, 'source_files': len(pin['files']),
+        'source_directories': sum(row['kind'] == 'directory' for row in before['namespace'].values()),
+        'command': command, 'cwd': str(SOURCE), 'interpreter': sys.executable,
+        'entry_preflight_passed': checks['passed'], 'distribution_count': checks['distribution_count'],
+        'umask': '077', 'uid': os.geteuid(), 'gid': os.getegid(),
+        'scope': 'UNINSTRUMENTED_CANONICAL_BIG_NATIVE157_OBSERVED_IMPORT_WINDOWS_NOT_GOV_ARTIFACT_OR_RUNTIME_VALIDATION',
+        'acceptance_complete': False, 'artifact_validated': False, 'runtime_validated': False,
+        'diagnostic_only': False, 'source_custody_scope': before['scope'],
+        'source_phase_comparison_scope': 'CODE_BYTES_MODES_BLOBS_NAMESPACE_MOUNTS_AND_STABLE_STAT; '
+            'CODE_ATIME_OBSERVED_SEPARATELY_NEVER_RESTORED; PRIMARY_DATA_ALL11_AND_SHA_UNCHANGED',
+        'preserved_native_contract': {'cycle_seconds': 90, 'catalog': 12000,
+            'materialized_inputs': 60000, 'evidence_bytes': 128 * 1024**2,
+            'rss_bytes_strict': 2 * 1024**3, 'factory_source_capture_seconds': 0.25,
+            'factory_live_bytes': 128 * 1024**2, 'factory_archive_bytes': 512 * 1024**2,
+            'factory_scratch_bytes': 512 * 1024**2, 'slow_fsync_release_seconds': 15,
+            'gc_policy_changed': False, 'gc_collect_added': False, 'stack_sampler_added': False},
+        'factory_contract_fields_are_pinned_source_declarations_not_independent_measurements': True,
+        'import_observation_limits': {'record_limit': 2048, 'pending_name_limit': 2048,
+            'retained_origin_limit_per_snapshot': 2048, 'identifier_char_limit': 4096,
+            'identifier_utf8_byte_upper_bound': 16384,
+            'opaque_or_unknown': 'UNVERIFIED', 'overflow_or_error': 'UNVERIFIED',
+            'bootstrap_before_installation': 'OUTSIDE_OBSERVED_WINDOW',
+            'tail_after_final_boundary': 'OUTSIDE_OBSERVED_WINDOW',
+            'authentication': 'INTERPRETER_PATH_METADATA_NOT_EXECUTED_CODE_OR_BINARY_AUTHENTICATION'}}
+    write_new(RAW / 'wrapper-before.json', metadata)
+    process, usage, native_start = None, None, time.monotonic()
+    reaped = False
+    failures = []
+    try:
+        with (RAW / 'big.log').open('xb') as log:
+            process = subprocess.Popen(command, cwd=SOURCE, env=environment,
+                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            metadata['native_pid'] = process.pid
+            metadata['external_parent_pid'] = os.getpid()
+            while True:
+                try:
+                    waited, status, usage = os.wait4(process.pid, 0)
+                    break
+                except InterruptedError:
+                    continue
+            require(waited == process.pid, 'NATIVE_WAIT4_PID_MISMATCH')
+            process.returncode = os.waitstatus_to_exitcode(status)
+            reaped = True
+            metadata['returncode'] = process.returncode
+            metadata['native_launcher_peak_rss_bytes'] = usage.ru_maxrss * 1024
+            metadata['native_launcher_cpu_seconds'] = usage.ru_utime + usage.ru_stime
+            metadata['native_launcher_resource_scope'] = 'ACTUAL_WAIT4_REAPED_LAUNCHER_INCLUDING_CHILDREN_NOT_WORKER_ONLY'
+    except BaseException as error:
+        failures.append({'stage': 'native_launch_or_reap', 'class': type(error).__name__, 'reason': str(error)})
+    finally:
+        if process is not None and not reaped:
+            try:
+                os.killpg(process.pid, 9)
+            except ProcessLookupError:
+                pass
+            try:
+                waited, status, usage = os.wait4(process.pid, 0)
+                process.returncode = os.waitstatus_to_exitcode(status)
+                reaped = waited == process.pid
+            except ChildProcessError:
+                failures.append({'stage': 'cleanup', 'reason': 'NATIVE_REAP_UNVERIFIED'})
+        metadata['native_launcher_reaped'] = reaped
+        metadata['wrapper_native_lifetime_wall_seconds'] = time.monotonic() - native_start
+        metadata['whole_launcher_lifetime_is_not_original_90s_worker_deadline'] = True
+        if reaped:
+            try:
+                _, after = verify_source()
+                write_new(RAW / 'source-custody-after.json', after)
+                unchanged = stable_code_custody(before) == stable_code_custody(after)
+                metadata['whole_source_namespace_bytes_modes_stable_stats_mounts_unchanged'] = unchanged
+                metadata['observed_code_atime_phase_changes'] = observed_code_atime_changes(before, after)
+                require(unchanged, 'SOURCE_STABLE_CUSTODY_CHANGED_AFTER_REAP')
+            except BaseException as error:
+                metadata['whole_source_namespace_bytes_modes_stable_stats_mounts_unchanged'] = False
+                failures.append({'stage': 'source_after_reap', 'class': type(error).__name__, 'reason': str(error)})
+        else:
+            metadata['whole_source_namespace_bytes_modes_stable_stats_mounts_unchanged'] = None
+            metadata['postreap_custody'] = 'POSTREAP_CUSTODY_NOT_OBSERVED'
+            failures.append({'stage': 'postreap_custody', 'reason': 'POSTREAP_CUSTODY_NOT_OBSERVED'})
+    if reaped:
+        try:
+            native, _ = read_file(RAW / 'native-big-result.json', maximum=MAX_INDEX)
+            result = unique_json(native)
+            metadata['native_result_sha256'] = hashlib.sha256(native).hexdigest()
+            require(process is not None and process.returncode == 0 and usage is not None,
+                    'CLEAN_NATIVE_EXIT_REQUIRED')
+            require(usage.ru_maxrss * 1024 < 2 * 1024**3, 'NATIVE_LIFETIME_RSS_RED')
+            proof_complete(result, process.pid)
+            metadata['native_business_and_import_proof_complete'] = True
+        except BaseException as error:
+            metadata['native_business_and_import_proof_complete'] = False
+            failures.append({'stage': 'native_receipt', 'class': type(error).__name__, 'reason': str(error)})
+        try:
+            log_raw, _ = read_file(RAW / 'big.log', maximum=MAX_INDEX)
+            metadata['rawlog_sha256'] = hashlib.sha256(log_raw).hexdigest()
+        except BaseException as error:
+            failures.append({'stage': 'native_log', 'class': type(error).__name__, 'reason': str(error)})
+    else:
+        metadata['native_business_and_import_proof_complete'] = False
+        metadata['native_result_capture'] = 'POSTREAP_CUSTODY_NOT_OBSERVED'
+        metadata['native_log_capture'] = 'POSTREAP_CUSTODY_NOT_OBSERVED'
+    metadata['failures'] = failures
+    metadata['status'] = 'GREEN' if not failures else 'RED'
+    write_new(RAW / 'wrapper-final.json', metadata)
+    print(json.dumps({'status': metadata['status'], 'native_pid': metadata.get('native_pid'),
+        'reaped': reaped, 'source_sha': CONFIG['sha'], 'source_tree': CONFIG['tree'],
+        'native_returncode': metadata.get('returncode'), 'acceptance_complete': False}, sort_keys=True), flush=True)
+    return 0 if not failures else 1
+
+try:
+    raise SystemExit(run())
+except Exception as error:
+    print(json.dumps({'status': 'RED', 'stage': 'wrapper_entry_or_finalization',
+        'class': type(error).__name__, 'reason': str(error), 'acceptance_complete': False}), flush=True)
+    raise SystemExit(1)
+'''
+
+
+@contextmanager
+def generator_directory(path):
+    descriptor = os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for name in path.parts[1:]:
+            child = os.open(name, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW
+                            | os.O_CLOEXEC, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def generator_mount_id(descriptor):
+    fd = os.open('/proc/self/fdinfo/' + str(descriptor),
+                 os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        raw = os.read(fd, 4096)
+        matches = re.findall(rb'^mnt_id:\s*([0-9]+)$', raw, re.MULTILINE)
+        if len(raw) >= 4096 or len(matches) != 1:
+            raise ValueError('GENERATOR_MOUNT_ID_UNAVAILABLE')
+        return int(matches[0])
+    finally:
+        os.close(fd)
+
+
+def index_identity(value):
+    return (value.st_dev, value.st_ino, value.st_uid, value.st_gid,
+            value.st_mode, value.st_nlink, value.st_size, value.st_blocks,
+            value.st_atime_ns, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def read_index(path):
+    with generator_directory(path.parent) as parent:
+        expected_mount = generator_mount_id(parent)
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                             | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
+    try:
+        before = os.fstat(descriptor)
+        if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                or before.st_uid != os.geteuid() or before.st_size > 32 * 1024**2
+                or generator_mount_id(descriptor) != expected_mount):
+            raise ValueError('COMPLETE_REGULAR_INDEX_REQUIRED')
+        blocks, total = [], 0
+        while True:
+            block = os.read(descriptor, 1048576)
+            if not block:
+                break
+            blocks.append(block)
+            total += len(block)
+            if total > 32 * 1024**2:
+                raise ValueError('INDEX_BUDGET_EXCEEDED')
+        with generator_directory(path.parent) as parent:
+            final = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        if index_identity(os.fstat(descriptor)) != index_identity(before) or index_identity(final) != index_identity(before):
+            raise ValueError('INDEX_CHANGED_DURING_GENERATION')
+        return b''.join(blocks)
+    finally:
+        os.close(descriptor)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('source', 'source-repo', 'index', 'raw', 'data', 'out'):
+        parser.add_argument('--' + name, type=Path, required=True)
+    parser.add_argument('--sha', required=True)
+    parser.add_argument('--tree', required=True)
+    args = parser.parse_args()
+    if not re.fullmatch('[0-9a-f]{40}', args.sha) or not re.fullmatch('[0-9a-f]{40}', args.tree):
+        raise ValueError('SOURCE_SHA_AND_TREE_REQUIRED')
+    for value in (args.source, args.source_repo, args.index, args.raw, args.data, args.out):
+        if not value.is_absolute() or value == Path('/') or '..' in value.parts:
+            raise ValueError('CANONICAL_ABSOLUTE_PATH_REQUIRED')
+    for value in (args.source, args.source_repo, args.index.parent, args.raw.parent,
+                  args.data.parent, args.out.parent):
+        with generator_directory(value):
+            pass
+    protected = (args.source, args.source_repo, args.index.parent)
+    for value in (args.raw, args.data, args.out):
+        if any(value == root or root in value.parents or value in root.parents for root in protected):
+            raise ValueError('NEW_OUTPUTS_OUTSIDE_SOURCE_AND_PIN_REQUIRED')
+        if os.path.lexists(value):
+            raise ValueError('NEW_OUTPUT_REQUIRED')
+    if args.raw == args.data or args.raw in args.data.parents or args.data in args.raw.parents:
+        raise ValueError('RAW_DATA_OVERLAP')
+    if args.out in (args.raw, args.data) or args.raw in args.out.parents or args.data in args.out.parents:
+        raise ValueError('WRAPPER_MUST_BE_OUTSIDE_RAW_AND_DATA')
+    raw = read_index(args.index)
+    pin = json.loads(raw)
+    if (pin.get('schema') != 'rc6.complete-archive-source-pin.v1'
+            or pin.get('source_sha') != args.sha or pin.get('source_tree') != args.tree
+            or type(pin.get('overlay_count')) is not int or pin['overlay_count'] != 0
+            or not all(type(pin.get(key)) is dict and pin[key] for key in ('files', 'modes', 'blob_ids'))
+            or not re.fullmatch('[0-9a-f]{64}', pin.get('raw_git_commit_sha256', ''))):
+        raise ValueError('COMPLETE_RAW_GIT_INDEX_REQUIRED')
+    config = {'source': str(args.source), 'source_repo': str(args.source_repo),
+              'index': str(args.index), 'raw': str(args.raw), 'data': str(args.data),
+              'sha': args.sha, 'tree': args.tree, 'index_sha256': hashlib.sha256(raw).hexdigest()}
+    if WRAPPER.count('__CONFIG_LITERAL__') != 1:
+        raise ValueError('WRAPPER_TEMPLATE_REJECTED')
+    # Only preparation outputs are written. No Source export or product import.
+    with generator_directory(args.raw.parent) as parent:
+        os.mkdir(args.raw.name, mode=0o700, dir_fd=parent)
+        with generator_directory(args.raw) as root:
+            info = os.fstat(root)
+            if generator_mount_id(root) != generator_mount_id(parent):
+                raise ValueError('GENERATED_RAW_ROOT_MOUNT_REJECTED')
+            config['raw_identity'] = [info.st_dev, info.st_ino, info.st_uid, info.st_gid]
+            config['raw_mount_id'] = generator_mount_id(root)
+    wire = WRAPPER.replace('__CONFIG_LITERAL__', repr(config))
+    ast.parse(wire)
+    with generator_directory(args.out.parent) as parent:
+        descriptor = os.open(args.out.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                             | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=parent)
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as target:
+        target.write(wire)
+        target.flush()
+        os.fsync(target.fileno())
+    print(json.dumps({'wrapper': str(args.out), 'wrapper_sha256': hashlib.sha256(wire.encode()).hexdigest(),
+        'source_sha': args.sha, 'source_tree': args.tree, 'source_repo': str(args.source_repo),
+        'source_index_sha256': config['index_sha256'], 'source_files': len(pin['files']),
+        'raw': str(args.raw), 'data': str(args.data), 'overlay_count': 0,
+        'scope': 'GENERATION_ONLY_NOT_PRODUCT_EXECUTION', 'acceptance_complete': False}), flush=True)
+
+
+if __name__ == '__main__':
+    main()

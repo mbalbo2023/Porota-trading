@@ -1,0 +1,350 @@
+{
+  "schema": "rc6.external-register-helper-extension-plan.v1",
+  "status": "SOURCE_PREPARATION_WITH_ROOT_DOCUMENTARY_CONTROLS_NOT_FINAL_CORPUS_REBIND",
+  "scope": "Immutable Git/JSON/AST and helper source preparation, with separately attributed ROOT private documentary controls; no product imports, Native/Gov, Root writes by History, runtime, network or final register generation.",
+  "source_snapshot": {
+    "sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+    "tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+    "matrix_publication_binding": {
+      "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+      "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+      "path": "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json",
+      "blob": "804bbeaa4bda5a9951d9f2f9ef23606c3f0aa0e5",
+      "git_mode": "100644",
+      "sha256": "24e074d92a68b45cc90f480d4d833100903c920ee51a4df362d716ec22ebc78a",
+      "bytes": 2101609
+    },
+    "final_frozen_source_sha": null,
+    "final_fip_digest": null,
+    "final_governed_junit_digest": null,
+    "final_artifact_digest": null,
+    "rebind_required_if_source_advances": true,
+    "documentation_order": "Publish reviewed helper/custody and typed ROOT supplemental membership before selecting S; generate D from S/tree T outside Git; D refers to S, not itself; commit D then freeze C; actual final Gov/FIP/artifact binds C."
+  },
+  "closure_inventory_only": {
+    "requirements": 55,
+    "scenarios": 80,
+    "front_variants": 90,
+    "restored_controls": 6,
+    "additional_findings": 18,
+    "path_evolution": 1162
+  },
+  "extension_files": [
+    {
+      "path": "/tmp/rc6_remediation_register_generate_v3.py",
+      "bytes": 97086,
+      "sha256": "28bbb212b333911634e7ea87fea0042503f744253cee87a4ee05140e7bc8f30e",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_root_supplemental_named_findings_generate_v2.py",
+      "bytes": 35668,
+      "sha256": "5a28dac53c6b63e4e21971ebf96bf1eaa1b65b486199125de3bbbe4c904ba708",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_register_helpers_v3_controls.py",
+      "bytes": 28031,
+      "sha256": "40981cd324dbf0270a69c025f794bd3150fafbdc8012dba5b3c7ae851899532c",
+      "AST_compile": "PASS",
+      "static_compile_phase_imported": false
+    },
+    {
+      "path": "/tmp/rc6_register_helpers_v3_README.md",
+      "bytes": 9019,
+      "sha256": "91cf285755d2455b3157afd18ff73500e57366f041b9eb71ec80efda968a929c"
+    }
+  ],
+  "published_frozen_predecessors_preserved": {
+    "primary_sha256": "f893ac183aff42f7be1241aa03ae51123fc12089706643d073ac779662e7c7b8",
+    "supplement_sha256": "ca32227c837d26281d880c7c90988c81ee1bd616c87a777d04a82a68740f37b3",
+    "historical_control_receipt_sha256": "316c2982032520e97721f5dd1fc3a06ea7a8e67bd30a18526bc90ad6123a6883",
+    "previous_control_count": 30,
+    "those_controls_verify_new_extension_hashes": false
+  },
+  "dossier_references": [
+    {
+      "label": "BIG8764",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/convergence/evidence/native-big-8764e934-157/CUSTODY.json",
+        "blob": "64726dea2103c6e7ac1e994697b8c060a6033074",
+        "git_mode": "100644",
+        "sha256": "1523a511e4c9b472572ea37f2d96075929eef9caa93465580b7349e9ea4f263e",
+        "bytes": 13524
+      },
+      "declared_schema": "rc6.native-big-whole-source-witness-custody.v2",
+      "original_scope_verbatim": "ROOT_SOURCE_ONLY_UNINSTRUMENTED_CANONICAL_BIG_NOT_FINAL_GOV_IMAGE_HORIZON_BROWSER_OR_RUNTIME",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "UX9e",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/dashboard/evidence/rc6-convergence-ux/family-health-function-scope-9e36e92a/MANIFEST.json",
+        "blob": "b78331bb810b0efb52e352439b75f2304a73b534",
+        "git_mode": "100644",
+        "sha256": "5b215d27e1e2e928222a694fa1909ddfe2238a3a830c65c439f5e43f917f368f",
+        "bytes": 21783
+      },
+      "declared_schema": "rc6.ux-function-scope-native-dossier.v1",
+      "original_scope_verbatim": "OWN9e36_NATIVE_SMALL_FUNCTIONAL_AND_PRIVATE_LIVE_HEALTH_ONLY",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "UX9e_execution_summary",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/dashboard/evidence/rc6-convergence-ux/family-health-function-scope-9e36e92a/EXECUTION_SUMMARY.json",
+        "blob": "60e0c87a4a7a2661434bb6845a2e01487542962d",
+        "git_mode": "100644",
+        "sha256": "a2a17295803b6226bd97798975ba087e859875d56e10af7aba64b64675ae4825",
+        "bytes": 4069
+      },
+      "declared_schema": "rc6.ux-function-scope-native-execution-summary.v1",
+      "original_scope_verbatim": "OWN9e36_NATIVE_SMALL_FUNCTIONAL_AND_PRIVATE_LIVE_HEALTH_ONLY",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "PERS270",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/rc6-convergence-persistence-evidence/packed_scalar_dispatch/DOSSIER.json",
+        "blob": "751e1002bdcab38fd5c647217646ea7a6e8206c7",
+        "git_mode": "100644",
+        "sha256": "1422b41e58ef8f2e0251ed498e427785cbd85325af24dc4a66ae6ca5f5db9090",
+        "bytes": 100621
+      },
+      "declared_schema": "rc6.packed-scalar-dispatch-native-dossier.v1",
+      "original_scope_verbatim": "EXACT_SCALAR_TERMINAL_OPERATIONS_ORDER_CUTS_WIRE_AND_EXISTING_NATIVE_WRITER_READER_PROJECTION_GUARDS",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "SRE64",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/convergence/evidence/fresh-github-source-ro-20261005/PACKET_MANIFEST.json",
+        "blob": "2179bb2c7f977a4f78eb3f22f594f79f68dcc5b3",
+        "git_mode": "100644",
+        "sha256": "bd90127f817aaab14d30ce1085ea556b4c83ec46cd7350d04e317da0ce679675",
+        "bytes": 11634
+      },
+      "declared_schema": "rc6.sre-compact-source-readonly-packet.v1",
+      "original_scope_verbatim": "SOURCE_READONLY_NO_GOV_COLLECTION_EXECUTION_IMAGE_RUNTIME_APPROVAL",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "SRE64_archival_custody",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/convergence/evidence/fresh-github-source-ro-20261005/CUSTODY.json",
+        "blob": "711bc3268e1cbf3dfbaff9b3ac5725d9bcead2ad",
+        "git_mode": "100644",
+        "sha256": "ace17d28eeebfab7cce0787f84f0fe83c6c029f4dcbaecab0a78af4e8d09c3de",
+        "bytes": 104989
+      },
+      "declared_schema": "rc6.fresh-github-source-ro-packet-copy-custody.v1",
+      "original_scope_verbatim": "ALL11_COPYTIME_FILE_AND_SOURCE_NAMESPACE_CUSTODY_ONLY",
+      "new_execution_inferred": false
+    },
+    {
+      "label": "FULL1201_source_driver",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v1.py.source",
+        "blob": "ed97a8e6d5ca69df8603780bc624f2713cdbf830",
+        "git_mode": "100644",
+        "sha256": "a74215491110d1a2e862cab496d3aaeeec24018db963825a394223f145957d74",
+        "bytes": 35226
+      },
+      "declared_schema": null,
+      "original_scope_verbatim": null,
+      "new_execution_inferred": false
+    },
+    {
+      "label": "FULL1201_source_plan",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/rc6-convergence-persistence-evidence/FULL1201_EXTERNAL_DRIVER_SOURCE_PLAN.json",
+        "blob": "bebb948c5189f0b3ef30a4704f6beec69bf6d97e",
+        "git_mode": "100644",
+        "sha256": "64c239165da9582c76eee04cda3218fd47416ec99ee1498fd5d4415dcec18d78",
+        "bytes": 10805
+      },
+      "declared_schema": "rc6.full1201-external-driver-source-plan.v1",
+      "original_scope_verbatim": null,
+      "new_execution_inferred": false
+    },
+    {
+      "label": "source_scratch_cleanup",
+      "publication_binding": {
+        "source_sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+        "source_tree": "b020d609ae5d63440fa74d7967bb250f817f235a",
+        "path": "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/CUSTODY.json",
+        "blob": "6a4e01e43efb45730e9f1236e82af807aec85199",
+        "git_mode": "100644",
+        "sha256": "0c88a711ee610bc3e8843dd44363acac6767a47427770157227d659439707122",
+        "bytes": 2595
+      },
+      "declared_schema": "rc6.source-scratch-cleanup.raw-custody.v1",
+      "original_scope_verbatim": "Original authorized source-copy removal proposal and actual cleanup receipt. Copy-time metadata equality does not attest times before original execution. Only 17 regenerable Git source copies were removed; source TARs, RAW, DATA, worktrees and all protected siblings remain. No Native or runtime gate.",
+      "new_execution_inferred": false
+    }
+  ],
+  "prepared_catalog_discovery": [
+    {
+      "directory": "docs/audits/convergence/evidence/native-big-8764e934-157/",
+      "tracked_members": 10,
+      "old_discovery_omitted_members": 5,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/dashboard/evidence/rc6-convergence-ux/family-health-function-scope-9e36e92a/",
+      "tracked_members": 47,
+      "old_discovery_omitted_members": 33,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/rc6-convergence-persistence-evidence/packed_scalar_dispatch/",
+      "tracked_members": 18,
+      "old_discovery_omitted_members": 16,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/convergence/evidence/fresh-github-source-ro-20261005/",
+      "tracked_members": 64,
+      "old_discovery_omitted_members": 27,
+      "prepared_discovery_omitted_members": []
+    },
+    {
+      "directory": "docs/audits/convergence/evidence/source-scratch-cleanup-20261005/",
+      "tracked_members": 3,
+      "old_discovery_omitted_members": 0,
+      "prepared_discovery_omitted_members": []
+    }
+  ],
+  "archival_mapping_contract": {
+    "source_manifest_modified": false,
+    "exact_schema": "rc6.fresh-github-source-ro-packet-copy-custody.v1",
+    "original_packet_binding": "original_control_sha256 plus literal PACKET_MANIFEST record SHA/bytes/mode",
+    "membership": "CUSTODY.files exact original packet keys plus the original control record, original_relative_path==key, stored paths unique and exact",
+    "relative_paths_resolved_only_via_custody": true,
+    "suffix_inference": false,
+    "publication_binding_and_declaration_hashes_retained": true,
+    "private_archival_program_fixture_count": 15,
+    "private_custody_scenarios": [
+      "valid",
+      "missing_mapping",
+      "duplicate_stored",
+      "mapping_hash",
+      "mapping_mode",
+      "control_hash",
+      "wrong_schema",
+      "missing_custody",
+      "missing_raw",
+      "original_name",
+      "stored_escape"
+    ]
+  },
+  "encoding_contract": {
+    "uncompressed_bound_bytes": 33554432,
+    "gzip": "Known named suffixes, single complete stream CRC/eof, no concatenated/trailing bytes",
+    "metadata": "Compressed/uncompressed SHA256+bytes and actual mtime; identity uses equal pairs",
+    "json": "Known .json/.json.gz; duplicate keys/nonfinite rejected; literal RAW data not interpreted as refs",
+    "legacy_refs": "Missing json_encoding accepted only for plain .json",
+    "archives": "No blind ZIP/TAR extraction, local original capture/TAR paths never opened",
+    "limit_control": "Prepared private 128-byte constant shim with 129 decoded bytes and production constant restoration; not a real operational 32MiB measurement"
+  },
+  "prepared_control_command": [
+    "timeout",
+    "20s",
+    "/workspace/venv_rc6/bin/python",
+    "-B",
+    "-I",
+    "-S",
+    "/tmp/rc6_register_helpers_v3_controls.py"
+  ],
+  "control_receipt_future_path": "/tmp/rc6_register_helpers_v3_controls_receipt.json",
+  "control_scope": "Small private stdlib Git/parser/codec fixtures only; no product imports/native guards/financial/market cases, final register or network",
+  "runtime_controls_executed": 64,
+  "native_tests_executed": 0,
+  "governed_suite_executed": false,
+  "root_files_written": false,
+  "final_register_generated": false,
+  "current_finding_changes": 0,
+  "original_catalog_preservation": "Original E001-E210 objects/fields remain literal and unchanged; only newly DERIVED copies/bindings are shared and resolved.",
+  "receipt_scope_limits": {
+    "BIG8764": "Original incomplete RED cycle/returncode1, not complete cycle, horizon/browser/Gov/runtime/image acceptance.",
+    "UX9e": "Separate95/95 interpreter receipts and focal2 subset; no independent192/Root execution claim.",
+    "PERS270": "365=94new+271overlapping, not636 independent; no DATA400/BIG90/horizon/CPU savings acceptance.",
+    "FULL1201": "SOURCE-only driver/plan; zero actual horizon execution on this preparation.",
+    "SRE64": "SOURCE-only64 records, original FINAL_INSTALL_EXIT_PENDING remains literal; external Root exit0 attribution separate.",
+    "cleanup": "Original17 regenerable source copies removed; copy-time custody distinct from original execution times, not Native/runtime gate."
+  },
+  "pending_before_final_rebind": [
+    "Preserve ROOT executed documentary controls and raw source hash lists with exact scope; do not rerun unchanged code or add the old30 as independent cases.",
+    "Integrate reviewed helper/supplement custody at ROOT; root closure must name six supplemental IDs explicitly without inventing upstream owner membership.",
+    "Select stable exact source S after product and dossier updates; rebind all publication paths/tree/hash/modes against S.",
+    "Verify real compact byte size and exact210/literal55/80/90/6/ref reconstruction; current size not measured.",
+    "Commit reviewed D, freeze C, and perform actual final canonical Gov/FIP/image/artifact binding outside this helper."
+  ],
+  "root_documentary_execution": {
+    "executor": "ROOT",
+    "classification": "PRIVATE_DOCUMENTARY_HELPER_CONTROLS_ONLY_NOT_NATIVE_PRODUCT_GOV_OR_MARKET_SCENARIOS",
+    "receipt": {
+      "path": "/tmp/rc6_register_helpers_v3_controls_receipt.json",
+      "bytes": 8119,
+      "sha256": "2c28598fa8f622539deccaae11536657713762661116f08562307237fe4f1cd6",
+      "schema": "rc6.derived-register-ref-controlled-diagnostic.v1",
+      "scope_verbatim": "PRIVATE_SYNTHETIC_GIT_JSON_XML_CODEC_ONLY_NO_PRODUCT_IMPORT_NO_NATIVE_GOV_PROVIDER_IMAGE_RUNTIME_OR_FINANCIAL_EXECUTION"
+    },
+    "recorded_documentary_controls": 64,
+    "native_tests_executed": 0,
+    "governed_suite_executed": false,
+    "product_imports_executed": false,
+    "helper_stdlib_modules_imported_by_root_control": true,
+    "source_hashes_equal_before_after": true,
+    "original_30_controls_added_as_independent_cases": false,
+    "root_reported_cli_exit_code": 0,
+    "root_reported_elapsed_seconds": 0.945,
+    "elapsed_evidence_boundary": "ROOT orchestration report in parent message; not emitted in receipt/RAW timing record, not operational performance.",
+    "raw_files": [
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/controls.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/controls.stdout",
+        "bytes": 320,
+        "sha256": "4e699e5a36e3d174a08a82f0b5f36dc0dcb02391c6b4e697c0f5e0f00619095c"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/source-after.sha256",
+        "bytes": 341,
+        "sha256": "b7c753b29ef3204e90163226144cc9c702f70f0b94bec0b96f01c104cb08406f"
+      },
+      {
+        "path": "/workspace/rc6-documentary-controls-v3-20261005-raw/source-before.sha256",
+        "bytes": 341,
+        "sha256": "b7c753b29ef3204e90163226144cc9c702f70f0b94bec0b96f01c104cb08406f"
+      }
+    ],
+    "final_register_or_product_generated": false
+  },
+  "static_review_reference": {
+    "path": "/tmp/rc6_register_helpers_v3_static_review.json",
+    "bytes": 5566,
+    "sha256": "7ec358a9c70c62c6accaf02da48aa132e08c62bc759011eef92e707e51e1dcb1"
+  }
+}

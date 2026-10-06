@@ -1,0 +1,73 @@
+{
+  "records": [
+    {
+      "bytes": 18647,
+      "copy_time_source_after": {
+        "st_atime_ns": 1791234603838535160,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791234603838495762,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3090931,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791234603838495762,
+        "st_nlink": 1,
+        "st_size": 18647,
+        "st_uid": 1000
+      },
+      "copy_time_source_all11_unchanged": true,
+      "copy_time_source_before": {
+        "st_atime_ns": 1791234603838535160,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791234603838495762,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3090931,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791234603838495762,
+        "st_nlink": 1,
+        "st_size": 18647,
+        "st_uid": 1000
+      },
+      "original_path": "/tmp/rc6-ux-exact-source-scratch-removal-proposal-20261005.json",
+      "sha256": "6c0f5db5f8b22ed864e53f3b3fc5156203191308921940102305a097f7d3b17e",
+      "stored_relative": "rc6-ux-exact-source-scratch-removal-proposal-20261005.json"
+    },
+    {
+      "bytes": 9255,
+      "copy_time_source_after": {
+        "st_atime_ns": 1791235078437937523,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791235078441469015,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3091072,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235078441469015,
+        "st_nlink": 1,
+        "st_size": 9255,
+        "st_uid": 1000
+      },
+      "copy_time_source_all11_unchanged": true,
+      "copy_time_source_before": {
+        "st_atime_ns": 1791235078437937523,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791235078441469015,
+        "st_dev": 33,
+        "st_gid": 1000,
+        "st_ino": 3091072,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791235078441469015,
+        "st_nlink": 1,
+        "st_size": 9255,
+        "st_uid": 1000
+      },
+      "original_path": "/tmp/rc6-ux-exact-source-scratch-cleanup-receipt-20261005.json",
+      "sha256": "0580f2602e0615b46cadfac3657a47e74b3fbcdac9c0e766057940b8c9f58d3c",
+      "stored_relative": "rc6-ux-exact-source-scratch-cleanup-receipt-20261005.json"
+    }
+  ],
+  "schema": "rc6.source-scratch-cleanup.raw-custody.v1",
+  "scope": "Original authorized source-copy removal proposal and actual cleanup receipt. Copy-time metadata equality does not attest times before original execution. Only 17 regenerable Git source copies were removed; source TARs, RAW, DATA, worktrees and all protected siblings remain. No Native or runtime gate.",
+  "status": "RAW_COPY_VERIFIED"
+}

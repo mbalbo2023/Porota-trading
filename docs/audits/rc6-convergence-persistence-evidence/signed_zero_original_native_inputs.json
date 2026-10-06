@@ -1,0 +1,19 @@
+{
+  "files_sha256": {
+    "rc6_shadow_runtime/serialization.py": "32114835b031e2e7137be4339975550c0f7dd795450158991ff32a6d7a999121",
+    "tests/test_rc6_packed_storage.py": "ed291efe9c1be1c405fd823ca722453677399a3d6eec830532107b542e5c60e4"
+  },
+  "junit_sha256": "b094f9d54dffcb70621a7f7ad9e13c7bc1e213d9d0903acf2dc609523be1fece",
+  "native_guard_added_only": true,
+  "result": {
+    "errors": "0",
+    "failures": "8",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "12",
+    "time": "2.298",
+    "timestamp": "2026-10-05T12:20:13.629979+00:00"
+  },
+  "source_sha": "0dc8a520d8af7cbdc9485eaceb3b037d897eeb7e"
+}

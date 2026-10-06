@@ -1,0 +1,43 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tarfile
+
+repository=Path(sys.argv[1]).resolve()
+sha=sys.argv[2]
+output=Path(sys.argv[3]).resolve()
+output.mkdir(exist_ok=False)
+source=output/'source'
+source.mkdir(mode=0o755)
+def git(*arguments):
+    return subprocess.check_output(['git','--no-replace-objects','-C',str(repository),*arguments])
+sha=git('rev-parse',sha+'^{commit}').decode().strip()
+tree=git('rev-parse',sha+'^{tree}').decode().strip()
+git('archive','--format=tar',sha,'--output='+str(output/'source.tar'))
+with tarfile.open(output/'source.tar') as bundle:
+    for member in bundle.getmembers():
+        assert member.isdir() or member.isfile()
+    bundle.extractall(source,filter='data')
+commit=git('cat-file','commit',sha)
+pin={'schema':'rc6.complete-archive-source-pin.v1','source_sha':sha,'source_tree':tree,'overlay_count':0,'raw_git_commit_sha256':hashlib.sha256(commit).hexdigest(),'files':{},'modes':{},'blob_ids':{}}
+for row in git('ls-tree','-r','--full-tree','-z',sha).split(b'\0'):
+    if not row:continue
+    meta,name=row.split(b'\t',1)
+    mode,kind,blob=meta.decode().split()
+    assert kind=='blob' and mode in ('100644','100755')
+    name=name.decode()
+    path=source/name
+    os.chmod(path,int(mode[-3:],8))
+    wire=path.read_bytes()
+    assert hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()==blob
+    pin['files'][name]=hashlib.sha256(wire).hexdigest()
+    pin['modes'][name]=mode
+    pin['blob_ids'][name]=blob
+    for parent in path.parents:
+        if parent==source.parent:break
+        os.chmod(parent,0o755)
+(output/'source-index.json').write_text(json.dumps(pin,indent=2,sort_keys=True)+'\n')
+print(json.dumps({'source_sha':sha,'source_tree':tree,'source_file_count':len(pin['files'])},sort_keys=True))

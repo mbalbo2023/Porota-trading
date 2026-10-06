@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: porota-predeploy-v2-${{ github.ref }}
@@ -17,17 +18,63 @@ jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout exact candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 verified2026-10-05
         with:
           ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Set reviewed Python tooling platform
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 verified2026-10-05
+        with:
+          python-version: "3.11.16"
+
+      - name: Initialize proven private runner workspace
+        id: private_workspace
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_predeploy_cleanup.py init
+
+      - name: Freeze checkout byte provenance before build
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
+          python scripts/porota_artifact_provenance.py create \
+            --repo-root . \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --tree-sha "$CANDIDATE_TREE" \
+            --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-source-provenance.json"
+          SOURCE_MANIFEST_SHA256="$(sha256sum POROTA_SOURCE_PROVENANCE.json | awk '{print $1}')"
+          python scripts/porota_predeploy_cleanup.py claim-source \
+            --scope "$POROTA_PREDEPLOY_OWNER" --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --sha256 "$SOURCE_MANIFEST_SHA256"
+          echo "CANDIDATE_TREE=$CANDIDATE_TREE" >> "$GITHUB_ENV"
+          echo "SOURCE_MANIFEST_SHA256=$SOURCE_MANIFEST_SHA256" >> "$GITHUB_ENV"
+          python - <<'PY_ORIGIN'
+          import os
+          from pathlib import Path
+          from scripts.porota_artifact_provenance import canonical_bytes
+          from scripts.porota_predeploy_binding import api_get, REPOSITORY, WORKFLOW_PATH
+          assert os.environ['GITHUB_EVENT_NAME'] == 'pull_request'
+          assert os.environ['GITHUB_WORKFLOW_REF'].split('@')[0] == REPOSITORY + '/' + WORKFLOW_PATH
+          workflow=api_get('/actions/workflows/porota-predeploy-v2.yml')
+          assert workflow['path'] == WORKFLOW_PATH and workflow['state'] == 'active'
+          origin={'repository':REPOSITORY,'workflow_path':WORKFLOW_PATH,'workflow_id':workflow['id'],
+                  'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+                  'event':'pull_request','candidate_sha':os.environ['CANDIDATE_SHA']}
+          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-predeploy-origin.json')).write_bytes(canonical_bytes(origin))
+          PY_ORIGIN
 
       - name: Policy invariants
         shell: bash
@@ -46,6 +93,10 @@ jobs:
           import json
           from pathlib import Path
           p=json.loads(Path('ops/policy/rc6-disk-housekeeping-v1.json').read_text())
+          root_policy=Path('ops/policy/porota-policy.yaml').read_text()
+          assert 'droplet_disk_pretransfer_min_free_bytes: 0' in root_policy
+          assert 'droplet_disk_admission_authority: ops/policy/rc6-disk-housekeeping-v1.json' in root_policy
+          assert 'droplet_disk_residual_reserve_bytes: 2147483648' in root_policy
           assert p['disk']['deploy_pretransfer_min_free_bytes'] == 0
           assert p['disk']['post_cleanup_min_free_bytes'] == 2 * 1024**3
           f=p['deploy']['pretransfer_formula']
@@ -64,7 +115,20 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m compileall -q             -x '(^|/)(\.git|\.venv|venv|tests|docs)/' .
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.porota_artifact_provenance import verify_source_manifest
+          source=verify_source_manifest(Path('.'), Path('POROTA_SOURCE_PROVENANCE.json'), os.environ['CANDIDATE_SHA'], os.environ['CANDIDATE_TREE'])
+          count=0
+          for row in source['files']:
+              path=Path(row['path'])
+              if path.suffix == '.py' and path.parts[0] not in {'tests','docs'}:
+                  compile(path.read_bytes(), str(path), 'exec')
+                  count+=1
+          assert count > 0
+          print('POROTA_COMPILED_SOURCE_FILES=' + str(count))
+          PY
           echo 'POROTA_COMPILE_GATE=GREEN'
 
       - name: Fail-closed negative fixtures
@@ -72,16 +136,29 @@ jobs:
         run: |
           set -Eeuo pipefail
           python tests/ci_frozen_candidate_contract.py negative \
-            --evidence /tmp/porota-negative-fixtures.json
-          test "$(python -c 'import json; print(len(json.load(open("/tmp/porota-negative-fixtures.json"))))')" -eq 7
+            --evidence "${POROTA_PREDEPLOY_TMP}/porota-negative-fixtures.json"
+          test "$(python -c 'import json, os; print(len(json.load(open(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], "porota-negative-fixtures.json")))))')" -eq 7
           echo 'POROTA_NEGATIVE_FIXTURES=GREEN'
+
+      - name: Inventory original convergence source refs before governed tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_convergence_provenance.py \
+            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
+            --out "${POROTA_PREDEPLOY_TMP}/porota-convergence-input-inventory.json" --fetch-source-refs
 
       - name: Governed automatic test discovery and execution
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pip install --disable-pip-version-check --requirement requirements.lock.txt
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements.build.lock.txt
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: \
+            --no-binary=msgpack,ppi-client,signalrcoreppi,ta --no-build-isolation -r requirements.lock.txt
+          python -m pip check
+          python -m pip freeze --all > "${POROTA_PREDEPLOY_TMP}/porota-installed-dependencies.txt"
           python - <<'PY'
+          import os
           from pathlib import Path
           import yaml
 
@@ -102,32 +179,46 @@ jobs:
               assert item.get('classification') and item.get('reason') and item.get('owner')
               args.append(f'--ignore={path.as_posix()}')
               evidence.append('|'.join((path.as_posix(), item['classification'], successor.as_posix())))
-          Path('/tmp/porota-test-args.txt').write_text('\n'.join(args) + '\n', encoding='utf-8')
-          Path('/tmp/porota-test-exclusions.txt').write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
+          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-args.txt')).write_text('\n'.join(args) + '\n', encoding='utf-8')
+          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-exclusions.txt')).write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
           print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
           PY
-          mapfile -t TEST_ARGS < /tmp/porota-test-args.txt
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > /tmp/porota-test-collection.txt
+          mapfile -t TEST_ARGS < "${POROTA_PREDEPLOY_TMP}/porota-test-args.txt"
+          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest --collect-only -q "${TEST_ARGS[@]}" > "${POROTA_PREDEPLOY_TMP}/porota-test-collection.txt"
           set +e
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml=/tmp/porota-governed-tests.xml
+          RUNNER_TEMP="$POROTA_PREDEPLOY_TMP" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q "${TEST_ARGS[@]}" --junitxml="${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"
           TEST_RC=$?
           set -e
           TEST_RC="$TEST_RC" python - <<'PY'
+          import os
           from pathlib import Path
-          import json, os, re, xml.etree.ElementTree as ET
+          import hashlib, json, os, re, subprocess, xml.etree.ElementTree as ET
+          from scripts.porota_artifact_provenance import verify_source_manifest
 
-          collection = Path('/tmp/porota-test-collection.txt').read_text(encoding='utf-8')
+          candidate_sha = os.environ['CANDIDATE_SHA']
+          candidate_tree = os.environ['CANDIDATE_TREE']
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == candidate_sha
+          assert subprocess.check_output(['git', 'rev-parse', candidate_sha + '^{tree}'], text=True).strip() == candidate_tree
+          verify_source_manifest(Path('.'), Path('POROTA_SOURCE_PROVENANCE.json'), candidate_sha, candidate_tree)
+          junit_bytes = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.xml')).read_bytes()
+
+          collection = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-collection.txt')).read_text(encoding='utf-8')
           discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
-          suite = ET.parse('/tmp/porota-governed-tests.xml').find('.//testsuite')
+          suite = ET.fromstring(junit_bytes).find('.//testsuite')
           tests = int(suite.get('tests', 0))
           failures = int(suite.get('failures', 0))
           errors = int(suite.get('errors', 0))
           skipped_nodes = [node for node in suite.iter('skipped')]
           xfail = sum(node.get('type') == 'pytest.xfail' for node in skipped_nodes)
           skipped = len(skipped_nodes) - xfail
-          exclusions = [line for line in Path('/tmp/porota-test-exclusions.txt').read_text(encoding='utf-8').splitlines() if line]
+          exclusions = [line for line in Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-exclusions.txt')).read_text(encoding='utf-8').splitlines() if line]
           result = {
               'schema_version': 1,
+              'candidate_sha': candidate_sha,
+              'candidate_tree': candidate_tree,
+              'junit_sha256': hashlib.sha256(junit_bytes).hexdigest(),
+              'junit_bytes': len(junit_bytes),
+              'source_unchanged': True,
               'scope': 'repository-root automatic pytest discovery',
               'discovered': discovered,
               'executed': tests,
@@ -137,9 +228,9 @@ jobs:
               'errors': errors,
               'exclusions': exclusions,
               'pytest_exit_code': int(os.environ['TEST_RC']),
-              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests else 'RED',
+              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests and discovered > 0 and not any((failures, errors, skipped, xfail)) else 'RED',
           }
-          Path('/tmp/porota-governed-tests.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.json')).write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(f'POROTA_TEST_DISCOVERED={discovered}')
           print(f'POROTA_TEST_EXECUTED={tests}')
           print(f'POROTA_TEST_SKIPPED={skipped}')
@@ -150,23 +241,35 @@ jobs:
           print(f'POROTA_GOVERNED_TEST_STATUS={result["status"]}')
           assert discovered > 0, 'automatic discovery returned zero tests'
           assert discovered == tests, f'collected/executed mismatch: {discovered}!={tests}'
+          assert not any((failures, errors, skipped, xfail)), 'final governed suite requires zero failures/errors/skips/xfails'
           PY
           test "$TEST_RC" -eq 0
           echo 'POROTA_GOVERNED_TESTS=GREEN'
+
+      - name: Issue 465 programable reauditing evidence gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_issue465_audit_gate.py verify \
+            --repo-root . \
+            --junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml" \
+            --governed "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.json" \
+            --out "${POROTA_PREDEPLOY_TMP}/porota-issue465-audit-gate.json"
 
       - name: Governed test evidence summary
         if: always()
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [ ! -f /tmp/porota-governed-tests.json ]; then
+          if [ ! -f "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.json" ]; then
             echo '### Governed productive suite' >> "$GITHUB_STEP_SUMMARY"
             echo '- Status: RED — evidence file missing' >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os
           import json
-          data=json.load(open('/tmp/porota-governed-tests.json',encoding='utf-8'))
+          data=json.load(open(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.json'),encoding='utf-8'))
           print('### Governed productive suite')
           print(f'- Status: {data["status"]}')
           print(f'- Discovered: {data["discovered"]}')
@@ -189,7 +292,7 @@ jobs:
           python scripts/porota_host_control_plane_inventory.py \
             --repo-root . \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
-            --json-out /tmp/porota-host-control-plane.json
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-host-control-plane.json"
 
       - name: Dependency reproducibility gate
         shell: bash
@@ -197,7 +300,8 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_dependency_repro_audit.py \
             --repo-root . \
-            --json-out /tmp/porota-dependency-repro.json \
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-dependency-repro.json" \
+            --check-installed \
             --fail-on-gap
 
       - name: Host control-plane manifest V2
@@ -208,47 +312,87 @@ jobs:
             --repo-root . \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
             --source-sha "$CANDIDATE_SHA" \
-            --json-out /tmp/porota-host-manifest-v2.json
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-host-manifest-v2.json"
 
       - name: Host control-plane reconciliation policy
         shell: bash
         run: |
           set -Eeuo pipefail
           python scripts/porota_host_policy_v2.py \
-            --manifest /tmp/porota-host-manifest-v2.json \
+            --manifest "${POROTA_PREDEPLOY_TMP}/porota-host-manifest-v2.json" \
             --policy ops/policy/host-control-plane-reconciliation-v2.json \
-            --json-out /tmp/porota-host-policy-v2.json
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-host-policy-v2.json"
+
+      - name: Final convergence input and guard provenance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/rc6_convergence_provenance.py \
+            --repo-root . --candidate-sha "$CANDIDATE_SHA" \
+            --junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml" \
+            --out "${POROTA_PREDEPLOY_TMP}/porota-final-input-provenance.json" --fetch-source-refs
+          python - <<'PY_FINAL_MATERIAL'
+          import os
+          from pathlib import Path
+          from scripts.rc6_convergence_provenance import read_json, final_material_receipt_binding
+          final_material_receipt_binding(
+              Path('.'), os.environ['CANDIDATE_SHA'], os.environ['CANDIDATE_TREE'],
+              read_json(Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-final-input-provenance.json')).read_bytes()),
+              read_json(Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.json')).read_bytes()),
+              Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.xml')))
+          print('POROTA_FINAL_MATERIAL_PROGRAMMING_GATES=GREEN')
+          PY_FINAL_MATERIAL
 
       - name: Build candidate exactly once
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker build             --label "porota.commit=${CANDIDATE_SHA}"             --label "porota.predeploy=v2"             -t "$IMAGE" .
-          docker image inspect "$IMAGE" >/dev/null
+          python scripts/porota_artifact_provenance.py checkout \
+            --repo-root . --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" --verify-context
+          python scripts/porota_predeploy_cleanup.py begin-build --scope "$POROTA_PREDEPLOY_OWNER"
+          docker build \
+            --label "porota.commit=${CANDIDATE_SHA}" \
+            --label "porota.tree=${CANDIDATE_TREE}" \
+            --label "porota.source-manifest-sha256=${SOURCE_MANIFEST_SHA256}" \
+            --label "porota.predeploy=v2" \
+            --label "porota.predeploy.owner=${POROTA_PREDEPLOY_OWNER_UUID}" \
+            --label "porota.predeploy.run-id=${GITHUB_RUN_ID}" \
+            --label "porota.predeploy.run-attempt=${GITHUB_RUN_ATTEMPT}" \
+            -t "$IMAGE" .
+          docker image inspect "$IMAGE" > "${POROTA_PREDEPLOY_TMP}/porota-image-inspect.json"
+          python scripts/porota_predeploy_cleanup.py claim-image \
+            --scope "$POROTA_PREDEPLOY_OWNER" --image-id "$(docker image inspect --format '{{.Id}}' "$IMAGE")"
           echo "POROTA_BUILD_ONCE=GREEN|IMAGE=$IMAGE"
 
       - name: Extract exact image application filesystem
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf /tmp/porota-predeploy-app
-          mkdir -p /tmp/porota-predeploy-app
+          mkdir "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app"
           cid="$(docker create "$IMAGE")"
           trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/app/." /tmp/porota-predeploy-app/
+          docker cp "$cid:/app/." "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app/"
           docker rm "$cid" >/dev/null
           trap - EXIT
-          test -f /tmp/porota-predeploy-app/Dockerfile
+          test -f "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app/Dockerfile"
           echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
 
       - name: Artifact completeness and import closure
         shell: bash
         run: |
           set -Eeuo pipefail
-          python scripts/porota_validate_deploy_artifact.py             --repo-root .             --artifact-root /tmp/porota-predeploy-app             --manifest-out /tmp/porota-artifact-manifest.json
+          python scripts/porota_validate_deploy_artifact.py \
+            --repo-root . \
+            --artifact-root "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app" \
+            --manifest-out "${POROTA_PREDEPLOY_TMP}/porota-artifact-manifest.json" \
+            --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --image-inspect "${POROTA_PREDEPLOY_TMP}/porota-image-inspect.json" \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE"
           python - <<'PY'
+          import os
           import json
-          p='/tmp/porota-artifact-manifest.json'
+          p=os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-artifact-manifest.json')
           x=json.load(open(p,encoding='utf-8'))
           assert x['status']=='GREEN'
           print('POROTA_ARTIFACT_FILES=' + str(x['artifact_runtime_files']))
@@ -256,9 +400,9 @@ jobs:
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
           PY
           for asset in n_instrument_watchlist.json POROTA_SECTOR_MAP_V1.csv; do
-            test -f "/tmp/porota-predeploy-app/$asset"
+            test -f "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app/$asset"
             EXPECTED="$(sha256sum "$asset" | awk '{print $1}')"
-            ACTUAL="$(sha256sum "/tmp/porota-predeploy-app/$asset" | awk '{print $1}')"
+            ACTUAL="$(sha256sum "${POROTA_PREDEPLOY_TMP}/porota-predeploy-app/$asset" | awk '{print $1}')"
             test "$EXPECTED" = "$ACTUAL"
             echo "POROTA_STATIC_RUNTIME_ASSET=GREEN|$asset|$ACTUAL"
           done
@@ -267,7 +411,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker run --rm --pull never --entrypoint python "$IMAGE" - <<'PY'
+          docker run --rm -i --pull never --network none --entrypoint python "$IMAGE" - <<'PY'
           import bg_paper_dashboard
           import bf_production_paper_observer
           import bv_paper_runtime
@@ -275,17 +419,74 @@ jobs:
           import be_paper_engine
           import bw_daily_risk
           import dh_paper_dynamic_risk_gate_hf6
+          import rc6_paper_family_lifecycle
+          import rc6_ppi_future_contract_policy
+          import rc6_shadow_runtime.worker
+          import rc6_shadow_runtime.entry_signals
+          import rc6_shadow_runtime.funnel
+          import rc6_shadow_runtime.source_authority
+          import rc6_dynamic_universe.promotion
+          import rc6_ppi_global_budget
           import o_dashboard
+          import rc6_trader_dashboard
+          import rc6_trader_dashboard.projection
+          import scripts.rc6_shadow_health_gate
+          import json
+          from pathlib import Path
+          from scripts.porota_dependency_repro_audit import (
+              current_platform_identity, installed_distribution_audit, platform_supported)
+          policy=json.loads(Path('ops/policy/rc6-supply-chain-v1.json').read_text())
+          installed=installed_distribution_audit(policy)
+          assert installed['status']=='GREEN', installed
+          assert platform_supported(current_platform_identity(), policy['platform'])
+          print('POROTA_IMAGE_INSTALLED_CLOSURE=GREEN|' + str(installed['installed_total']))
           print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
           PY
+
+      - name: Exact image native codec and archive control
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ACTUAL_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+          docker run --rm --pull never --network none --read-only \
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true \
+            --no-healthcheck \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432,uid=1000,gid=1000,mode=1777 \
+            --entrypoint python "$ACTUAL_IMAGE_ID" \
+            -m scripts.rc6_archive_v3_image_smoke \
+            --source-manifest /app/POROTA_SOURCE_PROVENANCE.json \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --image-id "$ACTUAL_IMAGE_ID" > "${POROTA_PREDEPLOY_TMP}/porota-runtime-codec-smoke.json"
+          python - "$ACTUAL_IMAGE_ID" <<'PY_CODEC_IMAGE'
+          import os
+          import os, sys
+          from pathlib import Path
+          from scripts.porota_artifact_provenance import verify_source_manifest
+          from scripts.rc6_archive_v3_image_smoke import loads, sha, validate_report
+          manifest_path = Path('POROTA_SOURCE_PROVENANCE.json')
+          source = verify_source_manifest(Path('.'), manifest_path, os.environ['CANDIDATE_SHA'], os.environ['CANDIDATE_TREE'])
+          raw = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-runtime-codec-smoke.json')).read_bytes()
+          validate_report(loads(raw), candidate_sha=os.environ['CANDIDATE_SHA'], tree_sha=os.environ['CANDIDATE_TREE'],
+                          image_id=sys.argv[1], source_manifest_sha256=sha(manifest_path.read_bytes()),
+                          source_sha256={row['path']: row['sha256'] for row in source['files']})
+          print('POROTA_EXACT_IMAGE_NATIVE_CODEC_ARCHIVE=GREEN|' + sys.argv[1])
+          PY_CODEC_IMAGE
 
       - name: Exact image runtime smoke contract
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Runtime images intentionally exclude tests and CI metadata. The exact
-          # image has already passed compile/import-closure/import-smoke gates.
-          echo "POROTA_EXACT_IMAGE_TEST_SOURCES=EXCLUDED_FROM_RUNTIME_IMAGE"
+          # Report the extracted image contents, rather than assuming its
+          # Docker context excludes test sources or CI metadata.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          app = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-predeploy-app'))
+          sources = list(app.rglob('test_*.py'))
+          print('POROTA_EXACT_IMAGE_TEST_SOURCES=' + ('PRESENT' if sources else 'ABSENT'))
+          print('POROTA_EXACT_IMAGE_TEST_SOURCE_FILES=' + str(len(sources)))
+          print('POROTA_EXACT_IMAGE_CI_METADATA=' + ('PRESENT' if (app / '.github').is_dir() else 'ABSENT'))
+          PY
           echo "POROTA_EXACT_IMAGE_IMPORT_SMOKE=GREEN"
           echo "POROTA_FULL_SUITE=SEE_GOVERNED_TEST_EVIDENCE"
           echo "POROTA_GOVERNED_TEST_DISCOVERY=REPOSITORY_ROOT_AUTOMATIC"
@@ -308,17 +509,35 @@ jobs:
           set -Eeuo pipefail
           python scripts/porota_build_deploy_bundle_v2.py \
             --repo-root . \
-            --output /tmp/porota-deploy-bundle-v2.tgz \
-            --manifest-out /tmp/porota-deploy-bundle-v2-manifest.json
-          docker save "$IMAGE" | gzip -1 > /tmp/porota-predeploy-image.tar.gz
-          IMAGE_TAR_SHA="$(sha256sum /tmp/porota-predeploy-image.tar.gz | awk '{print $1}')"
+            --output "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2.tgz" \
+            --manifest-out "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2-manifest.json" \
+            --source-manifest POROTA_SOURCE_PROVENANCE.json
+          python scripts/porota_artifact_provenance.py bundle \
+            --repo-root . --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --bundle "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2.tgz" \
+            --bundle-manifest "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2-manifest.json" \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-bundle-byte-provenance.json"
+          docker save "$IMAGE" | gzip -1 > "${POROTA_PREDEPLOY_TMP}/porota-predeploy-image.tar.gz"
+          IMAGE_TAR_SHA="$(sha256sum "${POROTA_PREDEPLOY_TMP}/porota-predeploy-image.tar.gz" | awk '{print $1}')"
           IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
           IMAGE_SIZE_BYTES="$(docker image inspect -f '{{.Size}}' "$IMAGE")"
           IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$IMAGE" | sha256sum | awk '{print $1}')"
           TREE_SHA="$(git rev-parse HEAD^{tree})"
+          python scripts/porota_artifact_provenance.py image-tar \
+            --repo-root . --source-manifest POROTA_SOURCE_PROVENANCE.json \
+            --image-tar "${POROTA_PREDEPLOY_TMP}/porota-predeploy-image.tar.gz" --image-id "$IMAGE_ID" \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --json-out "${POROTA_PREDEPLOY_TMP}/porota-image-tar-byte-provenance.json"
           python - "$CANDIDATE_SHA" "$TREE_SHA" "$IMAGE_ID" "$IMAGE_TAR_SHA" "$IMAGE_CONFIG_SHA" "$IMAGE_SIZE_BYTES" <<'PY'
-          import json,sys
+          import os
+          import hashlib,json,os,sys
+          from pathlib import Path
+          from scripts.rc6_archive_v3_image_smoke import SCHEMA, FIXTURE_SHA256, loads
           candidate,tree,image_id,image_tar_sha,image_config_sha,image_size_bytes=sys.argv[1:]
+          rows={row['path']:row for row in json.loads(Path('POROTA_SOURCE_PROVENANCE.json').read_bytes())['files']}
+          codec_raw=Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-runtime-codec-smoke.json')).read_bytes()
+          assert loads(codec_raw)['image_id_argument'] == image_id
           payload={
             "schema_version":1,
             "candidate_sha":candidate,
@@ -331,8 +550,19 @@ jobs:
             "real_orders_sent_required":0,
             "real_order_capability_required":"BLOCKED",
             "build_once":True,
+            "source_manifest_sha256":os.environ['SOURCE_MANIFEST_SHA256'],
+            "source_byte_provenance_required":True,
+            "final_input_provenance_sha256":hashlib.sha256(Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-final-input-provenance.json')).read_bytes()).hexdigest(),
+            "runtime_codec_smoke":{
+                "schema":SCHEMA,
+                "receipt_sha256":hashlib.sha256(codec_raw).hexdigest(),
+                "script_sha256":rows['scripts/rc6_archive_v3_image_smoke.py']['sha256'],
+                "fixtures_sha256":{name:rows[name]['sha256'] for name in FIXTURE_SHA256},
+                "image_id":image_id,
+            },
+            "execution_origin":json.load(open(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-predeploy-origin.json'),encoding="utf-8")),
           }
-          open("/tmp/porota-frozen-candidate.json","w",encoding="utf-8").write(
+          open(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-frozen-candidate.json'),"w",encoding="utf-8").write(
               json.dumps(payload,indent=2,sort_keys=True)+"\n")
           print("POROTA_FROZEN_CANDIDATE=GREEN|"+candidate+"|"+tree+"|"+image_id)
           PY
@@ -342,40 +572,127 @@ jobs:
         run: |
           set -Eeuo pipefail
           python tests/ci_frozen_candidate_contract.py validate \
-            --frozen /tmp/porota-frozen-candidate.json \
-            --image /tmp/porota-predeploy-image.tar.gz \
-            --manifest /tmp/porota-deploy-bundle-v2-manifest.json \
+            --frozen "${POROTA_PREDEPLOY_TMP}/porota-frozen-candidate.json" \
+            --image "${POROTA_PREDEPLOY_TMP}/porota-predeploy-image.tar.gz" \
+            --manifest "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2-manifest.json" \
             --candidate-sha "$CANDIDATE_SHA" \
             --tree-sha "$(git rev-parse HEAD^{tree})"
 
       - name: Upload predeploy evidence
+        id: frozen_primary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 verified2026-10-05
         with:
-          name: porota-predeploy-v2-${{ env.CANDIDATE_SHA }}
+          name: porota-predeploy-v2-${{ env.CANDIDATE_SHA }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
-            /tmp/porota-artifact-manifest.json
-            /tmp/porota-host-control-plane.json
-            /tmp/porota-dependency-repro.json
-            /tmp/porota-host-manifest-v2.json
-            /tmp/porota-host-policy-v2.json
-            /tmp/porota-deploy-bundle-v2.tgz
-            /tmp/porota-deploy-bundle-v2-manifest.json
-            /tmp/porota-predeploy-image.tar.gz
-            /tmp/porota-frozen-candidate.json
-            /tmp/porota-governed-tests.xml
-            /tmp/porota-governed-tests.json
-            /tmp/porota-test-collection.txt
-            /tmp/porota-test-exclusions.txt
-            /tmp/porota-negative-fixtures.json
-            ${{ runner.temp }}/porota-predeploy-evidence/
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-artifact-manifest.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-source-provenance.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-image-inspect.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-bundle-byte-provenance.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-image-tar-byte-provenance.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-issue465-audit-gate.json
+            docs/audits/ISSUE465_REAUDIT.json
+            docs/audits/ISSUE465_REAUDIT.md
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-host-control-plane.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-dependency-repro.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-installed-dependencies.txt
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-origin.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-host-manifest-v2.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-host-policy-v2.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-deploy-bundle-v2.tgz
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-deploy-bundle-v2-manifest.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-image.tar.gz
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-frozen-candidate.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-final-input-provenance.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-runtime-codec-smoke.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-governed-tests.xml
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-governed-tests.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-test-collection.txt
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-test-exclusions.txt
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-negative-fixtures.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-evidence/
 
-      - name: Predeploy summary
+      - name: Replay exact published primary ZIP and export bounded evidence only
         if: success()
         shell: bash
+        env:
+          PRIMARY_ARTIFACT_ID: ${{ steps.frozen_primary.outputs.artifact-id }}
+          PRIMARY_ARTIFACT_DIGEST: ${{ steps.frozen_primary.outputs.artifact-digest }}
         run: |
+          set -Eeuo pipefail
+          python scripts/porota_published_artifact_evidence.py \
+            --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" \
+            --artifact-id "$PRIMARY_ARTIFACT_ID" --upload-digest "$PRIMARY_ARTIFACT_DIGEST" \
+            --image-ref "$IMAGE" --repo-root . \
+            --evidence-root "${POROTA_PREDEPLOY_TMP}/porota-predeploy-published-evidence" --deadline-seconds 600
+          echo 'POROTA_SECONDARY_EVIDENCE_ONLY=GREEN|primary_remains_unique_promotable_artifact=true'
+
+      - name: Upload small published-primary verification receipts
+        id: primary_evidence_only
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 verified2026-10-05
+        with:
+          name: porota-predeploy-v2-evidence-only-${{ env.CANDIDATE_SHA }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-published-evidence/*.xml
+
+      - name: Enforce secondary evidence API size and origin
+        if: success()
+        shell: bash
+        env:
+          SECONDARY_ARTIFACT_ID: ${{ steps.primary_evidence_only.outputs.artifact-id }}
+          SECONDARY_ARTIFACT_DIGEST: ${{ steps.primary_evidence_only.outputs.artifact-digest }}
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY_SECONDARY'
+          import os
+          from scripts.porota_artifact_http import api_get
+          from scripts.porota_published_artifact_evidence import MAX_SECONDARY_ARTIFACT_BYTES, upload_digest
+          artifact=api_get('/actions/artifacts/' + str(int(os.environ['SECONDARY_ARTIFACT_ID'])))
+          expected='porota-predeploy-v2-evidence-only-' + os.environ['CANDIDATE_SHA'] + '-run-' + os.environ['GITHUB_RUN_ID'] + '-attempt-' + os.environ['GITHUB_RUN_ATTEMPT']
+          assert artifact['name']==expected and artifact['expired'] is False
+          assert artifact['digest']==upload_digest(os.environ['SECONDARY_ARTIFACT_DIGEST'])
+          assert 0 < artifact['size_in_bytes'] <= MAX_SECONDARY_ARTIFACT_BYTES
+          assert artifact['workflow_run']['id']==int(os.environ['GITHUB_RUN_ID'])
+          assert artifact['workflow_run']['head_sha']==os.environ['CANDIDATE_SHA']
+          print('POROTA_SECONDARY_EVIDENCE_API=GREEN|id=' + str(artifact['id']) + '|bytes=' + str(artifact['size_in_bytes']) + '|promotable=false')
+          PY_SECONDARY
+
+      - name: Local cleanup
+        id: local_cleanup
+        if: always()
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python scripts/porota_predeploy_cleanup.py cleanup \
+            --scope "${RUNNER_TEMP}/porota-predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.owner.json" \
+            --receipt "${RUNNER_TEMP}/porota-predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.cleanup.json"
+
+      - name: Predeploy summary
+        if: success() && steps.local_cleanup.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY_CLEANUP_SUMMARY'
+          import json, os
+          from scripts.porota_predeploy_cleanup import read_file, RECEIPT_SCHEMA
+          raw, _ = read_file(os.environ['POROTA_PREDEPLOY_CLEANUP_RECEIPT'], maximum=1048576, mode=0o600)
+          result = json.loads(raw)
+          assert result['schema'] == RECEIPT_SCHEMA and result['status'] == 'GREEN'
+          assert result['failures'] == [] and result['private_root_absent'] is True
+          assert result['owner']['context']['candidate_sha'] == os.environ['CANDIDATE_SHA']
+          assert result['owner']['context']['candidate_tree'] == os.environ['CANDIDATE_TREE']
+          assert result['owner']['context']['run_id'] == os.environ['GITHUB_RUN_ID']
+          assert result['owner']['context']['run_attempt'] == os.environ['GITHUB_RUN_ATTEMPT']
+          assert result['owner']['owner_uuid'] == os.environ['POROTA_PREDEPLOY_OWNER_UUID']
+          print('POROTA_PREDEPLOY_CLEANUP_RECEIPT=GREEN')
+          PY_CLEANUP_SUMMARY
           {
             echo '### Porota Predeploy V2'
             echo "- Candidate SHA: \`${CANDIDATE_SHA}\`"
@@ -389,22 +706,17 @@ jobs:
             echo '- Host reconciliation policy: GREEN'
             echo '- Build: ONCE'
             echo '- Exact artifact integrity: GREEN'
+            echo '- Checkout/image/bundle/exported layers byte provenance: GREEN'
             echo '- Import closure: GREEN'
             echo '- Runtime import smoke: GREEN'
+            echo '- Exact published ZIP replay and saved /app rootfs modes: GREEN'
+            echo '- Downloaded primary loaded image and offline imports: GREEN'
+            echo '- Bounded secondary receipts: EVIDENCE ONLY; primary remains sole promotable artifact'
             echo '- Full governed suite: GREEN (see porota-governed-tests.json)'
             echo '- Negative fail-closed fixtures: GREEN'
             echo '- PAPER safety source gate: GREEN'
+            echo '- Local cleanup: GREEN (UUID/run/ImageID ownership verified; measured filesystem deltas in job log)'
             echo '- Droplet touched: NO'
           } >> "$GITHUB_STEP_SUMMARY"
           echo 'POROTA_PREDEPLOY_V2=GREEN'
           echo 'DROPLET_TOUCHED=NO'
-
-      - name: Local cleanup
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
-          docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence"
-          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'

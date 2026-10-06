@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="23" time="147.925" timestamp="2026-10-05T15:42:15.524219+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset" time="15.541"><failure message="AssertionError: (False, 'DAILY_RISK_STALE_MARKS', None)&#10;assert False">wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7fb3e9fefa50&gt;, [('POST', 'https://clientapi.portfoliopersona...1&amp;type=ACCIONES&amp;settlement=A-24HS'), ...], {'status': 200, 'mode': 'fresh', 'latency': 0.02, 'fail_calls': set(), ...})
+tmp_path = PosixPath('/workspace/rc6_budget_primary_custody_replays/fixture-focal-b8b9/pytest/test_native_current_future_sco0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fb3e9fefd50&gt;
+
+    def test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset(wire, tmp_path, monkeypatch):
+        from bd_ppi_readonly_guard import ProductionMarketReader
+        import bf_production_paper_observer as observer
+        from be_paper_engine import D, PaperBroker, PaperStore
+        from tests.test_production_paper_v1634 import quote
+        from tests.test_rc6_convergence_budget_liveness import seed_offline_pending_futures
+        clock = wire[0]
+        policy, recommendation, report, approval = reviewed_native_capacity(wire)
+        monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
+        store = PaperStore(str(tmp_path/"paper.sqlite"))
+        observer._support_schema(store)
+        # Explicit synthetic capital covers the whole worst-case FUT reserve.
+        # Every economic/risk/fee/calendar guard remains active on the real API;
+        # this is not a current account balance or six admissible DLR contracts.
+        broker = PaperBroker(store, initial_cash="1000000000", clock_fn=lambda: clock.now().isoformat())
+        for symbol in ("GGAL", "EXIT1", "EXIT2", "EXIT3", "EXIT4"):
+            q = quote(symbol=symbol, at=clock.now().isoformat())
+            store.add_quote(q)
+            opened = broker._open(q, D(".8"), {})
+            assert opened[0], opened
+        seed_offline_pending_futures(store, monkeypatch)
+        gc.collect()  # Finalize fixture writer cycles before the first read seam.
+        controller = RuntimeCapacityController(store.path, environ={}, policy=policy,
+            recommendation=recommendation, report=report, approval=approval)
+        runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+        reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+        # Use the actual durable five-key contracts, including their settlement;
+        # an advisory list is never the required primary scope.
+        positions, invalid = store.exit_positions()
+        assert not invalid
+        positions += [{**p, "asset_class": "FUTUROS"} for p in store.active_future_positions()]
+        identities = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]) for p in positions]
+        try:
+            reader.login_once()
+            for identity in identities:
+                assert scoped_book(reader, identity, "EXIT_CRITICAL")["bids"]
+            q = quote(symbol="EXIT_FIRST_ADMISSION_CHANGE", at=clock.now().isoformat())
+            store.add_quote(q)
+            opened = broker._open(q, D(".8"), {})
+&gt;           assert opened[0], opened
+E           AssertionError: (False, 'DAILY_RISK_STALE_MARKS', None)
+E           assert False
+
+tests/test_rc6_budget_source_custody.py:387: AssertionError</failure></testcase><testcase classname="tests.test_rc6_budget_source_custody" name="test_same_native_count_with_changed_identity_never_clears_from_frozen_scope" time="21.307" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[verified]" time="7.327" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]" time="3.752" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]" time="4.984" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]" time="4.995" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]" time="5.010" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]" time="5.139" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]" time="4.517" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]" time="3.899" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader" time="3.642" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]" time="0.044" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]" time="0.039" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]" time="0.034" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]" time="0.032" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]" time="0.036" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]" time="0.029" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]" time="0.042" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]" time="0.034" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]" time="0.033" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]" time="0.034" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[feasible]" time="45.524" /><testcase classname="tests.test_rc6_exit_reader_cadence" name="test_native_exit_worker_services_mixed_positions_with_honest_cadence[slow_round]" time="20.495" /></testsuite></testsuites>

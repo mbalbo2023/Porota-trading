@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="21" time="34.082" timestamp="2026-10-05T14:31:11.833489+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]" time="2.071" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]" time="1.893" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]" time="2.260" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]" time="2.149"><failure message="assert []">native_ledger = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7f2a18da3810&gt;, &lt;be_paper_engine.PaperStore object at 0x7f2a199d6410&gt;, &lt;rc6_dynamic_universe.promotion.RuntimeCapacityController object at 0x7f2a19fcec10&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f2a18da0650&gt;
+caller = 'runtime'
+
+    @pytest.mark.parametrize("caller", ("count", "digests", "controller", "runtime", "round"))
+    def test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math(native_ledger, monkeypatch, caller):
+        clock, store, controller = native_ledger
+        initial = controller.state(clock.now())
+        assert initial["status"] == "APPROVED_DYNAMIC"
+        assert initial["exit_capacity"]["open_positions_count"] == 10
+        assert initial["exit_capacity"]["exit_demand"]["book"] == 60
+        runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+        runtime._current(priority="EXIT_CRITICAL")
+        before = source_custody_snapshot(store.path)
+        assert before["-shm"]["st_size"] &gt; 0, "Native real WAL/SHM must be present"
+        captures = forbid_primary_sqlite(monkeypatch, store.path)
+        if caller == "count":
+            assert budgets.supervisable_position_count(store.path) == 10
+        elif caller == "digests":
+            assert len(budgets._supervisable_identity_digests(store.path)) == 10
+        elif caller == "controller":
+            observed = controller.state(clock.now())
+            assert observed["exit_capacity"] == initial["exit_capacity"]
+            assert observed["fingerprint"] == initial["fingerprint"]
+        elif caller == "runtime":
+            budget = runtime._current(priority="EXIT_CRITICAL", deadline=time.monotonic()+.15)
+            assert budget.policy["open_positions_count"] == 10
+            assert budget.policy["exit_demand"]["book"] == 60
+        else:
+            observed = runtime.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+            # No books were served: observing the correct scope cannot invent them.
+            assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+            assert observed["required_identities_count"] == 10
+            assert observed["covered_identities_count"] == 0
+&gt;       assert captures
+E       assert []
+
+tests/test_rc6_budget_source_custody.py:83: AssertionError</failure></testcase><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]" time="2.518" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]" time="1.289" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]" time="1.202" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]" time="1.551" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]" time="1.532" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]" time="1.219" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]" time="1.218" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success" time="1.246" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]" time="1.531" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]" time="1.501" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]" time="1.570" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary" time="1.584" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects" time="1.356" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]" time="1.252" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]" time="1.320" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_hot_rollback_journal_is_unknown_until_writer_finishes" time="0.352"><failure message="KeyError: '-journal'">wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7f2a1930fbd0&gt;, [], {'status': 200, 'mode': 'fresh', 'latency': 0.02, 'fail_calls': set(), ...})
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-325/test_native_hot_rollback_journ0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7f2a1930df90&gt;
+
+    def test_native_hot_rollback_journal_is_unknown_until_writer_finishes(wire, tmp_path, monkeypatch):
+        from tests.test_issue465_budget_adversarial import native_opened_store
+        store, _ = native_opened_store(tmp_path, wire[0], monkeypatch, count=5)
+        gc.collect()
+        with closing(sqlite3.connect(store.path)) as writer:
+            assert writer.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+            writer.execute("BEGIN IMMEDIATE")
+            writer.execute("UPDATE observer_state SET mode=mode WHERE id=1")
+            before = source_custody_snapshot(store.path)
+&gt;           assert before["-journal"]["st_size"] &gt; 0
+                   ^^^^^^^^^^^^^^^^^^
+E           KeyError: '-journal'
+
+tests/test_rc6_budget_source_custody.py:232: KeyError</failure></testcase><testcase classname="tests.test_rc6_budget_source_custody" name="test_observer_includes_its_own_capture_time_and_never_borrows_another_round" time="2.229" /></testsuite></testsuites>

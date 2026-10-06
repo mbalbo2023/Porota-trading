@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="5.176" timestamp="2026-10-05T05:57:51.222456+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_capacity_retention_activation" name="test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire" time="2.033"><failure message="AssertionError: assert 'APPROVED_DYNAMIC' == 'ACTIVATION_B...EXIT_CAPACITY'&#10;  &#10;  - ACTIVATION_BLOCKED_EXIT_CAPACITY&#10;  + APPROVED_DYNAMIC">wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7ff50d726590&gt;, [('POST', 'https://clientapi.portfoliopersona...1&amp;type=ACCIONES&amp;settlement=A-24HS'), ...], {'status': 200, 'mode': 'fresh', 'latency': 0.02, 'fail_calls': set(), ...})
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-232/test_native_cold_controller_bl0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7ff50d725a10&gt;
+
+    def test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire(
+            wire, tmp_path, monkeypatch):
+        clock, store, controller = reviewed_controller(wire, tmp_path, monkeypatch)
+        initial = controller.state(clock.now())
+        assert initial["status"] == "APPROVED_DYNAMIC"
+        runtime = RuntimePPIBudget(store.path, controller, clock=clock.now)
+        budget = GlobalPPIBudget(runtime.path, budget_policy(initial, opened_count=5), clock=clock.now)
+        historic_lower_receipts(budget, clock)
+        before = debt_digest(budget.path), budget.path.read_bytes()
+        observed = controller.state(clock.now())
+&gt;       assert observed["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+E       AssertionError: assert 'APPROVED_DYNAMIC' == 'ACTIVATION_B...EXIT_CAPACITY'
+E         
+E         - ACTIVATION_BLOCKED_EXIT_CAPACITY
+E         + APPROVED_DYNAMIC
+
+tests/test_rc6_capacity_retention_activation.py:35: AssertionError</failure></testcase><testcase classname="tests.test_rc6_capacity_retention_activation" name="test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration" time="1.455"><failure message="KeyError: 'exit_receipt_capacity'">wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7ff50d631450&gt;, [('POST', 'https://clientapi.portfoliopersona...1&amp;type=ACCIONES&amp;settlement=A-24HS'), ...], {'status': 200, 'mode': 'fresh', 'latency': 0.02, 'fail_calls': set(), ...})
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-232/test_native_healthy_retention_0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7ff50e240190&gt;
+
+    def test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration(
+            wire, tmp_path, monkeypatch):
+        clock, store, controller = reviewed_controller(wire, tmp_path, monkeypatch)
+        initial = controller.state(clock.now())
+        assert initial["status"] == "APPROVED_DYNAMIC"
+&gt;       assert initial["exit_receipt_capacity"]["source_status"] == "ABSENT"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'exit_receipt_capacity'
+
+tests/test_rc6_capacity_retention_activation.py:57: KeyError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,43 @@
+{
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-I",
+    "-B",
+    "/workspace/rc6_root_normal_browser_supervisor_efa69894_v2.py",
+    "--output-root",
+    "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-b",
+    "--phase",
+    "both"
+  ],
+  "driver_actual_metadata_contract": {
+    "driver_total": 158,
+    "explicit_extras": {
+      "greenlet": "3.5.6",
+      "playwright": "1.63.0",
+      "pyee": "13.0.1",
+      "setuptools": "84.0.0"
+    },
+    "product_total": 157,
+    "runtime_locked": 154
+  },
+  "expected_aliases": 22,
+  "expected_routes": 294,
+  "free_bytes_before_launch": 20772216832,
+  "management600_120_is_not_product1_2_90_extension": true,
+  "previous_attempt": {
+    "classification": "PREPARATION_DRIVER_METADATA_RED_BEFORE_PRODUCT_OR_CHROME",
+    "raw_unchanged": true,
+    "source_wrapper_sha256": "2df7eb90097e709eb06600bd6368894ec1f848faed67a530b0079a356eb90613",
+    "stage_sha256": "25e72d7187e5e1741e488f05b0e3d8a3d313374c52763a66a51baf61a7d077f7"
+  },
+  "reserve_bytes": 2147483648,
+  "schema": "rc6.root-normal-browser-source-only-dispatch.v1",
+  "separate_health": true,
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_only_is_not_execution": true,
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tar_sha256": "36732d5b4b675d578bb0699c4ac3fb0138f96a80145677933c64ada84d12ba5c",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "whole_git_files": 2398,
+  "wrapper_sha256": "7111265b27213809180e71d33df930f402693593a11dd2732f0e89f8fa7b3b30"
+}

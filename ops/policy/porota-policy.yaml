@@ -51,7 +51,11 @@ deployment:
   manual_partial_runtime_file_lists_allowed: false
   canonical_deploy_workflow: .github/workflows/porota-deploy-v2-promote.yml
   droplet_disk_pretransfer_gate_required: true
-  droplet_disk_pretransfer_min_free_bytes: 6442450944
+  droplet_disk_pretransfer_min_free_bytes: 0
+  droplet_disk_admission_authority: ops/policy/rc6-disk-housekeeping-v1.json
+  droplet_disk_admission_formula: compressed_image_plus_exact_docker_size_plus_two_bundles_plus_private_scratch_live_archive_growth_plus_shared_residual_reserve_per_filesystem
+  droplet_disk_residual_reserve_bytes: 2147483648
+  droplet_disk_authorization_utc: "2026-10-01"
   droplet_disk_guard_must_run_before_transfer: true
 
 predeploy_gates:

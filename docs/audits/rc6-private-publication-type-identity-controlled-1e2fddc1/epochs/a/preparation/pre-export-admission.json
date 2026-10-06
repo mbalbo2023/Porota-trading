@@ -1,0 +1,16 @@
+{
+  "admitted": true,
+  "available_bytes": 21686841344,
+  "forecast_bytes": 814442108,
+  "forecast_scope": "conservative four source/TAR copies plus128MiB ancillary; excludes product acceptance claim",
+  "monotonic": 86777.435735946,
+  "native_fixture_created": false,
+  "pid": 239980,
+  "required_reserve_bytes": 2147483648,
+  "schema": "rc6.external-pre-export-space-admission.v1",
+  "source_exported": false,
+  "source_logical_bytes": 170056095,
+  "source_sha": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+  "source_tree": "b984539931a25a5f77eae55116c4fa9543d53748",
+  "tracked_files": 2254
+}

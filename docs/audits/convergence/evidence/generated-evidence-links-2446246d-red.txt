@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/workspace/porota_rc6_validation_2446246d/scripts/rc6_convergence_provenance.py", line 578, in <module>
+    main()
+  File "/workspace/porota_rc6_validation_2446246d/scripts/rc6_convergence_provenance.py", line 571, in main
+    report = verify(args.repo_root, args.candidate_sha, args.junit, fetch_source_refs=args.fetch_source_refs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/porota_rc6_validation_2446246d/scripts/rc6_convergence_provenance.py", line 473, in verify
+    require(isinstance(reason, str) and bool(reason.strip()) and isinstance(guard_ids, list)
+  File "/workspace/porota_rc6_validation_2446246d/scripts/rc6_convergence_provenance.py", line 79, in require
+    raise ConvergenceError(reason)
+ConvergenceError: UNEXPLAINED_SOURCE_EVOLUTION:docs/audits/convergence/evidence/governed-binding-fixture-red-003dcc-wip.json

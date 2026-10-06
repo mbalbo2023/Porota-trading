@@ -6,7 +6,7 @@ import math
 import os
 import sqlite3
 from contextlib import closing
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from statistics import pstdev
 from urllib.parse import quote
@@ -30,19 +30,41 @@ def _history_uri() -> str:
 
 
 def _connect():
-    connection = sqlite3.connect(_history_uri(), uri=True, timeout=5)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA query_only=ON")
-    return connection
+    return _copied_connection(Path(os.getenv("HIST_DB_PATH", "data/market_history.db")))
+
+
+class _CopiedConnection:
+    def __init__(self, context):
+        self.context = context
+        self.connection = context.__enter__()
+
+    def execute(self, *args, **kwargs):
+        return self.connection.execute(*args, **kwargs)
+
+    def close(self):
+        if self.context is not None:
+            self.context.__exit__(None, None, None)
+            self.context = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def _copied_connection(path):
+    from rc6_audit_evidence.sqlite_snapshot import readonly_copy
+    from bs_instrument_contracts import register_exact_time_sql
+    from time import monotonic
+    result = _CopiedConnection(readonly_copy(path.expanduser(), deadline=monotonic() + 1., validate=False))
+    register_exact_time_sql(result.connection)
+    return result
 
 
 def _runtime_connect():
     path = Path(database_path()).expanduser().resolve()
-    connection = sqlite3.connect("file:" + quote(str(path), safe="/") + "?mode=ro",
-                                 uri=True, timeout=5)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA query_only=ON")
-    return connection
+    return _copied_connection(path)
 
 
 def _runtime_rows(sql, params=()):
@@ -70,10 +92,10 @@ def _catalog():
         if TABLE not in tables:
             return []
         return [dict(row) for row in connection.execute(
-            f"""SELECT DISTINCT UPPER(instrument_type) AS family, symbol, market, settlement
+            f"""SELECT DISTINCT UPPER(instrument_type) AS family, symbol, market, currency, settlement, price_basis
                 FROM {TABLE}
                 WHERE TRIM(COALESCE(instrument_type,''))<>'' AND TRIM(COALESCE(symbol,''))<>''
-                ORDER BY family, symbol, market, settlement""")]
+                ORDER BY family, symbol, market, currency, settlement, price_basis LIMIT 100""")]
 
 
 def _families():
@@ -106,21 +128,21 @@ def _identities_for_family(family):
         ).fetchone():
             return []
         return [
-            (str(row["symbol"]),str(row["market"]),str(row["settlement"]))
+            (str(row["symbol"]), str(row["market"]), str(row["currency"]), str(row["settlement"]), str(row["price_basis"]), str(row["adjustment_basis"]))
             for row in connection.execute(
-                f"""SELECT DISTINCT symbol,market,settlement
+                f"""SELECT DISTINCT symbol,market,settlement,currency,price_basis,adjustment_basis
                     FROM {TABLE}
                     WHERE UPPER(instrument_type)=?
                       AND TRIM(COALESCE(symbol,''))<>''
-                    ORDER BY symbol,market,settlement""",
+                    ORDER BY symbol,market,currency,settlement,price_basis,adjustment_basis LIMIT 500""",
                 (family,),
             )
         ]
 
 
 def _identity(value):
-    parts = str(value or "").split("|", 3)
-    if len(parts) != 4:
+    parts = str(value or "").split("|")
+    if len(parts) != 7 or not all(parts):
         return None
     return tuple(part.strip() for part in parts)
 
@@ -131,16 +153,35 @@ def _is_on_family(value):
     }
 
 
+def _is_fixed_income_family(value):
+    return str(value or "").strip().upper() in {
+        "BONOS", "BONO", "LETRAS", "LETRA", "TITULOS_PUBLICOS", "ON",
+        "OBLIGACIONES", "OBLIGACIONES_NEGOCIABLES",
+    }
+
+
 def _bars(identity, cutoff):
-    family, symbol, market, settlement = identity
+    from rc6_trader_dashboard.history import causal_history_sql
+    if len(identity) != 7:
+        raise ValueError("ANNUAL_FULL_IDENTITY_AND_BASIS_REQUIRED")
+    family, symbol, market, currency, settlement, price_basis, adjustment_basis = identity
+    if price_basis == "UNKNOWN_ADJUSTED" or adjustment_basis == "UNKNOWN":
+        raise ValueError("ANNUAL_PRICE_ADJUSTMENT_BASIS_UNVERIFIED")
+    known_cutoff = (cutoff if isinstance(cutoff, datetime) else datetime.combine(cutoff, time.max, TZ))
     with _connect() as connection:
-        return [dict(row) for row in connection.execute(
-            f"""SELECT date, open, high, low, close, volume, source, adjusted
-                FROM {TABLE}
-                WHERE UPPER(instrument_type)=? AND symbol=? AND market=? AND settlement=?
-                  AND date<=?
-                ORDER BY date""",
-            (family, symbol, market, settlement, cutoff.isoformat()))]
+        cte, args = causal_history_sql(connection.connection, known_cutoff,
+            dict(family=family, symbol=symbol, market=market, currency=currency, settlement=settlement,
+                 price_basis=price_basis, adjustment_basis=adjustment_basis))
+        checks = {"version_id", "last_checked_at"} <= {row["name"] for row in connection.execute("PRAGMA table_info(history_checks_v2)")}
+        checked = "CASE WHEN rc6_instant_us(c.last_checked_at)<=rc6_instant_us(?) THEN c.last_checked_at END" if checks else "NULL"
+        join = " LEFT JOIN history_checks_v2 c ON c.version_id=h.id" if checks else ""
+        rows = [dict(row) for row in connection.execute(cte + f"""SELECT date,open,high,low,close,volume,source,adjusted,
+                 currency,price_basis,adjustment_basis,provider_at,observed_at,version_known_at,h.id version_id,
+                 {checked} last_checked_at FROM causal_history h{join} ORDER BY date LIMIT 5001""",
+                 (*args, *((known_cutoff.isoformat(),) if checks else ())))]
+        if len(rows) > 5000:
+            raise ValueError("ANNUAL_BAR_ROW_BUDGET_EXHAUSTED")
+        return rows
 
 
 def _number(value):
@@ -224,7 +265,15 @@ def _metric(label, value, detail=""):
 
 
 def _render_report(identity, bars, year):
-    family, symbol, market, settlement = identity
+    if len(identity) == 7:
+        family, symbol, market, currency, settlement, price_basis, adjustment_basis = identity
+    elif len(identity) == 6:
+        family, symbol, market, currency, settlement, price_basis = identity
+    else:
+        # Pure legacy diagnostic calls remain readable, but never pretend the
+        # old four-part key has a verified currency or comparable price basis.
+        family, symbol, market, settlement = identity
+        currency = price_basis = "NO_VERIFICADO"
     valid = [(row, _number(row.get("close"))) for row in bars]
     valid = [(row, close) for row, close in valid if close is not None and close > 0]
     if not valid:
@@ -290,10 +339,12 @@ def _render_report(identity, bars, year):
     high_text = _price(max(highs)) if highs else "—"
     low_text = _price(min(lows)) if lows else "—"
     metrics = [
-        _metric((f"Variación de precio {year} (sin flujos)" if _is_on_family(family)
-                 else f"Performance {year}"), _pct(annual_return),
+        _metric(f"Variación de precio {year} (sin flujos)", _pct(annual_return),
                 f"Base: {base_label}; último cierre: {end_date}"
-                + ("; excluye cupones, amortizaciones e interés corrido" if _is_on_family(family) else "")),
+                + ("; excluye cupones, amortizaciones, interés corrido y reinversión" if _is_fixed_income_family(family) else "")),
+        *([_metric("Retorno total / TIR / interés corrido", "NO_VERIFICADO",
+                   "Exige cashflows contractuales efectivos, base limpia/sucia, day-count y reinversión conocidos.")]
+          if _is_fixed_income_family(family) else []),
         _metric("Máxima caída del año", _pct(max_drawdown), "Drawdown calculado con cierres diarios desde el máximo acumulado."),
         _metric("Volatilidad realizada anualizada", _pct(volatility), "Desviación de retornos diarios × √252; requiere al menos 2 retornos."),
         _metric("RSI (14)", "—" if _rsi(analysis_closes) is None else _price(_rsi(analysis_closes)), "Promedio simple de ganancias y pérdidas de las últimas 14 ruedas; contextual, no calibrado como gatillo."),
@@ -315,22 +366,26 @@ def _render_report(identity, bars, year):
     ]
     partial = base_i is None
     note = ("Serie anual parcial: no había cierre previo al 1 de enero." if base_i is None else
-            "La performance usa el cierre anterior al primer día del año cuando está disponible.")
+            "La variación usa el cierre anterior al primer día del año cuando está disponible.")
     return (
         f"<h2>{_e(symbol)} — {_e(family)}</h2>"
-        f"<p class='paper-muted'>Mercado {_e(market)} · Liquidación {_e(settlement)} · "
+        f"<p class='paper-muted'>Mercado {_e(market)} · Moneda {_e(currency)} · Liquidación {_e(settlement)} · Base {_e(price_basis)} · "
         f"Serie {_e(series_first)} a {_e(end_date)}</p>"
         + ("<div class='paper-warning'><b>" + _e(note) + "</b></div>" if partial else "")
         + "<div class='analysis-grid'>" + "".join(metrics) + "</div>"
         + "<div class='paper-card'><h2>Cobertura y procedencia</h2><p>"
         + f"<b>Barras del año:</b> {last_i - first_i + 1} · <b>OHLC completo:</b> {full_ohlc} · "
         + f"<b>Ajuste:</b> {_e(adjustment)} · <b>Fuentes:</b> {_e(', '.join(sources))}</p>"
-        + "<p class='paper-muted'>Se muestra la serie canónica v2; conserva identidad completa y procedencia. "
-        "No se mezclan mercado ni liquidación. El ajuste depende del indicador guardado por la fuente.</p></div>"
-        + ("<div class='paper-warning'><b>Para ON, esta variación de precio no es rendimiento total.</b> "
+        + f"<p class='paper-muted'>Fuente conceptual: history_canonical_v2 · fecha de barra {_e(end_date)} · "
+        f"versión conocida {_e(latest.get('version_known_at') or 'NO_VERIFICADO')} · observación de versión "
+        f"{_e(latest.get('observed_at') or 'NO_VERIFICADO')} · último chequeo {_e(latest.get('last_checked_at') or 'NO_VERIFICADO')}. "
+        "No se mezclan identidad, moneda ni base. Este histórico no prueba el input que usó el motor: "
+        "cotización actual = market_snapshots; decisión = decision_evidence_snapshots al decision_at; "
+        "ejecución PAPER = fill/lifecycle ledger al filled_at, cada uno con fuente y corte propios.</p></div>"
+        + ("<div class='paper-warning'><b>Para renta fija, esta variación de precio no es rendimiento total.</b> "
            "No incorpora cupones cobrados, amortizaciones, interés corrido, ni reinversión de flujos; "
            "la performance económica requiere reconstruir el flujo real del bono y normalizar precio limpio/sucio.</div>"
-           if _is_on_family(family) else "")
+           if _is_fixed_income_family(family) else "")
         + ("<div class='paper-card'><h2>Validación de Obligaciones Negociables</h2>"
            "<p>La coincidencia de precio entre PPI e IOL sirve para detectar discrepancias, pero no basta para habilitar operatoria. "
            "Antes hacen falta identidad exacta (símbolo, mercado, moneda y liquidación), nominal/unidad de cotización, "
@@ -465,10 +520,10 @@ def render_page(family="", instrument=""):
         f"<option value='{_e(value)}'{' selected' if value == family else ''}>{_e(value)}</option>"
         for value in families)
     instrument_options = "".join(
-        f"<option value='{_e(family + '|' + symbol + '|' + market + '|' + settlement)}' "
-        f"{'selected' if wanted == (family, symbol, market, settlement) else ''}>"
-        f"{_e(symbol)} · {_e(market)} · {_e(settlement)}</option>"
-        for symbol, market, settlement in identities)
+        f"<option value='{_e('|'.join((family, symbol, market, currency, settlement, basis, adjustment)))}' "
+        f"{'selected' if wanted == (family, symbol, market, currency, settlement, basis, adjustment) else ''}>"
+        f"{_e(symbol)} · {_e(market)} · {_e(currency)} · {_e(settlement)} · {_e(basis)} · {_e(adjustment)}</option>"
+        for symbol, market, currency, settlement, basis, adjustment in identities)
     form = (
         "<form method='get' action='/analisis' class='paper-card analysis-form'>"
         "<label for='analysis-family'><b>Tipo de instrumento</b></label>"
@@ -484,8 +539,8 @@ def render_page(family="", instrument=""):
     report = ""
     if wanted:
         try:
-            bars = _bars((family, wanted[1], wanted[2], wanted[3]), datetime.now(TZ).date())
-            report = _render_report((family, wanted[1], wanted[2], wanted[3]), bars, year)
+            bars = _bars(wanted, datetime.now(TZ))
+            report = _render_report(wanted, bars, year)
         except (sqlite3.Error, OSError, ValueError):
             report = "<div class='paper-warning'><b>No se pudo leer la serie seleccionada.</b> No se modificó el histórico.</div>"
     elif not families:
@@ -493,8 +548,8 @@ def render_page(family="", instrument=""):
                   "No se generará un informe a partir de datos ausentes.</div>")
     runtime_truth = truth_projection.build(_runtime_rows, _runtime_table)
     return (
-        "<h1>Análisis</h1><p class='paper-muted'>Performance del año calendario "
-        + str(year) + " por instrumento, usando histórico canónico v2.</p>"
+        "<h1>Análisis</h1><p class='paper-muted'>Variación histórica de precios del año calendario "
+        + str(year) + " por identidad y base, usando histórico canónico v2; no equivale a retorno total.</p>"
         + form + _render_family_readiness(truth=runtime_truth)
         + _render_reconciliation_evidence(runtime_truth) + report
     )

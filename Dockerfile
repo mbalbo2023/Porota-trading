@@ -22,11 +22,13 @@ WORKDIR /app
 
 # Copiar solo requirements primero (cache de capas: si cambia el codigo pero no
 # las dependencias, no se reinstala nada).
-COPY requirements.txt requirements.lock.txt ./
+COPY requirements.txt requirements.lock.txt requirements.build.lock.txt ./
 
 # requirements.txt conserva la intención humana/top-level. requirements.lock.txt
 # congela el entorno exacto validado por Predeploy V2; runtime instala sólo el lock.
-RUN pip install --no-cache-dir -r requirements.lock.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements.build.lock.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary=:all: \
+    --no-binary=msgpack,ppi-client,signalrcoreppi,ta --no-build-isolation -r requirements.lock.txt
 
 # El .dockerignore (nuevo en v16.2) impide que este COPY meta archivos de
 # entorno, la base de datos o el indice vectorial dentro de la imagen.

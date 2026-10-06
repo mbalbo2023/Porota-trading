@@ -1,68 +1,11 @@
-"""
-as_greeks_engine.py — Volatilidad implícita y griegas para opciones de BYMA
+"""Analítica orientativa de opciones europeas con Black-Scholes-Merton.
 
-EL PENDIENTE ESTABA MAL PLANTEADO
----------------------------------------------------------------------------
-La versión anterior dejó anotado que no se podían calcular griegas porque no
-existía una fuente gratuita y confiable de volatilidad implícita para el
-mercado local. Al investigarlo en serio, el planteo estaba invertido.
-
-La volatilidad implícita no es un dato que haya que buscar afuera: es un dato
-que se DESPEJA de la prima que el mercado ya está pagando. El modelo de
-Black-Scholes toma cinco entradas —precio del subyacente, strike, tiempo al
-vencimiento, tasa libre de riesgo y volatilidad— y devuelve una prima
-teórica. Si uno tiene la prima real y le faltan la volatilidad, invierte la
-fórmula y despeja: eso ES la volatilidad implícita. Literalmente significa
-"la volatilidad implícita en el precio que se está pagando".
-
-Y las cinco entradas ya las tiene el sistema:
-
-  · precio del subyacente ....... PPI, en tiempo real
-  · strike y vencimiento ........ del contrato
-  · tasa libre de riesgo ........ la caución, que ya está en el contexto macro
-  · prima ....................... PPI, en tiempo real
-
-No hace falta ningún proveedor externo, ninguna suscripción y ninguna
-credencial nueva. Solo aritmética sobre datos que ya llegan. El pendiente
-queda cerrado, y no por conseguir una fuente sino por darse cuenta de que no
-hacía falta.
-
-LO QUE ESTO HABILITA, QUE ES LO QUE IMPORTA
----------------------------------------------------------------------------
-Tener la volatilidad implícita permite responder la pregunta que un operador
-de opciones se hace antes que cualquier otra: **¿esta prima está cara o
-barata?** Y se responde comparándola contra la volatilidad que el subyacente
-efectivamente tuvo:
-
-  · IV bastante por ENCIMA de la histórica → la prima está cara. El mercado
-    está cobrando por un movimiento mayor al que el papel viene teniendo.
-    Comprar ahí es pagar de más aunque uno acierte la dirección.
-
-  · IV por DEBAJO de la histórica → la prima está barata en términos
-    relativos. Es el terreno donde comprar opciones tiene sentido.
-
-Sin esta comparación, el sistema podía acertar la dirección del subyacente y
-perder plata igual, porque pagó una prima inflada. Es uno de los errores más
-caros y menos evidentes de operar opciones.
-
-LÍMITES HONESTOS DEL MODELO
----------------------------------------------------------------------------
-Black-Scholes asume mercados líquidos, continuos y sin dividendos. Las
-opciones de BYMA son poco líquidas y sobre acciones que pagan dividendos.
-Por eso:
-
-  · Las griegas que salen de acá son ORIENTATIVAS, no exactas. Sirven para
-    comparar dos opciones entre sí y para detectar primas absurdas, no para
-    armar una cobertura fina.
-  · Si la prima es tan baja que la opción no tiene valor temporal, la
-    inversión no converge y se devuelve None en vez de un número inventado.
-  · Se usa el modelo europeo. Las opciones sobre acciones en BYMA son de
-    ejercicio americano, lo que hace que el valor real sea igual o mayor al
-    calculado. Para un comprador eso significa que el modelo es conservador:
-    subestima levemente lo que vale la opción, nunca lo contrario.
-
-Esas tres limitaciones están anotadas en la salida de cada cálculo, para que
-quien lea el número sepa qué tiene en la mano.
+El precio, solver y wrapper comparten cotas descontadas, tasa, dividend yield
+continuo y tiempo ACT/365 declarados. La prima de un put europeo puede estar
+por debajo de su intrínseco sin arbitraje. No se aplica este modelo a ejercicio
+americano, estilo desconocido ni dividendos discretos sin un modelo adecuado.
+Las griegas y la relación IV/histórica no prueban edge ni conceden autoridad
+de entrada. El caller del contrato debe declarar el estilo de ejercicio.
 """
 
 import logging
@@ -111,6 +54,10 @@ class ResultadoGriegas:
     convergio: bool = False
     advertencias: list = None
     motivo: str = ""
+    exercise_style: str = "EUROPEAN"
+    model: str = "BLACK_SCHOLES_MERTON_EUROPEAN"
+    dividend_yield: Optional[float] = None
+    entry_authority: bool = False
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -132,28 +79,55 @@ def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
 
-def _d1_d2(S: float, K: float, T: float, r: float, sigma: float) -> tuple:
+def _d1_d2(S: float, K: float, T: float, r: float, sigma: float,
+           dividend_yield: float = 0.0) -> tuple:
     if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
         return None, None
-    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    d1 = (math.log(S / K) + (r - dividend_yield + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
     return d1, d1 - sigma * math.sqrt(T)
 
 
 def precio_teorico(S: float, K: float, T: float, r: float, sigma: float,
-                   es_call: bool = True) -> Optional[float]:
+                   es_call: bool = True, dividend_yield: float = 0.0) -> Optional[float]:
     """Prima teórica de una opción europea."""
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in (S, K, T, r, sigma, dividend_yield)) or S <= 0 or K <= 0:
+        return None
     if T <= 0:
         return max(S - K, 0.0) if es_call else max(K - S, 0.0)
-    d1, d2 = _d1_d2(S, K, T, r, sigma)
-    if d1 is None:
+    try:
+        d1, d2 = _d1_d2(S, K, T, r, sigma, dividend_yield)
+        if d1 is None:
+            return None
+        bounds = european_bounds(S, K, T, r, es_call, dividend_yield)
+        if bounds is None:
+            return None
+        spot, strike = S * math.exp(-dividend_yield * T), K * math.exp(-r * T)
+        price = (spot * _norm_cdf(d1) - strike * _norm_cdf(d2) if es_call
+                 else strike * _norm_cdf(-d2) - spot * _norm_cdf(-d1))
+        return max(0., price) if math.isfinite(price) else None
+    except (OverflowError, ValueError, ZeroDivisionError):
         return None
-    if es_call:
-        return S * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2)
-    return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+
+def european_bounds(S, K, T, r, es_call=True, dividend_yield=0.0):
+    """No-arbitrage bounds for the same European model as the IV solver."""
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in (S, K, T, r, dividend_yield)) or S <= 0 or K <= 0 or T <= 0:
+        return None
+    try:
+        discounted_spot = S * math.exp(-dividend_yield * T)
+        discounted_strike = K * math.exp(-r * T)
+    except OverflowError:
+        return None
+    if not all(math.isfinite(value) for value in (discounted_spot, discounted_strike)):
+        return None
+    return ((max(discounted_spot - discounted_strike, 0.0), discounted_spot) if es_call
+            else (max(discounted_strike - discounted_spot, 0.0), discounted_strike))
 
 
 def volatilidad_implicita(prima: float, S: float, K: float, T: float, r: float,
-                          es_call: bool = True) -> Optional[float]:
+                          es_call: bool = True, dividend_yield: float = 0.0) -> Optional[float]:
     """
     Despeja la volatilidad de la fórmula de Black-Scholes por bisección.
 
@@ -164,45 +138,36 @@ def volatilidad_implicita(prima: float, S: float, K: float, T: float, r: float,
     dentro del intervalo. Con cien iteraciones sobre un rango de 1% a 600%, la
     precisión sobra y el costo en tiempo es despreciable.
 
-    Devuelve None cuando no hay solución posible. Ese None es información: si
-    la prima de mercado está por debajo del valor intrínseco, no hay ninguna
-    volatilidad que explique ese precio, y significa que el dato es malo o que
-    hay un arbitraje. Inventar un número ahí sería lo peor que se puede hacer.
+    Devuelve None fuera de las cotas europeas descontadas o del intervalo de
+    búsqueda. La ausencia de solución no diagnostica la calidad del proveedor.
     """
-    if prima <= 0 or S <= 0 or K <= 0 or T <= 0:
+    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+                for v in (prima, S, K, T, r, dividend_yield))
+            or prima <= 0 or S <= 0 or K <= 0 or T <= 0):
         return None
 
-    # Cota inferior de no arbitraje. OJO: para una opción europea NO es
-    # max(S-K, 0) sino max(S - K·e^(-rT), 0), porque el strike se paga recién
-    # al vencimiento y hay que descontarlo.
-    #
-    # Esta distinción, que en un mercado con tasas del 4% es casi irrelevante,
-    # acá es enorme: con la caución al 29% anual, descontar un strike a dos
-    # meses cambia la cota en varios puntos porcentuales del subyacente. Y
-    # tiene una consecuencia práctica concreta: las opciones de BYMA son de
-    # ejercicio AMERICANO, así que su prima de mercado puede ubicarse
-    # legítimamente por debajo de la cota europea. Cuando eso pasa, no hay
-    # ninguna volatilidad que explique el precio con este modelo — y hay que
-    # decirlo, no devolver el piso del intervalo como si fuera una respuesta.
-    if es_call:
-        cota_inferior = max(S - K * math.exp(-r * T), 0.0)
-    else:
-        cota_inferior = max(K * math.exp(-r * T) - S, 0.0)
+    # European lower/upper bounds include both discount factors. Immediate
+    # exercise intrinsic is not the lower bound of a European put.
+    bounds = european_bounds(S, K, T, r, es_call, dividend_yield)
+    if bounds is None:
+        return None
+    cota_inferior, cota_superior = bounds
 
-    if prima < cota_inferior - TOLERANCIA:
+    if prima < cota_inferior - TOLERANCIA or prima >= cota_superior:
         logger.info("Prima %.4f por debajo de la cota europea %.4f (S=%.2f K=%.2f r=%.2f T=%.3f): "
                     "sin solución con el modelo europeo.", prima, cota_inferior, S, K, r, T)
         return None
 
     bajo, alto = IV_MINIMA, IV_MAXIMA
-    precio_alto = precio_teorico(S, K, T, r, alto, es_call)
-    if precio_alto is not None and prima > precio_alto:
+    precio_bajo = precio_teorico(S, K, T, r, bajo, es_call, dividend_yield)
+    precio_alto = precio_teorico(S, K, T, r, alto, es_call, dividend_yield)
+    if precio_bajo is None or precio_alto is None or not precio_bajo - TOLERANCIA <= prima <= precio_alto + TOLERANCIA:
         # Ni con 600% de volatilidad se explica esta prima.
         return None
 
     for _ in range(MAX_ITERACIONES):
         medio = (bajo + alto) / 2.0
-        precio = precio_teorico(S, K, T, r, medio, es_call)
+        precio = precio_teorico(S, K, T, r, medio, es_call, dividend_yield)
         if precio is None:
             return None
         if abs(precio - prima) < TOLERANCIA:
@@ -219,12 +184,25 @@ def volatilidad_implicita(prima: float, S: float, K: float, T: float, r: float,
 def calcular(prima: float, precio_subyacente: float, strike: float,
              dias_al_vencimiento: int, es_call: bool = True,
              tasa_libre_riesgo: Optional[float] = None,
-             volatilidad_historica: Optional[float] = None) -> ResultadoGriegas:
+             volatilidad_historica: Optional[float] = None, *,
+             exercise_style: str = "EUROPEAN", dividend_yield: Optional[float] = 0.0) -> ResultadoGriegas:
     """
     Cálculo completo: volatilidad implícita, griegas y el veredicto de si la
     prima está cara o barata contra la volatilidad histórica del subyacente.
     """
-    resultado = ResultadoGriegas(advertencias=[])
+    style = str(exercise_style or "UNKNOWN").strip().upper()
+    resultado = ResultadoGriegas(advertencias=[], exercise_style=style,
+                                 dividend_yield=dividend_yield)
+    if style != "EUROPEAN":
+        resultado.model = "UNAVAILABLE_FOR_CONTRACT_STYLE"
+        resultado.motivo = "Estilo de ejercicio contractual no europeo o no verificado; este modelo se abstiene."
+        resultado.advertencias.append("No se aproxima una opción americana mediante una valoración europea.")
+        return resultado
+    if (dividend_yield is None or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+            and math.isfinite(v) for v in (prima, precio_subyacente, strike, dias_al_vencimiento, dividend_yield))
+            or prima <= 0 or precio_subyacente <= 0 or strike <= 0):
+        resultado.motivo = "Parámetros contractuales faltantes o no finitos; cálculo no disponible."
+        return resultado
 
     if tasa_libre_riesgo is None:
         tasa_libre_riesgo = _tasa_desde_macro()
@@ -235,6 +213,9 @@ def calcular(prima: float, precio_subyacente: float, strike: float,
                 "implícita es orientativa.")
 
     T = dias_al_vencimiento / 365.0
+    if not isinstance(tasa_libre_riesgo, (int, float)) or isinstance(tasa_libre_riesgo, bool) or not math.isfinite(tasa_libre_riesgo):
+        resultado.motivo = "Tasa contractual no finita; cálculo no disponible."
+        return resultado
     if T <= 0:
         resultado.motivo = "La opción ya venció."
         return resultado
@@ -243,60 +224,58 @@ def calcular(prima: float, precio_subyacente: float, strike: float,
                                   else max(strike - precio_subyacente, 0.0))
     resultado.valor_temporal = prima - resultado.valor_intrinseco
 
-    if resultado.valor_temporal <= 0:
+    bounds = european_bounds(precio_subyacente, strike, T, tasa_libre_riesgo, es_call, dividend_yield)
+    if bounds is None:
+        resultado.motivo = "Cotas del modelo fuera del rango numérico representable; cálculo no disponible."
+        return resultado
+    lower, upper = bounds
+    if prima < lower - TOLERANCIA or prima >= upper:
         resultado.motivo = (
-            "La prima no tiene valor temporal: está en o por debajo de su valor intrínseco. "
-            "No hay volatilidad que despejar. Suele indicar un dato viejo o una punta sin "
-            "profundidad real.")
-        resultado.advertencias.append("Prima sin valor temporal.")
+            "La prima no tiene valor temporal admisible para el modelo europeo: queda fuera "
+            "de sus cotas descontadas con tasa, dividendos y tiempo declarados.")
+        resultado.advertencias.append("Fuera de las cotas del modelo europeo; no se infiere calidad del dato.")
         return resultado
 
-    iv = volatilidad_implicita(prima, precio_subyacente, strike, T, tasa_libre_riesgo, es_call)
+    iv = volatilidad_implicita(prima, precio_subyacente, strike, T, tasa_libre_riesgo, es_call, dividend_yield)
     if iv is None:
-        cota = (max(precio_subyacente - strike * math.exp(-tasa_libre_riesgo * T), 0.0) if es_call
-                else max(strike * math.exp(-tasa_libre_riesgo * T) - precio_subyacente, 0.0))
-        if prima < cota:
-            resultado.motivo = (
-                f"La prima (${prima:,.2f}) está por debajo de la cota inferior europea "
-                f"(${cota:,.2f}). No es un error del dato: con la tasa local al "
-                f"{tasa_libre_riesgo*100:.0f}% anual, descontar el strike sube mucho esa cota, y "
-                f"como las opciones de BYMA son de ejercicio americano su precio de mercado "
-                f"puede ubicarse legítimamente por debajo. Para esta serie no se pueden calcular "
-                f"griegas con este modelo. Pasa sobre todo en opciones bien dentro del dinero.")
-            resultado.advertencias.append("Fuera del alcance del modelo europeo.")
-        else:
-            resultado.motivo = ("No se pudo despejar la volatilidad implícita: ningún valor entre "
-                                "1% y 600% explica esta prima. El dato de mercado es inconsistente.")
+        resultado.motivo = ("No se pudo despejar IV dentro del intervalo declarado de 1% a 600%; "
+                            "no se infiere que el dato de mercado sea incorrecto.")
         return resultado
 
     resultado.volatilidad_implicita = round(iv, 4)
     resultado.convergio = True
 
-    d1, d2 = _d1_d2(precio_subyacente, strike, T, tasa_libre_riesgo, iv)
+    d1, d2 = _d1_d2(precio_subyacente, strike, T, tasa_libre_riesgo, iv, dividend_yield)
     raiz_T = math.sqrt(T)
+    discount = math.exp(-dividend_yield * T)
 
-    resultado.delta = round(_norm_cdf(d1) if es_call else _norm_cdf(d1) - 1.0, 4)
-    resultado.gamma = round(_norm_pdf(d1) / (precio_subyacente * iv * raiz_T), 6)
-    resultado.vega = round(precio_subyacente * _norm_pdf(d1) * raiz_T / 100.0, 4)
+    resultado.delta = round(discount * (_norm_cdf(d1) if es_call else _norm_cdf(d1) - 1.0), 4)
+    resultado.gamma = round(discount * _norm_pdf(d1) / (precio_subyacente * iv * raiz_T), 6)
+    resultado.vega = round(precio_subyacente * discount * _norm_pdf(d1) * raiz_T / 100.0, 4)
 
-    theta_anual = (-(precio_subyacente * _norm_pdf(d1) * iv) / (2 * raiz_T)
+    theta_anual = (-(precio_subyacente * discount * _norm_pdf(d1) * iv) / (2 * raiz_T)
                    - (tasa_libre_riesgo * strike * math.exp(-tasa_libre_riesgo * T) *
-                      (_norm_cdf(d2) if es_call else -_norm_cdf(-d2))))
+                      (_norm_cdf(d2) if es_call else -_norm_cdf(-d2)))
+                   + dividend_yield * precio_subyacente * discount *
+                     (_norm_cdf(d1) if es_call else -_norm_cdf(-d1)))
     resultado.theta_diario = round(theta_anual / 365.0, 4)
 
     if volatilidad_historica is None:
         resultado.advertencias.append(
             "Sin volatilidad histórica del subyacente: no se puede decir si la prima está cara "
             "o barata, solo cuánta volatilidad implica.")
-    else:
+    elif (isinstance(volatilidad_historica, (int, float)) and not isinstance(volatilidad_historica, bool)
+          and math.isfinite(volatilidad_historica) and volatilidad_historica > 0):
         resultado.volatilidad_historica = round(volatilidad_historica, 4)
         ratio = iv / volatilidad_historica if volatilidad_historica > 0 else None
         resultado.ratio_iv_historica = round(ratio, 3) if ratio else None
         resultado.prima_cara_o_barata = _veredicto_prima(ratio)
+    else:
+        resultado.advertencias.append("Volatilidad histórica no verificada: comparación IV/histórica no disponible.")
 
     resultado.advertencias.append(
-        "Griegas orientativas: modelo europeo sin dividendos sobre un mercado poco líquido. "
-        "Sirven para comparar opciones entre sí y detectar primas absurdas, no para cobertura fina.")
+        "Griegas orientativas: modelo europeo con dividend yield declarado. No habilitan entradas "
+        "ni sustituyen un modelo de ejercicio americano o flujos discretos.")
 
     return resultado
 
@@ -309,16 +288,12 @@ def _veredicto_prima(ratio: Optional[float]) -> str:
     if ratio is None:
         return ""
     if ratio < 0.8:
-        return ("BARATA — el mercado está cobrando menos volatilidad de la que el papel viene "
-                "teniendo. Es el terreno donde comprar opciones tiene sentido.")
+        return "BARATA — IV menor que la volatilidad histórica declarada; comparación orientativa sin edge validado."
     if ratio < 1.3:
-        return ("EN LÍNEA — la prima es coherente con la volatilidad reciente del subyacente. "
-                "No hay ventaja ni desventaja por el lado del precio de la opción.")
+        return "EN LÍNEA — IV próxima a la volatilidad histórica declarada; comparación orientativa sin edge validado."
     if ratio < 2.0:
-        return ("CARA — el mercado cobra bastante más movimiento del que el papel viene "
-                "teniendo. Aunque se acierte la dirección, el sobreprecio se come la ganancia.")
-    return ("MUY CARA — la prima implica más del doble de la volatilidad reciente. Suele pasar "
-            "antes de un evento conocido. Comprar acá es pagar la incertidumbre de otro.")
+        return "CARA — IV mayor que la volatilidad histórica declarada; comparación orientativa sin edge validado."
+    return "MUY CARA — IV supera el doble de la volatilidad histórica declarada; comparación orientativa sin edge validado."
 
 
 def _tasa_desde_macro() -> Optional[float]:

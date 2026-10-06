@@ -1,0 +1,17 @@
+{
+  "expected_unique": 43,
+  "management_seconds": 180,
+  "previous43RED": {
+    "fail": 2,
+    "pass": 41,
+    "source": "ce9323625e89fd8a10979d9b1eaf353c55c176e5"
+  },
+  "runner_sha256": "f1d575a996ed693f25ed99246748aab6b7c37924eac113b6bf657b256284baa5",
+  "source_files": 2244,
+  "source_index_sha256": "80224dac9452f043dfb2322e0072171a9f1e47f418fd52ac84bdca745c0f1e00",
+  "source_sha": "1d60ec2ced05ce7793028f5a04f707cb66fa5cda",
+  "source_tar_sha256": "9fc2d402f561318d8eb712d872bfca4a62a673cb363f72081fa6a751f398e996",
+  "source_tree": "a21e16b7d365b202996c835eda6baebbc8b0ffb4",
+  "supervisor_sha256": "ec4147f01baebcc1654e8e933b56f8cf35061672adb01eb28053f01457f371b4",
+  "this_preparation_not_execution": true
+}

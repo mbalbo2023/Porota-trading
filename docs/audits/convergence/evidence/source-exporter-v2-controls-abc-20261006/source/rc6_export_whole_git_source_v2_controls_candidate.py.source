@@ -1,0 +1,316 @@
+from __future__ import annotations
+
+import argparse
+import ast
+from contextlib import contextmanager
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+import time
+from types import SimpleNamespace
+
+EXPORTER = Path('/tmp/rc6_export_whole_git_source_v2_candidate.py')
+EXPORTER_SHA = '6bb2b5b82ae63317afcf16124dd677eaea324482dc6009708a60e19da3d865fd'
+FIELDS = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
+          'st_size', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns', 'st_blocks')
+CAP = 20.0
+
+
+def require(value, reason):
+    if not value:
+        raise ValueError(reason)
+
+
+def capture(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+                 | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        first = os.fstat(fd)
+        require(stat.S_ISREG(first.st_mode) and first.st_nlink == 1
+                and first.st_uid == os.geteuid() and first.st_size < 1024**2,
+                'CONTROL_SOURCE_CUSTODY')
+        data = bytearray()
+        while block := os.read(fd, 65536):
+            data.extend(block)
+        last = os.fstat(fd)
+        require(all(getattr(first, key) == getattr(last, key) for key in FIELDS),
+                'CONTROL_SOURCE_ALL11_CHANGED')
+        return bytes(data), {key: getattr(first, key) for key in FIELDS}
+    finally:
+        os.close(fd)
+
+
+def write(path, data):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o644)
+    try:
+        offset = 0
+        while offset < len(data):
+            written = os.write(fd, data[offset:])
+            require(written > 0, 'CONTROL_SHORT_WRITE')
+            offset += written
+        os.fchmod(fd, 0o644)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def patched(target, name, replacement):
+    previous = getattr(target, name)
+    setattr(target, name, replacement)
+    try:
+        yield
+    finally:
+        setattr(target, name, previous)
+
+
+def fake_stat(value, **changes):
+    fields = {key: getattr(value, key) for key in FIELDS}
+    fields.update(changes)
+    return SimpleNamespace(**fields)
+
+
+def rejection(function, predicate):
+    try:
+        function()
+    except (ValueError, OSError) as error:
+        require(predicate(error), 'WRONG_CONTROL_REJECTION:' + str(error))
+        return {'exception_class': type(error).__name__, 'reason': str(error)}
+    raise ValueError('CONTROL_FAILED_TO_REJECT')
+
+
+def main(args):
+    started = time.monotonic()
+    old_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    def alarm(_signum, _frame):
+        raise TimeoutError('SOURCE_CONTROL_TOTAL20_EXPIRED')
+    signal.signal(signal.SIGALRM, alarm)
+    signal.setitimer(signal.ITIMER_REAL, CAP)
+    rows = []
+    source_before = None
+    result = None
+    output = None
+    try:
+        require(sys.platform == 'linux' and os.getuid() == os.geteuid() != 0
+                and sys.version_info[:2] in ((3, 11), (3, 12)), 'CONTROL_INTERPRETER')
+        output = Path(args.output).absolute()
+        require(not output.exists() and output.parent.is_dir()
+                and not output.is_symlink() and '..' not in output.parts,
+                'FRESH_PRIVATE_CONTROL_OUTPUT')
+        output.mkdir(mode=0o700)
+        raw, source_before = capture(EXPORTER)
+        require(hashlib.sha256(raw).hexdigest() == EXPORTER_SHA, 'EXPORTER_PIN_CHANGED')
+        write(output / 'exporter.py.source', raw)
+        namespace = {'__name__': 'controlled_source_not_main', '__file__': str(EXPORTER)}
+        exec(compile(ast.parse(raw), str(EXPORTER), 'exec'), namespace)
+        m = SimpleNamespace(**namespace)
+        subprocesses = []
+        def audit(event, values):
+            if event.startswith('socket.') or event == 'sqlite3.connect':
+                raise ValueError('SOURCE_CONTROL_NETWORK_OR_SQL_FORBIDDEN')
+            if event == 'subprocess.Popen':
+                require(os.path.basename(os.fsdecode(values[0])) == 'git',
+                        'ONLY_PRIVATE_GIT_CONTROL_COMMANDS_ALLOWED')
+                subprocesses.append('git')
+        sys.addaudithook(audit)
+        def case(name, function):
+            require(time.monotonic() - started < CAP, 'SOURCE_CONTROL_TOTAL20_EXPIRED')
+            value = function()
+            rows.append({'id': name, 'status': 'GREEN', 'observations': value})
+
+        archive = output / 'archive.bin'
+        payload = b'actual-owned-source-file\n' * 32
+        write(archive, payload)
+        def positive():
+            synced = m.synchronize_archive(archive)
+            observed = m.capture_owned(archive)
+            require(observed['sha256'] == hashlib.sha256(payload).hexdigest()
+                    and observed['stat_fields'] == synced['after_own_fsync_stat_fields']
+                    and synced['file_fsync_completed'] is True
+                    and synced['parent_fsync_completed'] is True
+                    and set(observed['stat_fields']) == set(FIELDS), 'FSYNC_HASH_ALL11_CONTROL')
+            return {'kind': 'REAL_OWN_644_SINGLELINK_FILE_FSYNC_AND_NOATIME_ALL11_HASH',
+                    'sync': synced, 'capture': observed}
+        case('REAL_OWN_FSYNC_HASH_ALL11', positive)
+        link = output / 'alias.bin'; link.symlink_to(archive)
+        case('SYMLINK_REJECTED', lambda: rejection(lambda: m.capture_owned(link),
+                                                   lambda e: isinstance(e, OSError) and e.errno == errno.ELOOP))
+        hardlink = output / 'hardlink.bin'; os.link(archive, hardlink)
+        case('HARDLINK_REJECTED', lambda: rejection(lambda: m.capture_owned(hardlink),
+                                                    lambda e: str(e) == 'OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED'))
+        hardlink.unlink()
+        fifo = output / 'fifo'; os.mkfifo(fifo, 0o644)
+        case('NONREG_FIFO_REJECTED', lambda: rejection(lambda: m.synchronize_archive(fifo),
+                                                       lambda e: str(e) == 'OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED'))
+        wrong_mode = output / 'wrong-mode.bin'; write(wrong_mode, b'wrong-mode')
+        wrong_mode.chmod(0o600)
+        case('WRONG_REGULAR_MODE_REJECTED', lambda: rejection(lambda: m.capture_owned(wrong_mode),
+                                                              lambda e: str(e) == 'OWN_EXPORT_REGULAR_FILE_CUSTODY_REQUIRED'))
+        real_fstat = os.fstat
+        def wrong_parent(fd):
+            actual = real_fstat(fd)
+            return fake_stat(actual, st_uid=os.geteuid() + 1) if stat.S_ISDIR(actual.st_mode) else actual
+        def parent_case():
+            with patched(os, 'fstat', wrong_parent):
+                got = rejection(lambda: m.write_new_owned(output / 'must-not-be-created', b'x'),
+                                lambda e: str(e) == 'OWN_OUTPUT_PARENT_REQUIRED')
+            require(not (output / 'must-not-be-created').exists(), 'REJECTED_PARENT_WAS_WRITTEN')
+            return {'adapter': 'CONTROLLED_DIRECTORY_FSTAT_UID; NO_FOREIGN_CHOWN', **got}
+        case('OUTPUT_PARENT_UID_REJECTED', parent_case)
+        regular_calls = 0
+        def changed_blocks(fd):
+            nonlocal regular_calls
+            actual = real_fstat(fd)
+            if stat.S_ISREG(actual.st_mode):
+                regular_calls += 1
+                if regular_calls == 3:
+                    return fake_stat(actual, st_blocks=actual.st_blocks + 8)
+            return actual
+        def blocks_case():
+            with patched(os, 'fstat', changed_blocks):
+                got = rejection(lambda: m.capture_owned(archive),
+                                lambda e: str(e) == 'SOURCE_EXPORT_ALL11_CHANGED_DURING_NOATIME_CAPTURE')
+            return {'adapter': 'CONTROLLED_POSTREAD_FSTAT_BLOCKS_DELTA; CONTENT_NOT_CHANGED', **got}
+        case('CURRENT_BLOCKS_MUTATION_REJECTED', blocks_case)
+        sparse = output / 'over-bound.bin'; write(sparse, b'')
+        fd = os.open(sparse, os.O_WRONLY | os.O_NOFOLLOW)
+        try:
+            os.ftruncate(fd, m.MAX_SOURCE_ARCHIVE + 1); os.fsync(fd)
+        finally:
+            os.close(fd)
+        case('SOURCE_ARCHIVE512_BOUND_REJECTED', lambda: rejection(lambda: m.synchronize_archive(sparse),
+                                                                  lambda e: str(e) == 'SOURCE_ARCHIVE_BOUND'))
+        def broken_fsync(_fd):
+            raise OSError(errno.EIO, 'controlled-own-fsync')
+        def fsync_case():
+            with patched(os, 'fsync', broken_fsync):
+                return rejection(lambda: m.synchronize_archive(archive),
+                                 lambda e: isinstance(e, OSError) and e.errno == errno.EIO)
+        case('FSYNC_FAILURE_REJECTED', fsync_case)
+        def existing_case():
+            observations = []
+            for name in ('source.commit.raw', 'source.index.json'):
+                existing = output / name; original = ('unchanged:' + name).encode()
+                m.write_new_owned(existing, original)
+                got = rejection(lambda: m.write_new_owned(existing, b'overwritten'),
+                                lambda e: isinstance(e, FileExistsError))
+                require(m.capture_owned(existing)['sha256'] == hashlib.sha256(original).hexdigest(),
+                        'EXISTING_EXPORT_CONTROL_FILE_OVERWRITTEN')
+                observations.append({'name': name, **got})
+            return observations
+        case('EXISTING_COMMIT_AND_INDEX_NO_OVERWRITE', existing_case)
+
+        repository = output / 'private-git'; repository.mkdir(mode=0o700)
+        git_env = {**os.environ, 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null',
+                   'GIT_NO_LAZY_FETCH': '1'}
+        real_run, real_check_output = subprocess.run, subprocess.check_output
+        def timeout():
+            remaining = CAP - (time.monotonic() - started)
+            require(remaining > 0, 'SOURCE_CONTROL_TOTAL20_EXPIRED')
+            return min(2.0, remaining)
+        def git(*arguments):
+            return real_check_output(['git', '--no-replace-objects', '-c', 'protocol.allow=never',
+                                      '-C', str(repository), *arguments], env=git_env,
+                                     stderr=subprocess.PIPE, timeout=timeout())
+        git('init', '-q'); git('config', 'user.name', 'Source Control'); git('config', 'user.email', 'source@example.invalid')
+        write(repository / 'control.txt', b'real private Git source\n')
+        write(repository / 'control.sh', b'#!/bin/sh\nexit 0\n'); (repository / 'control.sh').chmod(0o755)
+        git('add', '.'); git('commit', '-qm', 'private source export control')
+        sha = git('rev-parse', 'HEAD').decode().strip()
+        commit = git('cat-file', 'commit', sha)
+        source_refs_before = git('show-ref', '--head')
+        source_blobs_before = git('ls-tree', '-r', '-z', sha)
+        def bounded_run(*args, **kwargs):
+            kwargs.setdefault('timeout', timeout())
+            return real_run(*args, **kwargs)
+        def bounded_check_output(*args, **kwargs):
+            kwargs.setdefault('timeout', timeout())
+            return real_check_output(*args, **kwargs)
+        def pipeline(label, tamper=None):
+            target_source, target_raw = output / (label + '-source'), output / (label + '-raw')
+            old_argv = sys.argv
+            original_write = namespace['write_new_owned']
+            def maybe_tamper(path, data):
+                record = original_write(path, data)
+                if tamper and Path(path).name == tamper:
+                    fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW)
+                    try:
+                        os.write(fd, b'!'); os.fsync(fd)
+                    finally:
+                        os.close(fd)
+                return record
+            namespace['write_new_owned'] = maybe_tamper
+            sys.argv = [str(EXPORTER), '--repo', str(repository), '--sha', sha,
+                        '--source', str(target_source), '--raw', str(target_raw)]
+            try:
+                with patched(subprocess, 'run', bounded_run), patched(subprocess, 'check_output', bounded_check_output):
+                    namespace['main']()
+            finally:
+                sys.argv = old_argv
+                namespace['write_new_owned'] = original_write
+            raw_commit, _ = capture(target_raw / 'source.commit.raw')
+            require(raw_commit == commit, 'REAL_GIT_RAW_COMMIT_EXPORT_MISMATCH')
+            index_raw, _ = capture(target_raw / 'source.index.json'); index = json.loads(index_raw)
+            ready_raw, _ = capture(target_raw / 'source.export-durability.json'); ready = json.loads(ready_raw)
+            require(index['source_sha'] == sha and ready['source_sha'] == sha
+                    and len(index['files']) == 2 and index['modes']['control.sh'] == '100755'
+                    and ready['source_commit_raw']['sha256'] == hashlib.sha256(commit).hexdigest()
+                    and ready['source_index']['sha256'] == hashlib.sha256(index_raw).hexdigest()
+                    and ready['tar']['sha256'] == index['tar_sha256'], 'REAL_GIT_EXPORT_CONTROL_JOIN')
+            return {'private_commit': sha, 'private_git_files': 2, 'native_qualification': False,
+                    'tar_sha256': ready['tar']['sha256'], 'commit_sha256': hashlib.sha256(commit).hexdigest(),
+                    'index_sha256': hashlib.sha256(index_raw).hexdigest()}
+        case('REAL_PRIVATE_GIT_SOURCE_EXPORT_COMMIT_INDEX_JOIN', lambda: pipeline('positive'))
+        case('REAL_PRIVATE_GIT_COMMIT_TAMPER_REJECTED', lambda: rejection(lambda: pipeline('commit-negative', 'source.commit.raw'),
+                                                                        lambda e: str(e) == 'SOURCE_RAW_COMMIT_ALL11_CHANGED_BEFORE_EXPORT_BASELINE'))
+        case('REAL_PRIVATE_GIT_INDEX_TAMPER_REJECTED', lambda: rejection(lambda: pipeline('index-negative', 'source.index.json'),
+                                                                       lambda e: str(e) == 'SOURCE_INDEX_ALL11_CHANGED_BEFORE_EXPORT_BASELINE'))
+        require(git('show-ref', '--head') == source_refs_before
+                and git('ls-tree', '-r', '-z', sha) == source_blobs_before
+                and not git('status', '--porcelain').strip(), 'PRIVATE_GIT_SOURCE_CHANGED')
+        final_raw, source_after = capture(EXPORTER)
+        require(final_raw == raw and source_after == source_before, 'EXPORTER_SOURCE_ALL11_CHANGED')
+        require(len(rows) == len({row['id'] for row in rows}) == 13, 'CONTROL_ID_COUNT')
+        require(time.monotonic() - started < CAP, 'SOURCE_CONTROL_TOTAL20_EXPIRED')
+        result = {'schema': 'rc6.source-exporter-fsync-controls.v1', 'status': 'GREEN',
+                  'scope': 'STDLIB_PRIVATE_FILES_AND_PRIVATE_GIT_SOURCE_CONTROLS_NOT_PRODUCT_NATIVE_GOV_BROWSER_OR_HISTORICAL_TAR',
+                  'controls': rows, 'unique_control_count': len(rows), 'exporter_sha256': EXPORTER_SHA,
+                  'exporter_source_before': source_before, 'exporter_source_after': source_after,
+                  'elapsed_before_publication': time.monotonic() - started,
+                  'private_git_popen_observed_count': len(subprocesses), 'total_acceptance_seconds': CAP,
+                  'canonical_source_exported_or_old_tar_read': False, 'product_imports': 0}
+        write(output / 'controls.receipt.json', (json.dumps(result, indent=2, sort_keys=True) + '\n').encode())
+        require(time.monotonic() - started < CAP, 'SOURCE_CONTROL_TOTAL20_EXPIRED')
+        print(json.dumps({'status': 'GREEN', 'unique_controls': len(rows), 'scope': result['scope']}), flush=True)
+        require(time.monotonic() - started < CAP, 'SOURCE_CONTROL_TOTAL20_EXPIRED')
+        return 0
+    except BaseException as error:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        if output is not None and output.is_dir():
+            fail = {'schema': 'rc6.source-exporter-fsync-controls-error.v1', 'status': 'RED',
+                    'exception_class': type(error).__name__, 'reason': str(error),
+                    'completed_controls': rows, 'raw_preserved': True, 'product_native': False}
+            try:
+                write(output / 'controls.error.json', (json.dumps(fail, indent=2, sort_keys=True) + '\n').encode())
+            except BaseException:
+                pass
+        raise
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
+        if previous_timer[0]:
+            signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output', required=True)
+    raise SystemExit(main(parser.parse_args()))

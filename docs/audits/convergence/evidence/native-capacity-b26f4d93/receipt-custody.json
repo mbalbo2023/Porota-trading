@@ -1,0 +1,126 @@
+{
+  "acceptance_complete": false,
+  "actual_diagnostic_distribution_count": 158,
+  "big_actual_slow_fsync_exit_isolation": false,
+  "big_complete_committed_cycle": false,
+  "big_cycle_deadline_seconds": 90,
+  "eligible_to_deploy": false,
+  "environment_mismatch_preserved": true,
+  "expected_final_distribution_count": 157,
+  "files": [
+    {
+      "bytes": 14801,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/native-normal4-result.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-native-normal4-result.json",
+      "sha256": "3863661b688329de35911ee8dcfcb60362ad3fc6b8ecd81e0ece45a9651da5dc"
+    },
+    {
+      "bytes": 811,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/normal4.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-normal4.log",
+      "sha256": "28eac47225edcc0dff3c8eed5d5172e4ec09c8b8f53e69c10421a26ea6112fa8"
+    },
+    {
+      "bytes": 3625,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/run-wrapper-first-syntax-red.py",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-run-wrapper-first-syntax-red.py.source",
+      "sha256": "e8de41387e84d0fb231108209dd1edfbcc63eeb1477494785ae37c236f6a38c4"
+    },
+    {
+      "bytes": 3627,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/run-wrapper.py",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-run-wrapper.py",
+      "sha256": "c177eefb94a2e63a73e4a5d5186bc8517c372c744210579b6e479ca80208cf39"
+    },
+    {
+      "bytes": 442415,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/source.index.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-source.index.json",
+      "sha256": "54e457b7886fe6ac086286379e46bf6c8e7112d22f74ff0f863f69c086944269"
+    },
+    {
+      "bytes": 12008,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/wrapper-before.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-before.json",
+      "sha256": "f303125386d0139e8f81cbd58bd0a5ec3cd44a14a906fcb9d6d67879cc174aac"
+    },
+    {
+      "bytes": 12311,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/wrapper-final.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-final.json",
+      "sha256": "c61490ba40496aa90702ad6d1c7295f7ec436fce6969e965a24b6ecb4c0a227d"
+    },
+    {
+      "bytes": 393,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/wrapper-first-syntax-red.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper-first-syntax-red.log",
+      "sha256": "90bf264fb0300a49b7183ab869511afc1c4097d53e9476f00523ddc466523127"
+    },
+    {
+      "bytes": 197,
+      "original_path": "/tmp/rc6-v3-normal-b26f4d93-raw/wrapper.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/normal4-wrapper.log",
+      "sha256": "07436783a2249c88c8827770d2bed7dd0ed4a77d2ae1153f2b8d826a08855b89"
+    },
+    {
+      "bytes": 77,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/big.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-big.log",
+      "sha256": "1e57dfbf603b33f82ca3ce00c2fbfdb8e6db438bbe77a0dbbe37d14fa8358570"
+    },
+    {
+      "bytes": 3464,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/native-big-result.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-native-big-result.json",
+      "sha256": "13b4abc5238f8db1cb60b32a544695220fb2b5b0e029d3d01f98402bad9b04f7"
+    },
+    {
+      "bytes": 3495,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/run-wrapper.py",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-run-wrapper.py",
+      "sha256": "5adebbbbd3ae7796f62c35950d535aa0ed7ccc88f60e107fd0fe656517328465"
+    },
+    {
+      "bytes": 11804,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/wrapper-before.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper-before.json",
+      "sha256": "ab23a56376a4ae751be9b3226731bd9b09bdb695fbaac87395711a48a3a3eaa2"
+    },
+    {
+      "bytes": 12106,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/wrapper-final.json",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper-final.json",
+      "sha256": "9781da47d5cf4cadff96e5cee0e570b78fa6c17d985e4900d06a15334a5a09e4"
+    },
+    {
+      "bytes": 196,
+      "original_path": "/tmp/rc6-v3-big-b26f4d93-raw/wrapper.log",
+      "path": "docs/audits/convergence/evidence/native-capacity-b26f4d93/big-wrapper.log",
+      "sha256": "26258d8191114fe0d1691c5cb81df75da44bed6e7e722e3a663a690155143c87"
+    }
+  ],
+  "normal4_acceptance_complete": false,
+  "normal4_completed_cuts": 4,
+  "original_wrapper_syntax_failure_is_product_red": false,
+  "schema": "rc6.native-capacity-diagnostic-custody.v1",
+  "scope": "ORIGINAL_NATIVE_DIAGNOSTIC_158_DISTRIBUTIONS_NOT_FINAL_ACCEPTANCE",
+  "source_db_custody_field_count": 10,
+  "source_db_custody_fields": [
+    "st_dev",
+    "st_ino",
+    "st_uid",
+    "st_gid",
+    "st_mode",
+    "st_nlink",
+    "st_size",
+    "st_atime_ns",
+    "st_mtime_ns",
+    "st_ctime_ns"
+  ],
+  "source_file_count": 1553,
+  "source_index_sha256": "54e457b7886fe6ac086286379e46bf6c8e7112d22f74ff0f863f69c086944269",
+  "source_overlay_count": 0,
+  "source_sha": "b26f4d9360e2f0a7d31abf08d9f29dc79409b64d",
+  "source_tar_sha256": "c706110b36655450e410a28dd24381fad407a83ff8f3cbb537d3ec56a23c37bb",
+  "source_tree": "2e712cbfb2dbc8f27bf7692e29f251c5981ec080"
+}

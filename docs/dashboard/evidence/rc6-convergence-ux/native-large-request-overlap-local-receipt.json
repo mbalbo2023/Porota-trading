@@ -1,0 +1,94 @@
+{
+  "acceptance_complete": false,
+  "archive_sha256": "2dda37ed73a24562f539158d0562f655eb0118b2c4f49cd97bf6ad0518fc059a",
+  "browser": {
+    "all_render_cpu_and_wall_measurements_in_raw_receipt": true,
+    "canonical_viewport_checks_completed": 55,
+    "chromium_launched": true,
+    "cut_discarded": true,
+    "failed_elapsed_seconds": 1.0145641839990276,
+    "failed_path": "/en-vivo/capacidad",
+    "failed_process_cpu_seconds": 1.7375682979999993,
+    "failed_read_queries": 1,
+    "failed_width": 1280,
+    "full_viewports_completed": [
+      1440
+    ],
+    "html_bytes": 18515,
+    "legacy_and_interaction_checks_completed": 0,
+    "renders_measured": 57,
+    "status": "RED"
+  },
+  "candidate_tree_sha": "c16aaead8646e66f7c0f9419e8424b9a83c886f9",
+  "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+  "exact_cherry_picks": [
+    "40f34f6e22db168c8206c8f8f189e78f60db7270",
+    "ab1bfa8964f47d71fd253c44fb827e257d69d68c",
+    "d7c134b9de2345be09ace1253e188b38c5bf8c04",
+    "4c92a00227852893ce2a12f802a73e870d615a20"
+  ],
+  "final_root_freeze_claim": false,
+  "generation_pointer": {
+    "digest": "1560041b1daa861314cf3beef68e56e1102d1e8391419a3867e7bb95f346c1ef",
+    "generation_id": "8fca0b4616da43f1b96a475f2efaad3c",
+    "manifest_sha256": "7d922004c9d4e03341c9fe96f942eb6755e1c4101004cc2e5bb5d367fb855043",
+    "schema": "rc6.shadow-evidence-generation.v2",
+    "sequence": 2
+  },
+  "integration_scope": "INTERMEDIATE_ISOLATED_ROOT_BASE_PLUS_EXACT_OWNER_COMMITS",
+  "native_inputs": {
+    "catalog_full_identities": 12000,
+    "funnel_groups": 24000,
+    "observation_read_truncated": true,
+    "observations_materialized": 60000,
+    "observations_returned": 20000,
+    "planner_rows": 24000,
+    "report_logical_bytes": 292783805
+  },
+  "network_attempts": 0,
+  "overlays": [],
+  "ppi_watch_touched": false,
+  "prior_large_reds_preserved": [
+    "native-large-first-cut-local-receipt.json",
+    "native-large-intermediate-40f-local-receipt.json"
+  ],
+  "provider_requests": 0,
+  "raw_evidence_sha256": {
+    "native-large-browser-red-88df8503.json": "81ec4d0b28f519870b518b72ed54a515f6af2ddee524debfa7cb62b868ba735f",
+    "native-large-browser-source-88df8503.json": "97ed819d4917fda638f098400f8c342d15b5dc88969ae5ff2757e3ba06d2fe33",
+    "native-large-reader-88df8503.json": "27dc484938cc36c4d43f2cf1318d81d0dd7bf09d345d6b03af3534f80041c5b7",
+    "native-large-reader-source-88df8503.json": "33d4a8e35ebedbf9b4c61188a403fd4f3288beebc4d3fc9c792e22f508005ed8",
+    "native-large-source-index-88df8503.json": "f09fa1f25d02d000cc8fd47244631f2a51caa9153b79651632a0b4846dc91520"
+  },
+  "reader": {
+    "complete_index_population_checked": true,
+    "full_page_traversal_claimed": false,
+    "maximum_elapsed_seconds": 0.8783932459991775,
+    "maximum_projection_bytes": 249011,
+    "requests_measured": 12,
+    "status": "GREEN"
+  },
+  "receipts": [
+    "native-large-source-index-88df8503.json",
+    "native-large-reader-88df8503.json",
+    "native-large-reader-source-88df8503.json",
+    "native-large-browser-red-88df8503.json",
+    "native-large-browser-source-88df8503.json"
+  ],
+  "requirements_remaining": [
+    "Reduce the remaining measured fresh verifier cost under Chromium without raising1s, skippingCRC/SHA or selecting a favorable retry.",
+    "Run complete large reader and49x6 canonical navigation/22aliases/11interactions on a new exact source pin.",
+    "Final root freeze/artifact/import/mount proof remains separate from this intermediate checkout."
+  ],
+  "root_base_sha": "3d1f45aa296869eefe55ef79900889333395a9bd",
+  "root_branch_modified": false,
+  "runtime_touched": false,
+  "schema": "rc6.dashboard-native-large-request-overlap-receipt.v1",
+  "source_and_custody_members_unchanged": 15,
+  "source_cut": "2026-10-05T13:35:00+00:00",
+  "source_files": 1391,
+  "source_sha": "88df85033ca38c280f403b0716bf8b556b4d3c04",
+  "source_sqlite_opens": 0,
+  "status": "READER_GREEN_BROWSER_RED_DURING_SECOND_VIEWPORT",
+  "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
+}

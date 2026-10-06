@@ -1,0 +1,250 @@
+{
+  "archive_sha256": "39dce2d41064af4440494d87f3c5a5e3f06d6d760de290ae4202d20eedb88ee3",
+  "candidate_tree_sha": "f6f3fc1343a9aa2b02fcfd38b20550eb4677355d",
+  "command_argv": [
+    "/workspace/porota_rc6_ux_frozen_af71ff9e/tests/ci_rc6_projection_large_browser.py",
+    "--database",
+    "/tmp/rc6-native-18e9716d-full-slow/source.db",
+    "--root",
+    "/tmp/rc6-native-18e9716d-full-slow/shadow",
+    "--output",
+    "/tmp/rc6-ux-large-browser-af71ff9e"
+  ],
+  "gate_exit_code": 1,
+  "imported_product_modules": [
+    {
+      "matches_archived_blob": true,
+      "module": "__main__",
+      "path": "tests/ci_rc6_exact_archive_gate.py",
+      "sha256": "146e2fd6444a5f24bb81d2ed0ea87072985de92d7233a76be88d28bc9b074f09"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "_version",
+      "path": "_version.py",
+      "sha256": "17a594100f02a0f4e7a36b8bb95ae88d2b85c21b93f68678da60c687d4a691b4"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "bs_instrument_contracts",
+      "path": "bs_instrument_contracts.py",
+      "sha256": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "cg_paper_workspace",
+      "path": "cg_paper_workspace.py",
+      "sha256": "722bfffe99c39667b435eb7f642bd167cea04fa3716f736f6aee19e8aae216fa"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_audit_evidence",
+      "path": "rc6_audit_evidence/__init__.py",
+      "sha256": "13e421a4ba86a9adef3bc4706128096c59d59694837f0cd01a66742875944498"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_audit_evidence.package",
+      "path": "rc6_audit_evidence/package.py",
+      "sha256": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_audit_evidence.recompute",
+      "path": "rc6_audit_evidence/recompute.py",
+      "sha256": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_audit_evidence.sqlite_scratch",
+      "path": "rc6_audit_evidence/sqlite_scratch.py",
+      "sha256": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_audit_evidence.sqlite_snapshot",
+      "path": "rc6_audit_evidence/sqlite_snapshot.py",
+      "sha256": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_dynamic_universe",
+      "path": "rc6_dynamic_universe/__init__.py",
+      "sha256": "509d7cc6e5378e62e80f19e7cb91090eb2c1395766697fbe28342e0d0a4b7b0d"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_dynamic_universe.common",
+      "path": "rc6_dynamic_universe/common.py",
+      "sha256": "c825d64bde0d1814536dfd82d45bb1d39987918d16dc6aa8df063d0a12adb21f"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_dynamic_universe.sources",
+      "path": "rc6_dynamic_universe/sources.py",
+      "sha256": "9f472b9b96f333c9db4d84daf6f2922298c16a52c5c53b6e814b297029f35cd6"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime",
+      "path": "rc6_shadow_runtime/__init__.py",
+      "sha256": "38de867a361db0f93625c3beb8d4a6f31e772e66db5af076a7fcc87a62cf3051"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime.persistence",
+      "path": "rc6_shadow_runtime/persistence.py",
+      "sha256": "ffcd177b50b32e9747336d7e32cbd3a8b344d8fba1262746417182e21cc4db91"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime.projection",
+      "path": "rc6_shadow_runtime/projection.py",
+      "sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_shadow_runtime.serialization",
+      "path": "rc6_shadow_runtime/serialization.py",
+      "sha256": "a51db7cedbae271a21272bf02524d25fe4af16c67ca3f432b719f2c7b1d29423"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard",
+      "path": "rc6_trader_dashboard/__init__.py",
+      "sha256": "9b2430fdeb6043ef7e91633cbeae77f273dd682bcc18f895ff74bc79d733e6e5"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.components",
+      "path": "rc6_trader_dashboard/components.py",
+      "sha256": "dfb0b823fec0ad827382cd2295c338a459537340d71f4d62f125a9cba5dd05c1"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.datasets",
+      "path": "rc6_trader_dashboard/datasets.py",
+      "sha256": "9a62255acda588f1e00dc3950fc00a1373f4218f808a89f73c16688164c30e78"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.design_system",
+      "path": "rc6_trader_dashboard/design_system.py",
+      "sha256": "15659acf999c7053c6c44cc87505dd6069ba50500e49e67e8792909ace0744fb"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.generation",
+      "path": "rc6_trader_dashboard/generation.py",
+      "sha256": "60b317b8d7ad9079d620924ca1ff9c485a375f04d2957875ab76e1cac646ea23"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.history",
+      "path": "rc6_trader_dashboard/history.py",
+      "sha256": "a80146a30852abd73bcfef935d33230aa3eef362b36e416312a987639c005ccb"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.navigation",
+      "path": "rc6_trader_dashboard/navigation.py",
+      "sha256": "29193381d9b826881ffee4af1acccb8d0b39e1c59c3626af7ab557455daf8b04"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.projected_generation",
+      "path": "rc6_trader_dashboard/projected_generation.py",
+      "sha256": "a74b85d32f498b5260c1964b3fcb73344abbd4aeff107daacb94b2aa1f6b88f7"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.projection",
+      "path": "rc6_trader_dashboard/projection.py",
+      "sha256": "54a7013bf55c5d7e8d9e30cdf277e6c2db7c64ed5fc41a105c75155a4b19389b"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.routes",
+      "path": "rc6_trader_dashboard/routes.py",
+      "sha256": "40342ba514d4bac681961f7d8d85725224abdf0141cab83c7be4afd0be3ca193"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.shell",
+      "path": "rc6_trader_dashboard/shell.py",
+      "sha256": "a7bd9ec2dfc4dbe3298088c4fd9aa2b7829b0be452efe7afa0dae2889de24e87"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.view_common",
+      "path": "rc6_trader_dashboard/view_common.py",
+      "sha256": "e489f4a2a4f8c08d9ce36b0ee0333b8f42258aae73bdf3a71f5336e8b4e1c7ae"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_analytics",
+      "path": "rc6_trader_dashboard/views_analytics.py",
+      "sha256": "ed1342a1a201b4e738858a647ae19bd9bcb0fbe214ba6ab7aa1fcd891e1809da"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_home",
+      "path": "rc6_trader_dashboard/views_home.py",
+      "sha256": "1aaaffee1c17772499a56af29a4016d079984e5e44464a1967b90c466a8d4133"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_instruments",
+      "path": "rc6_trader_dashboard/views_instruments.py",
+      "sha256": "0d158b0f1fb8cfc533f0e415d1e77ac96734fae56d507421aa588bb859dbe69e"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_live",
+      "path": "rc6_trader_dashboard/views_live.py",
+      "sha256": "2ba6ec67c30f8aae43d950be7d083af374658c99d57597b8e687ce8002584cf4"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_risk",
+      "path": "rc6_trader_dashboard/views_risk.py",
+      "sha256": "e8e2cf1e5b922cbdddcd4b2ad23fd26e79fb985a98f2e22db2484b914dcc6432"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_system",
+      "path": "rc6_trader_dashboard/views_system.py",
+      "sha256": "3c7a1eb51bd73f9eff7deaa6bd381d2ff4b6bd4d35609ace549828f2434e5cf3"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_trading",
+      "path": "rc6_trader_dashboard/views_trading.py",
+      "sha256": "2aa78a425ebd6eaf4f2221a181b6dedfcce08f3a12090e8aae5c3731c591110e"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "rc6_trader_dashboard.views_universe",
+      "path": "rc6_trader_dashboard/views_universe.py",
+      "sha256": "3945f394809e42a1c9480fda18f8a0f9eb37b476e39c7564030377375526ec44"
+    },
+    {
+      "matches_archived_blob": true,
+      "module": "tests.ci_rc6_projection_large_reader",
+      "path": "tests/ci_rc6_projection_large_reader.py",
+      "sha256": "2bb2eb650f0aa4e13b6e8dda52d7b7f20b32773c7d770c90a5a1602bf83539a7"
+    }
+  ],
+  "network_attempts": 0,
+  "overlays": [],
+  "runner_wrapper_sha256": "146e2fd6444a5f24bb81d2ed0ea87072985de92d7233a76be88d28bc9b074f09",
+  "schema": "rc6.exact-archive-gate-source-proof.v1",
+  "script": "tests/ci_rc6_projection_large_browser.py",
+  "source_proof_pass": true,
+  "source_sha": "af71ff9eefc4fbb301b4260c9b2a1d181293e6f7",
+  "source_sqlite_attempts": 0,
+  "tracked_source_files": 1380,
+  "tracked_source_hashes_unchanged": true,
+  "unexpected_error_class": null,
+  "unexpected_product_imports": []
+}

@@ -1,0 +1,80 @@
+{
+  "schema": "rc6.budget-invalid-harness-minimal-preservation.v1",
+  "status": "INVALIDATED_EXPERIMENTS_ONLY_NOT_PRODUCT_RED_OR_GREEN",
+  "preservation_policy": "Minimal immutable error/source/probe/receipt hashes; complete raw files stay separately in /tmp. The 1109-file inventory is not duplicated here.",
+  "prior_red_or_guard_count_added": 0,
+  "selected_for_original_ids": [],
+  "subsequent_provenance_diagnosis": "Python __mp_main__ is the same runner-file alias. urllib3 local HAS_IPV6 capability socket was denied before construction; no bind/connect/DNS occurred. Preserve original FAILED labels of invalid attempts rather than retroactively upgrade them.",
+  "accepted_material": {
+    "owner_commit": "a28344781004369878d73d50258d57de75306ad0",
+    "receipt_path": "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json",
+    "receipt_sha256": "cd7913ddc6a13c23767c2029581431adcfc96b0e5001574c2a3ed9162139c18b",
+    "probe_sha256": "3e262a5140af023cd71e36e021fc59ee489375b4dc87eff60797ea8b93e4ddb0",
+    "phase": "INTERMEDIATE_HISTORICAL_REPLAY; no final current runtime attestation"
+  },
+  "invalidated_attempts": [
+    {
+      "evidence_kind": "INVALIDATED_HARNESS_FAILURE_NOT_PRODUCT_RED",
+      "selected_for_requirement_closure": false,
+      "raw_receipt_local_path": "/tmp/rc6-budget-original-c27-first-receipt.json",
+      "raw_receipt_sha256": "99619d9dcfe765bcc38f8f7e0d33b2faa93a57d6b2604ced119d6340e053c373",
+      "raw_receipt_bytes": 333838,
+      "source_commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+      "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+      "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
+      "source_inventory_before_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+      "source_inventory_after_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+      "source_files": 1109,
+      "source_unchanged": true,
+      "probe_sha256_at_attempt": "bc3fb0adbc17915e11be383e6d551b32564d1e02545474b5244b0b9cd1617527",
+      "probe_version_boundary": "Temporary probe-version bytes not preserved as a commit; its raw reported hash is retained. This invalid experiment is not an accepted reproducible product receipt.",
+      "native_error": {
+        "evidence_kind": "INVALIDATED_HARNESS_FAILURE_NOT_PRODUCT_RED",
+        "message": "(False, 'EMERGENCY_POSITION_CAP', None)",
+        "traceback": "Traceback (most recent call last):\n  File \"/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py\", line 345, in main\n    receipt[\"requirements\"][\"U07\"] = u07(root / \"u07\")\n                                     ^^^^^^^^^^^^^^^^^\n  File \"/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py\", line 200, in u07\n    assert outcome[0], outcome\n           ~~~~~~~^^^\nAssertionError: (False, 'EMERGENCY_POSITION_CAP', None)\n",
+        "type": "AssertionError"
+      },
+      "raw_provenance_validation": "FAILED_NOT_ACCEPTED_AS_PRODUCT_EVIDENCE",
+      "raw_aliens": [
+        {
+          "module": "__mp_main__",
+          "path": "/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py"
+        }
+      ],
+      "raw_network_event_count": 1,
+      "cause": "Synthetic risk_pct .05 with daily soft stop4% natively derived emergency cap1; the second spot opening correctly failed. No budget/product RED was established by this combined experiment.",
+      "subsequent_fixture_correction": "Only synthetic cash/risk inputs corrected in later accepted fixture; final cash100000000/risk.002/soft4% gives native AUTO cap20, no gate override.",
+      "new_original_requirement_count": 0,
+      "new_R_scenario_count": 0
+    },
+    {
+      "evidence_kind": "INVALIDATED_HARNESS_FAILURE_NOT_PRODUCT_RED",
+      "selected_for_requirement_closure": false,
+      "raw_receipt_local_path": "/tmp/rc6-budget-original-c27-second-receipt.json",
+      "raw_receipt_sha256": "f9bc2723d3ce1d2f984cda28386a07d35a852acd6d2fe60465bdcfc29ef97c8a",
+      "raw_receipt_bytes": 335319,
+      "source_commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+      "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+      "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
+      "source_inventory_before_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+      "source_inventory_after_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+      "source_files": 1109,
+      "source_unchanged": true,
+      "probe_sha256_at_attempt": "6288cbbf8a876a6e6f12ceafac7b7026b637d28f498e1286efb9452e2ee738f3",
+      "probe_version_boundary": "Temporary probe-version bytes not preserved as a commit; its raw reported hash is retained. This invalid experiment is not an accepted reproducible product receipt.",
+      "native_error": {
+        "evidence_kind": "INVALIDATED_HARNESS_FAILURE_NOT_PRODUCT_RED",
+        "message": "(False, 'FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED', None)",
+        "traceback": "Traceback (most recent call last):\n  File \"/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py\", line 345, in main\n    receipt[\"requirements\"][\"U07\"] = u07(root / \"u07\")\n                                     ^^^^^^^^^^^^^^^^^\n  File \"/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py\", line 214, in u07\n    assert outcome[0], outcome\n           ~~~~~~~^^^\nAssertionError: (False, 'FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED', None)\n",
+        "type": "AssertionError"
+      },
+      "raw_provenance_validation": "FAILED_NOT_ACCEPTED_AS_PRODUCT_EVIDENCE",
+      "raw_aliens": [],
+      "raw_network_event_count": 1,
+      "cause": "Synthetic futures Quote.metadata_source lacked the required PPI_CATALOG prefix; native admission correctly rejected FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED.",
+      "subsequent_fixture_correction": "Only synthetic quote input corrected to PPI_CATALOG:OFFLINE_SYNTHETIC_FIXTURE_NOT_DATED_PROVIDER_EVIDENCE; no dated PPI authority or changed gate inferred.",
+      "new_original_requirement_count": 0,
+      "new_R_scenario_count": 0
+    }
+  ]
+}

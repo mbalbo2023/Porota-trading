@@ -1,0 +1,2 @@
+...................                                                      [100%]
+{"classification": "SCOPED_IMPORT_GUARDS_AND_ORIGINAL_CANONICAL_FACTORY_GREEN", "source_sha": "fa1fd60645c503557191b69578519cddab621a36", "tests": 19, "failures": 0, "errors": 0, "skipped": 0, "source_unchanged": true, "wall_seconds": 5.456274302006932, "receipt": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/native-import-provenance-focal-receipt.json", "receipt_sha256": "153a7d877892287305f69ef436ff8a894742bc3c822585d054f46860b62abf11"}

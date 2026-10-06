@@ -67,22 +67,22 @@ def test_data912_fallback_only_supported_families_and_under_90():
 def test_reconciler_uses_porota_universe_with_full_identity():
     c=sqlite3.connect(":memory:")
     c.execute("""CREATE TABLE candidate_universe(
-      ticker TEXT,instrument_type TEXT,market TEXT,settlement TEXT,status TEXT)""")
+      ticker TEXT,instrument_type TEXT,market TEXT,settlement TEXT,status TEXT,currency TEXT)""")
     c.execute("""CREATE TABLE production_history_attempts(
-      symbol TEXT,instrument_type TEXT,settlement TEXT,state TEXT,valid_rows INTEGER)""")
-    c.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?)",[
-        ("AAA","ACCIONES","BYMA","A-24HS","AVAILABLE"),
-        ("BBB","CEDEARS","BYMA","A-24HS","AVAILABLE"),
-        ("CCC","BONOS","BYMA","A-24HS","AVAILABLE"),
-        ("DDD","OPCIONES","BYMA","INMEDIATA","AVAILABLE"),
-        ("EEE","ACCIONES","BYMA","A-24HS","BLOCKED"),
-        ("FFF","ACCIONES","UNKNOWN","A-24HS","AVAILABLE"),
+      symbol TEXT,instrument_type TEXT,settlement TEXT,state TEXT,valid_rows INTEGER,market TEXT,currency TEXT)""")
+    c.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?)",[
+        ("AAA","ACCIONES","BYMA","A-24HS","AVAILABLE","ARS"),
+        ("BBB","CEDEARS","BYMA","A-24HS","AVAILABLE","ARS"),
+        ("CCC","BONOS","BYMA","A-24HS","AVAILABLE","ARS"),
+        ("DDD","OPCIONES","BYMA","INMEDIATA","AVAILABLE","ARS"),
+        ("EEE","ACCIONES","BYMA","A-24HS","BLOCKED","ARS"),
+        ("FFF","ACCIONES","UNKNOWN","A-24HS","AVAILABLE","ARS"),
     ])
-    c.executemany("INSERT INTO production_history_attempts VALUES(?,?,?,?,?)",[
-        ("AAA","ACCIONES","A-24HS","PARTIAL",20),
-        ("BBB","CEDEARS","A-24HS","PARTIAL",120),
-        ("CCC","BONOS","A-24HS","EMPTY_OR_INVALID",0),
-        ("DDD","OPCIONES","INMEDIATA","EMPTY_OR_INVALID",0),
+    c.executemany("INSERT INTO production_history_attempts VALUES(?,?,?,?,?,?,?)",[
+        ("AAA","ACCIONES","A-24HS","PARTIAL",20,"BYMA","ARS"),
+        ("BBB","CEDEARS","A-24HS","PARTIAL",120,"BYMA","ARS"),
+        ("CCC","BONOS","A-24HS","EMPTY_OR_INVALID",0,"BYMA","ARS"),
+        ("DDD","OPCIONES","INMEDIATA","EMPTY_OR_INVALID",0,"BYMA","ARS"),
     ])
     targets=reconcile.load_targets(c)
     assert [(x.symbol,x.instrument_type,x.market,x.settlement) for x in targets]==[
@@ -102,7 +102,7 @@ def test_reconcile_priority_prefers_empty_then_low_context():
 def _candle(symbol,family,market,settlement,source,close=100,adjusted=False,observed="2026-09-02T20:00:00+00:00"):
     return history_v2.Candle(
         symbol,family,market,settlement,"2026-09-01",95,105,90,close,1000,
-        source,adjusted,observed,{}
+        source,adjusted,observed,{"currency":"ARS"}
     )
 
 
@@ -131,14 +131,14 @@ def test_data912_cannot_replace_ppi_but_version_is_preserved():
     assert versions==2
 
 
-def test_adjusted_series_can_replace_unadjusted_same_identity():
+def test_adjusted_series_is_preserved_separately_without_replacing_raw():
     store=MemoryStore()
     history_v2.append_candle(store,_candle("ABC","ACCIONES","BYMA","A-24HS","PPI_PRODUCTION_HISTORY",100,False))
     result=history_v2.append_candle(store,_candle("ABC","ACCIONES","BYMA","A-24HS","IOL",98,True))
     assert result["canonical_updated"] is True
     with store.connect() as c:
-        row=c.execute("SELECT close,adjusted,source FROM history_canonical_v2").fetchone()
-    assert tuple(row)==(98.0,1,"IOL")
+        rows=c.execute("SELECT close,adjusted,source,price_basis FROM history_canonical_v2 ORDER BY price_basis").fetchall()
+    assert [tuple(row) for row in rows]==[(100.0,0,"PPI_PRODUCTION_HISTORY","RAW"),(98.0,1,"IOL","UNKNOWN_ADJUSTED")]
 
 
 def _record(source,observed_at,evidence):

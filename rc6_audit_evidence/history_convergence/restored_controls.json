@@ -1,0 +1,89 @@
+{
+  "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /workspace/venv_rc6/bin/python -m pytest -o addopts='' -q tests/test_rc6_history_convergence.py -k 'H_LEGACY_ASSET_CLASS_COLLISION or S_CRASH_AFTER_VERSION_INSERT or U_IOL_ARCHIVED_LIQUIDITY'",
+  "corpus": "SYNTHETIC_OFFLINE",
+  "current_python": "3.11.16",
+  "network_forbidden": true,
+  "old_candidate_scenarios": 90,
+  "original_harness_sha256": "a9d2ea84ae48bbff0ccf07bcee85a346e5fe874446edfdb4cf3ad95225845595",
+  "original_production_scenarios": 96,
+  "runtime_verified": false,
+  "schema": "rc6.history-restored-controls.v1",
+  "tests": [
+    {
+      "duration_seconds": 0.005,
+      "fixture_contract": "Explicit current currency/units required by the current writer; the original numerical and crash controls are preserved.",
+      "id": "H_LEGACY_ASSET_CLASS_COLLISION",
+      "invariant": "Family/currency/basis collisions leave the original legacy row intact; the batch rolls back.",
+      "original_production_case": {
+        "execution": "COMPLETED",
+        "id": "H_LEGACY_ASSET_CLASS_COLLISION",
+        "result": {
+          "rows_after_two_family_writes": [
+            [
+              "AUDIT",
+              "ACCIONES",
+              "2026-09-30",
+              1.0,
+              "DATA912",
+              0
+            ]
+          ]
+        }
+      },
+      "present_in_old_candidate_90": false,
+      "pytest_node": "tests/test_rc6_history_convergence.py::test_H_LEGACY_ASSET_CLASS_COLLISION_atomic_guard_preserves_original",
+      "status": "PASS"
+    },
+    {
+      "duration_seconds": 0.003,
+      "fixture_contract": "Explicit current currency/units required by the current writer; the original numerical and crash controls are preserved.",
+      "id": "U_IOL_ARCHIVED_LIQUIDITY",
+      "invariant": "montoOperado is cash and volumen is quantity; price100/cash100000/quantity1000 returns cash100000 only for explicit ARS.",
+      "original_production_case": {
+        "execution": "COMPLETED",
+        "id": "U_IOL_ARCHIVED_LIQUIDITY",
+        "result": {
+          "archived_liquidity_result": 10000000.0,
+          "cash_turnover_true_synthetic": 100000,
+          "legacy_record": [
+            "2026-09-30",
+            100,
+            100,
+            100,
+            100,
+            100000
+          ]
+        }
+      },
+      "present_in_old_candidate_90": false,
+      "pytest_node": "tests/test_rc6_history_convergence.py::test_U_IOL_ARCHIVED_LIQUIDITY_keeps_money_and_quantity_separate",
+      "status": "PASS"
+    },
+    {
+      "duration_seconds": 0.025,
+      "fixture_contract": "Explicit current currency/units required by the current writer; the original numerical and crash controls are preserved.",
+      "id": "S_CRASH_AFTER_VERSION_INSERT",
+      "invariant": "The actual child exits 79 after version INSERT and before canonical commit; restart yields zero partial rows and exact retry yields one.",
+      "original_production_case": {
+        "execution": "COMPLETED",
+        "id": "S_CRASH_AFTER_VERSION_INSERT",
+        "result": {
+          "canonical_after_restart": [],
+          "child_exitcode": 79,
+          "retry": {
+            "canonical_updated": true,
+            "payload_hash": "0b56362da6d970f56c3450c98604c97cdf8c15054c42ca3ea6f6a32feb952bdd",
+            "source_rank": 10,
+            "version_appended": true,
+            "version_id": 1
+          },
+          "versions_after_restart": [],
+          "versions_after_retry": 1
+        }
+      },
+      "present_in_old_candidate_90": false,
+      "pytest_node": "tests/test_rc6_history_convergence.py::test_S_CRASH_AFTER_VERSION_INSERT_restart_rolls_back_and_exact_retry_recovers",
+      "status": "PASS"
+    }
+  ]
+}

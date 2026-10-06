@@ -1,0 +1,60 @@
+[
+  {
+    "api_digest": "sha256:29d93fb97ba8df3c240e48d09120d4861b4daae38b908a5892cfe9b6cfe2d444",
+    "api_workflow_run": {
+      "head_branch": "ops/rc6-safe-housekeeping-20261005",
+      "head_repository_id": 1338680554,
+      "head_sha": "75013734d549b4efb332ba466ef33d759da65ae6",
+      "id": 37308983612,
+      "repository_id": 1338680554
+    },
+    "artifact_id": 11344882392,
+    "artifact_name": "rc6-safe-housekeeping-20261005-37308983612",
+    "command": [
+      "gh",
+      "api",
+      "--method",
+      "GET",
+      "repos/mbalbo2023/Porota-trading/actions/artifacts/11344882392/zip"
+    ],
+    "failure": "ValueError:READONLY_SMALL_ARTIFACT_DIGEST_OR_SIZE_MISMATCH",
+    "fetched_at": "2026-10-05T20:35:53.268783+00:00",
+    "final_candidate_or_current_runtime_validated": false,
+    "members": [],
+    "observed_zip_bytes": 0,
+    "observed_zip_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run_id": 37308983612,
+    "schema": "rc6.historical-actions-evidence-github-byte-readonly.v1",
+    "scope": "HISTORICAL_ACTIONS_RECEIPT_BYTES_ONLY; no image/build/host/promotion",
+    "status": "RED"
+  },
+  {
+    "api_digest": "sha256:a4bf46ea04860448e349483d8fe96f870efacb10cf376725dd42e63af032c99d",
+    "api_workflow_run": {
+      "head_branch": "ops/rc6-deploy-validation-recovery-20261003",
+      "head_repository_id": 1338680554,
+      "head_sha": "d4df82804c48b13e5dd46a03f951a99d496385e5",
+      "id": 37131712187,
+      "repository_id": 1338680554
+    },
+    "artifact_id": 11277627152,
+    "artifact_name": "rc6-validation-resume-runtime-37131712187",
+    "command": [
+      "gh",
+      "api",
+      "--method",
+      "GET",
+      "repos/mbalbo2023/Porota-trading/actions/artifacts/11277627152/zip"
+    ],
+    "failure": "ValueError:READONLY_SMALL_ARTIFACT_DIGEST_OR_SIZE_MISMATCH",
+    "fetched_at": "2026-10-05T20:35:53.856935+00:00",
+    "final_candidate_or_current_runtime_validated": false,
+    "members": [],
+    "observed_zip_bytes": 0,
+    "observed_zip_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "run_id": 37131712187,
+    "schema": "rc6.historical-actions-evidence-github-byte-readonly.v1",
+    "scope": "HISTORICAL_ACTIONS_RECEIPT_BYTES_ONLY; no image/build/host/promotion",
+    "status": "RED"
+  }
+]

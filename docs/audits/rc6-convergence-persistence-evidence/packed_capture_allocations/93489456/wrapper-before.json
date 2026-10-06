@@ -1,0 +1,39 @@
+{
+  "acceptance_complete": false,
+  "argv": [
+    "/tmp/rc6-packed-capture-93489456-157-raw/run_focal.py"
+  ],
+  "artifact_validated": false,
+  "cwd": "/workspace/rc6-packed-capture-93489456-157-source",
+  "distribution_count": 157,
+  "environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONHOME": null,
+    "PYTHONPATH": ""
+  },
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "overlay_count": 0,
+  "preflight_exact_names_versions": true,
+  "pytest_arguments": [
+    "tests/test_rc6_packed_capture_allocations.py",
+    "-q",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/workspace/rc6-packed-capture-93489456-157-fixtures",
+    "--junitxml=/tmp/rc6-packed-capture-93489456-157-raw/native-focal.xml"
+  ],
+  "python": "3.11.16",
+  "runtime_validated": false,
+  "schema": "rc6.packed-capture-allocation-whole-source-focal.v1",
+  "scope": "OWN_93489456_NATIVE_FOCAL_NOT_FINAL_ARTIFACT_OR_BIG_ACCEPTANCE",
+  "source_files": 1650,
+  "source_index_sha256": "4c8307e9088e9bf5cf6ed9f809ee4f515154ca465df18a55733ec2facdd66ea4",
+  "source_sha": "934894569810b1bbc176ce93ba95cc1ee51cfb0c",
+  "source_tar_sha256": "172b4b1943b8ef590f6ae6eea2914a594582f52a0b2f86f5e179f60bade73225",
+  "source_tree": "5f82f191cd38ecf3caef7263580d9632f068d541",
+  "sqlite": "3.53.1",
+  "umask": "022"
+}

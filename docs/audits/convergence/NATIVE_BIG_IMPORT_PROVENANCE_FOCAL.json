@@ -1,0 +1,808 @@
+{
+  "artifact_validated": false,
+  "classification": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_WITH_PRESERVED_FIXTURE_FAILURE",
+  "counting": {
+    "latest_new_guard_bases": 16,
+    "latest_new_guard_variants": 18,
+    "latest_original_canonical_control": 1,
+    "latest_scoped_actual_unique_testcases": 19,
+    "rule": "19 is one exact focal execution. Prior4087 has its own19,18PASS+1fixtureFAIL. Runs, references and parameter variants are never added as original errors, originalR scenarios or a larger single-suite total."
+  },
+  "deployed": false,
+  "document_commit_D": null,
+  "final_input_provenance": null,
+  "final_source_sha": null,
+  "guard_fixture_autocorrection": {
+    "after_allocation_bytes": 114135040,
+    "allocation_bytes_preserved": 100663296,
+    "asserted_minimum_late_increase_bytes_preserved": 67108864,
+    "classification": "EXACT_SCOPED_18PASS_1_GUARD_FIXTURE_FAILURE_NOT_PRODUCT_RED",
+    "corrected_exact_node": "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak",
+    "corrected_exact_source_sha": "fa1fd60645c503557191b69578519cddab621a36",
+    "corrected_guard_executed": true,
+    "corrected_status": "PASS",
+    "delta_bytes": 52334592,
+    "fix": "Fork after entry into a small fresh exec interpreter, preserve actual96MiB physical allocation and64MiB minimum late-increase assertion, bind actual allocationPID to its intermediate parent, reap both, and keep aggregate descendants-inclusive RUSAGE scope explicit.",
+    "old_count_or_classification_not_upgraded": true,
+    "old_raw_not_rewritten": true,
+    "old_raw_preserved": true,
+    "old_source_sha": "4087e58035d6b081b89091a1b292552d0e82d540",
+    "product_helper_and_stress_bytes_identical_between_4087_and_fa1": true,
+    "product_rss_limit_strict_bytes_preserved": 2147483648,
+    "product_rss_threshold_or_provenance_changed": false,
+    "rca": "Linux high-water RSS retained from the pre-exec parent made a fixed96MiB allocation increase the reported maximum by less than the guard's64MiB witness margin. This was the fixture assertion, not a product resource-limit failure.",
+    "receipt_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal-receipt.json",
+    "receipt_sha256": "4b173abf1646f33ae1cfc37ba53d7cae7665ff16f0b8b34c5c9613e838ad8984",
+    "reported_before_bytes": 61800448
+  },
+  "guards": [
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_retained_pinned_module_origin_is_reported"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_FRESH_PYTHON_IMPORT_OBSERVER_CONTROL_NOT_FULL_RAW_GIT_QUALIFICATION",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_retained_pinned_module_origin_is_reported"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_FRESH_PYTHON_TRANSIENT_ALIEN_EXEC",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_OPAQUE_EXEC_CONTROL",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_unresolved_filename_none_is_not_treated_as_a_closed_import"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "DIRECT_PUBLIC_AUDIT_EVENT_TELEMETRY_CONTROL_NOT_MODULE_IMPORT",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_unresolved_filename_none_is_not_treated_as_a_closed_import"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "DIRECT_PUBLIC_AUDIT_EVENT_CAPACITY_CONTROL_NOT2049_MODULE_IMPORTS",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_EVENT_AFTER_DEACTIVATION_AND_NEXT_OBSERVER",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "EXPLICIT_SNAPSHOT_FAILURE_CONTROL",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[root_abort]",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[fixture_abort]"
+      ],
+      "actual_fa1_status": [
+        "PASS",
+        "PASS"
+      ],
+      "kind": "ACTUAL_ABORT_OWNER_CLEANUP_WITH_CONTROLLED_PREPARED_BINDING_NOT_RAW_GIT_PASS",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer",
+      "variants": [
+        "root_abort",
+        "fixture_abort"
+      ]
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_initial_abort]",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_queue_abort]"
+      ],
+      "actual_fa1_status": [
+        "PASS",
+        "PASS"
+      ],
+      "kind": "ACTUAL_CHILD_TARGET_STARTUP_BASEEXCEPTION_WITH_REAL_OBSERVER_AND_CONTROLLED_QUALIFICATION_NOT_ACTUAL157",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook",
+      "variants": [
+        "child_initial_abort",
+        "child_queue_abort"
+      ]
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_FORK_CHILD_OBSERVER_INIT_EXCEPTION_EXIT1_REAP_WITH_CONTROLLED_BINDING_SQLITE_WORK_FAILURE_AND_EXIT_STUB_NOT_CANONICAL_SPAWN_BUSINESS_ACCEPTANCE",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_CLI_PARTIAL_BINDING_REJECTION",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "CONTROLLED_INVALID_INDEX_BINDING_FAILS_BEFORE_ENVIRONMENT_OR_FIXTURE_NOT_RAW_GIT_SUCCESS",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_TARGET_ENTRY_PID_BINDING_REJECTION_NO_PRODUCT_IMPORT_OR_FIXTURE",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_POSTEXEC_FORK_LATE96MIB_ALLOCATION_WITH_EXACT_PID_CHAIN_AND_DESCENDANTS_INCLUSIVE_PARENT_RUSAGE_NOT_WORKER_ONLY_WAIT4",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "ACTUAL_LIVE_CHILD_REFUSES_RUSAGE_CHILDREN_LIFETIME_CLAIM",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss"
+    },
+    {
+      "actual_fa1_exact_nodes": [
+        "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation"
+      ],
+      "actual_fa1_status": [
+        "PASS"
+      ],
+      "kind": "DECLARATIVE_AST_CONTRACT_NOT_NATIVE_IMPORT_PROOF",
+      "node": "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation"
+    }
+  ],
+  "limits": [
+    "No native BIG12k/60k,1201horizon, image, provider, economic edge or finalGov/FIP execution is claimed.",
+    "Exact157 qualification is installed names/versions and policy hash-lock metadata; it does not authenticate installed wheel bytes.",
+    "Retained sys.modules origins and transient audit events are different evidence. Import/exec windows exclude bootstrap and postboundary IPC/emission/teardown.",
+    "The observer uses interpreter paths/co_filename metadata, not executed-byte authentication. Opaque/None/overflow/error refuses closure.",
+    "The Parent focal transport/SQLite barrier is Python-level and does not claim OS isolation of every subprocess.",
+    "Fork exception guards use declared controlled bindings/faults; the unchanged canonical factory control does not claim successful opt-in spawned-worker closure.",
+    "WholeSource/TAR remain external and explicitly un-packaged. Every small committed raw file is byte-exact and independently hashed.",
+    "Document D references executedSource S; finalSource/FIP/Gov/JUnit/artifact binding still requires independent evidence outside this self-contained dossier."
+  ],
+  "linked_original_requirement_ids": [
+    "U14"
+  ],
+  "native_product_contract_preserved": {
+    "call_profile_or_stack_sampler_added": false,
+    "canonical_runtime": true,
+    "catalog_count": 12000,
+    "cycle_deadline_seconds": 90,
+    "factual_paper_exits": 5,
+    "fixtures_or_business_clocks_changed": false,
+    "gc_collect_callbacks_or_thresholds_added": false,
+    "live_bytes": 134217728,
+    "materialized_observations": 60000,
+    "observations_per_identity": 5,
+    "per_event_hash_io_or_queue_added": false,
+    "rss_bytes": 2147483648,
+    "runtime_or_horizon_changed": false,
+    "slow_fsync_release_limit_seconds": 15
+  },
+  "new_original_requirements_or_scenarios": 0,
+  "observer_contract": {
+    "callback_cost": "Python calls every registered audit hook for other audit events too; this handler immediately returns for them. The spawned-worker qualification, observations and IPC consume the existing parent-managed90s window without renewal. Parent preflight/initial snapshot and fixture construction precede that original timer; parent final capture follows worker cleanup. The external wrapper must measure full launcher lifetime/resource use as well; none of these stages is relabeled as a90s whole-launcher deadline.",
+    "cleanup": "Owner wrappers unconditionally deactivate audit hooks on every exit, including root/fixture/spawn/import/setup failures and BaseException during child initial receipt or queue startup. A single outer child ownership finally covers startup and work. Python audit hooks cannot be uninstalled; inactive hooks return without changing counters.",
+    "closure_limit": "Bootstrap before installation and postboundary IPC/emission/process teardown are outside the observed window. Local module paths/code.co_filename are interpreter metadata, not cryptographic authentication of executed code or installed binaries.",
+    "filename_none": "Original None counts retained. A named event may be resolved only through the actual final retained-module origin; missing/unresolved names remain UNVERIFIED.",
+    "opaque": "Generic <string>, frozen-looking exec filenames and other unknown code locations remain opaque/UNVERIFIED. No generic allowlist is used to turn them GREEN.",
+    "parent": "Snapshot and audit window cover fixture construction, launcher activity and actual PAPER exits, ending before final result emission.",
+    "records": "At most2048 event records,2048 pending names,2048 retained-origin/unresolved records per snapshot and4096 characters per identifier (UTF-8 may occupy up to16384 bytes). Counters explicitly record overflow and errors; no truncation is silently accepted.",
+    "retained_scope": "Actual module file/spec/namespace locations at two boundaries. No claim that retained modules enumerate every transient import.",
+    "transient_scope": "Stdlib audit hook counts actual import and exec events, retaining bounded module/filename strings and complete event counters. It never profiles Python function calls.",
+    "worker": "Installed before product imports; snapshot before/after PRE+OPEN+readCommitted. Initial IMPORT_PROVENANCE event survives a later timeout; final proof rides existing FINAL."
+  },
+  "original_canonical_control": {
+    "actual_fa1_status": "PASS",
+    "boundaries": "This original test invokes legacy stress without the five optional binding fields. Actual positive prepare_binding occurs separately before all focal fixtures. The fork failure guard has controlled qualification/work faults. Neither is a completed opt-in canonicalspawn BIG12k60k witness.",
+    "exact_node": "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+    "scope": "UNCHANGED_NATIVE_CANONICAL_FACTORY20_CATALOG_5_PAPER_EXIT_SLOW_FSYNC_PRIVATE_ROOTS_FINGERPRINT"
+  },
+  "pid_and_acceptance_contract": {
+    "external_wrapper": "Future wrapper must bind native launcher os.getpid to external Popen.pid and actual wait4/reap/returncode. Its own sys.modules cannot substitute for the spawned worker proof.",
+    "incomplete": "Business/resource-complete can coexist with import proof incomplete. In opt-in audit mode incomplete imports raise StressImportProofLimit with lossless evidence/exit1; business/resource failure uses StressResourceLimit carrying the same aggregate proof. Nonzero worker exits retain actual exitcode, initial proof and any safely captured failure window instead of losing JSON to an untyped AssertionError. Legacy mode retains its original nonzero-child AssertionError. Worker Exception proof emission never converts the exception into exit0; previously received progress/fsync is retained without inventing unobserved work. Missing FINAL, timeout, invalid PID/pin, unknown origin, opaque exec, observer failure or overflow never closes the proof.",
+    "late_worker_rss": "Opt-in mode captures parent RUSAGE_CHILDREN after existing joins/cleanup, covering worker final proof serialization and IPC. This is explicitly the maximum of ALL reaped children including local Git preflight, not isolated worker-only wait4. The original strict RSS<2GiB threshold is unchanged; resource actual_rss is the maximum of original worker self-report and this actual reaped-children maximum. Unreaped/unavailable observation keeps actual_rss unknown and the RSS gate false. The external wrapper still measures native launcher lifetime resources separately.",
+    "legacy": "No binding preserves original business path and reports NOT_AUDITED. Old8764 and other raw epochs remain byteexact and are never relabeled as audited.",
+    "result_fields": [
+      "business_resource_complete",
+      "import_proof_complete",
+      "import_provenance.requested",
+      "import_provenance.status",
+      "import_provenance.transient_closure_verified",
+      "import_provenance.worker_pid_source_binding_verified",
+      "import_provenance.worker_exitcode",
+      "import_provenance.worker_cleanup_completed"
+    ],
+    "worker_binding": "Both initial/final worker payloads must match ctx.Process.pid, os.getppid==launcherPID and sourceSHA/tree/indexRAWsha. Actual child.join/exitcode/cleanup and final receipt are required. No manual wait4 is added to multiprocessing's own waitpid."
+  },
+  "raw_custody_contract": {
+    "current_test_execution_lives_in_separate_documentary_dossier": true,
+    "encoding": "BYTE_EXACT",
+    "historical_source_plan_not_rewritten_after_tests": true,
+    "original_paths_are_observed_external_locations_not_portable_artifact_links": true,
+    "source_plan_fa1_was_source_only_at_commit": true,
+    "stored_mode": "100644"
+  },
+  "raw_files": [
+    {
+      "bytes": 218917,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:native-import-provenance-focal-receipt.json",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal-receipt.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/native-import-provenance-focal-receipt.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_NATIVE_FOCAL_RECEIPT",
+      "sha256": "4b173abf1646f33ae1cfc37ba53d7cae7665ff16f0b8b34c5c9613e838ad8984",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 4310,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:native-import-provenance-focal.junit.xml",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal.junit.xml",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/native-import-provenance-focal.junit.xml",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_PYTEST_JUNIT",
+      "sha256": "859a024a8dae48f6657532de15bbd0131e2da2e62a7c2f32fc88aa5a572dfb05",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 1558,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:focal-supervisor.json",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/focal-supervisor.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-supervisor.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_PID_WAIT4_REAP_MANAGEMENT_RECEIPT",
+      "sha256": "0d53ec100287d1cb09d538488fe32a08b154b459c4e0a8eaf11f098e925a0faa",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 1886,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:focal.log",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/focal.log",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal.log",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_NATIVE_STDOUT_STDERR",
+      "sha256": "92069c1b4902801f0a0986915d0734326860b55a2d988a6ea012646654c9f400",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 702988,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:source.index.json",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/source.index.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/source.index.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "TESTED_WHOLE_SOURCE_RAW_GIT_SHA_MODE_BLOB_INDEX",
+      "sha256": "395dfe7813e37d83dcdcced7c40554f4e75243e43d36d2942cc140b0900f0b0c",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 12542,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:runner",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-runner.py",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-runner.py.source",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "EXACT_EXECUTED_CONTROLLED_RUNNER_SOURCE",
+      "sha256": "03ca62f8df9d4c1b446148c0549add4c74d0b52d79d72c4679419104ce5f73e6",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 5891,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "4087:supervisor",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-supervisor.py",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/4087/focal-supervisor.py.source",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "EXACT_EXECUTED_EXTERNAL_WAIT4_SUPERVISOR_SOURCE",
+      "sha256": "846573e9ed09e0317ea8d03418e235a7205ed52ffd1eb59025d3297d237a851a",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 218725,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:native-import-provenance-focal-receipt.json",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/native-import-provenance-focal-receipt.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/native-import-provenance-focal-receipt.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_NATIVE_FOCAL_RECEIPT",
+      "sha256": "153a7d877892287305f69ef436ff8a894742bc3c822585d054f46860b62abf11",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 3209,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:native-import-provenance-focal.junit.xml",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/native-import-provenance-focal.junit.xml",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/native-import-provenance-focal.junit.xml",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_PYTEST_JUNIT",
+      "sha256": "879ddadd7d082796d5e4041a2855f6e8a7c6e7b5139d8fb71955cceecdd4fd9c",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 1569,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:focal-supervisor.json",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/focal-supervisor.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-supervisor.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_PID_WAIT4_REAP_MANAGEMENT_RECEIPT",
+      "sha256": "649f733d8ae2acff97ec3be9eec15e270560621e75ddce6d0881577e34a50622",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 529,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:focal.log",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/focal.log",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal.log",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "ACTUAL_NATIVE_STDOUT_STDERR",
+      "sha256": "04ef372f3392da23ea82be80b58eb9006fe8dcbc030bf9957b6168af4affb388",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 702988,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:source.index.json",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/source.index.json",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/source.index.json",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "TESTED_WHOLE_SOURCE_RAW_GIT_SHA_MODE_BLOB_INDEX",
+      "sha256": "1e9729f160baaa4da5873b633912e80545dc335285c009ef713b0ce0eeb4d82c",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 12540,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:runner",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-runner.py",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-runner.py.source",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "EXACT_EXECUTED_CONTROLLED_RUNNER_SOURCE",
+      "sha256": "334bd4a7b57b89feee31a3970482eb4472e7e8fb4be50cdc109c162a987a98d4",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 5889,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "fa1:supervisor",
+      "original_path": "/workspace/rc6-budget-big-import-fa1-focal-supervisor.py",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/fa1/focal-supervisor.py.source",
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "role": "EXACT_EXECUTED_EXTERNAL_WAIT4_SUPERVISOR_SOURCE",
+      "sha256": "7c0ff7a8a3caa2cb9232c4998585289117336fb62bbbc47aa4c0d0d03721cc86",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 4874,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "harness:whole-source-exporter",
+      "original_path": "/tmp/rc6_export_whole_git_source.py",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/harness/whole-source-exporter.py.source",
+      "phase": "EXECUTED_SOURCE_PREPARATION_ONLY",
+      "role": "EXACT_EXTERNAL_RAW_GIT_COMPLETE_EXPORTER_SOURCE",
+      "sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+      "stored_mode": "100644"
+    },
+    {
+      "bytes": 7974,
+      "custody": "BYTE_EXACT_ORIGINAL_RAW",
+      "encoding": "BYTE_EXACT",
+      "id": "harness:unexecuted-d086-draft",
+      "original_path": "/workspace/rc6-budget-big-import-4087-focal-runner-d086-unexecuted-draft.py.source",
+      "path": "docs/audits/convergence/evidence/native-big-import-provenance/harness/focal-runner-d086-unexecuted-draft.py.source",
+      "phase": "SOURCE_ONLY_NOT_EXECUTED",
+      "role": "PRESERVED_SUPERSEDED_COUNT_ONLY_RUNNER_DRAFT",
+      "sha256": "d086e2f4b482f184f6446adffe44355c3382b0b450c95af5a80396072ce16927",
+      "stored_mode": "100644"
+    }
+  ],
+  "runs": [
+    {
+      "actual_source_binding_before_fixture": {
+        "prepared_by_pid": 233226,
+        "scope": "RAW_GIT_PHYSICAL_NAMESPACE_AND_INSTALLED157_BEFORE_FIXTURES",
+        "source_sha": "4087e58035d6b081b89091a1b292552d0e82d540",
+        "source_tree": "af63efe5491f0b31496f5c26983dc1159f305db9"
+      },
+      "case_status_by_exact_node": {
+        "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_retained_pinned_module_origin_is_reported": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_initial_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_queue_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak": "FAIL",
+        "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[fixture_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[root_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_unresolved_filename_none_is_not_treated_as_a_closed_import": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture": "PASS"
+      },
+      "classification": "EXACT_SCOPED_18PASS_1_GUARD_FIXTURE_FAILURE_NOT_PRODUCT_RED",
+      "command": [
+        "-q",
+        "--strict-markers",
+        "/workspace/rc6-budget-big-import-4087-focal-157-raw/source/tests/test_rc6_native_big_import_provenance.py",
+        "/workspace/rc6-budget-big-import-4087-focal-157-raw/source/tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--junitxml=/workspace/rc6-budget-big-import-4087-focal-157-raw/native-import-provenance-focal.junit.xml",
+        "--basetemp=/workspace/rc6-budget-big-import-4087-focal-157-raw/fixtures/pytest",
+        "--rootdir=/workspace/rc6-budget-big-import-4087-focal-157-raw/source"
+      ],
+      "counters": {
+        "collected_unique": 19,
+        "errors": 0,
+        "executed_call_unique": 19,
+        "failed": 1,
+        "junit_unique": 19,
+        "passed": 18,
+        "skipped": 0
+      },
+      "evidence_refs": {
+        "focal-supervisor.json": "4087:focal-supervisor.json",
+        "focal.log": "4087:focal.log",
+        "native-import-provenance-focal-receipt.json": "4087:native-import-provenance-focal-receipt.json",
+        "native-import-provenance-focal.junit.xml": "4087:native-import-provenance-focal.junit.xml",
+        "source.index.json": "4087:source.index.json"
+      },
+      "fixture_namespace_outside_whole_source": "/workspace/rc6-budget-big-import-4087-focal-157-raw/fixtures",
+      "focal_import_graph_scope": "RETAINED_MODULE_LOCATIONS_AT_BOUNDARIES_NOT_TRANSIENT_HARNESS_CLOSURE",
+      "full_whole_source_and_tar": {
+        "boundary": "Raw tar/wholeSource remain in the authorized external workspace; the committed exact index and reachable sourceGit commit pin them. This dossier does not claim tar bytes are packaged inside the repository.",
+        "packaging": "LOCAL_EXTERNAL_NOT_PACKAGED",
+        "source_namespace": "/workspace/rc6-budget-big-import-4087-focal-157-raw/source",
+        "tar_bytes": 79984640,
+        "tar_path": "/workspace/rc6-budget-big-import-4087-focal-157-raw/source.tar",
+        "tar_sha256": "074864a102a2981d694db7e512687e149a85a2b7070a3c0a6b7a9e0a3d760ad6"
+      },
+      "id": "4087",
+      "identity_collection_call_junit_bijection_independently_derived": true,
+      "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+      "native_big_executions": 0,
+      "native_horizon_executions": 0,
+      "nonpassed_reports": [
+        "call::tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak"
+      ],
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "pid_lifetime": {
+        "actual_native_pid": 233226,
+        "actual_parent_pid": 233204,
+        "completion_observation_elapsed_seconds": 6.2715185309934895,
+        "external_wait4_actual_reaped": true,
+        "management_watchdog_exhausted": false,
+        "management_watchdog_seconds": 180.0,
+        "peak_rss_bytes": 114135040,
+        "returncode": 1,
+        "scope": "FOCAL_CHILD_LIFETIME_TO_ACTUAL_WAIT4_NOT_PRODUCT90S_CAP_OR_POSTSUPERVISOR_EMISSION"
+      },
+      "pytest_wall_seconds": 4.463673931997619,
+      "python_harness_barriers": {
+        "network_attempt_count": 0,
+        "network_attempts_first64": [],
+        "primary_sqlite_sealed_after_fixture": false,
+        "scope": "AUDITED_PRIVATE_SQLITE_AND_NO_NETWORK_NOT_PROVIDER_AUTHORITY",
+        "sqlite_allowed": 202,
+        "sqlite_memory": 0,
+        "sqlite_primary_setup": 0,
+        "sqlite_rejected_count": 0,
+        "sqlite_rejected_first64": []
+      },
+      "qualification_before_fixture": true,
+      "qualification_scope": "INSTALLED_METADATA_EXACT157_VERSIONS_AND_HASH_LOCKS_NOT_WHEEL_BYTES_OR_IMAGE_ID",
+      "raw_exact_collection_call_junit_bijection": false,
+      "raw_join_semantics": "The raw field additionally requires passed reports. It remainsFalse in4087 because the RSS fixture call failed; the actual unique identity sets and every phase still each contain exactly19 once.",
+      "runner_ref": "4087:runner",
+      "source_index_and_tar_unchanged": true,
+      "source_snapshot": {
+        "code_paths": {
+          "docs/audits/convergence/NATIVE_BIG_IMPORT_PROVENANCE_SOURCE_PLAN.json": {
+            "bytes": 12030,
+            "git_blob_id": "57e0484e22239839c86016f54db7acdfa0d55753",
+            "git_mode": "100644",
+            "sha256": "2c06d9216ff6ed550171f95b432b2efca8cf2a6ba83b3b784c54a88196b404cf"
+          },
+          "scripts/rc6_issue465_stress.py": {
+            "bytes": 48679,
+            "git_blob_id": "26372c2bd27e0a02cf5d3876666263c51669c300",
+            "git_mode": "100644",
+            "sha256": "0df3b83942f2ebf799d8a2419eebcd7811337412edc4ece65c56239495b99abe"
+          },
+          "scripts/rc6_native_import_provenance.py": {
+            "bytes": 22900,
+            "git_blob_id": "6eae9822c33689f88e5c94ba57c7ba82bd4adbb1",
+            "git_mode": "100644",
+            "sha256": "c30d062a462a1994f016dd001affb4b5ca221ccd30f711234b8f905b78133a6d"
+          },
+          "tests/test_rc6_native_big_import_provenance.py": {
+            "bytes": 17792,
+            "git_blob_id": "7952e5655896ce91cf8ead1d1284388ce7cc9430",
+            "git_mode": "100644",
+            "sha256": "aa509a4dbf673890175b4063040547e0e6b6ccde137700dbb9bf3239ee248f5b"
+          }
+        },
+        "file_count": 2161,
+        "overlay_count": 0,
+        "sha": "4087e58035d6b081b89091a1b292552d0e82d540",
+        "source_index_sha256": "395dfe7813e37d83dcdcced7c40554f4e75243e43d36d2942cc140b0900f0b0c",
+        "source_tar_sha256": "074864a102a2981d694db7e512687e149a85a2b7070a3c0a6b7a9e0a3d760ad6",
+        "tree": "af63efe5491f0b31496f5c26983dc1159f305db9"
+      },
+      "supervisor_ref": "4087:supervisor",
+      "whole_source_bytes_modes_and_blobs_unchanged": true
+    },
+    {
+      "actual_source_binding_before_fixture": {
+        "prepared_by_pid": 233536,
+        "scope": "RAW_GIT_PHYSICAL_NAMESPACE_AND_INSTALLED157_BEFORE_FIXTURES",
+        "source_sha": "fa1fd60645c503557191b69578519cddab621a36",
+        "source_tree": "1da89798772731bda276d6d5f3ea86ff82076eb1"
+      },
+      "case_status_by_exact_node": {
+        "tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_audit_hook_deactivation_does_not_contaminate_next_observer": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_exec_of_alien_module_deleted_after_import_remains_blocked": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_opaque_exec_is_unverified_without_generic_allowlist": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_actual_retained_pinned_module_origin_is_reported": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_bounded_audit_overflow_keeps_complete_counter_and_refuses_closure": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_callback_source_has_no_hash_io_profile_or_gc_operation": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_initial_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_child_startup_base_exception_deactivates_owned_hook[child_queue_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_late_proof_allocation_is_covered_by_actual_reaped_children_peak": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_nonzero_actual_child_preserves_initial_and_failure_proof_in_typed_evidence": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_partial_source_cli_is_rejected_before_fixture_or_business_import": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_snapshot_failure_unconditionally_deactivates_owned_hook": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[fixture_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_stress_early_failure_deactivates_hook_before_next_observer[root_abort]": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_unreaped_child_does_not_claim_a_lifetime_rss": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_unresolved_filename_none_is_not_treated_as_a_closed_import": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_actual_parent_pid_reports_incomplete_before_product_startup": "PASS",
+        "tests/test_rc6_native_big_import_provenance.py::test_wrong_source_pin_rejects_before_environment_or_fixture": "PASS"
+      },
+      "classification": "EXACT_SCOPED_19PASS_IMPORT_GUARDS_AND_ORIGINAL_CANONICAL_FACTORY",
+      "command": [
+        "-q",
+        "--strict-markers",
+        "/workspace/rc6-budget-big-import-fa1-focal-157-raw/source/tests/test_rc6_native_big_import_provenance.py",
+        "/workspace/rc6-budget-big-import-fa1-focal-157-raw/source/tests/test_issue465_stress.py::test_canonical_factory_stress_uses_private_native_roots_and_matching_fingerprint",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--junitxml=/workspace/rc6-budget-big-import-fa1-focal-157-raw/native-import-provenance-focal.junit.xml",
+        "--basetemp=/workspace/rc6-budget-big-import-fa1-focal-157-raw/fixtures/pytest",
+        "--rootdir=/workspace/rc6-budget-big-import-fa1-focal-157-raw/source"
+      ],
+      "counters": {
+        "collected_unique": 19,
+        "errors": 0,
+        "executed_call_unique": 19,
+        "failed": 0,
+        "junit_unique": 19,
+        "passed": 19,
+        "skipped": 0
+      },
+      "evidence_refs": {
+        "focal-supervisor.json": "fa1:focal-supervisor.json",
+        "focal.log": "fa1:focal.log",
+        "native-import-provenance-focal-receipt.json": "fa1:native-import-provenance-focal-receipt.json",
+        "native-import-provenance-focal.junit.xml": "fa1:native-import-provenance-focal.junit.xml",
+        "source.index.json": "fa1:source.index.json"
+      },
+      "fixture_namespace_outside_whole_source": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/fixtures",
+      "focal_import_graph_scope": "RETAINED_MODULE_LOCATIONS_AT_BOUNDARIES_NOT_TRANSIENT_HARNESS_CLOSURE",
+      "full_whole_source_and_tar": {
+        "boundary": "Raw tar/wholeSource remain in the authorized external workspace; the committed exact index and reachable sourceGit commit pin them. This dossier does not claim tar bytes are packaged inside the repository.",
+        "packaging": "LOCAL_EXTERNAL_NOT_PACKAGED",
+        "source_namespace": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/source",
+        "tar_bytes": 79984640,
+        "tar_path": "/workspace/rc6-budget-big-import-fa1-focal-157-raw/source.tar",
+        "tar_sha256": "30caeb1419c39fef17670b0bb710e10de1f4ac9ef29cb00d5cbb6f76e82b8349"
+      },
+      "id": "fa1",
+      "identity_collection_call_junit_bijection_independently_derived": true,
+      "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+      "native_big_executions": 0,
+      "native_horizon_executions": 0,
+      "nonpassed_reports": [],
+      "phase": "INTERMEDIATE_EXACT_OWN_SOURCE_SCOPED_FOCAL_NOT_FINAL_CANDIDATE",
+      "pid_lifetime": {
+        "actual_native_pid": 233536,
+        "actual_parent_pid": 233514,
+        "completion_observation_elapsed_seconds": 7.384369150007842,
+        "external_wait4_actual_reaped": true,
+        "management_watchdog_exhausted": false,
+        "management_watchdog_seconds": 180.0,
+        "peak_rss_bytes": 109158400,
+        "returncode": 0,
+        "scope": "FOCAL_CHILD_LIFETIME_TO_ACTUAL_WAIT4_NOT_PRODUCT90S_CAP_OR_POSTSUPERVISOR_EMISSION"
+      },
+      "pytest_wall_seconds": 5.456274302006932,
+      "python_harness_barriers": {
+        "network_attempt_count": 0,
+        "network_attempts_first64": [],
+        "primary_sqlite_sealed_after_fixture": false,
+        "scope": "AUDITED_PRIVATE_SQLITE_AND_NO_NETWORK_NOT_PROVIDER_AUTHORITY",
+        "sqlite_allowed": 202,
+        "sqlite_memory": 0,
+        "sqlite_primary_setup": 0,
+        "sqlite_rejected_count": 0,
+        "sqlite_rejected_first64": []
+      },
+      "qualification_before_fixture": true,
+      "qualification_scope": "INSTALLED_METADATA_EXACT157_VERSIONS_AND_HASH_LOCKS_NOT_WHEEL_BYTES_OR_IMAGE_ID",
+      "raw_exact_collection_call_junit_bijection": true,
+      "raw_join_semantics": "The raw field additionally requires passed reports. It remainsFalse in4087 because the RSS fixture call failed; the actual unique identity sets and every phase still each contain exactly19 once.",
+      "runner_ref": "fa1:runner",
+      "source_index_and_tar_unchanged": true,
+      "source_snapshot": {
+        "code_paths": {
+          "docs/audits/convergence/NATIVE_BIG_IMPORT_PROVENANCE_SOURCE_PLAN.json": {
+            "bytes": 13229,
+            "git_blob_id": "175c5f077410a25c7ee9a448e073453ffe551e50",
+            "git_mode": "100644",
+            "sha256": "ef5ba13fd8fb08c640df6cf896799a260fa6fd2db3a9f72ef2736754b4ba7dd9"
+          },
+          "scripts/rc6_issue465_stress.py": {
+            "bytes": 48679,
+            "git_blob_id": "26372c2bd27e0a02cf5d3876666263c51669c300",
+            "git_mode": "100644",
+            "sha256": "0df3b83942f2ebf799d8a2419eebcd7811337412edc4ece65c56239495b99abe"
+          },
+          "scripts/rc6_native_import_provenance.py": {
+            "bytes": 22900,
+            "git_blob_id": "6eae9822c33689f88e5c94ba57c7ba82bd4adbb1",
+            "git_mode": "100644",
+            "sha256": "c30d062a462a1994f016dd001affb4b5ca221ccd30f711234b8f905b78133a6d"
+          },
+          "tests/test_rc6_native_big_import_provenance.py": {
+            "bytes": 18826,
+            "git_blob_id": "b4a6eb92970708e57e82c7e48ec8e260d8678636",
+            "git_mode": "100644",
+            "sha256": "4d5006fec7a480b22ba1e60c9836d0b1282c41c4afb88566ddebaf1480d8849c"
+          }
+        },
+        "file_count": 2161,
+        "overlay_count": 0,
+        "sha": "fa1fd60645c503557191b69578519cddab621a36",
+        "source_index_sha256": "1e9729f160baaa4da5873b633912e80545dc335285c009ef713b0ce0eeb4d82c",
+        "source_tar_sha256": "30caeb1419c39fef17670b0bb710e10de1f4ac9ef29cb00d5cbb6f76e82b8349",
+        "tree": "1da89798772731bda276d6d5f3ea86ff82076eb1"
+      },
+      "supervisor_ref": "fa1:supervisor",
+      "whole_source_bytes_modes_and_blobs_unchanged": true
+    }
+  ],
+  "runtime_validated": false,
+  "schema": "rc6.native-big-import-provenance-focal.v1",
+  "scope": "LOCAL_PAPER_OFFLINE_IMPORT_PROVENANCE_GUARDS_PLUS_ORIGINAL_CANONICAL20_NOT_BIG12K60K_OR_FINAL_CANDIDATE",
+  "self_commit_sha": null,
+  "source_S": "fa1fd60645c503557191b69578519cddab621a36",
+  "source_T": "1da89798772731bda276d6d5f3ea86ff82076eb1",
+  "source_base": {
+    "original_stress_sha256": "1643c3d58ab69b8ccdfed8b2818bb5ceb03adae77fa85f9cd702b36a3fdf4492",
+    "previous_wrapper_sha256": "342cf31542114f233061d0c2ee85916c969581287ebd7b45afe7bff18292c58f",
+    "read_only_previous_external_wrapper": "/workspace/rc6-canonical-8764e934-big-wrapper.py",
+    "sha": "4b8f6104380ef1a2338a4f246045e0a19b62831e",
+    "tree": "b020d609ae5d63440fa74d7967bb250f817f235a"
+  },
+  "source_lineage": [
+    {
+      "phase": "SOURCE_ONLY_NOT_EXECUTED",
+      "sha": "249ffe3eb7255645a17e05e6a3c74bd8548081c8"
+    },
+    {
+      "phase": "SOURCE_ONLY_NOT_EXECUTED",
+      "sha": "b6342edc85c721251b9e9b7ff6270b3ebc39a0a7"
+    },
+    {
+      "phase": "EXACT_SCOPED_18PASS_1_GUARD_FIXTURE_FAILURE",
+      "sha": "4087e58035d6b081b89091a1b292552d0e82d540"
+    },
+    {
+      "phase": "EXACT_SCOPED_19PASS_GUARDS_AND_ORIGINAL_CANONICAL20",
+      "sha": "fa1fd60645c503557191b69578519cddab621a36"
+    }
+  ],
+  "source_review_findings_not_native_product_red": [
+    {
+      "fix": "One child outerfinally owns startup+work and unconditionally deactivates the hook.",
+      "issue": "startup_BaseException_after_observer_installation"
+    },
+    {
+      "fix": "After existing joins, parent records RUSAGE_CHILDREN maximum of ALL reaped children, including Git preflight. It is not isolated worker-onlywait4. The existing strict2GiB gate includes it; unknown/unreaped keeps RSS unverified.",
+      "issue": "late_worker_final_proof_RSS_not_in_earlier_worker_self_report"
+    },
+    {
+      "fix": "Opt-in mode preserves actual exitcode/INIT/failure window and emits typed JSON carrier with incomplete flags. Original no-binding AssertionError contract remains unchanged.",
+      "issue": "nonzero_child_exit_lost_received_INIT_and_partial_evidence"
+    }
+  ]
+}

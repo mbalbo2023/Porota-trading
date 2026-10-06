@@ -1,0 +1,134 @@
+{
+  "baseline_commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "cases": {
+    "06": {
+      "observed": [
+        {
+          "adjusted": 1,
+          "close": 50.0,
+          "date": "2026-09-30",
+          "high": 50.0,
+          "instrument_type": "ACCIONES",
+          "low": 50.0,
+          "market": "BYMA",
+          "observed_at": "2026-10-01T17:00:00Z",
+          "open": 50.0,
+          "settlement": "A-24HS",
+          "source": "YAHOO",
+          "source_rank": 90,
+          "symbol": "AUDIT",
+          "version_id": 2,
+          "volume": 1000.0
+        }
+      ],
+      "red": true
+    },
+    "07": {
+      "observed": [
+        {
+          "adjusted": 0,
+          "close": 1.0,
+          "date": "2026-09-30",
+          "high": 1.0,
+          "instrument_type": "ACCIONES",
+          "low": 1.0,
+          "market": "BYMA",
+          "observed_at": "2026-10-02T16:00:00Z",
+          "open": 1.0,
+          "settlement": "A-24HS",
+          "source": "PPI_API",
+          "source_rank": 10,
+          "symbol": "AUDIT",
+          "version_id": 2,
+          "volume": 1000.0
+        }
+      ],
+      "red": true
+    },
+    "08": {
+      "observed": [
+        {
+          "adjusted": 0,
+          "close": 100.0,
+          "date": "2026-09-30",
+          "high": 102.0,
+          "instrument_type": "ACCIONES",
+          "low": 98.0,
+          "market": "BYMA",
+          "observed_at": "2026-10-02T19:00:00Z",
+          "open": 100.0,
+          "settlement": "A-24HS",
+          "source": "PPI_API",
+          "source_rank": 10,
+          "symbol": "AUDIT",
+          "version_id": 1,
+          "volume": 1000.0
+        }
+      ],
+      "red": true
+    },
+    "09": {
+      "observed": [
+        {
+          "adjusted": 0,
+          "close": 100.0,
+          "date": "2026-09-30",
+          "high": 102.0,
+          "instrument_type": "ACCIONES",
+          "low": 98.0,
+          "market": "BYMA",
+          "observed_at": "2026-10-01T16:00:00+00:00",
+          "open": 100.0,
+          "settlement": "A-24HS",
+          "source": "PPI_API",
+          "source_rank": 10,
+          "symbol": "AUDIT",
+          "version_id": 1,
+          "volume": 1000.0
+        }
+      ],
+      "red": true
+    },
+    "10": {
+      "observed": "future/infinite canonical accepted",
+      "red": true
+    },
+    "18": {
+      "observed": [
+        {
+          "adjusted": 0,
+          "close": 100.0,
+          "date": "2026-09-30",
+          "high": 102.0,
+          "instrument_type": "ACCIONES",
+          "low": 98.0,
+          "market": "BYMA",
+          "observed_at": "2026-10-01T16:00:00+00:00",
+          "open": 100.0,
+          "settlement": "A-24HS",
+          "source": "PPI_API",
+          "source_rank": 10,
+          "symbol": "AUDIT",
+          "version_id": 1,
+          "volume": 1000.0
+        }
+      ],
+      "red": true
+    },
+    "U24": {
+      "after": [
+        "source.sqlite",
+        "source.sqlite-shm",
+        "source.sqlite-wal"
+      ],
+      "before": [
+        "source.sqlite",
+        "source.sqlite-wal"
+      ],
+      "red": true
+    }
+  },
+  "corpus": "SYNTHETIC_OFFLINE",
+  "runtime_verified": false,
+  "schema": "rc6.history-red-baseline.v1"
+}

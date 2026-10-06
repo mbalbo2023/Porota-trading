@@ -1,0 +1,118 @@
+{
+  "actual_child_reaped": true,
+  "actual_launch_to_pid_reap_wall_seconds": 30.779128491994925,
+  "adopted_descendants_reaped": [],
+  "all_eleven_source_stats_unchanged_claimed": false,
+  "child_exit_code": 1,
+  "cpu_system_seconds": 1.388336,
+  "cpu_user_seconds": 28.584698,
+  "elapsed_wall_seconds": 30.781282405005186,
+  "execution_id": "83cb52c67e7941ffac7e6336a5c297a6",
+  "external_focal_rss_cap_bytes": 2147483648,
+  "kernel_lifetime_peak_rss_bytes": 275869696,
+  "management_timeout_seconds": 180,
+  "native_complete_receipt_verified": false,
+  "native_receipt_sha256": "323e5afdb1d62e844767ae944e0a6edb0b5bf78cde5096aef53e6f5afe5ce44d",
+  "observed_source_code_atime_changes": [
+    {
+      "after": 1791243358700678273,
+      "before": 1791243357304687560,
+      "kind": "directory",
+      "path": "."
+    },
+    {
+      "after": 1791243370580598452,
+      "before": 1791243357704684899,
+      "kind": "directory",
+      "path": "rc6_audit_evidence"
+    },
+    {
+      "after": 1791243362728651474,
+      "before": 1791243357712684846,
+      "kind": "directory",
+      "path": "rc6_dynamic_universe"
+    },
+    {
+      "after": 1791243362660651927,
+      "before": 1791243357716684819,
+      "kind": "directory",
+      "path": "rc6_performance"
+    },
+    {
+      "after": 1791243362348654003,
+      "before": 1791243357720684792,
+      "kind": "directory",
+      "path": "rc6_shadow_runtime"
+    },
+    {
+      "after": 1791243358700678273,
+      "before": 1791243357728684739,
+      "kind": "directory",
+      "path": "scripts"
+    },
+    {
+      "after": 1791243362052655972,
+      "before": 1791243357744684632,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "overlay_count": 0,
+  "owned_children_proc_path": "/proc/235637/task/235637/children",
+  "parent_preserved_source_tar": {
+    "bytes": 79964160,
+    "commit": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+    "directories": 111,
+    "files": 2158,
+    "sha256": "754f34d63ef86c7fd8076f3f1ae265ce8ba99dd5e587d0a745d61a68326e07aa",
+    "stat_fields": {
+      "st_atime_ns": 1791243358772733602,
+      "st_blocks": 156184,
+      "st_ctime_ns": 1791243359080675745,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 928151,
+      "st_mode": 33188,
+      "st_mtime_ns": 1791243359080675745,
+      "st_nlink": 1,
+      "st_size": 79964160,
+      "st_uid": 1000
+    }
+  },
+  "parent_raw_collection_call_phase_junit_join": null,
+  "pid": 235672,
+  "post_reap_custody_validation_seconds": 1.0287930560007226,
+  "process_group_absent_after_reap": true,
+  "product_deadlines_unchanged": true,
+  "publisher_performance_or_big_completion_claimed": false,
+  "raw_log_sha256": "6466eeb6a98fca7992dcd30b3b0737ea292087f81185d8d53ba7afd2de904a63",
+  "remaining_owned_children": [],
+  "residual_descendants_observed": [],
+  "resource_scope": "ACTUAL_SINGLE_CHILD_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT_CONCURRENT_RSS_SUM",
+  "schema": "rc6.private-publication-controlled-focal-kernel.v1",
+  "scope": "SEVEN_SELECTED_MODULES_PRIVATE_PUBLICATION_CAPTURE_EQUIVALENCE_AND_NATIVE_SMALL_WRITER_FULL_READER_PROJECTION; NOT_BIG_PERFORMANCE_OR_FULL_GOV",
+  "source_bytes_modes_blobs_stable_ten_stats_dirs_mounts_unchanged": true,
+  "source_files": 2158,
+  "source_sha": "e24bc025edc8bf72b272cb3546ce722dd97c10c8",
+  "source_tree": "79d1e849f44cc433283fbfcadf2680615c9684a5",
+  "status": "RED",
+  "subreaper_restore_attempted_on_all_activated_paths": true,
+  "supervisor_errors": [
+    {
+      "class": "FileNotFoundError",
+      "phase": "termination_or_reap",
+      "reason": "[Errno 2] No such file or directory: '/proc/235637/task/235637/children'"
+    }
+  ],
+  "supervisor_kernel_identity_before_spawn": {
+    "Pid": "235637",
+    "Tgid": "235637",
+    "Uid": "1000\t1000\t1000\t1000"
+  },
+  "supervisor_native_tid": 235637,
+  "supervisor_pid": 235637,
+  "supervisor_task_path": "/proc/235637/task/235637",
+  "termination_reap_restore_cleanup_seconds": 0.00019403999613132328,
+  "timed_out": false,
+  "wait4_reaped_pid": 235672
+}

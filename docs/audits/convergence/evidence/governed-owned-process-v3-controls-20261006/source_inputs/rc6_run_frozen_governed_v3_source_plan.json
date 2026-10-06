@@ -1,0 +1,146 @@
+{
+  "candidate": {
+    "bytes": 43365,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+    "sha256": "c4301e14e335555f47d1b1d2e26a56639e254fbb434455e25012131a1f617313"
+  },
+  "concrete_baseline_source_findings": [
+    {
+      "finding": "An observed main PID exit0 broke the loop without process-group absence or adopted-child exhaustion; the existing rc0/timedfalse gate could accept that partial state. This is a Source inference, not an executed Native RED.",
+      "lines": "301-321"
+    },
+    {
+      "finding": "No finally covered Popen, signal or log exceptions; wait4(pid,0) after SIGKILL was unbounded.",
+      "lines": "301-321"
+    },
+    {
+      "finding": "Main PID reap was checked before timeout, so a late observed reap could carry timed_out=False.",
+      "lines": "301-321"
+    }
+  ],
+  "created_at_utc": "2026-10-06T00:45:50Z",
+  "execution_recipe": {
+    "argv": [
+      "-I",
+      "-B",
+      "/tmp/rc6_run_frozen_governed_v3_candidate.py",
+      "--repo-root",
+      "<fresh complete clean wholeGitSourceC>",
+      "--source-sha",
+      "<literalFinalSourceSHA40>",
+      "--source-tree",
+      "<literalFinalSourceTree40>",
+      "--output-root",
+      "<new external disk-backed output>",
+      "--timeout-seconds",
+      "5400"
+    ],
+    "interpreter": "<approved frozen311 or312 interpreter with exact157 closure>",
+    "no_build_docker_image_artifact_deploy_claim": true,
+    "requires_explicit_native_slot": true
+  },
+  "immutable_baseline": {
+    "bytes": 31518,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v2.py",
+    "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+  },
+  "new_custody_contract": {
+    "acceptance_deadline_scope": "monotonic immediately before Popen through actual specific-PID wait4 observation; observation later than the original phase limit is irreversible RED",
+    "cleanup_loop_bound_seconds": 5,
+    "escaped_group_or_unreaped_child_has_red_residual_not_waived": true,
+    "green_requires_exact_reap_pre_echild_post_echild_no_zero_no_late_no_pending_no_residual_no_errors_restored_subreaper": true,
+    "group_absent_immediately_after_main_reap_and_at_final_check_both_required": true,
+    "kernel_observation_bound": 1024,
+    "main_rusage_and_adopted_rusage_kept_separate_no_summed_rss_claim": true,
+    "no_global_proc_scan_or_signal_to_individual_adopted_or_foreign_pids": true,
+    "once_group_absence_observed_no_further_signal_to_that_pgid": true,
+    "only_echild_proves_owned_child_exhaustion": true,
+    "optional_proc_task_children_file_not_opened_or_interpreted": true,
+    "own_supervisor_pid_tid_uid_kernel_status_bound_bytes": 65536,
+    "positive_adopted_pids_status_and_kernel_rusage_recorded_separately": true,
+    "post_main_wait4_minus_one_requires_actual_main_reap_and_prespawn_echild": true,
+    "pre_popen_only_echild_allows_exact_one_popen": true,
+    "signals_only_known_popen_pgid": true,
+    "specific_main_pid_wait4_wnohang_only": true,
+    "subreaper_previous_state_captured_and_restore_finally": true,
+    "zero_wait4_outcome_irreversible_red_even_if_cleanup_later_exhausts": true
+  },
+  "pending": [
+    "Root and Finance Source review",
+    "Root-owned independent controlled kernel tests or Native slot authorization",
+    "fresh final Source C whole Git pin and exact frozen interpreter closure",
+    "full governed execution and raw JUnit on final source; source preparation is not qualification"
+  ],
+  "proven_pattern_source": {
+    "bytes": 57707,
+    "mode_octal": "0600",
+    "path": "/workspace/rc6-publication-e24bc025-controlled-preparation-d/runner.py",
+    "sha256": "fc7513a4abe621a223a402d3e6e609b0a654ded30c8f931c286e268826ae6b56"
+  },
+  "schema": "rc6.frozen-governed-owned-kernel-source-plan.v1",
+  "source_diff": {
+    "bytes": 15966,
+    "mode_octal": "0644",
+    "path": "/tmp/rc6_run_frozen_governed_v3_candidate.diff.source",
+    "sha256": "fd09b48489fa1940c4f4c430c04b3ab104b6fd2bbc9b1ebb89e6b7ca2f3a6036"
+  },
+  "source_validation": {
+    "ast_parse_and_compile_only": true,
+    "candidate_or_support_imported": false,
+    "changed_top_level_definitions": [
+      "subprocess_phase",
+      "main"
+    ],
+    "collection_executed": false,
+    "documentary_helper_controls_executed": false,
+    "external_origin_or_data_or_tar_read": false,
+    "imports_added": [
+      "ctypes",
+      "errno",
+      "threading"
+    ],
+    "main_delta": "one additional mandatory custody require; every original statement and condition retained",
+    "native_or_gov_executed": false,
+    "normalized_entire_module_ast_identical_after_only_authorized_delta": true,
+    "product_imports": 0,
+    "root_repository_modified": false,
+    "unchanged_top_level_definitions": [
+      "require",
+      "digest",
+      "canonical",
+      "safe_path",
+      "capture",
+      "publish",
+      "git",
+      "git_metadata",
+      "physical_namespace",
+      "source_pin",
+      "compare_source",
+      "installed_closure",
+      "approved_scope",
+      "phase_child"
+    ]
+  },
+  "status": "SOURCE_ONLY_CANDIDATE_NATIVE_NOT_EXECUTED",
+  "unchanged_contracts": {
+    "automatic_repository_root_discovery": true,
+    "frozen311_or312_exact157_metadata_and_current_hashlocks_platform_preflight": true,
+    "immutable_f4_support_usages_untouched": true,
+    "literal_source_sha_tree_git_authority": true,
+    "metadata_preflight_is_not_a_wheel_byte_attestation": true,
+    "no_new_pytest_ignores_or_allowlist_or_node_threshold": true,
+    "original_junit_parser_and_collection_execution_identity_assertions": true,
+    "original_phase_timeout_cli_range_seconds": [
+      60,
+      5400
+    ],
+    "original_sigint_failure_grace_seconds": 20,
+    "phase_child_import_and_network_observation_scope_unchanged": true,
+    "physical_whole_source_namespace_bytes_modes_blobs_before_each_phase_and_after": true,
+    "plain_governed_proof_fields_and_fip_semantics": true,
+    "real_git_metadata_only_physical_exclusion": true,
+    "single_original_a3_exclusion": true
+  }
+}

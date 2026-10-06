@@ -1,0 +1,112 @@
+{
+  "candidate_sha": null,
+  "candidate_tree": null,
+  "case_totals_added_across_epochs": false,
+  "epochs": [
+    {
+      "assertion_limit": "RED preserved; setup errors are not executed passing cases; initial four-file hashes were not captured",
+      "elapsed_seconds_junit": 88.368,
+      "errors": 181,
+      "failure_attribution": [
+        "Two frozen-disk-mode mismatches: private Git checkout inherited umask 077 and produced 0600 fronts.",
+        "Frozen historical audit gate imports the current derived producer but expects inline guard_nodes; requires fixture-local representation bridge.",
+        "181 setup errors after private clone accumulation exhausted disk space; initial private basetemp removed after terminal run only."
+      ],
+      "failures": 3,
+      "id": "initial-full-two-module-311",
+      "passed": 50,
+      "result": "RED",
+      "skipped": 0,
+      "stdout_original_captured": false,
+      "tests": 234,
+      "umask": "077 inherited"
+    },
+    {
+      "assertion_limit": "Representation and validator diagnostics only; synthetic XML does not attest provider/runtime execution.",
+      "elapsed_seconds_junit": 31.102,
+      "errors": 0,
+      "execution_record": "/workspace/scratch/rc6-path-guards-focal-311-fixed.execution.json",
+      "failures": 0,
+      "fixture_change": "Representation adapter isolated in the historical counterexample fixture; frozen gate source and current module remain unchanged.",
+      "id": "reduced-fixed-311",
+      "module_case_counts": {
+        "tests.test_issue465_stress_audit_gate": 110,
+        "tests.test_rc6_convergence_provenance": 33
+      },
+      "passed": 143,
+      "result": "FOCAL_PASS",
+      "selected_cases_only": true,
+      "selection": "test_issue465_stress_audit_gate or path_guard_derivation or native_git_cli_preserves_all_original_sources_and_truthful_overlap_counts or native_inventory_without_junit_cannot_claim_executed_guards or executed_mapped_guards_do_not_close_pending_material_programming_gates or prior_audit_gate_accepts_actual_native_convergence_parser_with_controlled_junit or late_nonfront_tracked_mutation_is_rejected_after_actual_full_provenance or original_gate_receipt_binding_counterexample_and_current_native_rejection or duplicate_evolution_requirement",
+      "skipped": 0,
+      "source_hash_custody_limit": "Matching pre/post hashes do not claim continuous monitored immutability or a frozen Git SHA/tree.",
+      "stdout_original_captured": true,
+      "tests": 143,
+      "umask": "022"
+    }
+  ],
+  "files": [
+    {
+      "bytes": 1282241,
+      "path": "/workspace/scratch/rc6-path-guards-focal-311.xml",
+      "role": "initial full two-module RED JUnit",
+      "sha256": "59ca112df472df78d938a57c62dafe2555907a283c11a480c76f54ece256153f"
+    },
+    {
+      "bytes": 6226,
+      "path": "/workspace/scratch/rc6-path-guards-focal-311-failures-from-junit.log",
+      "role": "decoded JUnit failure.text extraction; not original stdout",
+      "sha256": "77054fc56d4466940a5b6f1d4dce5a30d3fb083bf47da086cbb50df28e467c08"
+    },
+    {
+      "bytes": 24272,
+      "path": "/workspace/scratch/rc6-path-guards-focal-311-fixed.xml",
+      "role": "reduced fixed representation focal JUnit; not Gov",
+      "sha256": "c9ba6a48eba8a01b3836feb46a09f11a0a4027437636ebc33d87124e5af02494"
+    },
+    {
+      "bytes": 160,
+      "path": "/workspace/scratch/rc6-path-guards-focal-311-fixed.stdout.log",
+      "role": "complete raw combined pytest stdout/stderr for reduced focal",
+      "sha256": "91dcb8076ccd39d3b7c026c953d5a5e2a9df3a2cebbe5c2c4aab69bb5eb45838"
+    },
+    {
+      "bytes": 2320,
+      "path": "/workspace/scratch/rc6-path-guards-focal-311-fixed.execution.json",
+      "role": "reduced focal command, umask and four-file pre/post hashes",
+      "sha256": "b79a3d418914bd6b99805a25b8d54f52317c8994ef253fa4d7ac13878c02f539"
+    }
+  ],
+  "representation_projection": {
+    "assertion_limit": "Streaming byte projection for prior RAW only; final frozen candidate requires exact verifier recomputation.",
+    "existing_read_bound_bytes": 8388608,
+    "inline_guard_fields": 2630,
+    "marker_bytes": 69,
+    "new_candidate_FIP_recomputed": false,
+    "projected_bytes": 7066032,
+    "removed_inline_bytes": 70585058,
+    "source_raw_bytes": 77651021,
+    "source_raw_path": "/workspace/scratch/porota-recovery-input-inventory-9a9b.json",
+    "source_raw_sha256": "a9cb5ea44a34938cb50c2b3467b28b8f649907d00812487ecd53519d46ddc4de"
+  },
+  "safety": {
+    "deploy": false,
+    "final_candidate_eligible": false,
+    "governed_acceptance": false,
+    "material_programming_gates_closed": false,
+    "merge": false,
+    "mode": "PAPER_SHADOW_ONLY",
+    "pending_material_requirements": [
+      "U14",
+      "UX470-I01",
+      "UX470-I02",
+      "UX470-I03",
+      "UX470-I05"
+    ],
+    "ppi_watch": "NOT_TOUCHED",
+    "prior_BIG_RED_preserved": true,
+    "real_orders_sent": 0
+  },
+  "schema": "rc6.path-guard-representation-focal-evidence.v1",
+  "scope": "LOCAL_WRITE representation fix diagnostic; controlled fixtures; not final candidate acceptance",
+  "source_git_authentication": "NOT_CAPTURED; four current uncommitted files have matching pre/post SHA256 only"
+}

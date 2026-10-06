@@ -1,0 +1,253 @@
+{
+  "U28": {
+    "classification": "DOC_CONTRACT_RED",
+    "control_execution_reference": "Existing canonical SRE170-case receipt in docs/audits/RC6_SRE_SQLITE_DISK_SCRATCH_NATIVE.json; no new documentary fixture tests",
+    "current_controls": [
+      "tests/test_rc6_disk_housekeeping_policy.py::test_policy_keeps_two_gib_as_final_reserve_not_start_gate",
+      "tests/test_rc6_disk_housekeeping_policy.py::test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size",
+      "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom"
+    ],
+    "facts": {
+      "control_sizing_scope": "Explicit synthetic volumes; not historical #466 or final artifact",
+      "original_checkpoint_fixed_floor": "6 GiB",
+      "original_checkpoint_formula": "max(6 GiB, 5*image_tar + 3*bundle + 5 GiB)",
+      "original_json_authorization_note": "2026-10-01: 2 GiB is residual reserve after deploy/cleanup, not a fixed start gate. Pre-transfer admission is dynamic: compressed image + exact unpacked Docker image + bundle/staging + residual reserve; on RED, safe cleanup runs before frozen-artifact transfer and the gate is re-evaluated.",
+      "original_json_fixed_floor_bytes": 0,
+      "original_json_residual_reserve_bytes": 2147483648,
+      "original_native_calculator_control_required_bytes": 4208985369,
+      "original_yaml_fixed_floor_bytes": 6442450944
+    },
+    "raw_inputs": [
+      "baseline-policy-yaml.txt",
+      "baseline-disk-policy.json",
+      "baseline-disk-checkpoint.md",
+      "baseline-disk-calculator.txt"
+    ],
+    "runtime_quota_bug_claimed": false,
+    "scope": "Original YAML and checkpoint disagree with the already authorized and implemented dynamic JSON/calculator. No host free-space or runtime defect is inferred. Current scratch growth is a separately measured additional cost, not a reinstated 6 GiB floor."
+  },
+  "U29": {
+    "baseline_classification": "NATIVE_OLD_SCHEMA2_GREEN_WITH_INCOMPLETE_GUARDS",
+    "baseline_result": {
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "docker_uses_lock": true,
+      "lock_exact_requirements": 153,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 153,
+      "schema_version": 2,
+      "source_requirements_total": 24,
+      "status": "GREEN"
+    },
+    "baseline_scope": "Original auditor checks version pin syntax, base digest and Docker lock reference. It never reads distribution hashes, installed metadata, action commits or platform closure. Its GREEN does not establish installed package authority.",
+    "current_metadata_controls": {
+      "real_isolated_environment": {
+        "expected_total": 157,
+        "installed_total": 157,
+        "missing": [],
+        "schema": "rc6.installed-distribution-closure.v1",
+        "status": "GREEN",
+        "unexpected": [],
+        "version_mismatch": []
+      },
+      "scope": "Native importlib.metadata snapshots, with shared test tooling intentionally differing from reviewed image closure. Metadata-only checks do not prove wheel byte identity; downloaded-distribution hashes and final actual-image installed closure remain separate gates.",
+      "shared_test_environment": {
+        "expected_total": 157,
+        "installed_total": 158,
+        "missing": [
+          "pip",
+          "wheel"
+        ],
+        "schema": "rc6.installed-distribution-closure.v1",
+        "status": "REPRODUCIBILITY_GAP",
+        "unexpected": [
+          "greenlet",
+          "playwright",
+          "pyee"
+        ],
+        "version_mismatch": [
+          "setuptools"
+        ]
+      }
+    },
+    "final_image_closure": "PENDING_FINAL_FROZEN_PREDEPLOY_ACTUAL_IMAGE",
+    "prior_311_312_receipts": [
+      "prior-current-closure-cpython311.json",
+      "prior-current-closure-cpython312.json"
+    ],
+    "prior_actual_installer_negative": {
+      "classification": "ACTUAL_INSTALLER_HASH_NEGATIVE",
+      "input": "prior-real-pip-hash-negative-input.txt",
+      "input_sha256": "d685fa5536773a8b980f4080b621a3326d878a1da72e337aabea01886335a1d4",
+      "installer_exit_code": 1,
+      "installer_outcome": "REJECTED_EXPECTED",
+      "receipt": "prior-real-pip-hash-negative.json",
+      "receipt_status_semantics": "GREEN means the negative expectation passed, not that pip installed a wrong distribution",
+      "scope": "Prior actual pip refusal for a changed requests distribution hash; exact prior receipt and input preserved. No new installer run. Original negative stderr log was not separately persisted; this local receipt is not independent external attestation."
+    },
+    "residual_boundaries": [
+      "ubuntu-24.04 hosted runner and kernel are externally managed",
+      "apt repository package bytes are not snapshot/hash locked",
+      "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+      "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+    ],
+    "reviewed_versions_changed": false,
+    "synthetic_parameter_controls": "Existing supplied-mapping wrong-version/missing/extra tests are synthetic metadata models, not an actual altered installed wheel."
+  },
+  "baseline_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "baseline_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+  "edge": "NO_DEMOSTRADO",
+  "market_effects": "NOT_EXECUTED",
+  "preserved_files": {
+    "baseline-Dockerfile.txt": {
+      "bytes": 3513,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-Dockerfile.txt",
+      "sha256": "c37bf289a3a75138aa89b1a10246cd8ccd22f0ce0737a0894c0cef1c78e3cd05",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "cf3856c641846f64d8ed535f2d019869503a016d",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "Dockerfile"
+      }
+    },
+    "baseline-dependency-auditor.txt": {
+      "bytes": 2617,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-dependency-auditor.txt",
+      "sha256": "6369831d0d937dc43bac5d6cf43dd7121bfe8c0a5a3363ccbda126ceff98e947",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "f421fbfa36b0b1450ba5ba1ba30719b1610abbf5",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "scripts/porota_dependency_repro_audit.py"
+      }
+    },
+    "baseline-disk-calculator.txt": {
+      "bytes": 3037,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-calculator.txt",
+      "sha256": "78c475e228ac698aece209f61c0c6e251d9fe0550a5cbfe239748a88bfb350b6",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "32bff1d83c172eb75b30bfd0b0b3b90ada851f3c",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "scripts/rc6_disk_space_guard.py"
+      }
+    },
+    "baseline-disk-checkpoint.md": {
+      "bytes": 2694,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-checkpoint.md",
+      "sha256": "cdf007646c1d189945119b9236f1984c9db458111a475eae7d1684a446a9465a",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "4138ab163dc88765c5f2a3d217e52440c475f155",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "CHECKPOINT_WS_DISK_07_HOUSEKEEPING_POLICY_2026-10-01.md"
+      }
+    },
+    "baseline-disk-policy.json": {
+      "bytes": 2499,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-disk-policy.json",
+      "sha256": "d620a1d8e76f7e8cf8980bc8e1330b0071cf2de305544f8410f2559449a0a12a",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "e5a08db82978c876123fdbff1f43b1579fc1ec41",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "ops/policy/rc6-disk-housekeeping-v1.json"
+      }
+    },
+    "baseline-policy-yaml.txt": {
+      "bytes": 3885,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-policy-yaml.txt",
+      "sha256": "dd88c6f09368323c93c13ede84225a15a8ae2e3348abec7f878f1a682c7af340",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "b4ffad53345d88a7f6b94cac0db837bbcea33314",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "ops/policy/porota-policy.yaml"
+      }
+    },
+    "baseline-requirements-lock.txt": {
+      "bytes": 3233,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-requirements-lock.txt",
+      "sha256": "5edf44a428d769acd34a8fa9429f3282000d02929d7103385587a1d24e9b3102",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "c2cef583c5e62b3448a9b85f65b523aeb8d15695",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "requirements.lock.txt"
+      }
+    },
+    "baseline-requirements.txt": {
+      "bytes": 3017,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/baseline-requirements.txt",
+      "sha256": "9d44145d9faabe720f19280adc7aeb3fe04fdf820e12fe3f289b8d2ac29fcb74",
+      "source": {
+        "commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+        "git_blob": "926ea95402cd7a5bd436ef14289cbe8e4bada05b",
+        "kind": "ORIGINAL_GIT_BLOB",
+        "original_path": "requirements.txt"
+      }
+    },
+    "current-native-readonly-replay.json": {
+      "bytes": 12504,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/current-native-readonly-replay.json",
+      "sha256": "3a69a07358066b06a12ff8f55b6b15d2188a3c35119556ba785e7910c5872174",
+      "source": {
+        "kind": "CURRENT_READ_ONLY_NATIVE_REPLAY",
+        "source_sha": "f8646daa1c40a96c6a029e5ef2e8149f6ab85e4c"
+      }
+    },
+    "prior-current-closure-cpython311.json": {
+      "bytes": 1620,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/prior-current-closure-cpython311.json",
+      "sha256": "b8e3f6d800383b4de73729e9a58c3dad90374280e842a01ffe14c8b24ab81223",
+      "source": {
+        "kind": "PRIOR_LOCAL_RECEIPT_BYTE_PRESERVATION",
+        "original_execution_timestamp": "NOT_IN_RECEIPT",
+        "path": "/tmp/rc6_dependency_closure_current311.json"
+      }
+    },
+    "prior-current-closure-cpython312.json": {
+      "bytes": 1620,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/prior-current-closure-cpython312.json",
+      "sha256": "685382b34fc1b51abc023a9da5843878c33df8631929a15689358a0b88fe06c9",
+      "source": {
+        "kind": "PRIOR_LOCAL_RECEIPT_BYTE_PRESERVATION",
+        "original_execution_timestamp": "NOT_IN_RECEIPT",
+        "path": "/tmp/rc6_dependency_closure_current312.json"
+      }
+    },
+    "prior-real-pip-hash-negative-input.txt": {
+      "bytes": 96,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/prior-real-pip-hash-negative-input.txt",
+      "sha256": "d685fa5536773a8b980f4080b621a3326d878a1da72e337aabea01886335a1d4",
+      "source": {
+        "kind": "PRIOR_LOCAL_RECEIPT_BYTE_PRESERVATION",
+        "original_execution_timestamp": "NOT_IN_RECEIPT",
+        "path": "/tmp/porota-sre-negative-hash.txt"
+      }
+    },
+    "prior-real-pip-hash-negative.json": {
+      "bytes": 247,
+      "path": "docs/audits/convergence/evidence/sre-baseline-bounds/prior-real-pip-hash-negative.json",
+      "sha256": "44ee3e95e29434a9634868b2f3df252f5b6d357076a0850ff44b4530e42fcc41",
+      "source": {
+        "kind": "PRIOR_LOCAL_RECEIPT_BYTE_PRESERVATION",
+        "original_execution_timestamp": "NOT_IN_RECEIPT",
+        "path": "/tmp/porota-sre-negative-hash-receipt.json"
+      }
+    }
+  },
+  "production_effects": "NOT_CALLED",
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "recorded_at": "2026-10-05T07:21:55.887879+00:00",
+  "schema": "rc6.sre-baseline-boundaries.v1",
+  "source_order": {
+    "path": "docs/audits/convergence/ORDEN_UNICA_CODEX_RC6_CONVERGENCIA_468_469_470.md",
+    "scope": "Root-owned pinned original; 1 October dynamic reserve authority reconciled by original order section10/U28",
+    "sha256": "d41e404d893a2fedfb10017b5f5732282f6e695220305e9b9cf1049b7c310731"
+  },
+  "source_original_baseline_receipt_note": "Existing porota-sre-baseline-red.json covers U04/U11/U12/U25 only; it is not a U28/U29 original execution receipt.",
+  "trust_scope": "LOCAL_BYTE_PRESERVATION_AND_NATIVE_REPLAY; hashes bind exact saved bytes, not external authenticity or production readiness"
+}

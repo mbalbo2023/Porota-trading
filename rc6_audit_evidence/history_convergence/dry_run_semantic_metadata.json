@@ -1,0 +1,839 @@
+{
+  "corpus": "SYNTHETIC_OFFLINE",
+  "migration": [
+    {
+      "close_only": {
+        "migrated_rows": 2,
+        "quarantined_rows": 1
+      },
+      "content": {
+        "preserved": {
+          "history_close_versions_v1_legacy": 3,
+          "history_versions_v2_legacy": 9,
+          "unrelated_evidence": "preserved"
+        },
+        "quarantine_reasons": {
+          "history_close_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED"
+          ],
+          "history_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED",
+            "HISTORY_CURRENCY_AMBIGUOUS",
+            "HISTORY_CURRENCY_MAPPING_CONFLICT",
+            "HISTORY_CLOCK_AWARE_REQUIRED",
+            "HISTORY_OPEN_NONFINITE"
+          ]
+        },
+        "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+      },
+      "counts": {
+        "history_batch_attempts_v2": 4,
+        "history_batch_rows_v2": 4,
+        "history_canonical_v2": 3,
+        "history_close_canonical_v1": 2,
+        "history_close_versions_v1": 2,
+        "history_versions_v2": 4
+      },
+      "currency_mapping_sha256": "1084858cda56de4bbd638991c82da11fbde40ec146550e7050b1c5466f553cf1",
+      "destination_inventory": {
+        "MAIN": {
+          "allocated_bytes": 151552,
+          "atime_ns": 1791177706455592647,
+          "bytes": 151552,
+          "ctime_ns": 1791177706464324294,
+          "inode": 1579999,
+          "mode": "0o100644",
+          "mtime_ns": 1791177706464324294,
+          "nlink": 1,
+          "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+        }
+      },
+      "full_ingestion_repeated": false,
+      "migrated_rows": 4,
+      "quarantined_rows": 5,
+      "source_mutation": false,
+      "source_rows": 9,
+      "state": "COPY_MIGRATED",
+      "wall_seconds": 0.08240839500285801
+    },
+    {
+      "close_only": {
+        "migrated_rows": 2,
+        "quarantined_rows": 1
+      },
+      "content": {
+        "preserved": {
+          "history_close_versions_v1_legacy": 3,
+          "history_versions_v2_legacy": 9,
+          "unrelated_evidence": "preserved"
+        },
+        "quarantine_reasons": {
+          "history_close_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED"
+          ],
+          "history_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED",
+            "HISTORY_CURRENCY_AMBIGUOUS",
+            "HISTORY_CURRENCY_MAPPING_CONFLICT",
+            "HISTORY_CLOCK_AWARE_REQUIRED",
+            "HISTORY_OPEN_NONFINITE"
+          ]
+        },
+        "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+      },
+      "counts": {
+        "history_batch_attempts_v2": 4,
+        "history_batch_rows_v2": 4,
+        "history_canonical_v2": 3,
+        "history_close_canonical_v1": 2,
+        "history_close_versions_v1": 2,
+        "history_versions_v2": 4
+      },
+      "currency_mapping_sha256": "1084858cda56de4bbd638991c82da11fbde40ec146550e7050b1c5466f553cf1",
+      "destination_inventory": {
+        "MAIN": {
+          "allocated_bytes": 151552,
+          "atime_ns": 1791177706543943634,
+          "bytes": 151552,
+          "ctime_ns": 1791177706548323394,
+          "inode": 1580069,
+          "mode": "0o100644",
+          "mtime_ns": 1791177706548323394,
+          "nlink": 1,
+          "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+        }
+      },
+      "full_ingestion_repeated": false,
+      "migrated_rows": 4,
+      "quarantined_rows": 5,
+      "source_mutation": false,
+      "source_rows": 9,
+      "state": "COPY_MIGRATED",
+      "wall_seconds": 0.07971036399976583
+    },
+    {
+      "close_only": {
+        "migrated_rows": 2,
+        "quarantined_rows": 1
+      },
+      "content": {
+        "preserved": {
+          "history_close_versions_v1_legacy": 3,
+          "history_versions_v2_legacy": 9,
+          "unrelated_evidence": "preserved"
+        },
+        "quarantine_reasons": {
+          "history_close_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED"
+          ],
+          "history_migration_quarantine_v2": [
+            "HISTORY_CURRENCY_UNVERIFIED",
+            "HISTORY_CURRENCY_AMBIGUOUS",
+            "HISTORY_CURRENCY_MAPPING_CONFLICT",
+            "HISTORY_CLOCK_AWARE_REQUIRED",
+            "HISTORY_OPEN_NONFINITE"
+          ]
+        },
+        "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+      },
+      "counts": {
+        "history_batch_attempts_v2": 4,
+        "history_batch_rows_v2": 4,
+        "history_canonical_v2": 3,
+        "history_close_canonical_v1": 2,
+        "history_close_versions_v1": 2,
+        "history_versions_v2": 4
+      },
+      "currency_mapping_sha256": "1084858cda56de4bbd638991c82da11fbde40ec146550e7050b1c5466f553cf1",
+      "destination_inventory": {
+        "MAIN": {
+          "allocated_bytes": 151552,
+          "atime_ns": 1791177706627618231,
+          "bytes": 151552,
+          "ctime_ns": 1791177706632322493,
+          "inode": 1580133,
+          "mode": "0o100644",
+          "mtime_ns": 1791177706632322493,
+          "nlink": 1,
+          "sha256": "127c4ab957acda073da20d6448d3855579c2b4243987a2f96f95eb336e3a3dad"
+        }
+      },
+      "full_ingestion_repeated": false,
+      "migrated_rows": 4,
+      "quarantined_rows": 5,
+      "source_mutation": false,
+      "source_rows": 9,
+      "state": "COPY_MIGRATED",
+      "wall_seconds": 0.08369391700034612
+    }
+  ],
+  "migration_crash_recovery": {
+    "exit_code": 88,
+    "partial_destination_counts": {
+      "history_batch_attempts_v2": 1,
+      "history_batch_rows_v2": 1,
+      "history_canonical_v2": 1,
+      "history_close_canonical_v1": 3,
+      "history_close_versions_v1": 3,
+      "history_versions_v2": 1
+    },
+    "partial_destination_preserved": true,
+    "partial_destination_publishable": false,
+    "provider_ingestion_repeated": false,
+    "resume_method": "NEW_DESTINATION_FROM_UNCHANGED_OFFLINE_SOURCE",
+    "resumed_content": {
+      "preserved": {
+        "history_close_versions_v1_legacy": 3,
+        "history_versions_v2_legacy": 9,
+        "unrelated_evidence": "preserved"
+      },
+      "quarantine_reasons": {
+        "history_close_migration_quarantine_v2": [
+          "HISTORY_CURRENCY_UNVERIFIED"
+        ],
+        "history_migration_quarantine_v2": [
+          "HISTORY_CURRENCY_UNVERIFIED",
+          "HISTORY_CURRENCY_AMBIGUOUS",
+          "HISTORY_CURRENCY_MAPPING_CONFLICT",
+          "HISTORY_CLOCK_AWARE_REQUIRED",
+          "HISTORY_OPEN_NONFINITE"
+        ]
+      },
+      "semantic_sha256": "99c3d3b891dad5e8c44d9c09126fefee9cdfd8e6c87a21ad721966502e20c535"
+    },
+    "resumed_result": {
+      "close_only": {
+        "migrated_rows": 2,
+        "quarantined_rows": 1
+      },
+      "currency_mapping_sha256": "1084858cda56de4bbd638991c82da11fbde40ec146550e7050b1c5466f553cf1",
+      "full_ingestion_repeated": false,
+      "migrated_rows": 4,
+      "quarantined_rows": 5,
+      "source_mutation": false,
+      "source_rows": 9,
+      "state": "COPY_MIGRATED"
+    }
+  },
+  "process_crash_recovery": [
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 0,
+          "history_batch_rows_v2": 0,
+          "history_canonical_v2": 0,
+          "history_versions_v2": 0,
+          "saga_state": "STARTED"
+        },
+        "observer": {}
+      },
+      "crash_image_inventory": {
+        "history": {
+          "-journal": {
+            "allocated_bytes": 32768,
+            "atime_ns": 1791177706832320349,
+            "bytes": 29240,
+            "ctime_ns": 1791177706835345527,
+            "inode": 1580301,
+            "mode": "0o100644",
+            "mtime_ns": 1791177706835345527,
+            "nlink": 1,
+            "sha256": "3bd9f6a87e0f2f50d319e8bd322710a9e28744266bf5624e0bcc3e246fcd95c0"
+          },
+          "MAIN": {
+            "allocated_bytes": 86016,
+            "atime_ns": 1791177706828320393,
+            "bytes": 86016,
+            "ctime_ns": 1791177706824581778,
+            "inode": 1580284,
+            "mode": "0o100644",
+            "mtime_ns": 1791177706824581778,
+            "nlink": 1,
+            "sha256": "92b879d20326b196a5c0b500205e754f291bd4fbcf3aa97fd0cbc724b360c698"
+          }
+        },
+        "observer": {}
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 79,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "VERSION_INSERT",
+      "wall_seconds": 0.09612731900051585
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_versions_v2": 1,
+          "saga_state": "STARTED"
+        },
+        "observer": {}
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 86016,
+            "atime_ns": 1791177706924319363,
+            "bytes": 86016,
+            "ctime_ns": 1791177706931292215,
+            "inode": 1580362,
+            "mode": "0o100644",
+            "mtime_ns": 1791177706931292215,
+            "nlink": 1,
+            "sha256": "1aae41a126feccbd4a5c807630642f8c17e60d332251b687e283f107c09da61b"
+          }
+        },
+        "observer": {}
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 81,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "FULL_COMMIT",
+      "wall_seconds": 0.11313899300148478
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_versions_v2": 1,
+          "saga_state": "FULL_COMMITTED"
+        },
+        "observer": {}
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 86016,
+            "atime_ns": 1791177707056706412,
+            "bytes": 86016,
+            "ctime_ns": 1791177707057308707,
+            "inode": 1580420,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707057308707,
+            "nlink": 1,
+            "sha256": "c7999f8fcf5ab749fe2dca67f11021f98baa17ea157f6b913c4781eebac75025"
+          }
+        },
+        "observer": {}
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 84,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "FULL_CHECKPOINT",
+      "wall_seconds": 0.18153463999988162
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "FULL_COMMITTED"
+        },
+        "observer": {}
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 110592,
+            "atime_ns": 1791177707269649338,
+            "bytes": 110592,
+            "ctime_ns": 1791177707271544592,
+            "inode": 1580491,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707271544592,
+            "nlink": 1,
+            "sha256": "8d442dc1edb0972bebfbed7c8b77b0669a75056ce7f350872ba8ca5ca1eed1be"
+          }
+        },
+        "observer": {}
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 82,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "CLOSE_COMMIT",
+      "wall_seconds": 0.12782851999872946
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "CLOSE_COMMITTED"
+        },
+        "observer": {}
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 110592,
+            "atime_ns": 1791177707385819140,
+            "bytes": 110592,
+            "ctime_ns": 1791177707386577482,
+            "inode": 1580538,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707386577482,
+            "nlink": 1,
+            "sha256": "e653bab7cbb7d46f297b309a2a78f0ff7e2a7c99058e8ef805c0db3019cea576"
+          }
+        },
+        "observer": {}
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 85,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "CLOSE_CHECKPOINT",
+      "wall_seconds": 0.1382659999981115
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "CLOSE_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 0
+        }
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 110592,
+            "atime_ns": 1791177707529944997,
+            "bytes": 110592,
+            "ctime_ns": 1791177707530471232,
+            "inode": 1580603,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707530471232,
+            "nlink": 1,
+            "sha256": "e653bab7cbb7d46f297b309a2a78f0ff7e2a7c99058e8ef805c0db3019cea576"
+          }
+        },
+        "observer": {
+          "MAIN": {
+            "allocated_bytes": 32768,
+            "atime_ns": 1791177707607041484,
+            "bytes": 32768,
+            "ctime_ns": 1791177707607088623,
+            "inode": 1580625,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707607088623,
+            "nlink": 1,
+            "sha256": "6486b90777d9d7e4b9e9b31e563553fc9ead8fad5f00b993af5b713747fe86e7"
+          }
+        }
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 83,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "OBSERVER_ATTEMPT_COMMIT",
+      "wall_seconds": 0.3962150939987623
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "CLOSE_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 110592,
+            "atime_ns": 1791177707934913515,
+            "bytes": 110592,
+            "ctime_ns": 1791177707935607437,
+            "inode": 1580687,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707935607437,
+            "nlink": 1,
+            "sha256": "e653bab7cbb7d46f297b309a2a78f0ff7e2a7c99058e8ef805c0db3019cea576"
+          }
+        },
+        "observer": {
+          "MAIN": {
+            "allocated_bytes": 32768,
+            "atime_ns": 1791177707940308475,
+            "bytes": 32768,
+            "ctime_ns": 1791177707943890984,
+            "inode": 1580709,
+            "mode": "0o100644",
+            "mtime_ns": 1791177707943890984,
+            "nlink": 1,
+            "sha256": "581ce08f8a7e3984b1d8673eefc07ab56a5ada55976f2e11beedfa456188a03c"
+          }
+        }
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 86,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "REJECTIONS_COMMIT",
+      "wall_seconds": 0.15823141199871316
+    },
+    {
+      "after_retry_and_repeat": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "committed_before_retry": {
+        "history": {
+          "history_batch_attempts_v2": 1,
+          "history_batch_rows_v2": 1,
+          "history_canonical_v2": 1,
+          "history_close_canonical_v1": 1,
+          "history_close_versions_v1": 1,
+          "history_versions_v2": 1,
+          "saga_state": "OBSERVER_COMMITTED"
+        },
+        "observer": {
+          "history_attempt_ledger_v2": 1,
+          "history_row_rejections_v2": 1
+        }
+      },
+      "crash_image_inventory": {
+        "history": {
+          "MAIN": {
+            "allocated_bytes": 110592,
+            "atime_ns": 1791177708084984615,
+            "bytes": 110592,
+            "ctime_ns": 1791177708085473167,
+            "inode": 1580768,
+            "mode": "0o100644",
+            "mtime_ns": 1791177708085473167,
+            "nlink": 1,
+            "sha256": "d5061d68611350d980351ff3a0ab3f7bbf607df60e9a8776f5c0a5b4686fea63"
+          }
+        },
+        "observer": {
+          "MAIN": {
+            "allocated_bytes": 32768,
+            "atime_ns": 1791177708084593587,
+            "bytes": 32768,
+            "ctime_ns": 1791177708084984615,
+            "inode": 1580790,
+            "mode": "0o100644",
+            "mtime_ns": 1791177708084984615,
+            "nlink": 1,
+            "sha256": "1cd8f13d4410b3d1aec4ea768e8bf30a4636fd4762ad8a0d6b0f15c78e72f484"
+          }
+        }
+      },
+      "diagnostic_source_unchanged": true,
+      "exit_code": 87,
+      "repeat_new_close_versions": 0,
+      "repeat_new_versions": 0,
+      "stage": "FINAL_CHECKPOINT",
+      "wall_seconds": 0.1172535509977024
+    }
+  ],
+  "production_history_coverage": "NO_VERIFICADO",
+  "resources": {
+    "available_local_disk_bytes": 7628238848,
+    "cpu_seconds_parent": 1.410455219,
+    "disk_sampler_status": "COMPLETED_WITHOUT_ERRORS",
+    "disk_samples_completed": 176,
+    "disk_sampling_interval_seconds": 0.005,
+    "peak_disk_allocated_bytes": 2215936,
+    "peak_disk_logical_bytes": 2208720,
+    "peak_rss_child_bytes": 24752128,
+    "peak_rss_parent_bytes": 58859520,
+    "probe_bundle_copies": [
+      {
+        "bytes": 2201,
+        "sha256": "574f0c079d02bbc24a73cb1fb980e26df58c559ce72b0524362d14fc0f73af53"
+      },
+      {
+        "bytes": 2201,
+        "sha256": "574f0c079d02bbc24a73cb1fb980e26df58c559ce72b0524362d14fc0f73af53"
+      }
+    ],
+    "production_capacity_gate": "NO_VERIFICADO; requires actual image + reserve + measured copy + two bundles",
+    "production_image_bytes": "NO_VERIFICADO",
+    "production_reserve_bytes": "NO_VERIFICADO",
+    "python_traced_peak_bytes": 2411753,
+    "wall_seconds": 1.8020461760024773
+  },
+  "runtime_verified": false,
+  "same_destination_rejected_without_mutation": true,
+  "schema": "rc6.history-offline-dry-run.v1",
+  "semantic_repeat_equal": true,
+  "source_after": {
+    "legacy-with-shm.sqlite": {
+      "-shm": {
+        "allocated_bytes": 32768,
+        "atime_ns": 1791177706398622463,
+        "bytes": 32768,
+        "ctime_ns": 1791177706399000314,
+        "inode": 1579992,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399000314,
+        "nlink": 1,
+        "sha256": "7738c6ddf7475acff1e242e597b3a4fc96840adc35cf23a0c984cf72c9b0ec04"
+      },
+      "-wal": {
+        "allocated_bytes": 81920,
+        "atime_ns": 1791177706398325893,
+        "bytes": 78312,
+        "ctime_ns": 1791177706398622463,
+        "inode": 1579991,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706398622463,
+        "nlink": 1,
+        "sha256": "c991b3030449ecda1e6736ae6bf98f61be9512cc00bdf619723e47df8c9d2803"
+      },
+      "MAIN": {
+        "allocated_bytes": 4096,
+        "atime_ns": 1791177706396529511,
+        "bytes": 4096,
+        "ctime_ns": 1791177706398325893,
+        "inode": 1579990,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706398325893,
+        "nlink": 1,
+        "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+      }
+    },
+    "legacy-without-shm.sqlite": {
+      "-wal": {
+        "allocated_bytes": 81920,
+        "atime_ns": 1791177706399368755,
+        "bytes": 78312,
+        "ctime_ns": 1791177706399632268,
+        "inode": 1579994,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399632268,
+        "nlink": 1,
+        "sha256": "c991b3030449ecda1e6736ae6bf98f61be9512cc00bdf619723e47df8c9d2803"
+      },
+      "MAIN": {
+        "allocated_bytes": 4096,
+        "atime_ns": 1791177706399000314,
+        "bytes": 4096,
+        "ctime_ns": 1791177706399368755,
+        "inode": 1579993,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399368755,
+        "nlink": 1,
+        "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+      }
+    }
+  },
+  "source_before": {
+    "legacy-with-shm.sqlite": {
+      "-shm": {
+        "allocated_bytes": 32768,
+        "atime_ns": 1791177706398622463,
+        "bytes": 32768,
+        "ctime_ns": 1791177706399000314,
+        "inode": 1579992,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399000314,
+        "nlink": 1,
+        "sha256": "7738c6ddf7475acff1e242e597b3a4fc96840adc35cf23a0c984cf72c9b0ec04"
+      },
+      "-wal": {
+        "allocated_bytes": 81920,
+        "atime_ns": 1791177706398325893,
+        "bytes": 78312,
+        "ctime_ns": 1791177706398622463,
+        "inode": 1579991,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706398622463,
+        "nlink": 1,
+        "sha256": "c991b3030449ecda1e6736ae6bf98f61be9512cc00bdf619723e47df8c9d2803"
+      },
+      "MAIN": {
+        "allocated_bytes": 4096,
+        "atime_ns": 1791177706396529511,
+        "bytes": 4096,
+        "ctime_ns": 1791177706398325893,
+        "inode": 1579990,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706398325893,
+        "nlink": 1,
+        "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+      }
+    },
+    "legacy-without-shm.sqlite": {
+      "-wal": {
+        "allocated_bytes": 81920,
+        "atime_ns": 1791177706399368755,
+        "bytes": 78312,
+        "ctime_ns": 1791177706399632268,
+        "inode": 1579994,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399632268,
+        "nlink": 1,
+        "sha256": "c991b3030449ecda1e6736ae6bf98f61be9512cc00bdf619723e47df8c9d2803"
+      },
+      "MAIN": {
+        "allocated_bytes": 4096,
+        "atime_ns": 1791177706399000314,
+        "bytes": 4096,
+        "ctime_ns": 1791177706399368755,
+        "inode": 1579993,
+        "mode": "0o100644",
+        "mtime_ns": 1791177706399368755,
+        "nlink": 1,
+        "sha256": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977"
+      }
+    }
+  },
+  "source_code_sha256": {
+    "closes": "bd2a0788dfe0e3e92853581b00ec25eb4b0989f3caa2eedaad42a5b04f25ef68",
+    "history": "e49694e103403e829e8d08d7c39fe67a31294876ddd97ad97a29c2fe7933a273",
+    "probe": "b9077b4a9ae9a0a27a6401feb3bf8c4741e6ec574a5f6aa2574a0e5b9d99a4db",
+    "salvage": "300af22ad46cc8d19289cadce71aa4d6f808bd00cea3019ab88b7511f6d42e4b",
+    "snapshot": "4760683ab9821e020b63d106734d010870eae32909b445d3744ed034493c0df1"
+  },
+  "source_unchanged": true
+}

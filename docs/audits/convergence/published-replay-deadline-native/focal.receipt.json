@@ -1,0 +1,2142 @@
+{
+  "actual_imports": {
+    "external_infrastructure": [
+      {
+        "module": "__main__",
+        "path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/runner.py",
+        "sha256": "82488085c74b3827ea29ab18d685ef5e7cefa85cb7b0c4b7247765df6b7af9c2"
+      },
+      {
+        "module": "replay_focal_source_support",
+        "path": "/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/source_support.py",
+        "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+      }
+    ],
+    "libraries": [
+      {
+        "bytes_authenticated": false,
+        "module": "_frozen_importlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_frozen_importlib_external",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "zipimport",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipimport.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "codecs",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codecs.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "encodings.aliases",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/aliases.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "encodings",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "encodings.utf_8",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/utf_8.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "io",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/io.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "stat",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/stat.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_collections_abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_collections_abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "genericpath",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/genericpath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "posixpath",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "os.path",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "os",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/os.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_sitebuiltins",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sitebuiltins.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_distutils_hack",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_distutils_hack/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "site",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/site.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "__future__",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/__future__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "types",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/types.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "operator",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/operator.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "keyword",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/keyword.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "reprlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/reprlib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "collections",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "functools",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/functools.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "enum",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/enum.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "re._constants",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_constants.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "re._parser",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_parser.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "re._casefix",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_casefix.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "re._compiler",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_compiler.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "copyreg",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copyreg.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "re",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "warnings",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/warnings.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "gettext",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/gettext.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "argparse",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/argparse.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "hashlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/hashlib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib._bootstrap",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib._bootstrap_external",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib._abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "contextlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_weakrefset",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_weakrefset.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "threading",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.util",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/util.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "json.scanner",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/scanner.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "json.decoder",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/decoder.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "json.encoder",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "json",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "fnmatch",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/fnmatch.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "ntpath",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ntpath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "urllib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "ipaddress",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ipaddress.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "urllib.parse",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/parse.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pathlib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "signal",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/signal.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "collections.abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "selectors",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/selectors.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "socket",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "datetime",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/datetime.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "sqlite3.dbapi2",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/dbapi2.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "sqlite3",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "locale",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/locale.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "subprocess",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "sysconfig",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sysconfig.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "token",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/token.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "tokenize",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tokenize.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "linecache",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/linecache.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "textwrap",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/textwrap.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "traceback",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/traceback.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "platform",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/platform.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "uuid",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/uuid.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_compression",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_compression.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "bz2",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bz2.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "lzma",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/lzma.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "shutil",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shutil.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "csv",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/csv.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "struct",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/struct.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "zipfile",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipfile.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "quopri",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/quopri.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "bisect",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bisect.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "random",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/random.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "calendar",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/calendar.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email._parseaddr",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_parseaddr.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "base64",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/base64.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.base64mime",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/base64mime.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "string",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/string.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.quoprimime",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/quoprimime.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.errors",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/errors.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.encoders",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/encoders.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.charset",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/charset.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.utils",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/utils.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.header",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/header.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email._policybase",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_policybase.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email._encoded_words",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_encoded_words.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.iterators",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/iterators.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.message",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/message.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._functools",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_functools.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._text",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_text.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._adapters",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_adapters.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "typing",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._meta",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_meta.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._collections",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_collections.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata._itertools",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_itertools.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.machinery",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/machinery.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "weakref",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/weakref.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "tempfile",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tempfile.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources.abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources._adapters",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_adapters.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources._common",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_common.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources._legacy",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_legacy.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.abc",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/abc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.metadata",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.feedparser",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/feedparser.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "email.parser",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/parser.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._version",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_version.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "ast",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ast.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "copy",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "opcode",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/opcode.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "dis",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dis.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "inspect",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/inspect.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "dataclasses",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dataclasses.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._result",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_result.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._hooks",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_hooks.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._tracing",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_tracing.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._warnings",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_warnings.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._callers",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_callers.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._manager",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_manager.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy._version",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_version.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pluggy",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._code.source",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/source.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.formatters._mapping",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/_mapping.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.plugin",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/plugin.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "html.entities",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/entities.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "html",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.util",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/util.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.formatters",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.styles._mapping",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/_mapping.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.styles",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.formatter",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatter.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.token",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/token.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.console",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/console.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.formatters.terminal",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/terminal.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.filter",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filter.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.filters",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filters/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.regexopt",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/regexopt.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.lexer",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexer.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.lexers._mapping",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/_mapping.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.modeline",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/modeline.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.lexers",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.lexers.diff",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/diff.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.unistring",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/unistring.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pygments.lexers.python",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/python.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._py",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._py.error",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._py.path",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "py.error",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "py.path",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "py",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/py.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.compat",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/compat.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._io.wcwidth",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/wcwidth.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._io.terminalwriter",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/terminalwriter.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._io",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pprint",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pprint.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._io.saferepr",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/saferepr.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.warning_types",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/warning_types.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.deprecated",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/deprecated.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.outcomes",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/outcomes.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.pathlib",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pathlib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._code.code",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/code.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._code",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources._itertools",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_itertools.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "importlib.resources.readers",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/readers.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._typing",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_typing.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._compare_mapping",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_mapping.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._io.pprint",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/pprint.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._compare_sequence",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_sequence.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._compare_set",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_set.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._guards",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_guards.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion.highlight",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/highlight.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion.compare_text",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/compare_text.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion._compare_any",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_any.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "glob",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/glob.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "shlex",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shlex.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.config.exceptions",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/exceptions.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "iniconfig.exceptions",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/exceptions.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "iniconfig._parse",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/_parse.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "iniconfig",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.config.findpaths",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/findpaths.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.config.argparsing",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/argparsing.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.hookspec",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/hookspec.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.stash",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/stash.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.config",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion.util",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/util.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.mark.expression",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/expression.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.raises",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/raises.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.scope",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/scope.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.mark.structures",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/structures.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.mark",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.nodes",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/nodes.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.reports",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/reports.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "bdb",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bdb.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.timing",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/timing.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.runner",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/runner.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.main",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/main.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.fixtures",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/fixtures.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion.rewrite",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/rewrite.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion.truncate",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/truncate.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.assertion",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.cacheprovider",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/cacheprovider.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.capture",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/capture.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.debugging",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/debugging.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.python",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "numbers",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/numbers.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "decimal",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/decimal.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.python_api",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python_api.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.doctest",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/doctest.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.freeze_support",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/freeze_support.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.monkeypatch",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/monkeypatch.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.tmpdir",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/tmpdir.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.pytester",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pytester.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.terminal",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/terminal.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.legacypath",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/legacypath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "logging",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/logging/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.logging",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/logging.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.recwarn",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/recwarn.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.subtests",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/subtests.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pytest",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pytest/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "xml",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "xml.etree",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "xml.etree.ElementPath",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementPath.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "xml.etree.ElementTree",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementTree.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.junitxml",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/junitxml.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest._argcomplete",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_argcomplete.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.helpconfig",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/helpconfig.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.util",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/util.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.result",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/result.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "heapq",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/heapq.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "difflib",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/difflib.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.case",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/case.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.suite",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/suite.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.loader",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/loader.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.signals",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/signals.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.runner",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/runner.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.main",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/main.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.unittest",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/unittest.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.skipping",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/skipping.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.pastebin",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pastebin.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.setuponly",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/setuponly.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.setupplan",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/setupplan.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.tracemalloc",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/tracemalloc.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.unraisableexception",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/unraisableexception.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.threadexception",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/threadexception.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.warnings",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/warnings.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_pytest.faulthandler",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/faulthandler.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "cmd",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/cmd.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "codeop",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codeop.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "code",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/code.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pdb",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pdb.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "gzip",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/gzip.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "tarfile",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tarfile.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "http",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/http/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "ssl",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ssl.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "http.client",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/http/client.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "urllib.response",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/response.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "urllib.error",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/error.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "urllib.request",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/request.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.error",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/error.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.tokens",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/tokens.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.events",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/events.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.nodes",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/nodes.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.reader",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/reader.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.scanner",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/scanner.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.parser",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/parser.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.composer",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/composer.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.constructor",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/constructor.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.resolver",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/resolver.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.loader",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/loader.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.emitter",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/emitter.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.serializer",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/serializer.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.representer",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/representer.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.dumper",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/dumper.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml._yaml",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/_yaml.cpython-311-x86_64-linux-gnu.so"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml.cyaml",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/cyaml.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "yaml",
+        "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/yaml/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "concurrent",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "concurrent.futures._base",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "concurrent.futures",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.constants",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/constants.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.coroutines",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/coroutines.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "contextvars",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextvars.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.format_helpers",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/format_helpers.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.base_futures",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_futures.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.exceptions",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/exceptions.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.base_tasks",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_tasks.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.events",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/events.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.futures",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/futures.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.protocols",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/protocols.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.transports",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/transports.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.log",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/log.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.sslproto",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/sslproto.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.mixins",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/mixins.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.tasks",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.locks",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.staggered",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/staggered.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.trsock",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/trsock.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.base_events",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.runners",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.queues",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/queues.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.streams",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/streams.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.subprocess",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/subprocess.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.taskgroups",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/taskgroups.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.timeouts",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/timeouts.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.threads",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/threads.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.base_subprocess",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_subprocess.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.selector_events",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/selector_events.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio.unix_events",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/unix_events.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "asyncio",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/__init__.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "pkgutil",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pkgutil.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "unittest.mock",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/mock.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "hmac",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/hmac.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "secrets",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/secrets.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "encodings.unicode_escape",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/unicode_escape.py"
+      },
+      {
+        "bytes_authenticated": false,
+        "module": "_sysconfigdata__linux_x86_64-linux-gnu",
+        "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sysconfigdata__linux_x86_64-linux-gnu.py"
+      }
+    ],
+    "no_physical_origin": [
+      "sys",
+      "builtins",
+      "_imp",
+      "_thread",
+      "_warnings",
+      "_weakref",
+      "_io",
+      "marshal",
+      "posix",
+      "time",
+      "_codecs",
+      "_signal",
+      "_abc",
+      "_stat",
+      "_operator",
+      "itertools",
+      "_collections",
+      "_functools",
+      "_sre",
+      "_hashlib",
+      "_blake2",
+      "_json",
+      "errno",
+      "_socket",
+      "math",
+      "select",
+      "array",
+      "_datetime",
+      "_sqlite3",
+      "_locale",
+      "fcntl",
+      "_posixsubprocess",
+      "_uuid",
+      "zlib",
+      "_bz2",
+      "_lzma",
+      "_csv",
+      "binascii",
+      "_struct",
+      "_bisect",
+      "_random",
+      "_sha512",
+      "_string",
+      "_typing",
+      "typing.io",
+      "typing.re",
+      "scripts",
+      "_ast",
+      "_opcode",
+      "atexit",
+      "unicodedata",
+      "_decimal",
+      "gc",
+      "pyexpat.errors",
+      "pyexpat.model",
+      "pyexpat",
+      "_elementtree",
+      "_heapq",
+      "readline",
+      "faulthandler",
+      "pwd",
+      "grp",
+      "_ssl",
+      "cython_runtime",
+      "_cython_3_1_4",
+      "resource",
+      "_contextvars",
+      "_asyncio",
+      "tests"
+    ],
+    "source": [
+      {
+        "module": "scripts.porota_dependency_repro_audit",
+        "path": "scripts/porota_dependency_repro_audit.py",
+        "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+      },
+      {
+        "module": "scripts.porota_artifact_provenance",
+        "path": "scripts/porota_artifact_provenance.py",
+        "sha256": "266ce536cb98bba30bba9fb3f78cbd60f51bbe606d346ef4b3f9529e3f5c9a54"
+      },
+      {
+        "module": "scripts.porota_artifact_http",
+        "path": "scripts/porota_artifact_http.py",
+        "sha256": "de6cb2837e679b398d943346087830860c653a3e936a6872fedf52760273e0c5"
+      },
+      {
+        "module": "scripts.rc6_archive_v3_image_smoke",
+        "path": "scripts/rc6_archive_v3_image_smoke.py",
+        "sha256": "5f3b1cfad1b6dd7853fc15066e73049d54f981c6e6e8126e3e070304526705ac"
+      },
+      {
+        "module": "scripts.porota_predeploy_binding",
+        "path": "scripts/porota_predeploy_binding.py",
+        "sha256": "0b89a14b4f845d90064c57d48c3dfdcb568677442fffd34925b70cc9c8c02c62"
+      },
+      {
+        "module": "scripts.porota_published_artifact_evidence",
+        "path": "scripts/porota_published_artifact_evidence.py",
+        "sha256": "8c43560a8a1aa49a8d1ff6314f442b8e0e066c17c2bd963d0609017cfd2bab90"
+      },
+      {
+        "module": "scripts.porota_build_deploy_bundle_v2",
+        "path": "scripts/porota_build_deploy_bundle_v2.py",
+        "sha256": "0313ff42f1d397649843760c004ef79bfb7152e89c31d26fa9d8c7c06a6e718d"
+      },
+      {
+        "module": "scripts.rc6_prior_regression_successors",
+        "path": "scripts/rc6_prior_regression_successors.py",
+        "sha256": "b0ba30248e5244ebf4e66dd7923b5b23343350441f57d9a47a6c3a9a7d37bdfb"
+      },
+      {
+        "module": "scripts.rc6_convergence_provenance",
+        "path": "scripts/rc6_convergence_provenance.py",
+        "sha256": "f49035101e611b012f0b3910e27b75921486829e3849d740b78c72337149564d"
+      },
+      {
+        "module": "tests.test_rc6_archive_v3_image_smoke",
+        "path": "tests/test_rc6_archive_v3_image_smoke.py",
+        "sha256": "d8072e0b000e721b7453e7f14abd97e8838efc8ee895b175929373a30ec6327d"
+      },
+      {
+        "module": "scripts.porota_host_manifest_v2",
+        "path": "scripts/porota_host_manifest_v2.py",
+        "sha256": "e2138827f3fea9bce815606c891c0747dc727b9376cf42ac68a1a4708f117435"
+      },
+      {
+        "module": "scripts.porota_host_policy_v2",
+        "path": "scripts/porota_host_policy_v2.py",
+        "sha256": "f739f37e4cf92105c83da8fe86a835826f7dd2fd394ce3a3352e039a3c04bbe0"
+      },
+      {
+        "module": "scripts.porota_validate_deploy_artifact",
+        "path": "scripts/porota_validate_deploy_artifact.py",
+        "sha256": "e2c2f59aef22d0bf30ce83390513fbfb2c1334608ecf7029a5246a9444dd8bce"
+      },
+      {
+        "module": "tests.test_issue465_provenance",
+        "path": "tests/test_issue465_provenance.py",
+        "sha256": "1fe95583421d6b99e7916b03992bd6f84f40da926737b2507152fc29cdd7d9ba"
+      },
+      {
+        "module": "tests.test_rc6_convergence_sre_binding",
+        "path": "tests/test_rc6_convergence_sre_binding.py",
+        "sha256": "fffc1dba3d4ab0fa7a5a77d945012036ca868738a823fb53048b85f923994e84"
+      },
+      {
+        "module": "test_rc6_convergence_sre_published_evidence",
+        "path": "tests/test_rc6_convergence_sre_published_evidence.py",
+        "sha256": "1f3fee3d128509c8b712608797aa0101ce00155a7bbdb877fc0e2252f95573ed"
+      }
+    ],
+    "unexpected": []
+  },
+  "collected": 45,
+  "docker_executed": false,
+  "executed": 45,
+  "execution_id": "2afaadf83346467ba60b4a58842341ac",
+  "forbidden_executable_attempts": [],
+  "full_governed_suite_or_artifact_acceptance": false,
+  "inet_attempts": [],
+  "items": [
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_native_urllib_redirect_does_not_forward_authorization",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_native_urllib_redirect_does_not_forward_authorization"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[none]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[truncated]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_bounded_stream_download_and_digest_execute_the_real_io_algorithm[deadline]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_existing_download_file_is_never_deleted_or_overwritten",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_existing_download_file_is_never_deleted_or_overwritten"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_metadata_response_is_bounded_and_uses_fixed_repository_url",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_metadata_response_is_bounded_and_uses_fixed_repository_url"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_current_upload_binding_is_evidence_only_until_completed_success",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_current_upload_binding_is_evidence_only_until_completed_success"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_real_saved_layer_replay_matches_git_bytes_and_all_modes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_real_saved_layer_replay_matches_git_bytes_and_all_modes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[same_bytes_writable]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[changed_bytes]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[deleted_file]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[parent_alias]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_fully_rehashed_saved_image_rootfs_drift_rejects[extra_source]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_opaque_whiteouts_and_repeated_compressed_layers_replay_native_order"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_downloaded_image_load_and_offline_smoke_require_exact_actual_id[True]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_load_and_import_use_total_budget_while_http_and_codec_keep_thirty_seconds"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[expired]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[exact-boundary]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[nan]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_expired_or_nonfinite_replay_budget_forbids_even_docker_load[infinite]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_completed_load_past_total_deadline_cannot_start_image_or_emit_green",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_completed_load_past_total_deadline_cannot_start_image_or_emit_green"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_codec_uses_remaining_total_budget_and_expiry_cleans_only_its_private_container"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_import_timeout_cleans_only_its_private_container_without_starting_codec",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_import_timeout_cleans_only_its_private_container_without_starting_codec"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[1]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_failed_or_boolean_import_cleanup_cannot_claim_container_termination[False]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_rejects_total_expiry_during_context_cleanup_and_preserves_emitted_raw"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_completes_cleanup_and_flushed_result_within_original_total_budget",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_completes_cleanup_and_flushed_result_within_original_total_budget"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[json_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_write]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_main_cannot_certify_late_result_or_flush_and_keeps_alarm_active[green_flush]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[nonzero]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[missing_json]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[red]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[foreign_image]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[source_drift]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[oversize]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_tiny_execution_failure_cannot_be_replaced_by_primary_receipt[timeout]"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_evidence_only_is_small_and_contains_no_image_or_bundle",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_evidence_only_is_small_and_contains_no_image_or_bundle"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_secondary_preserves_downloaded_primary_final_input_provenance_bytes",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_secondary_preserves_downloaded_primary_final_input_provenance_bytes"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_replay_errors_do_not_disclose_signed_urls_headers_or_tokens"
+    },
+    {
+      "classname": "tests.test_rc6_convergence_sre_published_evidence",
+      "name": "test_workflow_secondary_cannot_replace_primary_or_trigger_another_build",
+      "nodeid": "tests/test_rc6_convergence_sre_published_evidence.py::test_workflow_secondary_cannot_replace_primary_or_trigger_another_build"
+    }
+  ],
+  "junit_bytes": 11063,
+  "junit_counts": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 45
+  },
+  "junit_sha256": "5f165ceeb7ef3c6090b978357d8863d3ece273b52ea824aa2617828f5ee501e9",
+  "metadata157_and_hash_lock_platform_actions_before_fixtures": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_distribution_bytes_authenticated": false,
+    "installed_total": 157,
+    "installer_executed_by_this_runner": false,
+    "metadata_names_versions_exact": true,
+    "schema": "rc6.frozen-governed-installed-preflight.v1",
+    "source_hash_lock_action_platform_audit": {
+      "action_commit_gaps": [],
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "binary_distribution_policy_enforced": true,
+      "build_distribution_hash_gaps": [],
+      "build_isolation_disabled": true,
+      "build_tools_require_hashes": true,
+      "build_tools_total": 3,
+      "docker_requires_hashes": true,
+      "docker_uses_lock": true,
+      "hermetic_build": false,
+      "lock_distribution_hash_gaps": [],
+      "lock_exact_requirements": 154,
+      "lock_hashed_requirements": 154,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 154,
+      "platform": {
+        "architecture": "x86_64",
+        "libc_name": "glibc",
+        "libc_version": "2.41",
+        "os": "linux",
+        "python_minor": "3.11"
+      },
+      "platform_supported": true,
+      "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+      "residual_boundaries": [
+        "ubuntu-24.04 hosted runner and kernel are externally managed",
+        "apt repository package bytes are not snapshot/hash locked",
+        "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+        "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+      ],
+      "schema_version": 3,
+      "source_requirements_total": 24,
+      "status": "GREEN",
+      "supply_chain_schema_valid": true
+    },
+    "status": "GREEN"
+  },
+  "network_observation_scope": "THIS_PYTHON_PROCESS_PLUS_KNOWN_CLIENT_EXECUTABLES; NOT_KERNEL_OR_TRANSITIVE",
+  "overlay_count": 0,
+  "pid": 215623,
+  "pytest_arguments": [
+    "-q",
+    "--strict-markers",
+    "-q",
+    "tests/test_rc6_convergence_sre_published_evidence.py",
+    "-p",
+    "no:cacheprovider",
+    "-o",
+    "pythonpath=.",
+    "-o",
+    "junit_family=legacy",
+    "--junitxml=/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/focal.xml",
+    "--basetemp=/workspace/rc6-replay-deadline-bd69-focal-20261005-a/raw/pytest-private"
+  ],
+  "pytest_exit_code": 0,
+  "pytest_main_invocations": 1,
+  "remote_api_executed": false,
+  "schema": "rc6.published-replay-deadline-focal.v1",
+  "scope": "SELECTED_MODULE_CONTROLLED_CLOCK_SUBPROCESS; NO_DOCKER_REMOTE_API_FULL_GOV_OR_IMAGE_ACCEPTANCE",
+  "selected_module": "tests/test_rc6_convergence_sre_published_evidence.py",
+  "source_atime_changes_observed_separately": [
+    {
+      "after": 1791229492572429847,
+      "before": 1791229490361182766,
+      "kind": "directory",
+      "path": "tests"
+    }
+  ],
+  "source_byte_mode_blob_stable_custody_and_namespace_unchanged": true,
+  "source_data_db_all_stat_custody_claimed": false,
+  "source_sha": "bd69e8a111f355eb6ab8a07f8f9e6e660f5a2bdf",
+  "source_tree": "7dbe4152206081c3523b6fc8c179777e67ff9bfd",
+  "sqlite_attempts": [],
+  "status": "GREEN",
+  "subprocess_executable_counts": {
+    "git": 1056
+  },
+  "virtual_clock_controls_are_real_waits": false
+}

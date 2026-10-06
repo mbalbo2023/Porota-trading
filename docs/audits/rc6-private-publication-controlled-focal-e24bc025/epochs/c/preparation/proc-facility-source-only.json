@@ -1,0 +1,82 @@
+{
+  "B_C_pid_now_not_reopened": true,
+  "absence_not_interpreted_as_no_children": true,
+  "children_member_present": false,
+  "native_tid": 235731,
+  "pid": 235731,
+  "reads": {
+    "children": {
+      "errno": 2,
+      "opened": false,
+      "path": "/proc/235731/task/235731/children",
+      "reason": "[Errno 2] No such file or directory: '/proc/235731/task/235731/children'"
+    },
+    "status": {
+      "identity": {
+        "Pid": "235731",
+        "Tgid": "235731",
+        "Uid": "1000\t1000\t1000\t1000"
+      },
+      "mode": 33060,
+      "opened": true,
+      "path": "/proc/235731/task/235731/status",
+      "sha256": "3e7d65dd27acc7e253dbce7b591b60f2b89679a32d99961f4849c4ef10abfd55"
+    }
+  },
+  "recorded_at": "2026-10-05T23:38:00.121257+00:00",
+  "schema": "rc6.controlled-supervisor-source-only-proc-facility.v1",
+  "scope": "OWN_CURRENT_PID_TID_KERNEL_METADATA_ONLY; NO_PRODUCT_IMPORT_CHILD_FIXTURE_OR_TEST",
+  "task_directory_members": [
+    "arch_status",
+    "attr",
+    "auxv",
+    "cgroup",
+    "clear_refs",
+    "cmdline",
+    "comm",
+    "cwd",
+    "environ",
+    "exe",
+    "fd",
+    "fdinfo",
+    "gid_map",
+    "io",
+    "limits",
+    "loginuid",
+    "maps",
+    "mem",
+    "mountinfo",
+    "mounts",
+    "net",
+    "ns",
+    "numa_maps",
+    "oom_adj",
+    "oom_score",
+    "oom_score_adj",
+    "pagemap",
+    "personality",
+    "projid_map",
+    "root",
+    "sched",
+    "schedstat",
+    "sessionid",
+    "setgroups",
+    "smaps",
+    "smaps_rollup",
+    "stack",
+    "stat",
+    "statm",
+    "status",
+    "syscall",
+    "uid_map",
+    "wchan"
+  ],
+  "task_root": "/proc/235731/task/235731",
+  "uname": [
+    "Linux",
+    "9905252a2cbf",
+    "6.18.44",
+    "#1 SMP Sat Sep 26 20:02:31 UTC 2026",
+    "x86_64"
+  ]
+}

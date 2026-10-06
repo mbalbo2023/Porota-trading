@@ -1,0 +1,53 @@
+{
+  "code_sha256": {
+    "rc6_dynamic_universe/promotion.py": "baca6590e5adbd1ddd86ffdeb9e0b42e4480ac61bd8aa862baae0b3f47a09b2b",
+    "rc6_ppi_global_budget.py": "d228f0294ce41888ff159b3ecc5a38068b96d125f25ac1383cc912b65a0b8f98",
+    "tests/test_rc6_capacity_retention_activation.py": "d7c0275f71e77bbd93e2d62735e44907c7554ca8e7bd8b5bc77895c882c06949"
+  },
+  "error": "Controller published APPROVED_DYNAMIC and selected dynamically despite20000 retained receipts; physical activation was checked only at the later runtime budget seam.",
+  "fix": "Keep static EXIT demand/configuration fingerprint separate from occupancy telemetry; bind BLOCKED status/reasons before selection and preserve any warm exact prior authority.",
+  "limits": [
+    "Historic20000 rows are labeled synthetic SQL receipts; the benchmark/fill path is native offline fake transport. No factual provider OPEN capacity or actual market throughput claim.",
+    "Intermediate worktree execution; final candidate SHA/tree and full governed execution remain required.",
+    "Legal-aging and orphan-auxiliary follow-ups are separately tracked and must be integrated before freeze."
+  ],
+  "native_caller": "Offline actual SDK fake-wire benchmark -> native PAPER positions -> RuntimeCapacityController.state/selection -> cold RuntimePPIBudget.acquire.",
+  "positive_and_adversarial_guards": [
+    "tests/test_rc6_capacity_retention_activation.py::test_native_cold_controller_blocks_retained_full_ledger_before_selection_or_lower_wire",
+    "tests/test_rc6_capacity_retention_activation.py::test_native_healthy_retention_occupancy_is_telemetry_and_cannot_rekey_approved_configuration"
+  ],
+  "rca": "Static endpoint capacity did not include existing ledger occupancy and the controller did not call the canonical read-only retained-debt preflight.",
+  "receipts": {
+    "green": {
+      "path": "docs/audits/convergence/evidence/native-capacity-retention-green.xml",
+      "sha256": "9bf784e9e3a5794dd64f8a6c1f6cb4a6f0ffc7b642deaadfb668a8564f28088a",
+      "summary": {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "61",
+        "time": "147.231",
+        "timestamp": "2026-10-05T05:59:04.116107+00:00"
+      }
+    },
+    "red": {
+      "path": "docs/audits/convergence/evidence/native-capacity-retention-red.xml",
+      "sha256": "d12372a5bf068572c19f0a34aa7870c5d998935eacbe8d0bd7ca354c2d83d884",
+      "summary": {
+        "errors": "0",
+        "failures": "2",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "2",
+        "time": "5.176",
+        "timestamp": "2026-10-05T05:57:51.222456+00:00"
+      }
+    }
+  },
+  "schema": "rc6.native-capacity-retention-activation.v1",
+  "source_head_before_root_fix": "1aad95a514eeeeccfd0e29127dae0fa22d62fe08",
+  "status": "PASS_NATIVE_INTEGRATED_WORKTREE_REQUIRES_FINAL_FROZEN_EXECUTION"
+}

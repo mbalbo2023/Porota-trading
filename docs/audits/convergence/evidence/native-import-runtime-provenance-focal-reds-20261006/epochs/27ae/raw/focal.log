@@ -1,0 +1,17 @@
+.......................................F...                              [100%]
+=================================== FAILURES ===================================
+_ test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage _
+
+tmp_path = PosixPath('/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/fixtures/pytest/test_actual_cython_extension_c0')
+
+    def test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage(tmp_path):
+        result = _physical_runtime_control(tmp_path, 'cython_extension')
+        for name in result['control']['actual_cython_modules']:
+>           row = result['boundary_after']['modules'][name][0]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'cython_runtime'
+
+../../rc6-budget-runtime-provenance-27ae-focal-157-source/tests/test_rc6_native_big_import_provenance.py:859: KeyError
+=========================== short test summary info ============================
+FAILED ../../rc6-budget-runtime-provenance-27ae-focal-157-source/tests/test_rc6_native_big_import_provenance.py::test_actual_cython_extension_creation_has_exact_registry_parent_and_type_lineage
+{"classification": "SCOPED_IMPORT_GUARDS_NOT_GREEN", "source_sha": "27aec1bf8c0e4be779252e98e42d25cbfc5dee5d", "tests": 43, "failures": 1, "errors": 0, "skipped": 0, "source_unchanged": true, "wall_seconds": 14.314675283996621, "receipt": "/workspace/rc6-budget-runtime-provenance-27ae-focal-157-raw/native-import-provenance-focal-receipt.json", "receipt_sha256": "7fd0049b4248eaf4eb44e805e6d465a6d5df7541ad3de51ef6157a689260c0d4"}

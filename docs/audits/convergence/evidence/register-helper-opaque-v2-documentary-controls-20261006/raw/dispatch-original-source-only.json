@@ -1,0 +1,12 @@
+{
+  "helper_driver_pins": {
+    "/tmp/rc6_register_helpers_opaque_v2_actual_capsule_candidate.py": "ad968c7545e7d4c642be9cec246ba3f2c34339cc32d5f877ca0d8e4cdebc995a",
+    "/tmp/rc6_register_helpers_opaque_v2_controls_candidate.py": "d7768060214cfdc6eba671ddaa36ca4676f9c6c5fe887782fdd67cca6ce35d66",
+    "/tmp/rc6_remediation_register_generate_v4_opaque_candidate_v2.py": "60bd126002caf324ed9a3f42d45f21a9dd7591d162f3501d168d02ee10d35dfc",
+    "/tmp/rc6_root_supplemental_named_findings_generate_v3_opaque_candidate_v2.py": "76ece1725ca2696bbffba6bb5ebba7b7d6d8edd722d5b6f3ab42ac6afeafc696"
+  },
+  "immutable_actual_source_sha": "b477779cd7123e03fc09845da93095fe25c90ab5",
+  "schema": "rc6.documentary-opaque-controls-dispatch.v1",
+  "scope": "STDLIB_DOCUMENTARY_ONLY_NO_NATIVE_PRODUCT_FINAL_D_GOV_OR_ARTIFACT",
+  "stdout_stderr_captured_from_launch": true
+}
