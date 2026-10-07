@@ -218,3 +218,43 @@ The default branch still has a legacy PR check that asks for September checkpoin
 
 ## Accessibility invariant
 If a normal recurring operation requires the user to open a terminal, copy/paste shell commands, or manage GitHub manually, treat that as an automation defect to be fixed.
+
+
+## 13. Mandatory error learning and heavy-test admission
+
+The durable incident ledger is `docs/governance/RC6_ERROR_REGISTRY.md`; the
+machine policy is `ops/policy/rc6-heavy-test-governance-v1.json`.
+
+Before any heavy local producer, governed focal, BIG, Material, Horizon or full
+Predeploy:
+
+1. Read the ledger and link any repeated signature to its existing incident ID.
+2. Complete or update the chain
+   `ERROR -> RCA -> FIX -> GUARD -> TEST/PREFLIGHT -> EVIDENCE`.
+3. Refuse an identical rerun unless new evidence, code or configuration gives it
+   a falsifiable purpose.
+4. For local heavy producers, run
+   `scripts/rc6_heavy_test_preflight.py` with the measured peak from a
+   comparable run. Unknown peak, insufficient bytes, less than 10% free inodes,
+   or failure to preserve the 4 GiB residual reserve blocks the producer.
+5. Use one owned namespace per attempt. Cleanup may remove only owned generated
+   fixtures after evidence capture; unowned paths and evidence are preserved.
+6. Require GREEN same-SHA admission, complete Source, focal311, focal312,
+   retention and BIG-browser receipts before full Predeploy. Missing, stale,
+   RED or pending evidence blocks.
+7. Preserve the original BIG workload and ceilings: 12,000 instruments, 60,000
+   observations, 90 seconds, 2 GiB RSS, 128 MiB evidence and 100,000 retained
+   entries. Do not convert a failure into PASS by weakening them.
+8. Use <=75 seconds as the qualification target before spending a canonical
+   run. A lone PASS between 75 and 90 seconds is diagnostic, not robust
+   qualification.
+9. Record runner label, CPU, memory, filesystem and load with the receipt.
+   Faster/larger/self-hosted execution may diagnose but is not promotion
+   evidence by itself and requires a separate cost, security and
+   representativeness decision.
+10. Update the ledger in the same change that introduces a new failure guard,
+    or record the explicit technical reason automation is impossible.
+
+These controls authorize neither a workflow launch nor a deploy. Existing
+ownership, exact-SHA, immutable-artifact, PAPER-safety and runtime rules remain
+in force.

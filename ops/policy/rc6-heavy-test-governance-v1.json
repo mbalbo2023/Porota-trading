@@ -1,0 +1,64 @@
+{
+  "schema": "porota.rc6.heavy-test-governance.v1",
+  "version": 1,
+  "effective_date_utc": "2026-10-07",
+  "safety": {
+    "mode": "PRODUCTION_PAPER / SIMULATION",
+    "real_orders_sent": 0,
+    "real_order_routes": "BLOCKED",
+    "ppi_watch": "DO_NOT_TOUCH"
+  },
+  "incident_learning": {
+    "registry": "docs/governance/RC6_ERROR_REGISTRY.md",
+    "required_chain": [
+      "ERROR",
+      "RCA",
+      "FIX",
+      "GUARD",
+      "TEST_OR_PREFLIGHT",
+      "EVIDENCE"
+    ],
+    "repeat_without_new_evidence_or_change": "BLOCK",
+    "unknown_state": "BLOCK"
+  },
+  "local_capacity": {
+    "expected_peak_bytes_source": "MEASURED_PRIOR_COMPARABLE_RUN",
+    "unknown_expected_peak_policy": "BLOCK",
+    "residual_reserve_bytes": 4294967296,
+    "minimum_free_inode_ratio": 0.1,
+    "namespace_policy": "UNIQUE_PER_ATTEMPT",
+    "cleanup_policy": "OWNED_GENERATED_FIXTURES_ONLY",
+    "evidence_and_unowned_paths": "PRESERVE",
+    "receipt_required_before_heavy_producer": true
+  },
+  "performance": {
+    "big_workload_catalog_instruments": 12000,
+    "big_workload_observations": 60000,
+    "hard_ceiling_seconds": 90,
+    "qualification_target_seconds": 75,
+    "maximum_rss_bytes": 2147483648,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_retained_entries": 100000,
+    "workload_assertions_or_limits_may_be_relaxed": false,
+    "same_sha_focals_before_full_predeploy": true,
+    "full_predeploy_on_missing_red_or_pending_focal_receipt": "BLOCK",
+    "isolated_pass_above_qualification_target": "DIAGNOSTIC_ONLY"
+  },
+  "runner": {
+    "canonical_label": "ubuntu-24.04",
+    "repository_visibility": "public",
+    "official_standard_baseline": {
+      "cpu": 4,
+      "memory_gib": 16,
+      "storage_gib": 14
+    },
+    "record_actual_cpu_memory_filesystem_and_load": true,
+    "larger_or_self_hosted_runner": "REQUIRES_SEPARATE_COST_SECURITY_AND_REPRESENTATIVENESS_DECISION",
+    "faster_diagnostic_runner_is_promotion_evidence_by_itself": false
+  },
+  "promotion": {
+    "exact_sha_required": true,
+    "immutable_artifact_required": true,
+    "runtime_deploy_authorized_by_this_policy": false
+  }
+}
