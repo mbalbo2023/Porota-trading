@@ -52,6 +52,12 @@ class StressImportProofLimit(AssertionError):
         super().__init__("NATIVE_IMPORT_PROVENANCE_NOT_VERIFIED")
 
 
+def _require_reaped_shadow_producer(child):
+    """Veto payload postreads until the owned stress worker is actually reaped."""
+    if child.is_alive() or type(child.exitcode) is not int:
+        raise RuntimeError("SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD")
+
+
 def _reaped_child_lifetime_rss(child):
     """An actual reaped-children maximum, not isolated worker-only wait4."""
     result = {"status":"UNVERIFIED_UNREAPED", "worker_pid":child.pid,
@@ -428,6 +434,10 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
         started.set()
     try:
         data = read_runtime(database, as_of=AT, row_limit=20000, query_budget_seconds=2)
+        observation_count = len(data["observations"])
+        catalog_count = len(data["catalog"])
+        observation_read_truncated = data["observation_read_truncated"]
+        del data
         phases.append("BOUNDED_READ")
         if canonical_runtime:
             worker = ShadowRuntime.from_environment(database, maximum_bytes=maximum_bytes)
@@ -445,8 +455,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
         assert report["provider_requests"] == report["real_orders_sent"] == 0
         assert report["real_routes"] == "NOT_CALLED"
         assert report["source_database_effect"] == "READ_ONLY"
-        assert len(data["observations"]) <= 40000
-        assert len(data["catalog"]) <= 20000
+        assert observation_count <= 40000
+        assert catalog_count <= 20000
         committed = persistence.read_committed_projection(output, deadline=time.monotonic()+1)
         assert committed["report"]["as_of"] == report["as_of"]
         assert committed["pointer"]["generation_id"] == report["generation_id"]
@@ -456,8 +466,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
                   "full_pipeline_exercised": True,
                   "family_reports": len(report["family_routing"] if isinstance(report["family_routing"], list)
                                         else report["family_routing"]["families"]),
-                  "observations_returned": len(data["observations"]),
-                  "observation_read_truncated": data["observation_read_truncated"],
+                  "observations_returned": observation_count,
+                  "observation_read_truncated": observation_read_truncated,
                   "source_database_effect": "READ_ONLY", "committed_sequence": committed["pointer"]["sequence"],
                   "generation_schema": committed["manifest"]["schema"],
                   "configuration_fingerprint": committed["manifest"]["configuration_fingerprint"],
@@ -582,7 +592,8 @@ def factual_exit_probe(path):
 
 def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
                slow_disk=False, maximum_bytes=128*1024**2, allow_fail_closed=False,
-               canonical_runtime=False, diagnostic_stacks=None, source_provenance=None):
+               canonical_runtime=False, diagnostic_stacks=None, source_provenance=None,
+               _native_postread_barrier=None):
     binding, parent_observer, parent_before = None, None, None
     if source_provenance is not None:
         if not canonical_runtime or not isinstance(source_provenance,dict):
@@ -596,14 +607,16 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
         return _run_stress(root,catalog_count=catalog_count,observations_per_identity=observations_per_identity,
             slow_disk=slow_disk,maximum_bytes=maximum_bytes,allow_fail_closed=allow_fail_closed,
             canonical_runtime=canonical_runtime,diagnostic_stacks=diagnostic_stacks,
-            binding=binding,parent_observer=parent_observer,parent_before=parent_before)
+            binding=binding,parent_observer=parent_observer,parent_before=parent_before,
+            native_postread_barrier=_native_postread_barrier)
     finally:
         if parent_observer is not None:
             parent_observer.deactivate()
 
 
 def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, maximum_bytes,
-                allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before):
+                allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before,
+                native_postread_barrier=None):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     if any(root.iterdir()):
@@ -721,6 +734,9 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             child.join(5)
         queue.close()
         queue.join_thread()
+    _require_reaped_shadow_producer(child)
+    if native_postread_barrier is not None:
+        native_postread_barrier()
     lifetime_rss = _reaped_child_lifetime_rss(child) if binding is not None else None
     shadow.setdefault("evidence_bytes", sum(p.stat().st_size for p in output.rglob("*") if p.is_file()))
     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
@@ -804,6 +820,65 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
     return result
 
 
+
+def _native_cleanup_complete(report):
+    """All original six protocols and physical facts, never metadata alone."""
+    stages = ('nonnegative_stdlib_finalizers', 'join_owned_children', 'stop_owned_forkserver',
+              'remaining_stdlib_finalizers', 'stop_owned_resource_tracker', 'verify_kernel_echild')
+    return bool(isinstance(report, dict) and report.get('status') == 'GREEN'
+        and report.get('finalization_thread_finished') is True
+        and report.get('kernel_echild_before_phase_return') is True
+        and report.get('signal_guard_installed_and_witnessed') is True
+        and report.get('forced_termination_attempted') is False
+        and report.get('signal_vetoed') is False and report.get('forced_termination') is False
+        and report.get('termination_signal_attempts') == [] and report.get('errors') == []
+        and report.get('management_bound_seconds') == 5 and report.get('wall_seconds', 6) <= 5
+        and tuple(row.get('stage') for row in report.get('protocol_steps', ())) == stages
+        and all(row.get('completed') is True for row in report['protocol_steps']))
+
+
+def _aggregate_native_cleanup(attempts, entered, deadline, terminal_blocked):
+    """Keep terminal six-stage schema and every earlier RED under one deadline."""
+    receipts = [row['receipt'] for row in attempts if row.get('receipt') is not None]
+    if not receipts:
+        return None
+    elapsed = time.monotonic()-entered
+    aggregate = {**receipts[-1]}
+    # protocol_steps stays the terminal original six-stage report. Earlier
+    # complete receipts remain lossless under native_cli_finalization_passes.
+    for name in ('joined_children', 'stopped_owned_infrastructure', 'termination_signal_attempts',
+                 'unexpected_kernel_children', 'errors'):
+        aggregate[name] = [value for receipt in receipts for value in receipt[name]]
+    for row in attempts:
+        if row.get('error') is not None:
+            aggregate['errors'].append({'stage': row['stage'], **row['error']})
+    if terminal_blocked:
+        aggregate['errors'].append({'stage': 'before_main_exit', 'class': 'RuntimeError',
+                                    'reason': 'PRIOR_CHILD_FINALIZATION_NOT_OBSERVED_COMPLETE'})
+    all_returned = len(receipts) == len(attempts)
+    aggregate['finalization_thread_finished'] = all_returned and all(
+        row['finalization_thread_finished'] is True for row in receipts)
+    aggregate['signal_guard_installed_and_witnessed'] = all_returned and all(
+        row['signal_guard_installed_and_witnessed'] is True for row in receipts)
+    aggregate['forced_termination_attempted'] = any(row['forced_termination_attempted'] for row in receipts)
+    aggregate['signal_vetoed'] = any(row['signal_vetoed'] for row in receipts)
+    aggregate['forced_termination'] = False if aggregate['finalization_thread_finished'] and all(
+        row['forced_termination'] is False for row in receipts) else None
+    aggregate['kernel_echild_before_phase_return'] = all_returned and all(
+        row['kernel_echild_before_phase_return'] is True for row in receipts)
+    aggregate['inherited_tracker_preserved'] = any(row['inherited_tracker_preserved'] for row in receipts)
+    aggregate['management_bound_seconds'] = 5
+    aggregate['wall_seconds'] = elapsed  # Includes the gap, not a second five-second allowance.
+    aggregate['native_cli_cleanup_entered_at_monotonic'] = entered
+    aggregate['native_cli_cleanup_deadline_monotonic'] = deadline
+    aggregate['native_cli_finalization_passes'] = attempts
+    aggregate['native_cli_terminal_cleanup_blocked'] = terminal_blocked
+    terminal_attempted = bool(attempts and attempts[-1]['stage'] == 'before_main_exit')
+    aggregate['status'] = ('GREEN' if all_returned and terminal_attempted and not terminal_blocked
+        and not aggregate['errors'] and all(_native_cleanup_complete(row) for row in receipts)
+        and elapsed <= 5 and time.monotonic() <= deadline else 'RED')
+    return aggregate
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
@@ -822,13 +897,56 @@ def main(argv=None):
     source_provenance = source_values if all(value is not None for value in source_values.values()) else None
     from scripts import rc6_controlled_governed_runner as lifecycle
     output = lifecycle.safe_path(args.out)
-    lifecycle.require(not output.exists() and not output.is_relative_to(ROOT),
+    fin_output = lifecycle.safe_path(str(output)+".owned-fin.json")
+    lifecycle.require(not output.exists() and not fin_output.exists() and not output.is_relative_to(ROOT),
                       "FRESH_EXTERNAL_NATIVE_CLI_RECEIPT_REQUIRED")
     observations = {"inet_socket_attempts": [], "inet_socket_constructor_requests": [],
                     "subprocess_executable_counts": {}}
     initial = capability = finalization = result = unexpected = None
     fresh_infrastructure = audit_witness_verified = False
+    finalized_before_payload_postreads = False
+    cleanup_entered = cleanup_deadline = None
+    cleanup_attempts = []
+    terminal_cleanup_blocked = False
     code = 0
+
+    def attempt_child_cleanup(stage):
+        nonlocal cleanup_entered, cleanup_deadline, finalization
+        if cleanup_entered is None:
+            # Irreversible before the attempted call: an exception cannot buy
+            # another five seconds, reset the clock or permit a blind retry.
+            cleanup_entered = time.monotonic()
+            cleanup_deadline = cleanup_entered+5
+        attempt = {"stage": stage, "attempted_at_monotonic": time.monotonic(),
+                   "cleanup_deadline_monotonic": cleanup_deadline,
+                   "receipt": None, "error": None}
+        cleanup_attempts.append(attempt)
+        try:
+            attempt["receipt"] = lifecycle.finalize_child_infrastructure(initial, limit=5,
+                                                                        cleanup_deadline=cleanup_deadline)
+        except BaseException as error:
+            import re
+            literal = str(error).partition(":")[0]
+            attempt["error"] = {"class": type(error).__name__, "reason": literal
+                if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", literal) else "CHILD_FINALIZATION_PROTOCOL_ERROR"}
+            raise
+        finally:
+            finalization = _aggregate_native_cleanup(cleanup_attempts, cleanup_entered,
+                                                     cleanup_deadline, terminal_cleanup_blocked)
+        return attempt["receipt"]
+
+    def require_native_postread_fin():
+        nonlocal finalized_before_payload_postreads
+        if not cleanup_attempts:
+            attempt_child_cleanup("before_payload_postreads")
+        # An early pass is required before Source/DATA reads, but does not
+        # attest to infrastructure or real finalizers created after return.
+        lifecycle.require(len(cleanup_attempts) == 1
+            and _native_cleanup_complete(cleanup_attempts[0]["receipt"])
+            and time.monotonic() <= cleanup_deadline,
+            "NATIVE_CLI_FIN_REQUIRED_BEFORE_PAYLOAD_POSTREAD")
+        finalized_before_payload_postreads = True
+
     try:
         initial = lifecycle.child_infrastructure_snapshot()
         lifecycle.require(all(value is None for value in initial.values()),
@@ -840,6 +958,7 @@ def main(argv=None):
         result = run_stress(args.root, catalog_count=args.catalog_count,
                             observations_per_identity=args.observations_per_identity, slow_disk=args.slow_disk,
                             canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks,
+                            _native_postread_barrier=require_native_postread_fin,
                             **({"source_provenance":source_provenance} if source_provenance is not None else {}))
     except (StressResourceLimit,StressImportProofLimit) as error:
         result, code = error.evidence, 1
@@ -847,12 +966,22 @@ def main(argv=None):
         unexpected, code = error, 1
     finally:
         if fresh_infrastructure:
-            try:
-                finalization = lifecycle.finalize_child_infrastructure(initial, limit=5)
-            except BaseException as error:
-                if unexpected is None:
-                    unexpected = error
+            # Recheck after actual run_stress return: it may have registered
+            # genuine finalizers/children after the early physical barrier.
+            # Never overlap an unobserved or incomplete first daemon thread.
+            if cleanup_attempts and any(row["receipt"] is None or
+                    row["receipt"]["finalization_thread_finished"] is not True for row in cleanup_attempts):
+                terminal_cleanup_blocked = True
+                finalization = _aggregate_native_cleanup(cleanup_attempts, cleanup_entered,
+                                                         cleanup_deadline, terminal_cleanup_blocked)
                 code = 1
+            else:
+                try:
+                    attempt_child_cleanup("before_main_exit")
+                except BaseException as error:
+                    if unexpected is None:
+                        unexpected = error
+                    code = 1
     error_receipt = None
     if unexpected is not None:
         import re
@@ -864,13 +993,9 @@ def main(argv=None):
             error_receipt.update(reason="OS_ERROR", errno=unexpected.errno)
         else:
             error_receipt["reason"] = "NON_LITERAL_GUARD_EXCEPTION"
-    infrastructure_complete = bool(finalization is not None
-        and finalization["status"] == "GREEN" and finalization["finalization_thread_finished"] is True
-        and finalization["kernel_echild_before_phase_return"] is True
-        and finalization["signal_guard_installed_and_witnessed"] is True
-        and finalization["forced_termination_attempted"] is False and finalization["signal_vetoed"] is False
-        and not finalization["termination_signal_attempts"] and not finalization["errors"]
-        and finalization["wall_seconds"] <= 5)
+    infrastructure_complete = bool(_native_cleanup_complete(finalization)
+        and cleanup_attempts and cleanup_attempts[-1]["stage"] == "before_main_exit"
+        and not terminal_cleanup_blocked and time.monotonic() <= cleanup_deadline)
     lifecycle_complete = bool(capability is not None
         and capability["status"] == "INSTALLED_AND_KERNEL_WITNESSED" and audit_witness_verified is True
         and infrastructure_complete and not observations["inet_socket_attempts"] and unexpected is None)
@@ -889,14 +1014,33 @@ def main(argv=None):
         "original_inet_operation_audit_registration_witness_verified": audit_witness_verified,
         "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
         "child_infrastructure_finalization": finalization,
+        "child_finalization_attempts": cleanup_attempts,
+        "child_finalization_single_deadline_monotonic": cleanup_deadline,
+        "terminal_cleanup_blocked_by_prior_unknown": terminal_cleanup_blocked,
         "child_infrastructure_finalized_before_main_exit": infrastructure_complete,
+        "child_infrastructure_finalized_before_payload_postreads": finalized_before_payload_postreads,
+        "owned_fin_control_path": str(fin_output),
         "unexpected_error": error_receipt, **observations,
         "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE"}}
+    # Control-only receipt precedes the business payload. A closed physical FIN
+    # never converts a business/resource failure into GREEN or changes 90/5.
+    fin_control = {"schema": "rc6.issue465.native-cli-owned-fin.v1",
+        "pid": os.getpid(), "parent_pid": os.getppid(), "entry_module": __name__,
+        "source_binding": {**source_values,
+            "source_index_sha256": result.get("import_provenance", {}).get("source_index_sha256")},
+        "payload_path": str(output), "native_cli_lifecycle": result["native_cli_lifecycle"],
+        "physical_fin_closed": infrastructure_complete,
+        "finalized_before_payload_postreads": finalized_before_payload_postreads,
+        "native_resource_exit_code": native_code, "cli_exit_code": code,
+        "business_GREEN_inferred_from_FIN": False, "original_child_finalization_seconds": 5,
+        "cycle_deadline_seconds": 90, "real_orders_sent": 0}
+    lifecycle.publish(fin_output, lifecycle.canonical(fin_control))
     lifecycle.publish(output, lifecycle.canonical(result))
     print("ISSUE465_STRESS_EVIDENCE="+str(output))
     if unexpected is not None:
         raise unexpected
     return code
+
 
 
 if __name__ == "__main__":

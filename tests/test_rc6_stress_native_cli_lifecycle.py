@@ -93,6 +93,17 @@ def test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business(t
     if slow:
         assert result['slow_fsync_exit_isolation_proven'] and result['shadow']['fsync']['fsync_completed']
     lifecycle = result['native_cli_lifecycle']
+    control_path = tmp_path/'result.json.owned-fin.json'
+    control = json.loads(control_path.read_text())
+    assert control['schema'] == 'rc6.issue465.native-cli-owned-fin.v1'
+    assert control['pid'] == kernel['pid'] and control['entry_module'] == '__main__'
+    assert control['native_cli_lifecycle'] == lifecycle
+    assert control['physical_fin_closed'] and control['finalized_before_payload_postreads']
+    assert control['original_child_finalization_seconds'] == 5 and control['cycle_deadline_seconds'] == 90
+    assert control['business_GREEN_inferred_from_FIN'] is False and control['real_orders_sent'] == 0
+    assert control['payload_path'] == str(tmp_path/'result.json')
+    assert control_path.stat().st_mtime_ns <= (tmp_path/'result.json').stat().st_mtime_ns
+    assert lifecycle['child_infrastructure_finalized_before_payload_postreads']
     assert lifecycle['status'] == 'GREEN' and lifecycle['entry_module'] == '__main__'
     assert lifecycle['pid'] == kernel['pid'] and lifecycle['cli_exit_code'] == 0
     assert lifecycle['native_resource_exit_code'] == 0 and lifecycle['fresh_infrastructure_verified']
@@ -113,8 +124,9 @@ def test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business(t
     assert any(row['kind'] == 'resource_tracker' for row in finalization['stopped_owned_infrastructure'])
 
 
-def test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts(tmp_path):
-    receipt = tmp_path/'result.json'
+@pytest.mark.parametrize('existing', ('result.json', 'result.json.owned-fin.json'))
+def test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts(tmp_path, existing):
+    receipt = tmp_path/existing
     receipt.write_bytes(b'KEEP_ORIGINAL_RECEIPT\n')
     kernel = native_phase(tmp_path, [sys.executable, '-I', '-B', str(CLI), *cli_arguments(tmp_path)])
     assert_kernel_closed(kernel, 1)
@@ -248,3 +260,249 @@ def test_real_finalizer_sigterm_is_vetoed_and_cannot_turn_actual_business_into_c
     assert finalization['termination_signal_attempts'] == [{'event': 'os.kill',
         'pid_or_pgid': observed['child_pid'], 'signal': signal.SIGTERM, 'vetoed_before_syscall': True}]
     assert any(row['reason'] == 'CHILD_FINALIZATION_SIGNAL_ATTEMPT_DENIED' for row in finalization['errors'])
+
+
+
+def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_path):
+    command = control_process(tmp_path, """
+        import json, queue, threading, weakref
+        from pathlib import Path
+        from cg_paper_workspace import artifact_root
+        from rc6_dynamic_universe import runtime
+        from rc6_shadow_runtime.worker import ShadowRuntime
+        from scripts import rc6_issue465_stress as stress
+        from scripts import rc6_controlled_governed_runner as runner
+        initial = runner.child_infrastructure_snapshot()
+        assert all(value is None for value in initial.values())
+        capability = runner.restrict_inet_creation()
+        observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+                        'subprocess_executable_counts': {}}
+        assert runner.install_phase_audit(observations) is True
+        class WeakResult(dict):
+            pass
+        class WeakList(list):
+            pass
+        original_read, original_tick = runtime.read_runtime, ShadowRuntime.tick
+        references, scalars, ticks = [], {}, []
+        def tracked_initial_read(database, **options):
+            assert not references
+            assert options == {'as_of': stress.AT, 'row_limit': 20000, 'query_budget_seconds': 2}
+            actual = original_read(database, **options)
+            scalars.update(observation_count=len(actual['observations']),
+                catalog_count=len(actual['catalog']),
+                observation_read_truncated=actual['observation_read_truncated'])
+            payload = WeakResult(actual)
+            payload['observations'] = WeakList(actual['observations'])
+            payload['catalog'] = WeakList(actual['catalog'])
+            assert payload == actual
+            references.extend(weakref.ref(value) for value in
+                (payload, payload['observations'], payload['catalog']))
+            return payload
+        def checked_tick(worker, at):
+            assert len(references) == 3 and all(reference() is None for reference in references)
+            ticks.append(at.isoformat())
+            return original_tick(worker, at)
+        database = Path("""+repr(str(tmp_path/'data'/'paper_v17'/'observer_v17.db'))+""")
+        database.parent.mkdir(mode=0o700, parents=True)
+        stress.fixture_database(database, catalog_count=20, observations_per_identity=5)
+        source_before = stress.source_custody_snapshot(database)
+        output = artifact_root(database)/'dynamic-shadow'
+        messages = queue.Queue()
+        runtime.read_runtime, ShadowRuntime.tick = tracked_initial_read, checked_tick
+        try:
+            stress._shadow_child_work(str(database), str(output), threading.Event(),
+                threading.Event(), messages, False, 128*1024**2, True, None, None, None)
+        finally:
+            runtime.read_runtime, ShadowRuntime.tick = original_read, original_tick
+            finalization = runner.finalize_child_infrastructure(initial, limit=5)
+        assert finalization['status'] == 'GREEN' and finalization['finalization_thread_finished']
+        assert finalization['kernel_echild_before_phase_return'] and finalization['wall_seconds'] <= 5
+        assert not finalization['forced_termination_attempted'] and not finalization['signal_vetoed']
+        assert finalization['termination_signal_attempts'] == finalization['errors'] == []
+        assert observations['inet_socket_attempts'] == []
+        records = []
+        while not messages.empty():
+            records.append(messages.get_nowait())
+        finals = [record for record in records if record.get('_probe_event') == 'FINAL']
+        assert len(finals) == 1
+        shadow = finals[0]
+        assert shadow['cycle_completion'] and shadow['committed_sequence'] == 2
+        assert ticks == [stress.PRE.isoformat(), stress.AT.isoformat()]
+        assert scalars == {'observation_count': 100, 'catalog_count': 20,
+                          'observation_read_truncated': False}
+        assert shadow['observations_returned'] == scalars['observation_count']
+        assert shadow['observation_read_truncated'] is scalars['observation_read_truncated']
+        assert shadow['catalog_ready_count'] == scalars['catalog_count']
+        source_after = stress.source_custody_snapshot(database)
+        assert source_before == source_after
+        evidence = {'schema': 'rc6.issue465.initial-read-lifetime-control.v1',
+            'scope': 'NATIVE20_COMPONENT_LIFETIME_ONLY_NOT_FULL_STRESS_OR_BIG',
+            'initial_payload_and_both_lists_released': all(reference() is None for reference in references),
+            'scalars': scalars, 'tick_cutoffs': ticks, 'shadow': shadow,
+            'source_custody_before': source_before, 'source_custody_after': source_after,
+            'child_infrastructure_finalization': finalization,
+            'offline_ipv6_creation_capability': capability, 'operation_audit': observations,
+            'big_qualified': False, 'import_proof_complete': False}
+        with Path("""+repr(str(tmp_path/'lifetime.json'))+""").open('x') as stream:
+            json.dump(evidence, stream, sort_keys=True)
+    """)
+    kernel = native_phase(tmp_path, command)
+    assert_kernel_closed(kernel, 0)
+    evidence = json.loads((tmp_path/'lifetime.json').read_text())
+    assert evidence['initial_payload_and_both_lists_released']
+    assert evidence['shadow']['cycle_completion'] and evidence['shadow']['committed_sequence'] == 2
+    assert evidence['shadow']['real_orders_sent'] == evidence['shadow']['provider_requests'] == 0
+    assert evidence['shadow']['real_routes'] == 'NOT_CALLED'
+    assert not evidence['big_qualified'] and not evidence['import_proof_complete']
+
+
+def test_real_live_shadow_producer_vetoes_payload_postreads_until_actual_reap(tmp_path):
+    command = control_process(tmp_path, """
+        import json, multiprocessing as mp
+        from pathlib import Path
+        from scripts import rc6_issue465_stress as stress
+        from scripts import rc6_controlled_governed_runner as runner
+        initial = runner.child_infrastructure_snapshot()
+        assert all(value is None for value in initial.values())
+        capability = runner.restrict_inet_creation()
+        observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+                        'subprocess_executable_counts': {}}
+        assert runner.install_phase_audit(observations) is True
+        database = Path("""+repr(str(tmp_path/'data'/'source.db'))+""")
+        database.parent.mkdir(mode=0o700, parents=True)
+        stress.fixture_database(database, catalog_count=20, observations_per_identity=5)
+        source_before = stress.source_custody_snapshot(database)
+        context = mp.get_context('fork')
+        started, release = context.Event(), context.Event()
+        def real_live_producer():
+            started.set()
+            assert release.wait(5)
+        child = context.Process(target=real_live_producer)
+        child.start()
+        postread_calls, veto = [], None
+        try:
+            assert started.wait(5) and child.is_alive()
+            try:
+                stress._require_reaped_shadow_producer(child)
+                postread_calls.append('SOURCE_AFTER')
+                stress.source_custody_snapshot(database)
+            except RuntimeError as error:
+                veto = str(error)
+            assert veto == 'SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD'
+            assert child.is_alive() and child.exitcode is None and postread_calls == []
+        finally:
+            release.set()
+            child.join(5)
+            finalization = runner.finalize_child_infrastructure(initial, limit=5)
+        assert not child.is_alive() and child.exitcode == 0
+        assert finalization['status'] == 'GREEN' and finalization['finalization_thread_finished']
+        assert finalization['kernel_echild_before_phase_return'] and finalization['wall_seconds'] <= 5
+        assert not finalization['forced_termination_attempted'] and not finalization['signal_vetoed']
+        assert finalization['termination_signal_attempts'] == finalization['errors'] == []
+        assert observations['inet_socket_attempts'] == []
+        stress._require_reaped_shadow_producer(child)
+        source_after = stress.source_custody_snapshot(database)
+        assert source_before == source_after
+        evidence = {'schema': 'rc6.issue465.live-producer-postread-veto-control.v1',
+            'scope': 'REAL_LIVE_PRODUCER_NEGATIVE_GUARD_ONLY_NOT_STRESS_RESOURCE_QUALIFICATION',
+            'producer_pid': child.pid, 'producer_exitcode_after_natural_reap': child.exitcode,
+            'veto_reason': veto, 'payload_postread_calls_while_live': postread_calls,
+            'source_custody_before': source_before, 'source_custody_after': source_after,
+            'child_infrastructure_finalization': finalization,
+            'offline_ipv6_creation_capability': capability, 'operation_audit': observations,
+            'big_qualified': False, 'cycle_deadline_seconds_changed': False,
+            'original_cleanup_deadline_can_be_reclassified': False}
+        with Path("""+repr(str(tmp_path/'postread-veto.json'))+""").open('x') as stream:
+            json.dump(evidence, stream, sort_keys=True)
+    """)
+    kernel = native_phase(tmp_path, command)
+    assert_kernel_closed(kernel, 0)
+    evidence = json.loads((tmp_path/'postread-veto.json').read_text())
+    assert evidence['veto_reason'] == 'SHADOW_PRODUCER_NOT_REAPED_NO_PAYLOAD_POSTREAD'
+    assert evidence['payload_postread_calls_while_live'] == []
+    assert evidence['producer_exitcode_after_natural_reap'] == 0
+    assert not evidence['big_qualified'] and not evidence['cycle_deadline_seconds_changed']
+
+
+def test_native_absolute_cleanup_deadline_rejects_extra_budget_before_real_finalizer(tmp_path):
+    command = control_process(tmp_path, """
+        import errno, json, math, os, time
+        from multiprocessing import util
+        from pathlib import Path
+        from scripts import rc6_controlled_governed_runner as runner
+        initial = runner.child_infrastructure_snapshot()
+        assert all(value is None for value in initial.values())
+        calls, denials = [], []
+        finalizer = util.Finalize(None, lambda: calls.append('ACTUAL_FINALIZER'), exitpriority=1)
+        for deadline in (time.monotonic()+60, time.monotonic()-1, math.inf, math.nan, True):
+            try:
+                runner.finalize_child_infrastructure(initial, limit=5, cleanup_deadline=deadline)
+            except ValueError as error:
+                assert str(error) == 'ORIGINAL_ABSOLUTE_CHILD_FINALIZATION_DEADLINE_REQUIRED'
+                denials.append(type(deadline).__name__)
+            else:
+                raise AssertionError('ABSOLUTE_DEADLINE_EXTENSION_OR_INVALID_CLOCK_ACCEPTED')
+            assert finalizer.still_active() and calls == []
+        finalizer.cancel()
+        try:
+            os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            assert error.errno == errno.ECHILD
+        else:
+            raise AssertionError('KERNEL_ECHILD_NOT_OBSERVED')
+        Path("""+repr(str(tmp_path/'deadline-api.json'))+""").write_text(json.dumps({
+            'denials': denials, 'finalizer_executed': calls,
+            'management_bound_seconds': 5, 'gate_qualified': False}))
+    """)
+    kernel = native_phase(tmp_path, command)
+    assert_kernel_closed(kernel, 0)
+    result = json.loads((tmp_path/'deadline-api.json').read_text())
+    assert len(result['denials']) == 5 and result['finalizer_executed'] == []
+    assert result['management_bound_seconds'] == 5 and not result['gate_qualified']
+
+
+def test_real_early_finalization_exception_never_retries_or_resets_deadline(tmp_path):
+    command = control_process(tmp_path, """
+        import json
+        from pathlib import Path
+        from scripts import rc6_issue465_stress as stress
+        from scripts import rc6_controlled_governed_runner as runner
+        original = runner.finalize_child_infrastructure
+        attempts, actual = [], []
+        def real_finalization_then_failure(initial, limit=5, *, cleanup_deadline=None):
+            attempts.append({'limit': limit, 'deadline': cleanup_deadline})
+            receipt = original(initial, limit=limit, cleanup_deadline=cleanup_deadline)
+            assert receipt['status'] == 'GREEN' and receipt['finalization_thread_finished']
+            actual.append(receipt)
+            raise RuntimeError('REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED')
+        runner.finalize_child_infrastructure = real_finalization_then_failure
+        try:
+            stress.main("""+repr(cli_arguments(tmp_path))+""")
+        except RuntimeError as error:
+            assert str(error) == 'REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED'
+        else:
+            raise AssertionError('UNKNOWN_EARLY_FINALIZATION_REPORTED_GREEN')
+        assert len(attempts) == 1 and attempts[0]['limit'] == 5
+        assert actual[0]['cleanup_deadline_monotonic'] == attempts[0]['deadline']
+        Path("""+repr(str(tmp_path/'attempts.json'))+""").write_text(json.dumps({
+            'attempts': attempts, 'actual_receipt': actual[0], 'gate_qualified': False}))
+        raise SystemExit(1)
+    """)
+    kernel = native_phase(tmp_path, command)
+    assert_kernel_closed(kernel, 1)
+    result = json.loads((tmp_path/'result.json').read_text())
+    control = json.loads((tmp_path/'result.json.owned-fin.json').read_text())
+    observed = json.loads((tmp_path/'attempts.json').read_text())
+    lifecycle = result['native_cli_lifecycle']
+    assert lifecycle['status'] == 'RED' and lifecycle['cli_exit_code'] == 1
+    assert not lifecycle['child_infrastructure_finalized_before_payload_postreads']
+    assert not lifecycle['child_infrastructure_finalized_before_main_exit']
+    assert lifecycle['terminal_cleanup_blocked_by_prior_unknown']
+    assert len(lifecycle['child_finalization_attempts']) == len(observed['attempts']) == 1
+    attempt = lifecycle['child_finalization_attempts'][0]
+    assert attempt['stage'] == 'before_payload_postreads' and attempt['receipt'] is None
+    assert attempt['error']['reason'] == 'REAL_EARLY_FINALIZATION_RECEIPT_NOT_RETURNED'
+    assert attempt['cleanup_deadline_monotonic'] == lifecycle['child_finalization_single_deadline_monotonic']
+    assert not control['physical_fin_closed'] and not control['finalized_before_payload_postreads']
+    assert observed['actual_receipt']['management_bound_seconds'] == 5
+    assert not observed['gate_qualified']

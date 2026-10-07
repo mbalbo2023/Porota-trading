@@ -396,3 +396,175 @@ def test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline(t
     assert report['actual_child_reaped'] and report['owned_children_exhaustion_verified']
     assert report['phase_acceptance_deadline_seconds'] == .2
     assert report['owned_cleanup_management_bound_seconds'] == 5
+
+
+@pytest.mark.parametrize('phase', ('collection', 'execution'))
+def test_real_legacy_persistence_writers_leave_literal_and_product_source_unchanged(literal_tree, tmp_path, phase):
+    root, sha, tree = literal_tree
+    output = tmp_path/('legacy-output-'+phase)
+    output.mkdir(mode=0o700)
+    report = native("""
+from pathlib import Path
+import json, os, stat
+from scripts import rc6_controlled_governed_runner as r
+root, output, phase = Path(sys.argv[2]), Path(sys.argv[5]), sys.argv[6]
+source = Path(sys.argv[1]).absolute()
+source_sha = r.git(source, 'rev-parse', 'HEAD').decode().strip()
+source_tree = r.git(source, 'rev-parse', 'HEAD^{tree}').decode().strip()
+before = r.source_pin(root, sys.argv[3], sys.argv[4])
+# Canonical Predeploy may publish its own provenance outside this focal's
+# tiny literal Source. Bind the four real modules to raw HEAD blobs and Code
+# fields, rather than claiming a whole-product physical namespace here.
+product_before = {}
+for name in ('ac_db', 'al_historical_ingest', 'ao_startup_gate', 'ay_dashboard_auth'):
+    member = name+'.py'
+    path = r.safe_path(source/member)
+    raw, attributes = r.capture(path)
+    entry = r.git(source, 'ls-tree', '-z', source_sha, '--', member).split(bytes((0,)))
+    assert len(entry) == 2 and entry[1] == b''
+    header, encoded_member = entry[0].split(bytes((9,)), 1)
+    mode, kind, identifier = header.decode().split()
+    assert encoded_member.decode() == member and kind == 'blob' and mode in ('100644', '100755')
+    blob = r.git(source, 'cat-file', 'blob', identifier)
+    assert raw == blob and r.hashlib.sha1(b'blob '+str(len(raw)).encode()+bytes((0,))+raw).hexdigest() == identifier
+    assert stat.S_IMODE(attributes['st_mode']) == (0o644 if mode == '100644' else 0o755)
+    product_before[name] = {'sha256': r.digest(raw), 'git_blob': identifier,
+        'git_mode': mode, 'stat_fields': attributes}
+# The regression must exercise the new phase configurations, independently
+# of any namespace inherited from the surrounding whole-Gov process.
+for name in ('DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE', 'DATA_DIR'):
+    os.environ.pop(name, None)
+os.environ['DASHBOARD_ACCESS_TOKEN'] = 'offline-native-persistence-fixture-'+('x'*40)
+os.chdir(root)
+namespace = r.phase_namespace(root, output, phase)
+capability = r.restrict_inet_creation()
+observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
+    'subprocess_executable_counts': {}}
+r.install_phase_audit(observations)
+# Original product writers, imported normally after namespace publication.
+# No function, module, SQLite connection, session store or trace is replaced.
+import ac_db
+import al_historical_ingest as history
+import ao_startup_gate as gate
+import ay_dashboard_auth as auth
+configurations = {'DB_PATH': ac_db.DB_PATH, 'HIST_DB_PATH': history.HIST_DB_PATH,
+    'TESTING_LOG_PATH': gate.TESTING_LOG_PATH, 'DASHBOARD_SESSION_STORE': auth.SESSION_STORE_PATH}
+assert configurations == namespace['legacy_persistence_paths']
+connection = ac_db.connect_raw()
+try:
+    connection.execute('CREATE TABLE namespace_control(value TEXT NOT NULL)')
+    connection.execute('INSERT INTO namespace_control VALUES(?)', ('PAPER',))
+    connection.commit()
+    assert connection.execute('SELECT value FROM namespace_control').fetchall() == [('PAPER',)]
+finally:
+    connection.close()
+history.init_db()
+connection = history._conn()
+try:
+    assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        ('market_historical_ohlcv',)).fetchone() == ('market_historical_ohlcv',)
+finally:
+    connection.close()
+gate.registrar_paso('NAMESPACE_CONTROL', 'Original offline writer retained', 'PAPER')
+session = auth.crear_sesion_desde_token(os.environ['DASHBOARD_ACCESS_TOKEN'])
+assert session is not None and auth.sesion_valida(session)
+trace = json.loads(r.capture(Path(configurations['TESTING_LOG_PATH']))[0])
+sessions = json.loads(r.capture(Path(configurations['DASHBOARD_SESSION_STORE']))[0])
+assert trace['etapa'] == 'NAMESPACE_CONTROL' and trace['resultado'] == 'PAPER'
+assert session in sessions['sessions'] and len(sessions['sessions']) == 1
+# Never include session IDs, tokens or persisted content in the receipt.
+legacy = Path(namespace['legacy_persistence_directory'])
+files = {}
+for name, value in configurations.items():
+    path = r.safe_path(value)
+    attributes = path.lstat()
+    assert path.is_absolute() and path.parent == legacy and not path.is_relative_to(root)
+    assert stat.S_ISREG(attributes.st_mode) and attributes.st_nlink == 1
+    assert attributes.st_uid == os.geteuid() and attributes.st_dev == root.lstat().st_dev
+    files[name] = {'path': str(path), 'bytes': attributes.st_size,
+        'mode': stat.S_IMODE(attributes.st_mode), 'nlink': attributes.st_nlink}
+origins = {}
+for name, module in (('ac_db', ac_db), ('al_historical_ingest', history),
+                     ('ao_startup_gate', gate), ('ay_dashboard_auth', auth)):
+    path = Path(module.__file__).absolute()
+    raw, _attributes = r.capture(path)
+    assert path == source/(name+'.py')
+    assert r.digest(raw) == product_before[name]['sha256']
+    origins[name] = {'path': str(path), 'sha256': r.digest(raw),
+        'git_blob': product_before[name]['git_blob']}
+after = r.source_pin(root, sys.argv[3], sys.argv[4])
+assert r.git(source, 'rev-parse', 'HEAD').decode().strip() == source_sha
+assert r.git(source, 'rev-parse', 'HEAD^{tree}').decode().strip() == source_tree
+product_atime = []
+for name, original in product_before.items():
+    raw, attributes = r.capture(source/(name+'.py'))
+    assert r.digest(raw) == original['sha256']
+    assert all(attributes[key] == original['stat_fields'][key] for key in r.STABLE_CODE_FIELDS)
+    if attributes['st_atime_ns'] != original['stat_fields']['st_atime_ns']:
+        product_atime.append({'path': name+'.py', 'before': original['stat_fields']['st_atime_ns'],
+            'after': attributes['st_atime_ns']})
+assert observations['inet_socket_attempts'] == []
+print(json.dumps({'namespace': namespace, 'four_real_writer_files': files,
+    'literal_source_atime': r.compare_source(before, after),
+    'product_module_atime': product_atime,
+    'literal_source_exact': after['physical_namespace_exact_to_literal_tree'],
+    'product_module_bytes_and_original10_unchanged': True, 'whole_product_namespace_attested': False,
+    'product_origins': origins, 'inet_operations': observations['inet_socket_attempts'],
+    'inet_constructor_requests': observations['inet_socket_constructor_requests'],
+    'offline_capability_installed': capability['status'] == 'INSTALLED_AND_KERNEL_WITNESSED'}))
+""", root, sha, tree, output, phase)
+    namespace = report['namespace']
+    legacy = Path(namespace['legacy_persistence_directory'])
+    assert legacy == output/(phase+'-private')/'legacy-persistence'
+    assert namespace['legacy_persistence_mode'] == 0o700
+    assert namespace['legacy_persistence_owner_uid'] == os.geteuid()
+    assert namespace['legacy_persistence_device'] == root.lstat().st_dev
+    assert set(report['four_real_writer_files']) == {
+        'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE'}
+    assert all(Path(row['path']).parent == legacy and row['bytes'] > 0 and row['nlink'] == 1
+               for row in report['four_real_writer_files'].values())
+    assert report['four_real_writer_files']['DASHBOARD_SESSION_STORE']['mode'] == 0o600
+    assert report['literal_source_exact'] and report['product_module_bytes_and_original10_unchanged']
+    assert report['whole_product_namespace_attested'] is False
+    assert set(report['product_origins']) == {'ac_db', 'al_historical_ingest', 'ao_startup_gate', 'ay_dashboard_auth'}
+    assert namespace['writable_source_exclusions_added'] == []
+    assert report['inet_operations'] == [] and report['offline_capability_installed']
+    assert not (root/'data').exists()
+
+
+@pytest.mark.parametrize('name', ('DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE', 'DATA_DIR'))
+def test_foreign_persistence_environment_rejected_before_any_output(literal_tree, tmp_path, name):
+    root, sha, tree = literal_tree
+    output = tmp_path/('foreign-output-'+name)
+    report = native("""
+from pathlib import Path
+from types import SimpleNamespace
+import json, os
+from scripts import rc6_controlled_governed_runner as r
+root, output, name = Path(sys.argv[2]), Path(sys.argv[5]), sys.argv[6]
+before = r.source_pin(root, sys.argv[3], sys.argv[4])
+# Isolate the selected foreign variable so an inherited phase configuration
+# cannot make a missing rejection of this variable appear to pass.
+for key in tuple(os.environ):
+    if key.startswith(('POROTA_', 'PAPER_')) or key in (
+            'DATA_DIR', 'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE'):
+        del os.environ[key]
+# Presence is forbidden even for an empty DB_PATH, which would select a
+# relative product fallback. Other controls point directly inside Source.
+os.environ[name] = '' if name == 'DB_PATH' else str(root/'data'/'foreign-persistence')
+args = SimpleNamespace(repo_root=str(root), output_root=str(output),
+    source_sha=sys.argv[3], source_tree=sys.argv[4], timeout_seconds=5400)
+try:
+    r.main(args)
+except ValueError as error:
+    reason = str(error)
+else:
+    raise AssertionError('FOREIGN_PERSISTENCE_CONFIGURATION_WAS_ACCEPTED')
+after = r.source_pin(root, sys.argv[3], sys.argv[4])
+print(json.dumps({'reason': reason, 'output_created': output.exists(),
+    'source_exact': after['physical_namespace_exact_to_literal_tree'],
+    'atime': r.compare_source(before, after)}))
+""", root, sha, tree, output, name)
+    assert report['reason'] == 'OPERATIONAL_ENVIRONMENT_FORBIDDEN'
+    assert report['output_created'] is False and report['source_exact']
+    assert not output.exists() and not (root/'data').exists()

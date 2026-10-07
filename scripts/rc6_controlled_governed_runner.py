@@ -42,9 +42,21 @@ def phase_namespace(root, output, phase):
     require(not private.exists() and not private.is_relative_to(root),
             'FRESH_EXTERNAL_PHASE_NAMESPACE_REQUIRED')
     private.mkdir(mode=0o700)
-    paths = {name: private/name for name in ('hypothesis', 'logs')}
+    paths = {name: private/name for name in ('hypothesis', 'logs', 'legacy-persistence')}
     for path in paths.values():
         path.mkdir(mode=0o700)
+    # These supported product configurations must precede collection imports:
+    # a legacy status read, session or startup trace can persist real files.
+    legacy = safe_path(paths['legacy-persistence'])
+    legacy_identity = legacy.lstat()
+    require(stat.S_ISDIR(legacy_identity.st_mode) and legacy_identity.st_uid == os.geteuid()
+            and stat.S_IMODE(legacy_identity.st_mode) == 0o700
+            and legacy_identity.st_dev == output.lstat().st_dev == os.lstat(root).st_dev,
+            'EXTERNAL_OWNED_SAME_FILESYSTEM_LEGACY_PERSISTENCE_REQUIRED')
+    legacy_paths = {'DB_PATH': str(legacy/'trading_system.db'),
+        'HIST_DB_PATH': str(legacy/'market_history.db'),
+        'TESTING_LOG_PATH': str(legacy/'testing_trace.jsonl'),
+        'DASHBOARD_SESSION_STORE': str(legacy/'dashboard_sessions.json')}
     # multiprocessing's concrete AF_UNIX listener paths have a native length
     # bound. Choose a fresh private sibling on this same filesystem, rather
     # than moving fixtures onto tmpfs or hiding a path in the source tree.
@@ -63,12 +75,16 @@ def phase_namespace(root, output, phase):
             'SHORT_TEMPORARY_NAMESPACE_CUSTODY_REQUIRED')
     os.environ.update({'TMPDIR': str(paths['tmp']), 'RUNNER_TEMP': str(private),
         'HYPOTHESIS_STORAGE_DIRECTORY': str(paths['hypothesis']), 'LOG_DIR': str(paths['logs']),
-        'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1'})
+        'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1', **legacy_paths})
     tempfile.tempdir = str(paths['tmp'])
     sys.dont_write_bytecode = True
     return {'root': str(private), 'tmpdir': str(paths['tmp']),
             'hypothesis_storage_directory': str(paths['hypothesis']), 'log_dir': str(paths['logs']),
             'tmpdir_device': tmp_identity.st_dev, 'tmpdir_owner_uid': tmp_identity.st_uid,
+            'legacy_persistence_directory': str(legacy), 'legacy_persistence_paths': legacy_paths,
+            'legacy_persistence_device': legacy_identity.st_dev,
+            'legacy_persistence_owner_uid': legacy_identity.st_uid,
+            'legacy_persistence_mode': stat.S_IMODE(legacy_identity.st_mode),
             'tmpdir_retained_for_diagnostics': True,
             'pytest_cache_provider_disabled': True, 'writable_source_exclusions_added': []}
 
@@ -142,7 +158,7 @@ def child_infrastructure_snapshot():
             'forkserver_pid': server._forkserver_pid, 'forkserver_alive_fd': server._forkserver_alive_fd}
 
 
-def finalize_child_infrastructure(initial, limit=5):
+def finalize_child_infrastructure(initial, limit=5, *, cleanup_deadline=None):
     """Finish actual stdlib lifecycle before the parent observes main-PID exit.
 
     Known children are joined. Python os.kill/os.killpg nonzero signals are
@@ -157,7 +173,15 @@ def finalize_child_infrastructure(initial, limit=5):
     require(limit == 5, 'ORIGINAL_CHILD_FINALIZATION_BOUND_REQUIRED')
     entered = time.monotonic()
     deadline = entered+limit
+    if cleanup_deadline is not None:
+        import math
+        require(type(cleanup_deadline) in (int, float) and math.isfinite(cleanup_deadline)
+                and entered <= cleanup_deadline <= deadline,
+                'ORIGINAL_ABSOLUTE_CHILD_FINALIZATION_DEADLINE_REQUIRED')
+        deadline = cleanup_deadline
     report = {'status': 'RED', 'management_bound_seconds': limit, 'forced_termination': None,
+              'entered_at_monotonic': entered, 'cleanup_deadline_monotonic': deadline,
+              'available_management_seconds': deadline-entered,
               'forced_termination_attempted': False, 'signal_vetoed': False,
               'termination_signal_attempts': [], 'signal_guard_installed_and_witnessed': False,
               'forced_termination_observation_scope':
@@ -914,7 +938,8 @@ def main(args):
             and output.parent.is_dir() and output.parent.lstat().st_dev == root.lstat().st_dev,
             'FRESH_EXTERNAL_DISK_BACKED_OUTPUT_ON_CHECKOUT_FILESYSTEM_REQUIRED')
     require(not (root/'.env').exists() and not any(name.startswith(('POROTA_', 'PAPER_')) or name in
-            ('DATA_DIR', 'HIST_DB_PATH') for name in os.environ), 'OPERATIONAL_ENVIRONMENT_FORBIDDEN')
+            ('DATA_DIR', 'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE')
+            for name in os.environ), 'OPERATIONAL_ENVIRONMENT_FORBIDDEN')
     output.mkdir(mode=0o700)
     runner_raw, runner_stat = capture(__file__)
     publish(output/'external-runner.py', runner_raw)

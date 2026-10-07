@@ -1,26 +1,114 @@
-name: RC6 legacy candidate tests pointer
+name: RC6 supplemental material evidence
+run-name: RC6 material ${{ inputs.gate }} @ ${{ inputs.source_sha }}
 
-# Automatic candidate testing is canonical in porota-predeploy-v2.yml. This
-# historical workflow remains manually inspectable but cannot publish a second,
-# partial GREEN signal from a hand-maintained test allowlist.
+# Canonical Predeploy V2 alone builds/tests the promotable immutable artifact.
+# This registered carrier produces supplementary source-gate evidence only.
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact frozen PR476 source commit (40 lowercase hex)
+        required: true
+        type: string
+      source_tree:
+        description: Exact source Git tree (40 lowercase hex)
+        required: true
+        type: string
+      gate:
+        description: Supplementary gate; never an artifact/deploy approval
+        required: true
+        type: choice
+        options:
+          - focal
+          - full-gov311
+          - full-gov312
+          - BIG-browser
+          - Horizon
+      launch_receipt_url:
+        description: Durable issue471 authorization including this SHA and successor branch
+        required: true
+        type: string
+      owner_session:
+        description: Exact SESSION_SUCCESSOR in the durable launch receipt
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: rc6-supplementary-material-${{ inputs.source_sha }}-${{ inputs.gate }}
+  cancel-in-progress: false
 
 jobs:
-  canonical-predeploy-pointer:
+  supplemental-evidence:
     runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify canonical governed test policy
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 reviewed2026-10-05
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify canonical governed test policy pointer
         shell: bash
         run: |
           set -Eeuo pipefail
           test -f .github/workflows/porota-predeploy-v2.yml
           test -f ops/policy/test-policy.yaml
-          grep -Fq 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
-          grep -Fq 'automatic_discovery_required: true' ops/policy/test-policy.yaml
-          echo 'POROTA_LEGACY_CANDIDATE_PIPELINE=RETIRED_TO_CANONICAL_PREDEPLOY_V2'
-          echo 'TEST_RESULT_CLAIM=NONE'
+          rg -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
+          rg -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
+          echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
+          echo 'SUPPLEMENTARY_TEST_RESULT_CLAIM=SELECTED_GATE_ONLY'
+          echo 'DEPLOY_OWNER=NOT_ACQUIRED'
+          echo 'real_orders_sent=0'
+      - name: Prepare reviewed CPython311 tooling
+        id: py311
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
+        with:
+          python-version: "3.11.16"
+      - name: Prepare reviewed CPython312 tooling
+        id: py312
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
+        with:
+          python-version: "3.12.14"
+      - name: Run declared supplementary gate with owned custody
+        id: gate
+        shell: bash
+        env:
+          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+          RC6_GATE: ${{ inputs.gate }}
+          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
+          RC6_PYTHON312: ${{ steps.py312.outputs.python-path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          "$RC6_PYTHON311" -I -B scripts/rc6_material_carrier.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
+            --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
+      - name: Preserve only owned custody controls on every terminal path
+        if: always() && steps.gate.outputs.control_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
+        with:
+          name: rc6-supplementary-controls-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.gate.outputs.control_root }}/*.json
+      - name: Preserve supplementary RAW only after every native FIN
+        if: always() && steps.gate.outputs.safe_payload_upload == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
+        with:
+          name: rc6-supplementary-raw-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.gate.outputs.payload_root }}
