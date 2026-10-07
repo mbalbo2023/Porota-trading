@@ -170,3 +170,218 @@ def test_hash_workers_receive_bounded_immutable_scatter_buffers_without_joining_
         expansion_limit=64 * 1024**2, _pipeline_hash=True)
     assert actual == expected and len(observed) >= 2
     assert not any(thread.name.startswith("rc6-shadow-sha") for thread in threading.enumerate())
+
+
+@pytest.mark.parametrize("key", (1, None, False, ()), ids=("integer", "none", "boolean", "tuple"))
+def test_shape_exact_key_preclassification_never_accepts_original_nonstring_keys(key):
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_STRING_KEY_REQUIRED"):
+        serialization._shape({"prefix": [], key: "scalar"})
+
+
+def test_shape_key_type_identity_never_invokes_metaclass_hash_or_equality():
+    import sys
+    calls = []
+    class ExplosiveMeta(type):
+        def __eq__(self, other):
+            raise AssertionError("KEY_TYPE_EQUALITY_CALLBACK_FORBIDDEN")
+        def __hash__(self):
+            raise AssertionError("KEY_TYPE_HASH_CALLBACK_FORBIDDEN")
+    class LegacyStringKey(metaclass=ExplosiveMeta):
+        @property
+        def __class__(self):
+            calls.append(sys._getframe(1).f_code.co_name)
+            return str
+    assert serialization._shape({LegacyStringKey(): [1, 2]}) == 4
+    assert calls == ["<genexpr>"]
+
+
+def test_shape_string_subclass_keeps_original_builtin_isinstance_without_string_callbacks():
+    class LegacyString(str):
+        @property
+        def __class__(self):
+            raise AssertionError("ACTUAL_STRING_SUBCLASS_CLASS_CALLBACK_FORBIDDEN")
+        def __str__(self):
+            raise AssertionError("SHAPE_STRING_CONVERSION_FORBIDDEN")
+    assert serialization._shape({LegacyString("key"): [1, 2]}) == 4
+
+
+def test_shape_unknown_key_keeps_original_callback_frame_and_exact_exception():
+    import sys
+    calls = []
+    failure = RuntimeError("ORIGINAL_KEY_CALLBACK_FAILURE")
+    class LegacyKey:
+        @property
+        def __class__(self):
+            calls.append(sys._getframe(1).f_code.co_name)
+            raise failure
+    with pytest.raises(RuntimeError, match="ORIGINAL_KEY_CALLBACK_FAILURE") as observed:
+        serialization._shape({"prefix": [], LegacyKey(): 1})
+    assert observed.value is failure
+    assert calls == ["<genexpr>"]
+
+
+def test_shape_key_callback_mutation_keeps_original_iterator_failure():
+    import sys
+    calls = []
+    value = {"prefix": []}
+    class MutatingKey:
+        @property
+        def __class__(self):
+            calls.append(sys._getframe(1).f_code.co_name)
+            value["inserted_by_original_callback"] = 1
+            return str
+    value[MutatingKey()] = 1
+    with pytest.raises(RuntimeError, match="dictionary changed size during iteration"):
+        serialization._shape(value)
+    assert calls == ["<genexpr>"]
+
+
+def test_shape_original_key_validation_finishes_before_current_values_are_walked():
+    value = {"prefix": []}
+    class MutatingKey:
+        @property
+        def __class__(self):
+            value["prefix"] = [1, 2, 3]
+            return str
+    value[MutatingKey()] = 1
+    assert serialization._shape(value) == 6
+
+
+def test_shape_dictionary_subclass_keeps_original_key_and_values_callbacks():
+    calls = []
+    class ObservedDict(dict):
+        def __iter__(self):
+            calls.append("keys")
+            return super().__iter__()
+        def values(self):
+            calls.append("values")
+            return super().values()
+    assert serialization._shape(ObservedDict({"x": [1, 2]})) == 4
+    assert calls == ["keys", "values"]
+
+
+def test_shape_legacy_any_binding_is_called_instead_of_bypassed(monkeypatch):
+    original = any
+    calls = []
+    def observed(values):
+        calls.append(values.gi_code.co_name)
+        return original(values)
+    monkeypatch.setattr(serialization, "any", observed, raising=False)
+    assert serialization._shape({"x": [1, 2]}) == 4
+    assert calls == ["<genexpr>"]
+
+
+def test_shape_legacy_type_binding_keeps_original_python_caller_frames(monkeypatch):
+    import sys
+    original = type
+    calls = []
+    def observed(value):
+        calls.append(sys._getframe(1).f_code.co_name)
+        return original(value)
+    monkeypatch.setattr(serialization, "type", observed, raising=False)
+    assert serialization._shape({"x": 1}) == 2
+    assert calls == ["visit", "<genexpr>", "visit"]
+
+
+def test_shape_legacy_isinstance_binding_keeps_original_nonstring_denial(monkeypatch):
+    original = isinstance
+    calls = []
+    def observed(value, classes):
+        calls.append((value, classes))
+        return original(value, classes)
+    monkeypatch.setattr(serialization, "isinstance", observed, raising=False)
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_STRING_KEY_REQUIRED"):
+        serialization._shape({1: 2})
+    assert calls == [(1, str)]
+
+
+def test_shape_binding_changed_by_original_callback_still_denies_next_dictionary(monkeypatch):
+    failure = RuntimeError("ORIGINAL_ANY_BINDING_DENIAL")
+    def deny(values):
+        raise failure
+    class ChangingValue:
+        @property
+        def __class__(self):
+            monkeypatch.setattr(serialization, "any", deny, raising=False)
+            return ChangingValue
+    with pytest.raises(RuntimeError, match="ORIGINAL_ANY_BINDING_DENIAL") as observed:
+        serialization._shape({"trigger": ChangingValue(), "later": {"x": 1}})
+    assert observed.value is failure
+
+
+@pytest.mark.parametrize("binding", ("all", "map", "_key_type_is", "_key_type_repeat"))
+def test_shape_untrusted_fast_operation_never_calls_user_callback_or_accepts_bad_key(monkeypatch, binding):
+    calls = []
+    def unsafe(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("UNTRUSTED_FAST_OPERATION_CALLED")
+    monkeypatch.setattr(serialization, binding, unsafe, raising=False)
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_STRING_KEY_REQUIRED"):
+        serialization._shape({1: 2})
+    assert calls == []
+
+
+def test_shape_alias_expansion_cycles_original_depth_and_memo_caps_remain_exact():
+    shared = {"x": [1, 2]}
+    assert serialization._shape({"a": shared, "b": shared}) == 9
+    assert serialization._shape({}) == 1
+    cyclic = {}
+    cyclic["cycle"] = cyclic
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED"):
+        serialization._shape(cyclic)
+    deep = None
+    for _ in range(serialization.MAX_DEPTH + 1):
+        deep = {"child": deep}
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED"):
+        serialization._shape(deep)
+    value = {"x": 1}
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED"):
+        serialization._shape(value, memo={id(value): (serialization.MAX_NODES + 1, 0)})
+
+
+@pytest.mark.parametrize("binding", ("dict", "map", "_key_type_repeat"))
+def test_shape_fake_type_metadata_and_namespace_descriptors_are_never_resolved(monkeypatch, binding):
+    calls = []
+    class ForbiddenMetadata:
+        def __get__(self, instance, owner):
+            calls.append("descriptor")
+            raise AssertionError("UNTRUSTED_TYPE_METADATA_DESCRIPTOR_CALLED")
+        def __eq__(self, other):
+            calls.append("equality")
+            raise AssertionError("UNTRUSTED_TYPE_METADATA_EQUALITY_CALLED")
+    class FakeType:
+        __module__ = ForbiddenMetadata()
+        __name__ = ForbiddenMetadata()
+        __dict__ = ForbiddenMetadata()
+        __new__ = ForbiddenMetadata()
+    monkeypatch.setattr(serialization, binding, FakeType, raising=False)
+    if binding == "dict":
+        # Original binding semantics: a builtin dict is not this fake type.
+        assert serialization._shape({1: 2}) == 1
+    else:
+        with pytest.raises(ValueError, match="SHADOW_STORAGE_STRING_KEY_REQUIRED"):
+            serialization._shape({1: 2})
+    assert calls == []
+
+
+@pytest.mark.parametrize("binding", ("map", "_key_type_repeat"))
+def test_shape_borrowed_builtin_constructor_owner_cannot_authorize_fake_type(monkeypatch, binding):
+    calls = []
+    class ForbiddenMetadata:
+        def __get__(self, instance, owner):
+            calls.append("descriptor")
+            raise AssertionError("BORROWED_CONSTRUCTOR_METADATA_DESCRIPTOR_CALLED")
+        def __eq__(self, other):
+            calls.append("equality")
+            raise AssertionError("BORROWED_CONSTRUCTOR_METADATA_EQUALITY_CALLED")
+    class FakeType(dict):
+        __module__ = ForbiddenMetadata()
+        __name__ = ForbiddenMetadata()
+        __dict__ = ForbiddenMetadata()
+    # A real C class method can be bound to this subclass. Its owner alone
+    # is insufficient; the original C constructor name must also match.
+    FakeType.__new__ = dict.__dict__["fromkeys"].__get__(None, FakeType)
+    monkeypatch.setattr(serialization, binding, FakeType, raising=False)
+    with pytest.raises(ValueError, match="SHADOW_STORAGE_STRING_KEY_REQUIRED"):
+        serialization._shape({1: 2})
+    assert calls == []

@@ -6141,7 +6141,7 @@
       ]
     },
     ".github/workflows/porota-predeploy-v2.yml": {
-      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards. Controlled successor20261006: Use an actual exclusively owned venv for the native import guard; preserve hash-locked closure and automatic root discovery. Keep pytest/hypothesis/log/temp outputs outside source and retain a bootstrap interpreter for cleanup after the owned venv is removed. Controlled successor checkpoint4: Use the fresh owned scoped workspace helper for collection and execution as two separately launched native phases. Require literal launch intent, actual original-manager FIN and matching management budget before downstream Source/JUnit/DATA/log reads, full artifact upload or original guarded cleanup. Unknown closure is sticky RED and permits only bounded validated control snapshots; external adversarial pytest fixtures remain retained and measured.",
+      "reason": "Preserve the canonical source-bound Predeploy/promote model while adding exact origin, complete modes, loaded ImageID, hash-locked closure, bounded health and measured scoped disk guards. Controlled successor20261006: Use an actual exclusively owned venv for the native import guard; preserve hash-locked closure and automatic root discovery. Keep pytest/hypothesis/log/temp outputs outside source and retain a bootstrap interpreter for cleanup after the owned venv is removed. Controlled successor checkpoint4: Use the fresh owned scoped workspace helper for collection and execution as two separately launched native phases. Require literal launch intent, actual original-manager FIN and matching management budget before downstream Source/JUnit/DATA/log reads, full artifact upload or original guarded cleanup. Unknown closure is sticky RED and permits only bounded validated control snapshots; external adversarial pytest fixtures remain retained and measured. Recovery20261007 storage-key/fixture checkpoint: Add only execution/collection retained-limit sidecars to existing canonical upload paths; the actual ed89 FIN reported31750 diagnostic bytes but the32-member negative ZIP omitted their payload. Original workflow/actions/permissions/trigger/budgets/gates unchanged; no metadata-only sidecar acceptance.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -37231,7 +37231,7 @@
       ]
     },
     "rc6_shadow_runtime/serialization.py": {
-      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards. Controlled successor checkpoint4: Reuse type(value) for exact builtin dispatch and preserve every original fallback comparison/callback and complete-role admission guard. Same478-case native focal evidence is recorded; no budget/cap or material status is changed.",
+      "reason": "Preserve the source SHADOW worker/audit contract and replace incomplete durability or retention semantics with sealed generations, actual durable archives, same-cut source checks and bounded complete native pipeline guards. Controlled successor checkpoint4: Reuse type(value) for exact builtin dispatch and preserve every original fallback comparison/callback and complete-role admission guard. Same478-case native focal evidence is recorded; no budget/cap or material status is changed. Recovery20261007 storage-key/fixture checkpoint: Authenticate stdlib C iterators without untrusted descriptors/equality and use O(1)-memory C iteration only for exact dict/exact str keys; retain original generator for unknown/subclasses and dynamically rebound legacy any/type/dict/str/isinstance. Original traversal, callbacks, exceptions, rejection, graph shape, memo rules and caps retained. Addresses actual repeated storage_prepare CPU in the original90-second RED BIG; no saved seconds or resource PASS inferred.",
       "requirement_ids": [
         "U13",
         "U14",
@@ -38468,7 +38468,7 @@
       ]
     },
     "tests/test_rc6_convergence_provenance.py": {
-      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization.",
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization. Recovery20261007 storage-key/fixture checkpoint: Construct a fresh complete210-path explicitly synthetic receipt-parser input with authentic25 original Git objects and true current Source parent, instead of copying4031 Source worktree paths to every parser fixture. Full actual Source validator/IPC/predeploy contexts,124 cases/91 fresh candidate-dependent fixtures and all assertions/coverage/ancestry witnesses remain. Inventory complete own physical .git without following object-store targets; unchanged global100000 retained cap still requires native proof.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -38661,7 +38661,7 @@
       ]
     },
     "tests/test_rc6_funnel_storage_codec.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Recovery20261007 storage-key/fixture checkpoint: Preserve the original9310-byte22-case prefix and append24 pertinent controls for authenticated C key scan, subclass/callback/mutation/rebinding/cap/fake-descriptor semantics. Static review only; original whole affected module will run on exact successor Source.",
       "requirement_ids": [
         "U17",
         "U20",
@@ -38858,7 +38858,7 @@
       ]
     },
     "tests/test_rc6_predeploy_scoped_cleanup.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor checkpoint4: Add real fresh-venv construction, native collection/execution, timeout, failed-collection, sticky unknown-FIN and retained symlink/hardlink/special-node controls. Copy exact currently installed locked fixture bytes into normal new site-packages, including pytest-owned py.py with RECORD/digest/origin checks; this is explicitly not original-wheel attestation. Preserve the actual59PASS/3FAIL preflight epoch and its proved omitted-member cause. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification. Controlled recovery20261007: preserve original test bytes and append3 fresh actual supervisor/pytest/native FIN controls for explicit FD dirent fault without100kfiles, create-only collision and original positive small retained receipt. No mocked kernel or new native window; exact-source execution pending.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor checkpoint4: Add real fresh-venv construction, native collection/execution, timeout, failed-collection, sticky unknown-FIN and retained symlink/hardlink/special-node controls. Copy exact currently installed locked fixture bytes into normal new site-packages, including pytest-owned py.py with RECORD/digest/origin checks; this is explicitly not original-wheel attestation. Preserve the actual59PASS/3FAIL preflight epoch and its proved omitted-member cause. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification. Controlled recovery20261007: preserve original test bytes and append3 fresh actual supervisor/pytest/native FIN controls for explicit FD dirent fault without100kfiles, create-only collision and original positive small retained receipt. No mocked kernel or new native window; exact-source execution pending. Recovery20261007 storage-key/fixture checkpoint: The three appended retained-diagnostic controls now perform original genuine collection before execution; the fault is limited to retained measurement after actual FIN and restored in finally. Original55 controls, aggregate100000,60/2/5/90 limits and all native assertions preserved. Native revalidation pending.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -39077,7 +39077,7 @@
       ]
     },
     "scripts/rc6_material_focal.py": {
-      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence. Controlled recovery20261007: preserve six original focal modules/119 cohort and add whole runtime hydration, budget custody and scoped-cleanup modules for changed causes. Selected-cohort evidence only, never whole-Gov certificate.",
+      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence. Controlled recovery20261007: preserve six original focal modules/119 cohort and add whole runtime hydration, budget custody and scoped-cleanup modules for changed causes. Selected-cohort evidence only, never whole-Gov certificate. Recovery20261007 storage-key/fixture checkpoint: Retain original nine full modules/246 cases and add complete affected storage-codec and provenance modules.416 focal and6069 whole-Gov are static arithmetic only, never executed PASS counts. Original source/INET/custody/FIN/time/resource guards unchanged.",
       "requirement_ids": [
         "U11",
         "U14",
@@ -39217,7 +39217,7 @@
       ]
     },
     "tests/test_rc6_runtime_row_decode.py": {
-      "reason": "Controlled recovery20261007: six independent actual SQLite/locked legacy oracle/SQL trace/output type/catalog alias/freshness short-circuit controls for same default0.5 runtime read. Prepared only; actual governed outcomes required.",
+      "reason": "Controlled recovery20261007: six independent actual SQLite/locked legacy oracle/SQL trace/output type/catalog alias/freshness short-circuit controls for same default0.5 runtime read. Prepared only; actual governed outcomes required. Recovery20261007 storage-key/fixture checkpoint: Correct only the two new tuple-row controls' required source_connection deadline to original monotonic+0.5; all six control identities/oracles, nine SQL statements, runtime product and budgets remain unchanged. Native revalidation pending.",
       "requirement_ids": [
         "U04",
         "U05",
@@ -39238,6 +39238,16 @@
     },
     "notes/rc6-evidence/recovery-20261007T0246Z-runtime-journal-custody/checkpoint.json": {
       "reason": "Controlled recovery20261007: append-only actual5a canonical negative run/artifact/JUnit/typed hashes, two failures plus retained quota custody veto, minimal fix rationale and unchanged original guards/budgets. Containing Git commit/prepush receipts bind next exact SHA/tree; no unexecuted PASS/artifact/runtime claims.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "notes/rc6-evidence/recovery-20261007T0425Z-storage-key-fixture-custody/checkpoint.json": {
+      "reason": "Append-only durable exact-parent checkpoint for ed89 negative artifact/FIN/JUnit/BIG evidence, nine-path fix-forward, actual unchanged original case/oracle/cap scope and static original-object/210-path proofs. Preparation is not native qualification; no U14 or UX470 material gate is declared closed.",
       "requirement_ids": [
         "U11",
         "U14",

@@ -70,10 +70,205 @@ def junit(path, *, outcome=None, duplicate=False, counters=None):
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
+def prepare_explicit_receipt_parser_seed(root):
+    """Create complete synthetic Git INPUTS, never a runtime/artifact Source.
+
+    Every original Git object remains real and read-only through the same
+    native alternates mechanism the original fixtures used. Only this NEW
+    private repository's ref/index/worktree is constructed; no existing
+    checkout, Source object, fixture or resource is pruned or overwritten.
+    The CLI and every imported validator still execute from complete REPO.
+    """
+    import stat
+
+    source_sha = native_git(REPO, "rev-parse", "HEAD")
+    source_tree_sha = native_git(REPO, "rev-parse", "HEAD^{tree}")
+    final = provenance.tree(REPO, source_sha)
+    input_directory = REPO / provenance.INPUT_ROOT
+    manifest_raw = (input_directory / provenance.MANIFEST).read_bytes()
+    assert hashlib.sha256(manifest_raw).hexdigest() == provenance.ORIGINAL_DIGESTS[provenance.MANIFEST]
+    manifest = json.loads(manifest_raw)
+    matrix = json.loads((REPO / audit465.MATRIX).read_bytes())
+    original_sha = next(item["head_sha"] for item in manifest["sources"] if item["pr"] == 466)
+    original_matrix = json.loads(provenance.git(REPO, "show", original_sha + ":" + audit465.MATRIX, binary=True))
+    assert matrix["workstreams"] == original_matrix["workstreams"]
+    revisions = {manifest["product"]["sha"]}
+    revisions.update(item[key] for item in manifest["sources"] for key in ("head_sha", "base_sha"))
+    revisions.update(item["head"] for item in original_matrix["workstreams"])
+    originals, object_proofs = {}, []
+    for revision in sorted(revisions):
+        raw = provenance.git(REPO, "cat-file", "commit", revision, binary=True)
+        assert hashlib.sha1(b"commit " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == revision
+        tree_sha = next(line.split(b" ", 1)[1].decode() for line in raw.splitlines() if line.startswith(b"tree "))
+        assert provenance.git(REPO, "rev-parse", revision + "^{tree}") == tree_sha
+        originals[revision] = provenance.tree(REPO, revision)
+        object_proofs.append({"sha": revision, "tree": tree_sha,
+                              "raw_commit_sha256": hashlib.sha256(raw).hexdigest(),
+                              "regular_paths_in_original_tree": len(originals[revision])})
+    assert len(manifest["sources"]) == 15 and len(revisions) == 25
+    assert provenance.git(REPO, "rev-parse", manifest["product"]["sha"] + "^{tree}") == manifest["product"]["tree"]
+    for item in original_matrix["workstreams"]:
+        assert provenance.git(REPO, "rev-parse", item["head"] + "^{tree}") == item["tree"]
+    deltas, required = set(), set()
+    for item in manifest["sources"]:
+        head, baseline = originals[item["head_sha"]], originals[item["base_sha"]]
+        changed = {name for name in set(head) | set(baseline) if head.get(name) != baseline.get(name)}
+        deltas.update(changed)
+        required.update(name for name in changed if name in head)
+    expected = {item["path"] for rows in manifest["expected_source_paths"].values() for item in rows}
+    assert len(expected) == 170 and len(required) == 175 and expected <= required
+    required.update(expected)
+    required.update(name for item in original_matrix["workstreams"] for name in item["paths"])
+    required.update(provenance.PRESERVED_TESTS_344)
+    required.update(binding["node"].split("::")[0] for row in original_matrix["findings"]
+                    for clause in row["coverage"] for binding in clause["tests"])
+    required.update(node.split("::")[0] for node in provenance.prior_successions.SUCCESSORS)
+    required.update(provenance.INPUT_ROOT + "/" + name for name in
+                    {*provenance.ORIGINAL_DIGESTS, "ORIGINAL_INPUT_DIGESTS.json",
+                     provenance.SCENARIOS, provenance.CLOSURE})
+    required.update({GUARD.split("::")[0], "scripts/porota_predeploy_binding.py",
+                     "scripts/rc6_prior_regression_successors.py",
+                     str(Path(provenance.__file__).resolve().relative_to(REPO))})
+    # Preserve native Git ignore/attribute recipes, including ignored tracked
+    # historical *.log bytes. This is fixture input derivation, not a runtime
+    # module allowlist or a partial-source acceptance policy.
+    required.update(name for name in (".gitignore", ".gitattributes") if name in final)
+    comparisons = [originals[manifest["product"]["sha"]]]
+    comparisons.extend(originals[item["head_sha"]] for item in manifest["sources"])
+    witness = next(name for name, record in sorted(final.items()) if record["git_mode"] == "100644"
+                   and name not in deltas and any(tree.get(name) == record for tree in comparisons))
+    required.add(witness)
+    assert witness == ".dockerignore" and final[witness] == {
+        "git_mode": "100644", "blob": "cf4ba5888390bf0f34285286cef359f9f4191498"}
+    assert len(required) == 210 and required <= set(final)
+
+    native_git(REPO, "init", "--quiet", str(root))  # Fresh, physically empty worktree.
+    native_git(root, "config", "user.name", "Offline provenance fixture")
+    native_git(root, "config", "user.email", "fixture@example.invalid")
+    native_git(root, "remote", "add", "origin", str(REPO))
+    objects = Path(native_git(REPO, "rev-parse", "--git-path", "objects"))
+    objects = objects if objects.is_absolute() else REPO / objects
+    assert objects.absolute() == REPO / ".git/objects"
+    for directory in (REPO / ".git", objects, objects / "info"):
+        info = directory.lstat()
+        assert stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid()
+    assert not os.path.lexists(objects / "info/alternates")
+    alternate = root / ".git/objects/info/alternates"
+    descriptor = os.open(alternate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(os.fsencode(str(objects.absolute())) + b"\n")
+    for revision in sorted(revisions):
+        native_git(root, "cat-file", "-e", revision + "^{tree}")
+    # A NEW private unborn ref acquires the real REPO parent. No original ref
+    # is replaced. The empty own index becomes the complete synthetic 210-tree;
+    # no checkout, sparse index, trimming or Seed-as-Source gate is performed.
+    private_ref = native_git(root, "symbolic-ref", "HEAD")
+    native_git(root, "update-ref", private_ref, source_sha, "0" * 40)
+    copied = {}
+    for name in sorted(required):
+        source = REPO / name
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        try:
+            before = os.fstat(descriptor)
+            assert stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid == os.geteuid()
+            wanted_mode = 0o755 if final[name]["git_mode"] == "100755" else 0o644
+            assert stat.S_IMODE(before.st_mode) == wanted_mode
+            chunks = []
+            while True:
+                piece = os.read(descriptor, 65536)
+                if not piece:
+                    break
+                chunks.append(piece)
+            raw = b"".join(chunks)
+            fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size",
+                      "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+            assert all(getattr(before, field) == getattr(os.fstat(descriptor), field) ==
+                       getattr(source.lstat(), field) for field in fields)
+        finally:
+            os.close(descriptor)
+        assert hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == final[name]["blob"]
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(raw)
+            output.flush()
+            os.fchmod(output.fileno(), wanted_mode)  # Only this newly created file.
+        copied[name] = {**final[name], "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    # The initial index is explicit and COMPLETE for this synthetic tree; force
+    # original ignored log members in once. Every later commit uses unchanged
+    # native add -A and the original adversarial mutation recipe.
+    native_git(root, "add", "-f", "--", *sorted(required))
+    seed_sha = commit(root)
+    assert provenance.tree(root, seed_sha) == {name: final[name] for name in required}
+    assert native_git(root, "rev-parse", seed_sha + "^") == source_sha
+    assert native_git(REPO, "rev-parse", "HEAD") == source_sha
+    assert native_git(REPO, "rev-parse", "HEAD^{tree}") == source_tree_sha
+
+    # Truthful physical accounting includes ALL own .git metadata. Alternates
+    # is an ordinary own file; its object-store target is not traversed/count-
+    # fabricated. Borrowed original objects are available, not materialized
+    # here. The unchanged aggregate retained guard still measures all 91 later
+    # clones, other fixtures, .git files, mutations and controls after real FIN.
+    counts = {"namespace_entries_including_root": 0, "regular_files": 0, "directories": 0,
+              "symlinks": 0, "special_entries": 0, "hardlinked_regular_entries": 0,
+              "allocated_bytes_unique_physical_inodes": 0, "git_entries_including_git_root": 0}
+    physical, observed = set(), {}
+    pending = [(root, ".")]
+    while pending:
+        current, relative = pending.pop()
+        info = current.lstat()
+        counts["namespace_entries_including_root"] += 1
+        if relative == ".git" or relative.startswith(".git/"):
+            counts["git_entries_including_git_root"] += 1
+        identity = (info.st_dev, info.st_ino)
+        if identity not in physical:
+            physical.add(identity)
+            counts["allocated_bytes_unique_physical_inodes"] += info.st_blocks * 512
+        observed[relative] = {"mode": info.st_mode, "nlink": info.st_nlink, "dev": info.st_dev,
+                              "ino": info.st_ino, "uid": info.st_uid, "bytes": info.st_size}
+        if stat.S_ISDIR(info.st_mode):
+            counts["directories"] += 1
+            descriptor = os.open(current, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME)
+            try:
+                assert (os.fstat(descriptor).st_dev, os.fstat(descriptor).st_ino) == identity
+                for name in sorted(os.listdir(descriptor), reverse=True):
+                    pending.append((current / name, name if relative == "." else relative + "/" + name))
+            finally:
+                os.close(descriptor)
+        elif stat.S_ISREG(info.st_mode):
+            counts["regular_files"] += 1
+            counts["hardlinked_regular_entries"] += int(info.st_nlink > 1)
+        elif stat.S_ISLNK(info.st_mode):
+            counts["symlinks"] += 1
+        else:
+            counts["special_entries"] += 1
+    receipt = {"schema": "rc6.receipt-parser-explicit-synthetic-native-git-seed.v1",
+               "assertion_scope": "EXPLICIT_SYNTHETIC_ONLY",
+               "Source_acceptance_claimed": False, "runtime_or_artifact_source_claimed": False,
+               "partial_runtime_module_allowlist": False, "native_resource_gate_claimed": False,
+               "MAX_FILES_changed": False, "existing_fixtures_deleted": False,
+               "source_sha": source_sha, "source_tree": source_tree_sha,
+               "actual_complete_source_paths": len(final), "seed_sha": seed_sha,
+               "seed_tree": native_git(root, "rev-parse", "HEAD^{tree}"),
+               "real_source_parent_sha": native_git(root, "rev-parse", "HEAD^"),
+               "source_original_objects": object_proofs, "real_readonly_object_directory": str(objects),
+               "materialized_synthetic_worktree_paths": copied, "mode_only_witness": witness,
+               "physical_seed_including_git": counts, "physical_seed_entries": observed,
+               "object_store_target_followed_for_measurement": False,
+               "borrowed_objects_claimed_as_materialized": False,
+               "real_orders_sent": 0}
+    receipt_path = root.parent / "receipt-parser-synthetic-seed.json"
+    descriptor = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        json.dump(receipt, output, sort_keys=True, indent=2)
+        output.write("\n")
+
+
 @pytest.fixture(scope="module")
 def fixture_base(tmp_path_factory):
     root = tmp_path_factory.mktemp("native-convergence-base") / "repo"
-    native_git(REPO, "clone", "--quiet", "--shared", "--no-hardlinks", str(REPO), str(root))
+    prepare_explicit_receipt_parser_seed(root)
     native_git(root, "config", "user.name", "Offline provenance fixture")
     native_git(root, "config", "user.email", "fixture@example.invalid")
     inputs = root / provenance.INPUT_ROOT; inputs.mkdir(parents=True, exist_ok=True)

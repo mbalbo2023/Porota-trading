@@ -1020,13 +1020,34 @@ def fixture_fd_dirent_fault(descriptor):
             return names + fake
     return names
 
-if config['fault']:
+execute = helper['execute_pytest_owned']
+# Execution requires this real, closed collection phase. Both phases use the
+# same native supervisor; neither a kernel nor a FIN receipt is synthesized.
+collection_code = execute(
+    Path(config['scope']), repo, config['context'], os.environ,
+    config['collection_command'], timeout_seconds=60, phase='collection')
+if collection_code != 0:
+    raise SystemExit(collection_code)
+original_measure = execute.__globals__['measure_retained_workspace']
+
+def execution_retained_measurement(*args, **kwargs):
+    # The original execute function reaches this call only AFTER its actual
+    # managed child custody and same-parent kernel readback have closed. Keep
+    # the dirent fault out of every preflight and out of collection entirely.
     os.listdir = fixture_fd_dirent_fault
+    try:
+        return original_measure(*args, **kwargs)
+    finally:
+        os.listdir = original_listdir
+
+if config['fault']:
+    execute.__globals__['measure_retained_workspace'] = execution_retained_measurement
 try:
-    code = helper['execute_pytest_owned'](
+    code = execute(
         Path(config['scope']), repo, config['context'], os.environ,
         config['command'], timeout_seconds=60, phase='execution')
 finally:
+    execute.__globals__['measure_retained_workspace'] = original_measure
     os.listdir = original_listdir
 raise SystemExit(code)
 """
@@ -1042,7 +1063,7 @@ def execute_retained_limit_diagnostic_fixture(owned, *, fault):
         stream.write(RETAINED_LIMIT_SUPERVISOR_SOURCE)
     config = {key: str(owned[key]) for key in ('repo', 'private', 'scope')}
     config.update(control=owned['control'], context=owned['context'],
-                  command=owned['command'], fault=fault)
+                  command=owned['command'], collection_command=owned['collection_command'], fault=fault)
     process = subprocess.Popen([sys.executable, '-B', str(path), json.dumps(config)],
                                cwd=owned['repo'], env=owned['env'], stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True)
@@ -1050,7 +1071,26 @@ def execute_retained_limit_diagnostic_fixture(owned, *, fault):
     cleanup.publish(owned['private'] / 'retained-limit-supervisor-outer-control.json',
                     {'scope': 'REAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN',
                      'pid': process.pid, 'returncode': process.returncode, 'stdout': stdout})
-    return process.returncode, process.pid
+    return process.returncode, process.pid, stdout
+
+
+def retained_limit_supervisor_diagnostic(rc, supervisor, stdout):
+    # communicate() has reaped this actual fresh wrapper. Preserve its literal
+    # closed stdout in JUnit if collection/preflight aborts before a FIN exists;
+    # this evidence is diagnostic and does not supply any native FIN witness.
+    return json.dumps({'scope': 'CLOSED_FRESH_WRAPPER_STDOUT_NOT_NATIVE_FIN',
+                       'pid': supervisor, 'returncode': rc, 'stdout': stdout}, sort_keys=True)
+
+
+def assert_retained_collection_closed(owned, supervisor, diagnostic):
+    path = owned['private'] / test_workspace.phase_controls('collection')['fin']
+    assert os.path.lexists(path), diagnostic
+    collection = json.loads(cleanup.read_file(path, mode=0o600)[0])
+    assert collection['supervisor_pid'] == supervisor == collection['kernel']['supervisor_pid'], diagnostic
+    assert collection['phase'] == 'collection', diagnostic
+    assert collection['owned_fin_closed'] is collection['phase_green'] is collection['management_acceptance'] is True, diagnostic
+    assert collection['post_fin_errors'] == [], diagnostic
+    assert collection['kernel']['command'] == owned['collection_command'], diagnostic
 
 
 @pytest.mark.parametrize('collision', [False, True])
@@ -1061,9 +1101,13 @@ def test_retained_limit_real_fin_keeps_quota_red_and_create_only_partial_control
     if collision:
         cleanup.publish(limit_path, sentinel)
         original_bytes, original_stat = cleanup.read_file(limit_path, mode=0o600)
-    rc, supervisor = execute_retained_limit_diagnostic_fixture(owned, fault=True)
-    assert rc == 1
-    fin = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    rc, supervisor, stdout = execute_retained_limit_diagnostic_fixture(owned, fault=True)
+    diagnostic = retained_limit_supervisor_diagnostic(rc, supervisor, stdout)
+    assert rc == 1, diagnostic
+    assert_retained_collection_closed(owned, supervisor, diagnostic)
+    fin_path = owned['private'] / test_workspace.FIN
+    assert os.path.lexists(fin_path), diagnostic
+    fin = json.loads(cleanup.read_file(fin_path, mode=0o600)[0])
     kernel = fin['kernel']
     assert fin['supervisor_pid'] == supervisor == kernel['supervisor_pid']
     assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
@@ -1121,9 +1165,13 @@ def test_retained_limit_real_fin_keeps_quota_red_and_create_only_partial_control
 
 def test_retained_small_real_native_fin_has_complete_original_receipt_without_limit_sidecar(tmp_path):
     owned = native_owned_pytest_fixture(tmp_path, 'def test_tiny():\n    assert 3 + 4 == 7\n')
-    rc, supervisor = execute_retained_limit_diagnostic_fixture(owned, fault=False)
-    assert rc == 0
-    fin = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    rc, supervisor, stdout = execute_retained_limit_diagnostic_fixture(owned, fault=False)
+    diagnostic = retained_limit_supervisor_diagnostic(rc, supervisor, stdout)
+    assert rc == 0, diagnostic
+    assert_retained_collection_closed(owned, supervisor, diagnostic)
+    fin_path = owned['private'] / test_workspace.FIN
+    assert os.path.lexists(fin_path), diagnostic
+    fin = json.loads(cleanup.read_file(fin_path, mode=0o600)[0])
     assert fin['supervisor_pid'] == supervisor == fin['kernel']['supervisor_pid']
     assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
     assert fin['post_fin_errors'] == [] and fin['retained_capacity_status'] == 'GREEN'

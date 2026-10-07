@@ -640,6 +640,7 @@ jobs:
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-launch-intent.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-owned-fin.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-retained.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-retained-limit.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-progress.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-native.log
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-postread.json
@@ -648,6 +649,7 @@ jobs:
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-collection-owned-fin.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-collection-progress.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-collection-retained.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-collection-retained-limit.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-pytest-collection-postread.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-negative-fixtures.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-evidence/

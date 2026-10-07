@@ -11,6 +11,8 @@ import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque
+from itertools import repeat as _key_type_repeat
+from operator import is_ as _key_type_is
 
 SCHEMA = "rc6.lossless-json-storage.v1"
 PACKED_SCHEMA = "rc6.lossless-json-storage.v2"
@@ -66,6 +68,48 @@ def canonical_metrics(value, *, ensure_ascii=False, limit=None):
 
 
 def _shape(value, *, memo=None):
+    # Use literal builtin identities and raw type namespaces, never an
+    # input type's metadata descriptors. Legacy bindings keep the old path.
+    native_type, native_str = ().__class__.__class__, "".__class__
+    native_dict, native_function = {}.__class__, "".encode.__class__
+    key_dict, key_str, key_type, key_any = dict, str, type, any
+    key_isinstance, key_all, key_map = isinstance, all, map
+    key_is, key_repeat = _key_type_is, _key_type_repeat
+    type_namespace = native_type.__dict__["__dict__"]
+    map_namespace = (type_namespace.__get__(key_map, native_type)
+                     if native_type(key_map) is native_type else None)
+    repeat_namespace = (type_namespace.__get__(key_repeat, native_type)
+                        if native_type(key_repeat) is native_type else None)
+    map_new = None if map_namespace is None else map_namespace.get("__new__")
+    repeat_new = None if repeat_namespace is None else repeat_namespace.get("__new__")
+    fast_key_ops = (
+        key_type is native_type and key_str is native_str and key_dict is native_dict
+        and native_type(key_any) is native_function
+        and native_type(key_any.__module__) is native_str
+        and native_type(key_any.__name__) is native_str
+        and key_any.__module__ == "builtins" and key_any.__name__ == "any"
+        and native_type(key_isinstance) is native_function
+        and native_type(key_isinstance.__module__) is native_str
+        and native_type(key_isinstance.__name__) is native_str
+        and key_isinstance.__module__ == "builtins" and key_isinstance.__name__ == "isinstance"
+        and native_type(key_all) is native_function
+        and native_type(key_all.__module__) is native_str
+        and native_type(key_all.__name__) is native_str
+        and key_all.__module__ == "builtins" and key_all.__name__ == "all"
+        and native_type(key_is) is native_function
+        and native_type(key_is.__module__) is native_str
+        and native_type(key_is.__name__) is native_str
+        and key_is.__module__ == "_operator" and key_is.__name__ == "is_"
+        and native_type(map_new) is native_function and map_new.__self__ is key_map
+        and native_type(map_new.__name__) is native_str and map_new.__name__ == "__new__"
+        and native_type(key_map.__module__) is native_str
+        and native_type(key_map.__name__) is native_str
+        and key_map.__module__ == "builtins" and key_map.__name__ == "map"
+        and native_type(repeat_new) is native_function and repeat_new.__self__ is key_repeat
+        and native_type(repeat_new.__name__) is native_str and repeat_new.__name__ == "__new__"
+        and native_type(key_repeat.__module__) is native_str
+        and native_type(key_repeat.__name__) is native_str
+        and key_repeat.__module__ == "itertools" and key_repeat.__name__ == "repeat")
     memo = {} if memo is None else memo
     active = set()
     def visit(node, depth=0):
@@ -84,7 +128,16 @@ def _shape(value, *, memo=None):
         active.add(key)
         try:
             if kind is dict or isinstance(node, dict):
-                if any(type(name) is not str and not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
+                plain_keys = False
+                if (fast_key_ops and kind is key_dict and dict is key_dict
+                        and type is key_type and any is key_any and str is key_str
+                        and isinstance is key_isinstance):
+                    # Three constant-space C iterators; no materialized keys,
+                    # hashing, equality, value walk, or user type callbacks.
+                    # all stops on the first non-exact str; iterator references
+                    # are gone before the original fallback generator starts.
+                    plain_keys = key_all(key_map(key_is, key_map(key_type, node), key_repeat(key_str)))
+                if not plain_keys and any(type(name) is not str and not isinstance(name, str) for name in node): raise ValueError("SHADOW_STORAGE_STRING_KEY_REQUIRED")
                 values = node.values()
             else: values = node
             if (kind is dict or kind is list or kind is tuple

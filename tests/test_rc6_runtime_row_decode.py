@@ -207,7 +207,7 @@ def scalar_source():
 ))
 def test_catalog_tuple_decode_preserves_actual_row_names_and_connection_factory(scalar_source, names):
     before = _source_inventory(scalar_source.database)
-    with source_connection(scalar_source.database) as (connection,_):
+    with source_connection(scalar_source.database, deadline=monotonic()+0.5) as (connection,_):
         query = "SELECT " + ",".join('"'+source+'" AS "'+name+'"' for source,name in zip(
             ("ticker","instrument_type","market","currency","settlement","status","capability"),names))
         query += " FROM financial_instrument_catalog ORDER BY ticker"
