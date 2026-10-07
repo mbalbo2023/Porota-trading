@@ -1,0 +1,50 @@
+{
+  "families._mapping": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_shadow_runtime/families.py",
+    "code_identity": 140717954619536,
+    "code_marshal_sha256": "d4afb60f6a7d631df5b98c9dab5d1f83c2763a6873cd078cc134f27255f95f35",
+    "first_line": 52,
+    "function_identity": 140717947776000,
+    "module": "rc6_shadow_runtime.families"
+  },
+  "families._read": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_shadow_runtime/families.py",
+    "code_identity": 94915744184464,
+    "code_marshal_sha256": "ea95f443b415424472ef39157f06105389ec741763403c96066d6bb277255f97",
+    "first_line": 198,
+    "function_identity": 140717948184960,
+    "module": "rc6_shadow_runtime.families"
+  },
+  "snapshot._check": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_audit_evidence/sqlite_snapshot.py",
+    "code_identity": 140717951521904,
+    "code_marshal_sha256": "0c3b3df6cd5f0d13e158fbf28cb285c7dc231c952136c1787bdaf6b94fa6782e",
+    "first_line": 22,
+    "function_identity": 140717948179840,
+    "module": "rc6_audit_evidence.sqlite_snapshot"
+  },
+  "snapshot._read": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_audit_evidence/sqlite_snapshot.py",
+    "code_identity": 94915742564352,
+    "code_marshal_sha256": "cd8313cfc53daad6d0dd8e6b05ac6bb6b68d7187323170dd21dd27155477eaed",
+    "first_line": 50,
+    "function_identity": 140717951634944,
+    "module": "rc6_audit_evidence.sqlite_snapshot"
+  },
+  "snapshot.readonly_copy": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_audit_evidence/sqlite_snapshot.py",
+    "code_identity": 94915742854016,
+    "code_marshal_sha256": "27ff45f98f0e75da6b9e83943d77018a5c74e1a0456740144900876c45464d25",
+    "first_line": 89,
+    "function_identity": 140717951635104,
+    "module": "rc6_audit_evidence.sqlite_snapshot"
+  },
+  "source_connection": {
+    "code_file": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source/rc6_shadow_runtime/source_reads.py",
+    "code_identity": 94915745075360,
+    "code_marshal_sha256": "7303a6afa8b531dde3cd3cc5a2cd35bfbee72d02716b05121a125cca968bb37f",
+    "first_line": 23,
+    "function_identity": 140717948186400,
+    "module": "rc6_shadow_runtime.source_reads"
+  }
+}

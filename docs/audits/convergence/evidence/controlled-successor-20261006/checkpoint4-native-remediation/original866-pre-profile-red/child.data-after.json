@@ -1,0 +1,16 @@
+{
+  "": {
+    "sha256": "51017a9a272d0e65ca04033ef8a75f0b685cc503d05e79b0eb1b04d90fbbda20",
+    "st_atime_ns": 1791301571806058749,
+    "st_blocks": 45240,
+    "st_ctime_ns": 1791301571774058899,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1088686,
+    "st_mode": 33152,
+    "st_mtime_ns": 1791301571774058899,
+    "st_nlink": 1,
+    "st_size": 23162880,
+    "st_uid": 1000
+  }
+}

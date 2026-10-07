@@ -1,0 +1,29 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "failures": [
+    {
+      "class": "ValueError",
+      "reason": "DRIVER158_LOCK_METADATA_MISMATCH"
+    }
+  ],
+  "owned_pgid": 244262,
+  "phase": "normal",
+  "postreap_custody": "POSTREAP_CUSTODY_NOT_OBSERVED",
+  "raw_identity": {
+    "device": 27,
+    "gid": 1000,
+    "inode": 938494,
+    "mount_id": 52,
+    "uid": 1000
+  },
+  "runtime_validated": false,
+  "schema": "rc6.root-small-browser-stage.v1",
+  "source_index_sha256": "9e44cba7add7e630ec080c22ee39c506aca3833440a196a7abdce0707e9c4517",
+  "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103",
+  "source_tree": "e2187b082a4b9af907795dfa83bbf9b82ea345df",
+  "stage_elapsed_seconds": 0.16293856300762855,
+  "stage_pid": 244262,
+  "status": "RED",
+  "supervisor_pid": 244261
+}

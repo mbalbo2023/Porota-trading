@@ -1,0 +1,36 @@
+{
+  "atime_incident_separate": "MASTER_RECEIPT_INITIAL_READ_BYTES_MAY_HAVE_ADVANCED_RAW_ATIME_ALREADY_DECLARED_IN_INVENTORY; NO_RESTORE",
+  "first_attempt": {
+    "error": "EPERM",
+    "failed_before_creating_either_recipe_file": true,
+    "open_flags": "O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_NOATIME",
+    "root_owned_parent": "/tmp",
+    "uid": 1000
+  },
+  "forward_protocol_applied_to_this_note": {
+    "final_file_flags": "NEW_O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC; OWN_REGULAR_READ_O_RDONLY|O_NOFOLLOW|O_NOATIME|O_NONBLOCK|O_CLOEXEC",
+    "fsync": "OWN_FILE_FSYNC_THEN_PARENT_DIRECTORY_FSYNC_VIA_BOUND_DOT_OPEN; NO_LISTDIR_ON_ROOT_OWNED_PARENT",
+    "future_capsule_source_reads": "OWN_REGULAR_FILES_NOATIME_AND_CURRENT_COPY_TIME_ALL11; NEVER_INFER_EXECUTION_END_RAW_ATIME",
+    "previous_files_modified": false,
+    "root_owned_ancestor_and_output_parent_flags": "O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC"
+  },
+  "gov_executed": false,
+  "immutable_successful_recipe_documents": [
+    {
+      "bytes": 11218,
+      "path": "/tmp/rc6_governed_v3_replacement_recipe_source_v1.json",
+      "sha256": "f48808f220b07a4ff02d545efe5a8080d8edfcf60b33d4d6306eacc290b54c63"
+    },
+    {
+      "bytes": 3954,
+      "path": "/tmp/rc6_governed_v3_replacement_recipe_source_v1.md",
+      "sha256": "6a71b27504d64d7ef0529cb5ad1b731dd4c1f55d84fe6075c7064666589f6a63"
+    }
+  ],
+  "native_executed": false,
+  "product_failure_or_requalification": false,
+  "root_source_efa_remains_untouched": true,
+  "schema": "rc6.governed-source-document-publication-note.v1",
+  "scope": "SOURCE_DOCUMENT_PREPARATION_ONLY_NO_GOV_PRODUCT_NATIVE_OR_ROOT_WRITE",
+  "successful_recipe_publication_historical_fact": "PARENT_OPEN_O_RDONLY|O_DIRECTORY|O_NOFOLLOW_WITH_NO_ENUMERATION; NEW_EXCLUSIVE_OWNED_REGULAR_OUTPUTS; FCHMOD0644_AND_FSYNC"
+}

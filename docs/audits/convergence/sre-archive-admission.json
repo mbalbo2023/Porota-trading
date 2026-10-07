@@ -1,0 +1,281 @@
+{
+  "assertion_scope": "OFFLINE_NATIVE_NAMESPACE_AND_CONFIGURATION_NOT_PRODUCTION_CI_OR_RETENTION_HORIZON",
+  "baseline": {
+    "archive_created": false,
+    "classification": "CANONICAL_FACTORY_ARCHIVE_UNCONFIGURED_RED",
+    "commit": "40f34f6e22db168c8206c8f8f189e78f60db7270",
+    "complete_committed_blobs_and_modes_verified": 1250,
+    "factory_archive_root": null,
+    "launcher_archive_keys_present": false,
+    "live_created": false,
+    "native_process_exit": 42,
+    "source_database_unchanged": true,
+    "tree": "6553abe936d00814253659d46c03e1f6ffd58e0f"
+  },
+  "disk_admission": {
+    "archive_maximum_bytes": 536870912,
+    "bundle_multiplier": 2,
+    "fixed_start_floor_bytes": 0,
+    "growth_accounting": "QUOTA_MINUS_BOUNDED_VERIFIED_RESIDENT_BYTES",
+    "image_exact_unpacked_multiplier": 1,
+    "image_tar_multiplier": 1,
+    "inode_free_floor_percent": 10,
+    "live_maximum_bytes": 134217728,
+    "metadata_levels": [
+      "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA",
+      "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA"
+    ],
+    "missing_allocation_metadata": "ZERO_DISCOUNT_FULL_FUTURE_QUOTA_RESERVED",
+    "missing_roots": "FULL_FUTURE_GROWTH_RESERVED_NO_MKDIR_BY_PROBE",
+    "physical_future_horizon_bound": "REQUIRES_NATIVE_PRODUCER_RETENTION_PROOF_INCLUDING_BLOCK_PADDING",
+    "recognized_live_archive_residue": "COUNTED_AND_GATE_RED_UNTIL_PRODUCER_RECOVERY",
+    "residence_discount": "MIN_LOGICAL_QUOTA_USAGE_AND_VERIFIED_ALLOCATED_BLOCK_BYTES",
+    "residual_reserve_bytes_per_filesystem": 2147483648,
+    "same_data_filesystem_required_for_derived_roots": true,
+    "scratch_maximum_bytes": 536870912,
+    "unknown_alias_foreign_custody": "FAIL_CLOSED_NO_REPAIR_OR_DELETE"
+  },
+  "forward_configuration": {
+    "archive_created_by_factory": false,
+    "archive_maximum_bytes": 536870912,
+    "canonical_archive_suffix": "dynamic-shadow-archive",
+    "env_mode": "0600",
+    "launcher_shared_archive_env": [
+      "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT",
+      "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES"
+    ],
+    "native_process_exit": 0,
+    "offline_explicit_constructor_archive_none": "PRESERVED_INTENTIONAL_CONFIGURATION",
+    "owner_gid": 1000,
+    "owner_uid": 1000,
+    "persistence_allocation_inspector_commit": "6ed979877b2bee8b210940d9601d3f92513f2f15",
+    "persistence_factory_commit": "732b1e513848090263a1e879e7b7b3fffe217153",
+    "persistence_inspector_commit": "748c3ddce0b1d6f4a2fb82004378709da9458bbe",
+    "root_mode": "0700",
+    "source_database_unchanged": true
+  },
+  "guards": {
+    "U04": [
+      "test_archive_env_is_canonical_shared_private_and_ignores_preview_drift",
+      "test_archive_operator_drift_rejects_before_any_runtime_env"
+    ],
+    "U13": [
+      "test_native_launcher_env_round_trip_configures_factory_archive_without_source_or_evidence_writes",
+      "test_native_launcher_rejects_unknown_archive_before_container_stop_and_preserves_namespace"
+    ],
+    "U28": [
+      "test_combined_native_inventory_reserves_only_unoccupied_growth_and_binds_all_emitted_sources",
+      "test_native_combined_admission_fails_closed_and_preserves_unknown_or_interrupted_namespace",
+      "test_live_inventory_bounded_entries_and_ancestor_replacement_reject_before_alias_is_followed",
+      "test_native_report_parser_rejects_unbound_or_contradictory_namespace_metrics",
+      "test_native_pretransfer_config_drift_and_duplicates_reject_before_transfer_without_echoing_values",
+      "test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth"
+    ]
+  },
+  "pending": {
+    "CANONICAL_CHILD_HEALTH": "REQUIRES_FRESH_MATCHING_ARCHIVE_ENABLED_FACTORY_GENERATION",
+    "CAS_ARCHIVE_512M_NINE_HOUR_HORIZON": "REQUIRES_NATIVE_PRODUCER_PROOF",
+    "ECONOMIC_EDGE": "NO_DEMOSTRADO",
+    "FINAL_CANONICAL_CI_AND_IMMUTABLE_ARTIFACT": "PENDING",
+    "HISTORICAL_18E_HEALTH": "COMPONENT_ONLY_NO_CANONICAL_FINAL_CLAIM",
+    "MARKET_EXECUTION": "NO_VERIFICADO",
+    "PRODUCTION_RUNTIME": "NOT_EXECUTED"
+  },
+  "precommit_auto_correction": {
+    "baseline_immutability_assertion": "NOT_REACHED_AFTER_FAILURE",
+    "classification": "OWN_PRECOMMIT_NATIVE_SPARSE_GROWTH_GUARD_RED",
+    "forward_native_immutability_assertion": "PASSED_ALL_NAMESPACE_STATS_AND_SOURCE_SQLITE_IDENTITY",
+    "guard": "tests/test_rc6_convergence_sre_archive.py::test_native_sparse_namespace_cannot_discount_unallocated_logical_bytes_from_future_growth",
+    "incorrect_prior_discount_bytes_each": 4194304,
+    "namespace_allocated_block_bytes_each": 0,
+    "namespace_logical_bytes_each": 4194304,
+    "native_red_variants": 2,
+    "original_U28_DOC_CONTRACT_RED_classification": "UNCHANGED_DISTINCT_BASELINE",
+    "production_effect": "NONE"
+  },
+  "schema": "rc6.sre-native-archive-admission-evidence.v1",
+  "source_only_remote_probe": {
+    "cas_inspector_change_requires_revalidation": true,
+    "component_sha256": {
+      "admission": "b9281d9372fffc0a49cd61a19fe8038d416aeceddce7dbc846ff524dbdf7d77a",
+      "archive": "90916259c6c11447b2b04f7a8a8e2f4efdefb5b75f5d67853395522694c9e841",
+      "live": "9bad50394ede2135c97867f90b04b6a47265974561687fc1ff1fe6baf86c4c17",
+      "scratch": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8"
+    },
+    "components_embedded_verbatim": true,
+    "local_runner_compares_components_to_candidate_source": true,
+    "namespace_metadata_is_full_archive_proof": false,
+    "no_old_host_checkout_required": true,
+    "owned_scratch_empty_lease_only": "EXISTING_ROOT_INSPECTOR_MAY_CREATE",
+    "precommit_component_sha256": {
+      "admission": "00046eca540861b69376d562efd0bd250e0880b3dfa4f622ee90110c0378d3cd",
+      "archive": "0dfa78b01d986ffd6e2c3258c943aa9cb6483bed031a687b90fe05eda871a4f4",
+      "live": "56c21115ee6b0e25bedc50289480e5749aa57874f5862f8ad7087e925f13d43c",
+      "scratch": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8"
+    },
+    "source_sqlite_opened_by_pretransfer_probe": false
+  },
+  "source_state": {
+    "base_commit": "eed253ed150e852f943f24f204b1045687823bce",
+    "base_tree": "cb5e30ec65c56fc977c0731b4eb1f2dd4d5b386f",
+    "dependency_commit_original": "6ed979877b2bee8b210940d9601d3f92513f2f15",
+    "dependency_commit_worktree": "c1a81f470ac730f32939348217fa54f486a8893d",
+    "dependency_tree_worktree": "cfa06eaba0203a7f81b48ed5d955eef367a41842",
+    "final_frozen_artifact": "PENDING",
+    "own_changed_files": {
+      ".github/workflows/porota-deploy-v2-promote.yml": {
+        "bytes": 63031,
+        "sha256": "412cd87ae493401723b26fecca645d7af5f8f9d44c236d23481d4d5ba5c5bf5e"
+      },
+      "docs/runbooks/RC6_CONVERGENCE_SRE.md": {
+        "bytes": 16773,
+        "sha256": "3fd4f26e507ed1086d776df645ef9c11313c9ab63d033e971e7854a6097e991a"
+      },
+      "ops/policy/porota-policy.yaml": {
+        "bytes": 4226,
+        "sha256": "68220ce51bb6166e9ceef4b75f9a25a4f9e1f13d7dbb2764e6b9ffd67fc4adf6"
+      },
+      "ops/policy/rc6-disk-housekeeping-v1.json": {
+        "bytes": 4061,
+        "sha256": "0e8f2b7a922443ea5c248e0b7c74b107cd821cd71d10478d79985fca5671ae74"
+      },
+      "porota_mode_manager.py": {
+        "bytes": 38110,
+        "sha256": "b855ace067ed79b655f63363bfc515f5b5c75bb46ea19cf953136d4dcd7efac8"
+      },
+      "scripts/rc6_disk_space_guard.py": {
+        "bytes": 4632,
+        "sha256": "6b29577c3c82989bd07fed6281c4a4af1351e507d8524ab858375cf84e610bac"
+      },
+      "scripts/rc6_shadow_live_namespace.py": {
+        "bytes": 7565,
+        "sha256": "9bad50394ede2135c97867f90b04b6a47265974561687fc1ff1fe6baf86c4c17"
+      },
+      "scripts/rc6_sqlite_scratch_guard.py": {
+        "bytes": 25350,
+        "sha256": "b9281d9372fffc0a49cd61a19fe8038d416aeceddce7dbc846ff524dbdf7d77a"
+      },
+      "tests/test_rc6_convergence_sre_archive.py": {
+        "bytes": 17043,
+        "sha256": "938d1f1c8b60104796fbf956a984890eb0317a555362d425ae6aa045c6e77c12"
+      },
+      "tests/test_rc6_convergence_sre_scratch.py": {
+        "bytes": 18748,
+        "sha256": "5f6c9d54040d4929e11bde89018e63a10d33858d62eeb638b3d0520b747d8435"
+      },
+      "tests/test_rc6_disk_housekeeping_policy.py": {
+        "bytes": 4186,
+        "sha256": "55d0b54e2925023d289b093a5e3c0dd11dfd72e7166334825826e4e501193646"
+      }
+    },
+    "tested_state": "BASE_PLUS_EXACT_DEPENDENCY_6ED_AND_OWN_REVIEWABLE_SOURCE_DIFF"
+  },
+  "trust_bound": "LOCAL_EXECUTOR_RECEIPTS_NOT_EXTERNAL_ACTIONS_AUTHENTICATION",
+  "verification": {
+    "bash_steps_syntax_checked": 10,
+    "compile": "GREEN",
+    "current_receipt": "sre-final-allocated-regression.xml",
+    "current_unique_tests": 310,
+    "format_validation": {
+      "byte_exact_raw_receipt_preservation": {
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-sparse-before-red.xml",
+        "reason": "PRESERVE_NATIVE_PYTEST_BYTES_AND_SHA256_NO_NORMALIZATION_NO_TEST_EXCLUSION",
+        "trailing_whitespace_lines": []
+      },
+      "code_and_normal_docs_diff_check": "GREEN"
+    },
+    "intermediate_receipts": "98_AND_305_CHECKPOINTS_AND_9_FOCALS_RETAINED_NOT_ADDITIVE_COVERAGE",
+    "receipts": {
+      "namespace-focal.xml": {
+        "bytes": 17879,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 98
+        },
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/namespace-focal.xml",
+        "sha256": "6d01f998ce7b9b8c28abf6dbf3520270f3e1b72e19a715e0aed48f1c88747586",
+        "wall_seconds": 3.29
+      },
+      "native-current-green.json": {
+        "bytes": 1666,
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-current-green.json",
+        "sha256": "c3040d84cc24b9e6c6c630d29b678be563a09f68221c68b41166f6fa1a7dd790"
+      },
+      "native-factory-probe.txt": {
+        "bytes": 4353,
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-factory-probe.txt",
+        "sha256": "4cb8cd794db1cc8124df2fa3354039888e385ad7f3cd38aee6f8910d425cac08"
+      },
+      "native-old-red.json": {
+        "bytes": 1573,
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-old-red.json",
+        "sha256": "5be405065bb94d114b58cdb60de769b4819832838a4c2ca245cc18ad304647b2"
+      },
+      "native-sparse-before-red.xml": {
+        "bytes": 4018,
+        "counts": {
+          "errors": 0,
+          "failures": 2,
+          "skipped": 0,
+          "tests": 2
+        },
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-sparse-before-red.xml",
+        "sha256": "ee636531e4eb23f03ecc4254f20fcd138e5135702227f120863517487bbb9c07",
+        "wall_seconds": 0.285
+      },
+      "native-sparse-fallback-green.xml": {
+        "bytes": 1848,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 9
+        },
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/native-sparse-fallback-green.xml",
+        "sha256": "c8159c69f37bda22f14999871eea82da46ec390a971636ff90cfdf2e3c8ab0eb",
+        "wall_seconds": 0.79
+      },
+      "precommit-sparse-red-admission-source.txt": {
+        "bytes": 23899,
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/precommit-sparse-red-admission-source.txt",
+        "sha256": "00046eca540861b69376d562efd0bd250e0880b3dfa4f622ee90110c0378d3cd",
+        "source_recovery": "REVERSE_OF_OWN_FIX_MATCHES_PREVIOUSLY_CAPTURED_PRECOMMIT_SHA256"
+      },
+      "precommit-sparse-red-live-source.txt": {
+        "bytes": 7435,
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/precommit-sparse-red-live-source.txt",
+        "sha256": "56c21115ee6b0e25bedc50289480e5749aa57874f5862f8ad7087e925f13d43c",
+        "source_recovery": "REVERSE_OF_OWN_FIX_MATCHES_PREVIOUSLY_CAPTURED_PRECOMMIT_SHA256"
+      },
+      "sre-final-allocated-regression.xml": {
+        "bytes": 52047,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 310
+        },
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/sre-final-allocated-regression.xml",
+        "sha256": "501a21dbd4b9d6e256543644e586b960b9f9d1d26060e61e375e49df9f302018",
+        "wall_seconds": 19.156
+      },
+      "sre-regression.xml": {
+        "bytes": 51119,
+        "counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 305
+        },
+        "path": "docs/audits/convergence/evidence/sre-archive-admission/sre-regression.xml",
+        "sha256": "b197311d14b618f2824eececf73ae2c2fb0d15b3a008963e0894ac8e505c6167",
+        "wall_seconds": 18.923
+      }
+    },
+    "scoped_diff_check": "GREEN",
+    "workflow_executed": false,
+    "workflow_yaml_parsed": true
+  }
+}

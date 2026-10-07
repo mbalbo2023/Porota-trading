@@ -1,0 +1,21 @@
+{
+  "admitted_before_export": true,
+  "available_bytes": 22431956992,
+  "forecast": {
+    "private_fixture_upper_bound": 536870912,
+    "raw_upper_bound": 134217728,
+    "source_allocated_upper_bound": 83099648,
+    "source_tar_upper_bound": 88285696
+  },
+  "forecast_residual_bytes": 21589483008,
+  "forecast_total_bytes": 842473984,
+  "freeze_sha256": "cafc332a93f48aac48d97eeec38a1f2845deb974bc4968ef657dcbadcb9c02ca",
+  "output_root": "/workspace/rc6-publication-e24bc025-controlled-focal-20261005-d",
+  "protocol_epoch": "D",
+  "recorded_at": "2026-10-05T23:51:58.821414+00:00",
+  "required_residual_bytes": 2147483648,
+  "runner_sha256": "fc7513a4abe621a223a402d3e6e609b0a654ded30c8f931c286e268826ae6b56",
+  "schema": "rc6.controlled-focal-pre-export-capacity.v1",
+  "scope": "EXTERNAL_CONSERVATIVE_FOCAL_PREPARATION_FORECAST; NOT_MEASURED_RUNTIME_PEAK_OR_HORIZON",
+  "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+}

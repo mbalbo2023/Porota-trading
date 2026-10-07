@@ -1,0 +1,47 @@
+{
+  "duplicate_names": [],
+  "expected_total": 157,
+  "installed_distribution_bytes_authenticated": false,
+  "installed_total": 157,
+  "installer_executed_by_this_runner": false,
+  "metadata_names_versions_exact": true,
+  "schema": "rc6.frozen-governed-installed-preflight.v1",
+  "source_hash_lock_action_platform_audit": {
+    "action_commit_gaps": [],
+    "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+    "base_image_digest_pinned": true,
+    "binary_distribution_policy_enforced": true,
+    "build_distribution_hash_gaps": [],
+    "build_isolation_disabled": true,
+    "build_tools_require_hashes": true,
+    "build_tools_total": 3,
+    "docker_requires_hashes": true,
+    "docker_uses_lock": true,
+    "hermetic_build": false,
+    "lock_distribution_hash_gaps": [],
+    "lock_exact_requirements": 154,
+    "lock_hashed_requirements": 154,
+    "lock_non_exact_requirements": [],
+    "lock_requirements_total": 154,
+    "platform": {
+      "architecture": "x86_64",
+      "libc_name": "glibc",
+      "libc_version": "2.41",
+      "os": "linux",
+      "python_minor": "3.11"
+    },
+    "platform_supported": true,
+    "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+    "residual_boundaries": [
+      "ubuntu-24.04 hosted runner and kernel are externally managed",
+      "apt repository package bytes are not snapshot/hash locked",
+      "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+      "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+    ],
+    "schema_version": 3,
+    "source_requirements_total": 24,
+    "status": "GREEN",
+    "supply_chain_schema_valid": true
+  },
+  "status": "GREEN"
+}

@@ -1,0 +1,23 @@
+{
+  "acceptance_complete": false,
+  "available_bytes": 22248013824,
+  "dispatch_sha256": "06f5aa8694636e401cbad3dde43a38303230737aa24b77257c6c715909fa97e6",
+  "exporter_sha256": "4ff4676484db57cebe85ae57fe8ce17413c6a03471823cc88999ea2dc09c85aa",
+  "forecast_bytes": 842473984,
+  "generator_sha256": "c8f872b75544eb5102a0c769847a8ad51872aa3a920fe204b3c78ab41a8a7bfb",
+  "intermediate_source_not_final_candidate": true,
+  "native_exclusive": true,
+  "native_started": false,
+  "paths": {
+    "data": "/workspace/rc6-canonical-1426b284-big-20261005-data",
+    "dispatch": "/workspace/rc6-canonical-1426b284-big-20261005-dispatch",
+    "pin": "/workspace/rc6-canonical-1426b284-big-20261005-source-raw",
+    "raw": "/workspace/rc6-canonical-1426b284-big-20261005-raw",
+    "source": "/workspace/rc6-canonical-1426b284-big-20261005-source",
+    "wrapper": "/workspace/rc6-canonical-1426b284-big-20261005-wrapper.py"
+  },
+  "reserve_bytes": 2147483648,
+  "schema": "rc6.canonical-big-one-dispatch.v1",
+  "source_sha": "1426b2844c06b164aa08b765e01676f19845a192",
+  "source_tree": "983f5a1d3f38edf671eab7d5420bbffdc93ffea2"
+}

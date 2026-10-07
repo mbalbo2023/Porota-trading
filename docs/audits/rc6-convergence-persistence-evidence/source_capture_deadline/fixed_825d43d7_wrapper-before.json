@@ -1,0 +1,43 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-B",
+    "-u",
+    "/tmp/rc6-source-capture-fix-825d43d7-157-raw/run_fix_guards.py"
+  ],
+  "cwd": "/workspace/rc6-source-capture-fix-825d43d7-157-source",
+  "distribution_count": 157,
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "preflight_exact_names_versions": true,
+  "product_overlay_count": 0,
+  "pytest_arguments": [
+    "tests/test_rc6_source_capture_deadlines.py",
+    "tests/test_rc6_native_source_reads.py",
+    "tests/test_rc6_component_archive.py::test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration",
+    "tests/test_rc6_shadow_lab_runtime.py",
+    "tests/test_rc6_shadow_entry_signals.py",
+    "tests/test_rc6_shadow_family_runtime.py",
+    "tests/test_rc6_shadow_runtime_wiring.py",
+    "tests/test_rc6_history_snapshot_copy.py",
+    "tests/test_rc6_sqlite_disk_scratch.py",
+    "tests/test_issue465_generations.py::test_failure_diagnostics_never_persist_exception_message_secrets",
+    "-q",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml=/tmp/rc6-source-capture-fix-825d43d7-157-raw/fix-native-focal.xml"
+  ],
+  "python": "3.11.16",
+  "runtime_validated": false,
+  "schema": "rc6.source-capture-fix-whole-source-focal.v1",
+  "scope": "OWN_EXACT_COMMIT_NATIVE_SOURCE_FIX_NOT_ROOT_RELEASE_OR_ARTIFACT",
+  "source_files": 1545,
+  "source_index_sha256": "958c4eecd8f9b2ef469ef0cf0dd99db9ec62e4234819864b4be181068c20ae93",
+  "source_sha": "825d43d7b3a74c071b6a3372f6e320a95f03171b",
+  "source_tree": "1fb77d7def256222a14b9f4aadcfe54607cb1c19",
+  "tar_sha256": "65ff4557639fab0d181f1368e3c6ea94fd0b07e287290cd30bfce9d009c297ec",
+  "umask": "022"
+}

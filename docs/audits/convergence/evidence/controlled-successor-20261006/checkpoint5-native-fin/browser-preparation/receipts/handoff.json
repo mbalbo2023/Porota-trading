@@ -1,0 +1,727 @@
+{
+  "PAPER_SHADOW_ONLY": true,
+  "PPI_Watch_untouched": true,
+  "PRODUCT157_complete_physical_namespace_members_unchanged": 34879,
+  "PRODUCT157_file_bytes_aliases_and_all10_stable_fields_unchanged": true,
+  "PRODUCT157_observed_code_atime_changes": [
+    "lib/python3.11/site-packages/fastapi/.agents",
+    "lib/python3.11/site-packages/fastapi/.agents/skills",
+    "lib/python3.11/site-packages/fastapi/.agents/skills/fastapi",
+    "lib/python3.11/site-packages/fastapi/.agents/skills/fastapi/references",
+    "lib/python3.11/site-packages/typer/.agents",
+    "lib/python3.11/site-packages/typer/.agents/skills",
+    "lib/python3.11/site-packages/typer/.agents/skills/typer"
+  ],
+  "Source_protected7_contracts_locks_and_all10_fields_unchanged": true,
+  "Source_protected_atime_changes": [],
+  "actual_extracted_binary_and_all_asset_file_digests_recorded": true,
+  "all_receipts": [
+    {
+      "bytes": 3761,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/browser-assets-validation.json",
+      "sha256": "aecf4e173d753c0b13ef80af0b0811e6f065ebdd642e5af602c213525f791570"
+    },
+    {
+      "bytes": 328552,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/browser-cache-inventory.json",
+      "sha256": "2cce63328b505a1060f7f21196f7cf6d7c1d5480875ae1a493c03ab7a8d66c08"
+    },
+    {
+      "bytes": 785,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/browser-install.json",
+      "sha256": "7999d8ce832c57308a345ca35ad0670e71c8efce1248f017acde1742804fe079"
+    },
+    {
+      "bytes": 132716,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/driver-record-inventory.json",
+      "sha256": "705179386665e71af2ea39e2b9ed6e3927b24a39d691541b478ac2571a4ff01d"
+    },
+    {
+      "bytes": 6915,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/driver-validation.json",
+      "sha256": "8ea8651ec16771d144166f072a13a3abee1c60a0230d0092eed70dda887377f0"
+    },
+    {
+      "bytes": 2251,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/install-browser-kernel.json",
+      "sha256": "0e5c7d6bfc7b3414b9b257138a1f56c61e26866e87eab69dcfe07de873587aeb"
+    },
+    {
+      "bytes": 2837,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/install-kernel.json",
+      "sha256": "0977f188f7dac7191d197bf3a6b115ebc4b710b9d2625a2f9b9768a09a77f30a"
+    },
+    {
+      "bytes": 17820,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/pip-install-report.json",
+      "sha256": "415195bbb16e60de4c199cb2a34091ba0ea33931ac872bdee6f4ac83015c93cf"
+    },
+    {
+      "bytes": 18172692,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/protected-after.json",
+      "sha256": "a3bedee8c4d60c795f8f644f273b8588224a7a9aed48037068fefdc4df326325"
+    },
+    {
+      "bytes": 18172346,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/protected-before.json",
+      "sha256": "f14c6ee64d41fd03c35efbf10560b4c80bb2f92fa368cd462062276011e3850f"
+    },
+    {
+      "bytes": 2318,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/venv-kernel.json",
+      "sha256": "5c69414897b5bf42672301448d386c3486884cd063a558e342e97680d4aa9a13"
+    },
+    {
+      "bytes": 2249,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/verify-browser-kernel.json",
+      "sha256": "a17334fd90638f44941944f6bc3c6871c0e3c19a4d5912d1b606627764ab33a7"
+    },
+    {
+      "bytes": 2249,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/verify-driver-kernel.json",
+      "sha256": "dcafe071f5fd9cddfe184789372bf6464fc0468e9215d20e0ce3454610b85149"
+    },
+    {
+      "bytes": 3366,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/wheels.json",
+      "sha256": "35f1c7e4528e1e31a971de4d4b3cdda138b93703dcc15688a37ce1c4d571228d"
+    }
+  ],
+  "assets_binaries": [
+    {
+      "browser_version": "151.0.7922.34",
+      "bytes": 290614600,
+      "headless_binary_not_executed": false,
+      "ldd_log_path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-chromium.log",
+      "ldd_log_sha256": "75fb0b4efb43e2e2e66a816bad4e54e8aa35e82db0f6783e30dbe98dd040e6d1",
+      "ldd_returncode": 0,
+      "ldd_static": false,
+      "mode": 33261,
+      "no_linked_library_missing": true,
+      "normal_default_full_chromium_api_lookup": true,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/browser-cache/chromium-1234/chrome-linux64/chrome",
+      "revision": "1234",
+      "role": "chromium",
+      "sha256": "0b20b130e7edd9dd51873be867761295fe0cfad490c2b9a64f95bd3cfc08fa71"
+    },
+    {
+      "browser_version": "151.0.7922.34",
+      "bytes": 196975952,
+      "headless_binary_not_executed": true,
+      "ldd_log_path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-chromium-headless-shell.log",
+      "ldd_log_sha256": "acc071b8cdd6f859e02c670de001099abe4171692c2e4dc28bdda54325fdd003",
+      "ldd_returncode": 0,
+      "ldd_static": false,
+      "mode": 33261,
+      "no_linked_library_missing": true,
+      "normal_default_full_chromium_api_lookup": false,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/browser-cache/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+      "revision": "1234",
+      "role": "chromium-headless-shell",
+      "sha256": "e11fc9ce65c96313476f7ee9844b6fb6a9220fb048693cfe9eee00acf4170a9f"
+    },
+    {
+      "browser_version": null,
+      "bytes": 5101056,
+      "headless_binary_not_executed": false,
+      "ldd_log_path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-ffmpeg.log",
+      "ldd_log_sha256": "a34ab9523e85bf2b370e1afb84a5998de7007958c18b9a79ff32062b0035c29b",
+      "ldd_returncode": 1,
+      "ldd_static": true,
+      "mode": 33261,
+      "no_linked_library_missing": true,
+      "normal_default_full_chromium_api_lookup": false,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/browser-cache/ffmpeg-1011/ffmpeg-linux",
+      "revision": "1011",
+      "role": "ffmpeg",
+      "sha256": "460d44f3416005662f528d4b92e7b94ace924e8a0288106d3803b73c56eaadc8"
+    }
+  ],
+  "blind_retry_or_system_overrides": false,
+  "browser_LARGE_GATE_executed": false,
+  "browser_cache": "/workspace/scratch/rc6driver-kba25cdt/browser-cache",
+  "browser_cache_file_count": 599,
+  "browser_cache_inventory": {
+    "bytes": 328552,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/browser-cache-inventory.json",
+    "sha256": "2cce63328b505a1060f7f21196f7cf6d7c1d5480875ae1a493c03ab7a8d66c08"
+  },
+  "browser_cache_total_bytes": 685353559,
+  "browser_data_root_or_database_read_or_modified": false,
+  "browser_execution_compatibility_not_claimed_by_ldd_only": true,
+  "browser_process_launch_called": false,
+  "cpu_io_slot_free": true,
+  "download_failures": 0,
+  "download_log": {
+    "bytes": 6892,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/logs/browser-install.sanitized.log",
+    "sha256": "b85ca3070e48187c2c69578376cab26537fe321ac29dd6d684a5c2371dec98a2"
+  },
+  "driver_RECORD_unchanged_after_Node_CLI": 314,
+  "driver_RECORD_verified_entries": 314,
+  "driver_metadata": {
+    "greenlet": "3.5.5",
+    "playwright": "1.62.0",
+    "pyee": "13.0.1",
+    "typing-extensions": "4.16.0"
+  },
+  "driver_metadata_count": 4,
+  "driver_normal_base_prefix": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu",
+  "driver_python": "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+  "driver_python_version": "3.11.16",
+  "driver_root": "/workspace/scratch/rc6driver-kba25cdt/driver-env",
+  "future_gate_command_NOT_EXECUTED": [
+    "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+    "-I",
+    "-B",
+    "<NEW_QUALIFIED_FROZEN_SOURCE>/tests/ci_rc6_projection_large_browser.py",
+    "--product-python",
+    "<EXACT157_PRODUCT>/bin/python",
+    "--product-python-version",
+    "3.11",
+    "--index",
+    "<NEW_COMPLETE_RAW_GIT_SOURCE_INDEX>",
+    "--database",
+    "<QUALIFIED_NATIVE_BIG12000_60000_DB>",
+    "--root",
+    "<QUALIFIED_COMPLETE_OPEN_ROOT>",
+    "--output",
+    "<NEW_EXTERNAL_BROWSER_GATE_OUTPUT>"
+  ],
+  "gate_qualified": false,
+  "headless_shell_physical_binding_not_runtime_execution_proof": "/workspace/scratch/rc6driver-kba25cdt/browser-cache/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+  "host_Droplet_apt_or_deploy_action": false,
+  "installed_official_browsers_json": {
+    "byte_equal_official_pinned_json": true,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/package/browsers.json",
+    "payloads": [
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium",
+        "revision": "1234",
+        "title": "Chrome for Testing"
+      },
+      {
+        "browserVersion": "151.0.7922.34",
+        "installByDefault": true,
+        "name": "chromium-headless-shell",
+        "revision": "1234",
+        "title": "Chrome Headless Shell"
+      },
+      {
+        "installByDefault": true,
+        "name": "ffmpeg",
+        "revision": "1011"
+      }
+    ],
+    "sha256": "f306eed529599b1eaf2f8a85db9de2b23e1a3fe36c2b66434b7c9434fb627a99"
+  },
+  "kernel_stages": [
+    {
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 0.10064043200327433,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
+          "-I",
+          "-B",
+          "-m",
+          "venv",
+          "--without-pip",
+          "/workspace/scratch/rc6driver-kba25cdt/driver-env"
+        ],
+        "cpu_system_seconds": 0.0,
+        "cpu_user_seconds": 0.033829,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 24731648,
+        "phase_acceptance_deadline_seconds": 120,
+        "pid": 19016,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "19013",
+          "Tgid": "19013",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 19013,
+        "supervisor_pid": 19013,
+        "termination_reap_restore_cleanup_seconds": 0.00033592700128792785,
+        "timed_out": false,
+        "wait4_reaped_pid": 19016,
+        "wall_seconds": 0.10095356599777006
+      },
+      "receipt": {
+        "bytes": 2318,
+        "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/venv-kernel.json",
+        "sha256": "5c69414897b5bf42672301448d386c3486884cd063a558e342e97680d4aa9a13"
+      },
+      "stage": "venv"
+    },
+    {
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 1.1027988049972919,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+          "-I",
+          "-B",
+          "-m",
+          "pip",
+          "--isolated",
+          "--disable-pip-version-check",
+          "--python",
+          "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+          "install",
+          "--no-index",
+          "--find-links",
+          "/workspace/scratch/rc6driver-kba25cdt/wheelhouse",
+          "--no-deps",
+          "--require-hashes",
+          "--only-binary=:all:",
+          "--no-compile",
+          "--no-cache-dir",
+          "--report",
+          "/workspace/scratch/rc6driver-kba25cdt/receipts/pip-install-report.json",
+          "-r",
+          "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt"
+        ],
+        "cpu_system_seconds": 0.098712,
+        "cpu_user_seconds": 0.9321959999999999,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 51478528,
+        "phase_acceptance_deadline_seconds": 120,
+        "pid": 19020,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "19017",
+          "Tgid": "19017",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 19017,
+        "supervisor_pid": 19017,
+        "termination_reap_restore_cleanup_seconds": 6.81609999446664e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 19020,
+        "wall_seconds": 1.1032510840013856
+      },
+      "receipt": {
+        "bytes": 2837,
+        "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/install-kernel.json",
+        "sha256": "0977f188f7dac7191d197bf3a6b115ebc4b710b9d2625a2f9b9768a09a77f30a"
+      },
+      "stage": "install"
+    },
+    {
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 0.5018816359988705,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6driver-kba25cdt/verify_driver.py"
+        ],
+        "cpu_system_seconds": 0.11867599999999999,
+        "cpu_user_seconds": 0.343155,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 155365376,
+        "phase_acceptance_deadline_seconds": 120,
+        "pid": 19126,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "19123",
+          "Tgid": "19123",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 19123,
+        "supervisor_pid": 19123,
+        "termination_reap_restore_cleanup_seconds": 0.00010931100041489117,
+        "timed_out": false,
+        "wait4_reaped_pid": 19126,
+        "wall_seconds": 0.5022310429994832
+      },
+      "receipt": {
+        "bytes": 2249,
+        "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/verify-driver-kernel.json",
+        "sha256": "dcafe071f5fd9cddfe184789372bf6464fc0468e9215d20e0ce3454610b85149"
+      },
+      "stage": "verify-driver"
+    },
+    {
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 21.339620959999593,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6driver-kba25cdt/sanitized_browser_install.py"
+        ],
+        "cpu_system_seconds": 3.202204,
+        "cpu_user_seconds": 9.838346,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 227397632,
+        "phase_acceptance_deadline_seconds": 600,
+        "pid": 19245,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "19242",
+          "Tgid": "19242",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 19242,
+        "supervisor_pid": 19242,
+        "termination_reap_restore_cleanup_seconds": 6.561700138263404e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 19245,
+        "wall_seconds": 21.340037075999135
+      },
+      "receipt": {
+        "bytes": 2251,
+        "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/install-browser-kernel.json",
+        "sha256": "0e5c7d6bfc7b3414b9b257138a1f56c61e26866e87eab69dcfe07de873587aeb"
+      },
+      "stage": "install-browser"
+    },
+    {
+      "kernel": {
+        "actual_child_reaped": true,
+        "actual_launch_to_pid_reap_wall_seconds": 1.2034515929990448,
+        "adopted_descendants_reaped": [],
+        "command": [
+          "/workspace/scratch/rc6driver-kba25cdt/driver-env/bin/python",
+          "-I",
+          "-B",
+          "/workspace/scratch/rc6driver-kba25cdt/verify_browser.py"
+        ],
+        "cpu_system_seconds": 0.13169899999999998,
+        "cpu_user_seconds": 1.045388,
+        "kernel_owned_child_observations": [
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "before_popen_after_subreaper_activation"
+          },
+          {
+            "errno": 10,
+            "outcome": "ECHILD",
+            "phase": "after_main_pid_reap"
+          }
+        ],
+        "kernel_pre_popen_echild_verified": true,
+        "kernel_wait4_zero_observed_irreversible_red": false,
+        "late_observed_main_reap_irreversible_red": false,
+        "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+        "owned_children_exhaustion_verified": true,
+        "owned_cleanup_management_bound_seconds": 5,
+        "owned_group_signal_observations": [],
+        "peak_rss_bytes": 150552576,
+        "phase_acceptance_deadline_seconds": 120,
+        "pid": 19409,
+        "proc_task_children_examined": false,
+        "process_group_absent_after_reap": true,
+        "process_group_absent_at_main_reap": true,
+        "remaining_owned_children": [],
+        "residual_descendants_observed": [],
+        "returncode": 0,
+        "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+        "sigint_failure_grace_seconds": 20,
+        "subreaper_previous_state": 0,
+        "subreaper_restore_attempted_on_all_activated_paths": true,
+        "supervisor_errors": [],
+        "supervisor_kernel_identity_before_spawn": {
+          "Pid": "19406",
+          "Tgid": "19406",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "supervisor_native_tid": 19406,
+        "supervisor_pid": 19406,
+        "termination_reap_restore_cleanup_seconds": 8.268300007330254e-05,
+        "timed_out": false,
+        "wait4_reaped_pid": 19409,
+        "wall_seconds": 1.203756846000033
+      },
+      "receipt": {
+        "bytes": 2249,
+        "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/verify-browser-kernel.json",
+        "sha256": "a17334fd90638f44941944f6bc3c6871c0e3c19a4d5912d1b606627764ab33a7"
+      },
+      "stage": "verify-browser"
+    }
+  ],
+  "logs": [
+    {
+      "bytes": 6892,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/browser-install.sanitized.log",
+      "sha256": "b85ca3070e48187c2c69578376cab26537fe321ac29dd6d684a5c2371dec98a2"
+    },
+    {
+      "bytes": 430,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/install-browser.log",
+      "sha256": "81775829937680da608a39c77f5786aa1c47830eb25b63f3ba99a3d2b7833cce"
+    },
+    {
+      "bytes": 1121,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/install.log",
+      "sha256": "bd04c5e9df49f76601663687b1bab32c858033c6d3830e730d03e498d0798c8e"
+    },
+    {
+      "bytes": 3410,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-chromium-headless-shell.log",
+      "sha256": "acc071b8cdd6f859e02c670de001099abe4171692c2e4dc28bdda54325fdd003"
+    },
+    {
+      "bytes": 6203,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-chromium.log",
+      "sha256": "75fb0b4efb43e2e2e66a816bad4e54e8aa35e82db0f6783e30dbe98dd040e6d1"
+    },
+    {
+      "bytes": 26,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/ldd-ffmpeg.log",
+      "sha256": "a34ab9523e85bf2b370e1afb84a5998de7007958c18b9a79ff32062b0035c29b"
+    },
+    {
+      "bytes": 0,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/venv.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 512,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/verify-browser.log",
+      "sha256": "38aa07aee5d2c19258b03015f17a0dd635ca0a9c24a8840f9b1d9ace4f9c9c04"
+    },
+    {
+      "bytes": 459,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/logs/verify-driver.log",
+      "sha256": "3097fa5555c8d43e7225687be2ec62022811928b68fd0be4558fa2385ae70083"
+    }
+  ],
+  "lookup_python_network_audit": {
+    "audit_witnessed": true,
+    "inet_constructor_requests": [],
+    "inet_operation_attempts": [],
+    "subprocess_names": [
+      "node",
+      "ldd",
+      "ldd",
+      "ldd"
+    ]
+  },
+  "module_origins": [
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/__init__.py",
+      "installed_record_match": true,
+      "module": "playwright",
+      "sha256": "06c3acdadd13e2813fcb95ad91d53ee3885c2b5f473beccc45a579d9ceead70b"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/pyee/__init__.py",
+      "installed_record_match": true,
+      "module": "pyee",
+      "sha256": "aa4f9a8ede4618ab005b60bf8751769ed424bbdc65ae0a65ed025aebebad9b81"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet/__init__.py",
+      "installed_record_match": true,
+      "module": "greenlet",
+      "sha256": "d33d783010148fd425b28c84483eca9a9753fa59c65ff492dd233fd3dc2a1978"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/typing_extensions.py",
+      "installed_record_match": true,
+      "module": "typing_extensions",
+      "sha256": "4040ca1a1ecbee00d1385c12a93084d1c5bd46f0b774f07e5ae7e91c4f55e696"
+    },
+    {
+      "file": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/greenlet/_greenlet.cpython-311-x86_64-linux-gnu.so",
+      "installed_record_match": true,
+      "module": "greenlet._greenlet",
+      "sha256": "a933f358cda2bf507536c9d8f85b43002d33d313db47735c722783db43bc457c"
+    }
+  ],
+  "network_verification_scope": "THIS_PREPARATION_PYTHON_PROCESS_DNS_INET_OPERATIONS_AND_KNOWN_SUBPROCESS_NAMES; NOT_BINARY_KERNEL_OR_TRANSITIVE_ISOLATION",
+  "newSourceSHA_OPEN_prerequisite_still_required": true,
+  "next_step": "Root obtains qualified newSHA fullOPEN and separately authorizes original browserLARGE gate; preserve original guards/budgets/Source/data custody and real kernel FIN.",
+  "no_GitHub_git_ref_commit_writes_by_subagent": true,
+  "no_binary_kernel_or_transitive_network_isolation_claim": true,
+  "no_missing_linked_libraries_from_ldd": true,
+  "no_more_subagent_execution_scheduled": true,
+  "normal_bundled_node": {
+    "mode": 33225,
+    "normal_default_lookup": true,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/driver-env/lib/python3.11/site-packages/playwright/driver/node",
+    "sha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+    "version": "v24.18.1",
+    "version_process_returncode": 0
+  },
+  "normal_driver_full_executable_lookup": "/workspace/scratch/rc6driver-kba25cdt/browser-cache/chromium-1234/chrome-linux64/chrome",
+  "official_four_wheel_hashlock": {
+    "bytes": 410,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/browser-driver.cp311-linux-x86_64.lock.txt",
+    "sha256": "2089301b3326405b4158363811903de75b416d03529409a5e29f242afe71bd7c"
+  },
+  "package_globals_modules_Source_identities_rebound": false,
+  "pinned_plan": {
+    "bytes": 16348,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-browser-driver-pin-plan-b981m5rb/plan.json",
+    "sha256": "1b54d7ffd910b08cc2bc4f90225a29da13a076a3f34e001be6998152cb577cf1"
+  },
+  "preparation_scripts": [
+    {
+      "bytes": 4136,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/stage.py",
+      "sha256": "f459a72b9ce76a137967326817a2940509c28f9a80f80c53efaebcff9c4cc6ee"
+    },
+    {
+      "bytes": 6229,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/verify_driver.py",
+      "sha256": "a2df3faa2ec24657afbb93c2a33305f0985cfeddaa04c2832d8b0c36f1e27d1f"
+    },
+    {
+      "bytes": 3232,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/sanitized_browser_install.py",
+      "sha256": "53b973ebd88670e4ff121586736552f5c2029d49e3e6dd52711ebee987256019"
+    },
+    {
+      "bytes": 7619,
+      "path": "/workspace/scratch/rc6driver-kba25cdt/verify_browser.py",
+      "sha256": "d80a02718875bfe9fd25fe658034dbf69bc90527118f8512197ce92c68537701"
+    }
+  ],
+  "protected_after": {
+    "bytes": 18172692,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/protected-after.json",
+    "sha256": "a3bedee8c4d60c795f8f644f273b8588224a7a9aed48037068fefdc4df326325"
+  },
+  "protected_before": {
+    "bytes": 18172346,
+    "path": "/workspace/scratch/rc6driver-kba25cdt/receipts/protected-before.json",
+    "sha256": "f14c6ee64d41fd03c35efbf10560b4c80bb2f92fa368cd462062276011e3850f"
+  },
+  "provider_routes_not_called": true,
+  "raw_temporary_download_archives_deleted_by_normal_installer_no_archive_digest_claim": true,
+  "real_orders_sent": 0,
+  "required_launch_environment_for_future_authorized_gate": {
+    "PLAYWRIGHT_BROWSERS_PATH": "/workspace/scratch/rc6driver-kba25cdt/browser-cache"
+  },
+  "schema": "rc6.browser-driver-preparation-handoff.v1",
+  "source_or_PRODUCT157_written_by_subagent": false,
+  "state": "DESARROLLADO_LOCAL_PREPARED_ASSETS_ONLY",
+  "wholeSource_namespace_not_claimed_root_concurrent_own_docs_edits": true
+}

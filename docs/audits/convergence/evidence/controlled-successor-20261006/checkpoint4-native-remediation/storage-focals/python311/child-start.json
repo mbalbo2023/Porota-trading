@@ -1,0 +1,111 @@
+{
+  "argv": [
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "-o",
+    "pythonpath=.",
+    "-o",
+    "junit_family=legacy",
+    "--basetemp=/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/execution-private/pytest",
+    "--junitxml=/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/junit.xml",
+    "tests/test_rc6_packed_storage.py",
+    "tests/test_rc6_publication_storage.py",
+    "tests/test_rc6_publication_type_identity.py",
+    "tests/test_rc6_funnel_storage_codec.py",
+    "tests/test_rc6_packed_capture_allocations.py",
+    "tests/test_rc6_packed_scalar_dispatch.py",
+    "tests/test_rc6_packed_small_container.py",
+    "tests/test_rc6_packed_volatile_scalars.py"
+  ],
+  "closure": {
+    "duplicate_names": [],
+    "expected_total": 157,
+    "installed_distribution_bytes_authenticated": false,
+    "installed_total": 157,
+    "installer_executed_by_this_runner": false,
+    "metadata_names_versions_exact": true,
+    "schema": "rc6.frozen-governed-installed-preflight.v1",
+    "source_hash_lock_action_platform_audit": {
+      "action_commit_gaps": [],
+      "base_image": "python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9",
+      "base_image_digest_pinned": true,
+      "binary_distribution_policy_enforced": true,
+      "build_distribution_hash_gaps": [],
+      "build_isolation_disabled": true,
+      "build_tools_require_hashes": true,
+      "build_tools_total": 3,
+      "docker_requires_hashes": true,
+      "docker_uses_lock": true,
+      "hermetic_build": false,
+      "lock_distribution_hash_gaps": [],
+      "lock_exact_requirements": 154,
+      "lock_hashed_requirements": 154,
+      "lock_non_exact_requirements": [],
+      "lock_requirements_total": 154,
+      "platform": {
+        "architecture": "x86_64",
+        "libc_name": "glibc",
+        "libc_version": "2.41",
+        "os": "linux",
+        "python_minor": "3.11"
+      },
+      "platform_supported": true,
+      "reproducibility_scope": "APPROVED_ACTION_COMMITS_AND_HASHED_PYTHON_DISTRIBUTIONS",
+      "residual_boundaries": [
+        "ubuntu-24.04 hosted runner and kernel are externally managed",
+        "apt repository package bytes are not snapshot/hash locked",
+        "source-only packages compile under the pinned image/runtime and hash-locked build backends",
+        "pip resolver and installed closure are checked at Predeploy; same version does not guarantee equal wheel bytes"
+      ],
+      "schema_version": 3,
+      "source_requirements_total": 24,
+      "status": "GREEN",
+      "supply_chain_schema_valid": true
+    },
+    "status": "GREEN"
+  },
+  "inet_audit_witnessed": true,
+  "kind": "UNCOMMITTED_TREE_AFFECTED_FILE_FOCAL_ONLY",
+  "namespace": {
+    "hypothesis_storage_directory": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/execution-private/hypothesis",
+    "log_dir": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/execution-private/logs",
+    "pytest_cache_provider_disabled": true,
+    "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l/python311/execution-private",
+    "tmpdir": "/workspace/rc6gov-g5nxv2m2",
+    "tmpdir_device": 27,
+    "tmpdir_owner_uid": 1000,
+    "tmpdir_retained_for_diagnostics": true,
+    "writable_source_exclusions_added": []
+  },
+  "offline_capability": {
+    "af_unix_ipc_functional": true,
+    "architecture": "x86_64",
+    "creation_denial_witnesses": [
+      {
+        "errno": 97,
+        "family": 10,
+        "operation": "socket_creation",
+        "socket_created": false
+      }
+    ],
+    "ipv4_creation_grants_operation_authority": false,
+    "kernel_errno": 97,
+    "native_socket_creation_denied_families": [
+      10
+    ],
+    "no_new_privileges": true,
+    "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+    "status": "INSTALLED_AND_KERNEL_WITNESSED",
+    "transitive_kernel_network_attestation": false
+  },
+  "parent_pid": 11787,
+  "pgid": 11790,
+  "pid": 11790,
+  "product_sha256": {
+    "rc6_shadow_runtime/packed_storage.py": "fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466",
+    "rc6_shadow_runtime/serialization.py": "e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a"
+  },
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "source_whole_frozen": false
+}

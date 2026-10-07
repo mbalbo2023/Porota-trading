@@ -1,0 +1,11 @@
+{
+  "hypothesis_storage_directory": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private/hypothesis",
+  "log_dir": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private/logs",
+  "pytest_cache_provider_disabled": true,
+  "root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-row-tuple-pair-0f73-64bhz4w8/raw/ROW_control/execution-private",
+  "tmpdir": "/workspace/rc6gov-oyjdy4oy",
+  "tmpdir_device": 27,
+  "tmpdir_owner_uid": 1000,
+  "tmpdir_retained_for_diagnostics": true,
+  "writable_source_exclusions_added": []
+}

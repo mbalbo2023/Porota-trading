@@ -1,0 +1,45 @@
+import datetime,hashlib,json,os,pathlib,re,signal,subprocess,sys,time,urllib.parse
+OUT=pathlib.Path('/workspace/scratch/rc6driver-kba25cdt');DRIVER=OUT/'driver-env'
+assert json.loads((OUT/'receipts/driver-validation.json').read_text())['status']=='GREEN_DRIVER_BYTES_ONLY'
+command=[str(DRIVER/'bin/python'),'-I','-B','-m','playwright','install','chromium']
+changes=0;lines=0;failures=0;aborted=False;size=0
+url_re=re.compile(r'https?://[^\s<>\"\']+')
+secret_re=re.compile(r'(?i)\b(authorization|proxy-authorization|cookie|set-cookie|token|secret|password|credential)\s*[:=]\s*\S+')
+header_re=re.compile(r'^[A-Za-z][A-Za-z0-9-]*:\s+')
+def sanitize(line):
+ global changes
+ def url_clean(match):
+  global changes
+  text=match.group(0);parts=urllib.parse.urlsplit(text)
+  if parts.username is not None or parts.query or parts.fragment:
+   changes+=1
+   return urllib.parse.urlunsplit((parts.scheme,parts.hostname or '',parts.path,'',''))+' [URL_COMPONENTS_REDACTED]'
+  return text
+ if header_re.match(line) and not line.startswith(('Error:','Warning:','Note:')):
+  changes+=1;return '[HEADER_LINE_REDACTED]'
+ clean=url_re.sub(url_clean,line)
+ clean,n=secret_re.subn(lambda m:m.group(1)+'=[REDACTED]',clean);changes+=n
+ return clean
+p=subprocess.Popen(command,cwd=OUT,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+print(json.dumps({'event':'NORMAL_BROWSER_INSTALL_STARTED','utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'python_pid':os.getpid(),'cli_pid':p.pid,'browser_cache':os.environ['PLAYWRIGHT_BROWSERS_PATH'],'browser_launch_called':False}),flush=True)
+path=OUT/'logs/browser-install.sanitized.log';started=time.monotonic()
+with path.open('x') as log:
+ path.chmod(0o600)
+ while True:
+  raw=p.stdout.readline(65537)
+  if not raw:break
+  assert len(raw)<=65536,'INSTALLER_LOG_LINE_CAPACITY'
+  text=raw.decode('utf-8',errors='replace')
+  clean=sanitize(text.rstrip('\n'))+'\n';encoded=clean.encode();size+=len(encoded);assert size<=8*1024**2
+  log.write(clean);log.flush();lines+=1
+  if re.search(r'(?i)(download failure|error:.*download failed|error:.*connect.*(refused|timed out)|certificate.*(failed|error))',clean):
+   failures+=1
+   if not aborted:
+    aborted=True;p.send_signal(signal.SIGINT)
+ rc=p.wait()
+result={'status':'GREEN_BROWSER_INSTALL_ONLY' if rc==0 and not aborted else 'RED','command':command,'cli_pid':p.pid,'returncode':rc,'seconds':time.monotonic()-started,'log_path':str(path),'log_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'log_bytes':size,'sanitized_lines':lines,'redactions':changes,'first_download_failure_aborts_no_blind_retry':True,'download_failures_observed':failures,'aborted_own_cli_on_failure':aborted,'browser_gate_run':False,'browser_launch_called':False,'system_browser_override':False,'package_globals_rebound':False}
+raw=(json.dumps(result,sort_keys=True,indent=2)+'\n').encode();receipt=OUT/'receipts/browser-install.json'
+with receipt.open('xb') as f:f.write(raw)
+receipt.chmod(0o600)
+print(json.dumps({'event':'NORMAL_BROWSER_INSTALL_FIN','status':result['status'],'receipt_sha256':hashlib.sha256(raw).hexdigest(),'redactions':changes,'returncode':rc}),flush=True)
+sys.exit(0 if result['status']=='GREEN_BROWSER_INSTALL_ONLY' else 1)

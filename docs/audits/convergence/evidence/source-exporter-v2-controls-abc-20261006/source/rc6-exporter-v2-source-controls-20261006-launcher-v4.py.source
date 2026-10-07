@@ -1,0 +1,85 @@
+import ctypes,errno,hashlib,json,os,signal,stat,subprocess,sys,time
+from pathlib import Path
+DRIVER=Path('/tmp/rc6_export_whole_git_source_v2_controls_candidate.py')
+EXPECTED='f5226b655a0b2ea46bf58553030834ff6d567ae86d079f613f2920e4ed145552'
+RAW=Path('/workspace/rc6-exporter-v2-source-controls-20261006-dispatch-retry-c')
+OUTPUT=Path('/workspace/rc6-exporter-v2-source-controls-20261006-raw-retry-c')
+FIELDS=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+def read(path):
+ fd=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK)
+ try:
+  info=os.fstat(fd);assert stat.S_ISREG(info.st_mode) and info.st_nlink==1
+  pieces=[]
+  while part:=os.read(fd,65536):pieces.append(part)
+  assert all(getattr(info,k)==getattr(os.fstat(fd),k)==getattr(os.lstat(path),k) for k in FIELDS)
+  return b''.join(pieces),{k:getattr(info,k) for k in FIELDS}
+ finally:os.close(fd)
+wire,before=read(DRIVER);assert hashlib.sha256(wire).hexdigest()==EXPECTED
+assert not RAW.exists() and not OUTPUT.exists(); RAW.mkdir(mode=0o700)
+libc=ctypes.CDLL(None,use_errno=True);previous=ctypes.c_int();assert libc.prctl(37,ctypes.byref(previous),0,0,0)==0
+command=[sys.executable,'-I','-B','-S','-c',
+    'import sys; sys.argv='+repr([str(DRIVER),'--output',str(OUTPUT)])+'; exec(compile('+repr(wire)+', '+repr(str(DRIVER))+', \'exec\'), {\'__name__\':\'__main__\', \'__file__\':'+repr(str(DRIVER))+'})']
+main=None;reaped=0;status=None;usage=None;failed=None;exhausted=False;group_absent=False;residual=[];adopted=[];wait4_zero=False;observations=[];started=time.monotonic();active=False;pre_echild=False;restore_verified=False
+try:
+ assert libc.prctl(36,1,0,0,0)==0;active=True
+ current=ctypes.c_int();assert libc.prctl(37,ctypes.byref(current),0,0,0)==0 and current.value==1
+ try:os.wait4(-1,os.WNOHANG)
+ except ChildProcessError as e:assert e.errno==errno.ECHILD;pre_echild=True
+ else:raise RuntimeError('CONTROL_OUTER_PRE_ECHILD_REQUIRED')
+ (RAW/'dispatch.source-only.json').write_text(json.dumps({'command':command,'driver_sha256':EXPECTED,'driver_cap20':True,'outer_main_management_seconds':30,'product_native':0,'full_gov':False},indent=2)+'\n')
+ with (RAW/'stdout.raw').open('xb') as out,(RAW/'stderr.raw').open('xb') as err:
+  main=subprocess.Popen(command,stdout=out,stderr=err,start_new_session=True,env={'PATH':os.defpath,'LANG':'C.UTF-8','PYTHONDONTWRITEBYTECODE':'1'})
+  while time.monotonic()-started<30:
+   reaped,status,usage=os.wait4(main.pid,os.WNOHANG)
+   if reaped:main.returncode=os.waitstatus_to_exitcode(status);break
+   time.sleep(.02)
+  if not reaped:failed={'reason':'CONTROL_OUTER_MAIN30_EXHAUSTED'}
+except BaseException as e:failed={'class':type(e).__name__,'reason':str(e)}
+finally:
+ deadline=time.monotonic()+5
+ cleanup_error=None
+ try:
+  if active and pre_echild and main is None:
+   try:os.wait4(-1,os.WNOHANG)
+   except ChildProcessError as e:assert e.errno==errno.ECHILD;exhausted=True;group_absent=True;observations.append({'outcome':'ECHILD','errno':e.errno,'phase':'NO_POPEN_OWN_CHILD_EXHAUSTION'})
+   else:failed=failed or {'reason':'CONTROL_NO_POPEN_OWN_CHILD_EXHAUSTION_UNVERIFIED'}
+  while main is not None and time.monotonic()<deadline:
+   try:os.killpg(main.pid,0)
+   except ProcessLookupError:group_absent=True
+   if not group_absent:
+    try:os.killpg(main.pid,signal.SIGKILL)
+    except ProcessLookupError:group_absent=True
+   if not reaped:
+    found,status,usage=os.wait4(main.pid,os.WNOHANG)
+    if found:reaped=found;main.returncode=os.waitstatus_to_exitcode(status)
+   if reaped:
+    try:found,childstatus,chusage=os.wait4(-1,os.WNOHANG)
+    except ChildProcessError as e:
+     assert e.errno==errno.ECHILD;exhausted=True;observations.append({'outcome':'ECHILD','errno':e.errno})
+    else:
+     if found:
+      adopted.append({'pid':found,'exit_code':os.waitstatus_to_exitcode(childstatus),'kernel_rusage':{'rss_bytes':chusage.ru_maxrss*1024,'cpu_user':chusage.ru_utime,'cpu_system':chusage.ru_stime}})
+     else:
+      wait4_zero=True
+      observations.append({'outcome':'WAIT4_ZERO_IRREVERSIBLE_RED','phase':'POST_MAIN_OWN_CHILD_DRAIN'})
+   if exhausted and group_absent:break
+   time.sleep(.02)
+  if main is not None and not exhausted:
+   residual.append({'outcome':'OWN_CHILD_EXHAUSTION_UNVERIFIED_AT_CLEANUP_BOUND'})
+  if active and pre_echild and exhausted and group_absent:
+   assert libc.prctl(36,previous.value,0,0,0)==0
+   restored=ctypes.c_int();assert libc.prctl(37,ctypes.byref(restored),0,0,0)==0 and restored.value==previous.value
+   restore_verified=True;active=False
+ except BaseException as e:
+  cleanup_error={'class':type(e).__name__,'reason':str(e)}
+  failed=failed or cleanup_error
+elapsed=time.monotonic()-started
+wireafter=None;after=None;source_error=None
+try:
+ wireafter,after=read(DRIVER)
+except BaseException as e:source_error={'class':type(e).__name__,'reason':str(e)}
+source_unchanged=source_error is None and before==after and wire==wireafter
+receipt={'schema':'rc6.synthetic-process-driver-outer-wait4.v1','driver_sha256':EXPECTED,'pid':main.pid if main else None,'actual_main_reaped':bool(reaped),'exit_code':main.returncode if main else None,'kernel_pre_echild':pre_echild,'kernel_post_echild':exhausted,'subreaper_restore_verified':restore_verified,'subreaper_retained_on_unverified_cleanup':active,'own_group_absent':group_absent,'residual_descendants_observed':residual,'adopted_descendants_reaped':adopted,'kernel_wait4_zero_observed_irreversible_red':wait4_zero,'observations':observations,'outer_wall_seconds':elapsed,'failed':failed,'source_all11_unchanged':source_unchanged,'source_custody_before':before,'source_custody_after':after,'source_custody_error':source_error,'kernel_rusage':{'rss_bytes':usage.ru_maxrss*1024,'cpu_user':usage.ru_utime,'cpu_system':usage.ru_stime} if usage else None,'product_native':0,'full_gov':False}
+(RAW/'kernel.wait4.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
+print(json.dumps(receipt),flush=True)
+raise SystemExit(0 if reaped and main.returncode==0 and pre_echild and exhausted and group_absent and restore_verified and not residual and not wait4_zero and not failed and source_unchanged and elapsed<30 else 1)

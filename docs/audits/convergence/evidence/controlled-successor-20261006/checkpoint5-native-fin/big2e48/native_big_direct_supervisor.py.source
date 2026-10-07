@@ -1,0 +1,348 @@
+"""External parent only; exactly one direct, source-pinned canonical BIG CLI.
+
+Running this file requires an approved new Git SHA/tree, fresh exported whole
+source and reviewed launch. Preparing this file does not execute its gates.
+No bootstrap runs in the child, no source overlays and no module aliases.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import re
+import stat
+import sys
+
+sys.dont_write_bytecode = True
+
+
+def safe_failure(error, stage):
+    record = {"stage": stage, "class": type(error).__name__}
+    literal = str(error).partition(":")[0]
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{0,191}", literal):
+        record["reason"] = literal
+    elif isinstance(error, OSError) and type(error.errno) is int:
+        record.update(reason="OS_ERROR", errno=error.errno)
+    else:
+        record["reason"] = "NON_LITERAL_GUARD_EXCEPTION"
+    return record
+
+
+def bounded_number(value, maximum):
+    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= maximum
+
+
+def streamed_tar(gov, path, expected_digest):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    try:
+        before = os.fstat(descriptor)
+        gov.require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                    and before.st_uid == os.geteuid(), "OWNED_REGULAR_SOURCE_TAR_REQUIRED")
+        checksum, size = hashlib.sha256(), 0
+        while block := os.read(descriptor, 1024**2):
+            checksum.update(block); size += len(block)
+        after, location = os.fstat(descriptor), path.lstat()
+        gov.require(size == before.st_size and checksum.hexdigest() == expected_digest
+                    and all(getattr(before, key) == getattr(after, key) == getattr(location, key)
+                            for key in gov.FIELDS), "SOURCE_TAR_HASH_OR_CUSTODY_CHANGED")
+        return {key: getattr(before, key) for key in gov.FIELDS}
+    finally:
+        os.close(descriptor)
+
+
+def source_snapshot(gov, source, repository, index_path, tar_path, args):
+    """Called only before launch or after real FIN + owned kernel exhaustion."""
+    from scripts.rc6_native_import_provenance import prepare_binding
+    wire, index_stat = gov.capture(index_path)
+    gov.require(hashlib.sha256(wire).hexdigest() == args.index_sha256, "EXACT_SOURCE_INDEX_REQUIRED")
+    index = json.loads(wire)
+    gov.require(gov.git(repository, "rev-parse", "HEAD").decode().strip() == args.sha
+                and gov.git(repository, "rev-parse", "HEAD^{tree}").decode().strip() == args.tree
+                and not gov.git(repository, "status", "--porcelain").strip(),
+                "FRESH_REPOSITORY_HEAD_TREE_AND_CLEAN_WORKTREE_REQUIRED")
+    binding = prepare_binding(source_root=str(source), source_repo=str(repository),
+        source_sha=args.sha, source_tree=args.tree, source_index=str(index_path))
+    physical_before, files = gov.physical_namespace(source), {}
+    for name, expected in binding["files"].items():
+        blob, attributes = gov.capture(source/name)
+        row = {"bytes": len(blob), "sha256": hashlib.sha256(blob).hexdigest(),
+               "git_blob": hashlib.sha1(b"blob "+str(len(blob)).encode()+b"\0"+blob).hexdigest(),
+               "git_mode": "100"+format(stat.S_IMODE(attributes["st_mode"]), "03o"),
+               "stat_fields": attributes}
+        gov.require(row["sha256"] == expected["sha256"] and row["git_blob"] == expected["blob_id"]
+                    and row["git_mode"] == expected["mode"], "PHYSICAL_SOURCE_PIN_MISMATCH")
+        files[name] = row
+    physical_after = gov.physical_namespace(source)
+    gov.require(physical_before == physical_after and set(physical_after["files"]) == set(files),
+                "PHYSICAL_NAMESPACE_CHANGED_OR_NONLITERAL")
+    for name, row in files.items():
+        gov.require(row["stat_fields"] == physical_after["files"][name], "PHYSICAL_STAT_CAPTURE_MISMATCH")
+    gov.require(index["tar_sha256"] == args.tar_sha256, "INDEX_TAR_BINDING_MISMATCH")
+    tar_stat = streamed_tar(gov, tar_path, args.tar_sha256)
+    return {"source_sha": args.sha, "source_tree": args.tree, "files": files, "overlay_count": 0,
+        "physical_directories": physical_after["directories"],
+        "git_metadata": {"source_repo": str(repository), "repository_head": args.sha,
+            "repository_head_tree": args.tree, "source_index_sha256": args.index_sha256,
+            "raw_git_commit_sha256": index["raw_git_commit_sha256"], "index_stat": index_stat,
+            "tar_sha256": args.tar_sha256, "tar_stat": tar_stat},
+        "scope": "WHOLE_RAW_GIT_EXACT_EXPORT; CODE_BYTES_MODES_AND10_STABLE_STATS; CODE_ATIME_SEPARATE; NO_DATA_READ"}
+
+
+def original_families_budget(gov, source):
+    """Read the pinned contract; aggregate family_reports time is descriptive."""
+    wire, _attributes = gov.capture(source/"rc6_shadow_runtime/families.py")
+    module = ast.parse(wire)
+    assignments = [node for node in module.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "QUERY_BUDGET_SECONDS" for target in node.targets)]
+    gov.require(len(assignments) == 1 and isinstance(assignments[0].value, ast.Constant)
+                and type(assignments[0].value.value) is float and assignments[0].value.value == 0.5,
+                "ORIGINAL_FAMILIES_PER_CAPTURE_POINT_FIVE_REQUIRED")
+    functions = [node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "_read"]
+    gov.require(len(functions) == 1, "PINNED_FAMILIES_READ_FUNCTION_REQUIRED")
+    function = functions[0]
+    deadline = [node for node in function.body if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "deadline" for target in node.targets)]
+    gov.require(len(deadline) == 1 and ast.dump(deadline[0].value) == ast.dump(
+        ast.parse("monotonic()+QUERY_BUDGET_SECONDS", mode="eval").body),
+        "ORIGINAL_FAMILIES_CAPTURE_DEADLINE_REQUIRED")
+    calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name) and node.func.id == "source_connection"]
+    gov.require(len(calls) == 1 and any(keyword.arg == "deadline" and isinstance(keyword.value, ast.Name)
+                and keyword.value.id == "deadline" for keyword in calls[0].keywords),
+                "FAMILIES_CAPTURE_MUST_RECEIVE_ORIGINAL_DEADLINE")
+    return {"source_file_sha256": hashlib.sha256(wire).hexdigest(), "query_budget_seconds": 0.5,
+        "read_function_line": function.lineno, "deadline_line": deadline[0].lineno,
+        "scope": "LITERAL_PINNED_PER_CAPTURE_DEADLINE; NATIVE_FULL_PIPELINE_AND_IMPORT_PROOF_REQUIRED",
+        "family_reports_aggregate_is_not_point_five_gate": True}
+
+
+def kernel_checks(kernel):
+    return {
+        "main_pid_reaped_exactly": kernel["actual_child_reaped"] is True
+            and kernel["wait4_reaped_pid"] == kernel["pid"],
+        "main_exit_zero": type(kernel["returncode"]) is int and kernel["returncode"] == 0,
+        "exclusive_pre_and_post_echild": kernel["kernel_pre_popen_echild_verified"] is True
+            and kernel["owned_children_exhaustion_verified"] is True,
+        "pgid_absent_at_main_and_after": kernel["process_group_absent_at_main_reap"] is True
+            and kernel["process_group_absent_after_reap"] is True,
+        "no_irreversible_late_or_wait4_zero_red": kernel["timed_out"] is False
+            and kernel["kernel_wait4_zero_observed_irreversible_red"] is False
+            and kernel["late_observed_main_reap_irreversible_red"] is False,
+        "actual_outer_management_only_300": bounded_number(kernel["actual_launch_to_pid_reap_wall_seconds"], 300)
+            and kernel["phase_acceptance_deadline_seconds"] == 300,
+        "original_owned_cleanup_5": kernel["owned_cleanup_management_bound_seconds"] == 5,
+        "subreaper_restored_and_no_residue_or_signals": kernel["subreaper_restore_attempted_on_all_activated_paths"] is True
+            and all(kernel[name] == [] for name in ("residual_descendants_observed", "remaining_owned_children",
+                "adopted_descendants_reaped", "owned_group_signal_observations", "supervisor_errors")),
+        "actual_kernel_peak_rss_strictly_below_2gib": type(kernel["peak_rss_bytes"]) is int
+            and 0 <= kernel["peak_rss_bytes"] < 2*1024**3}
+
+
+def native_checks(native, kernel, gov, args):
+    shadow, proof, gates = native["shadow"], native["import_provenance"], native["resource_gates"]
+    lifecycle, exits = native["native_cli_lifecycle"], native["factual_exits"]
+    finalization, fsync = lifecycle["child_infrastructure_finalization"], shadow["fsync"]
+    binding = (args.sha, args.tree, args.index_sha256)
+    qualified = [proof["environment_before_fixtures"], proof["worker_final"]["environment_before_product_imports"]]
+    custody = native["source_custody_before"]
+    finals = [node for node in shadow["probe_event_receipts"] if node["event"] == "FINAL"]
+    handlers = shadow["handler_resources"]
+    required_handlers = ("families", "lab", "entry_signals", "funnel")
+    return {
+        "actual_original_12000_and_60000": type(native["catalog_count"]) is int and native["catalog_count"] == 12000
+            and type(native["observations_materialized"]) is int and native["observations_materialized"] == 60000,
+        "native_original_required_gates_green": native["business_resource_complete"] is True
+            and native["completion_required"] is True
+            and all(gates[name] is True for name in ("source_database_unchanged", "evidence_within_quota",
+                "rss_within_two_gib", "child_cleanup_completed", "complete_committed_cycle", "actual_slow_fsync_exit_isolation")),
+        "canonical_full_pre_and_open": native["canonical_runtime_requested"] is True
+            and native["diagnostic_only"] is False and shadow["canonical_factory"] is True
+            and shadow["cycle_completion"] is True and shadow["child_cleanup_completed"] is True
+            and shadow["full_pipeline_exercised"] is True and shadow["committed_sequence"] == 2
+            and shadow["catalog_ready_count"] == 12000
+            and shadow["phases"] == ["BOUNDED_READ", "PREOPEN_COMMITTED", "OPEN_CYCLE_COMPLETED"]
+            and all(type(handlers[name]["calls"]) is int and handlers[name]["calls"] == 2 for name in required_handlers),
+        "actual_original_native_cycle_90": native["cycle_deadline_seconds"] == 90
+            and bounded_number(shadow["elapsed_seconds"], 90) and len(finals) == 1
+            and bounded_number(finals[0]["received_at_monotonic"]-shadow["cycle_started_at_monotonic"], 90),
+        "original_native_quota_128mib_and_rss_strict_2gib": gates["maximum_evidence_bytes"] == 128*1024**2
+            and type(gates["actual_evidence_bytes"]) is int and 0 <= gates["actual_evidence_bytes"] <= 128*1024**2
+            and gates["maximum_rss_bytes"] == 2*1024**3 and type(gates["actual_rss_bytes"]) is int
+            and 0 <= gates["actual_rss_bytes"] < 2*1024**3,
+        "actual_5paper_exits_during_slow_fsync": native["slow_disk_requested"] is True
+            and native["slow_disk_injected"] is True and native["slow_fsync_exit_isolation_proven"] is True
+            and fsync["fsync_entered"] is True and fsync["fsync_completed"] is True
+            and bounded_number(fsync["blocked_seconds"], 15)
+            and exits["closed"] == exits["sell_fills"] == 5 and exits["real_orders_sent"] == 0
+            and fsync["entered_at_monotonic"] <= exits["started_at_monotonic"]
+                <= exits["finished_at_monotonic"] <= fsync["completed_at_monotonic"],
+        "native_data_all11_and_main_wal_shm_journal_unchanged": native["source_database_unchanged"] is True
+            and native["source_custody_scope"] == "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME"
+            and custody == native["source_custody_after"] and "" in custody
+            and set(custody) <= {"", "-wal", "-shm", "-journal"}
+            and all(set(row) == {*gov.FIELDS, "sha256"}
+                and all(type(row[name]) is int for name in gov.FIELDS)
+                and re.fullmatch(r"[0-9a-f]{64}", row["sha256"]) is not None for row in custody.values()),
+        "actual157_native_metadata_before_fixtures_and_product_imports": all(
+            row["installed_total"] == row["installed_unique_total"] == row["expected_total"] == 157
+            and row["python"] == "3.11.16" and row["executable"] == args.python for row in qualified),
+        "native_observed_import_closure_verified_no_alien_relabel": native["import_proof_complete"] is True
+            and proof["status"] == "VERIFIED_OBSERVED_WINDOWS" and proof["transient_closure_verified"] is True
+            and tuple(proof[name] for name in ("source_sha", "source_tree", "source_index_sha256")) == binding
+            and proof["launcher_pid"] == kernel["pid"] and proof["launcher_parent_pid"] == os.getpid()
+            and proof["worker_pid_source_binding_verified"] is True and proof["worker_exitcode"] == 0
+            and proof["worker_cleanup_completed"] is True
+            and all(row["status"] == "VERIFIED_OBSERVED_WINDOW" and row["transient_closure_verified"] is True
+                    and row["invalid"] == [] and tuple(row[name] for name in
+                        ("source_sha", "source_tree", "source_index_sha256")) == binding
+                    for row in (proof["parent_final"], proof["worker_final"])),
+        "direct_native_cli_identity_and_actual_guard": lifecycle["pid"] == kernel["pid"]
+            and lifecycle["parent_pid"] == os.getpid() and lifecycle["entry_module"] == "__main__"
+            and lifecycle["status"] == "GREEN" and lifecycle["native_resource_exit_code"] == lifecycle["cli_exit_code"] == 0
+            and lifecycle["fresh_infrastructure_verified"] is True
+            and all(value is None for value in lifecycle["infrastructure_before"].values())
+            and lifecycle["original_inet_operation_audit_registration_witness_verified"] is True
+            and lifecycle["inet_socket_attempts"] == [] and lifecycle["unexpected_error"] is None
+            and lifecycle["offline_ipv6_creation_capability"]["status"] == "INSTALLED_AND_KERNEL_WITNESSED"
+            and lifecycle["offline_ipv6_creation_capability"]["transitive_kernel_network_attestation"] is False,
+        "actual_native_child_fin_5_no_signals_or_errors": lifecycle["child_infrastructure_finalized_before_main_exit"] is True
+            and finalization["status"] == "GREEN" and finalization["finalization_thread_finished"] is True
+            and finalization["management_bound_seconds"] == 5 and bounded_number(finalization["wall_seconds"], 5)
+            and finalization["kernel_echild_before_phase_return"] is True
+            and finalization["signal_guard_installed_and_witnessed"] is True
+            and finalization["forced_termination_attempted"] is False and finalization["signal_vetoed"] is False
+            and finalization["forced_termination"] is False
+            and finalization["termination_signal_attempts"] == finalization["errors"] == [],
+        "paper_only_and_no_runtime": native["real_orders_sent"] == native["provider_requests"] == 0
+            and native["real_routes"] == "NOT_CALLED" and native["runtime_touched"] is False}
+
+
+def main(args):
+    source, repository, index_path, tar_path = (args.epoch/"source", args.epoch/"repository",
+                                              args.epoch/"pin/source.index.json", args.epoch/"pin/source.tar")
+    sys.path.insert(0, str(source))
+    from scripts import rc6_controlled_governed_runner as gov
+    gov.require(sys.platform == "linux" and os.getuid() == os.geteuid() != 0
+                and platform.python_version() == "3.11.16" and sys.executable == args.python,
+                "EXACT_NONROOT_LOCKED311_INTERPRETER_REQUIRED")
+    for path in (args.epoch, source, repository, index_path, tar_path, Path(__file__)):
+        gov.safe_path(path)
+    gov.require(Path(gov.__file__).absolute() == source/"scripts/rc6_controlled_governed_runner.py",
+                "ACTUAL_TRACKED_GOV_HELPER_REQUIRED")
+    gov.require(not any(key in os.environ for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")), "GIT_AUTHORITY_ENV_OVERRIDE_FORBIDDEN")
+    gov.require(not any(name.startswith(("POROTA_", "PAPER_")) or name in ("DATA_DIR", "HIST_DB_PATH")
+                for name in os.environ), "OPERATIONAL_ENVIRONMENT_FORBIDDEN")
+    raw, data = args.epoch/"raw-slow", args.epoch/"data-slow"
+    gov.require(not raw.exists() and not data.exists() and not source.is_relative_to(raw)
+                and not raw.is_relative_to(source) and not data.is_relative_to(source)
+                and args.epoch.lstat().st_uid == os.geteuid() and stat.S_IMODE(args.epoch.lstat().st_mode) == 0o700,
+                "FRESH_EXTERNAL_OWNED700_RAW_AND_DATA_REQUIRED")
+    raw.mkdir(mode=0o700); data.mkdir(mode=0o700)
+    errors, checks, before, after, kernel, native, atime = [], {}, None, None, None, None, None
+    native_summary = None
+    publish = lambda name, value: gov.publish(raw/name, gov.canonical(value))
+    try:
+        namespace = gov.phase_namespace(source, raw, "execution")
+        publish("namespace.json", namespace)
+        closure = gov.installed_closure(source)
+        publish("parent-installed-closure.json", closure)
+        before = source_snapshot(gov, source, repository, index_path, tar_path, args)
+        publish("source-before.json", before)
+        budget = original_families_budget(gov, source)
+        publish("original-families-budget.json", budget)
+        command = [args.python, "-I", "-B", str(source/"scripts/rc6_issue465_stress.py"),
+            "--root", str(data), "--out", str(raw/"native-big-result.json"),
+            "--catalog-count", "12000", "--observations-per-identity", "5", "--canonical-runtime", "--slow-disk",
+            "--source-root", str(source), "--source-repo", str(repository), "--source-sha", args.sha,
+            "--source-tree", args.tree, "--source-index", str(index_path)]
+        env = {"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+               "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "TZ": "UTC"}
+        env.update({name: os.environ[name] for name in ("TMPDIR", "RUNNER_TEMP", "HYPOTHESIS_STORAGE_DIRECTORY", "LOG_DIR")})
+        harness, harness_stat = gov.capture(Path(__file__))
+        launch = {"schema": "rc6.native-direct-big-launch.v1", "source_sha": args.sha, "source_tree": args.tree,
+            "source_index_sha256": args.index_sha256, "source_tar_sha256": args.tar_sha256,
+            "harness_sha256": hashlib.sha256(harness).hexdigest(), "harness_stat_fields": harness_stat,
+            "source_file_count": len(before["files"]), "supervisor_pid": os.getpid(), "command": command,
+            "invocation": "DIRECT_NATIVE_PYTHON_CLI; NO_RUNPY_BOOTSTRAP_OVERLAY_OR_ALIAS_REBINDING",
+            "original_gates": {"catalog": 12000, "observations": 60000, "cycle_seconds": 90,
+                "families_per_capture_seconds": 0.5, "maximum_evidence_bytes": 128*1024**2,
+                "rss_strictly_less_than_bytes": 2*1024**3, "factual_paper_exits": 5,
+                "slow_fsync_release_seconds": 15, "native_child_finalization_seconds": 5},
+            "outer_management_only_seconds": 300, "outer_management_changes_native90s": False,
+            "owned_cleanup_management_seconds": 5, "profiler": False, "gc_tuning": False,
+            "stack_sampler": False, "real_orders_sent": 0, "runtime_validated": False, "artifact_validated": False}
+        publish("launch.json", launch)
+        print("BIG_NATIVE_LAUNCH="+json.dumps(launch, sort_keys=True), flush=True)
+        # While this call is active, this parent reads no SOURCE, DATA, native
+        # result or native.log. The actual tracked supervisor owns all children.
+        kernel = gov.subprocess_phase(command, source, raw/"native.log", env, limit=300)
+        publish("kernel-supervision.json", kernel)
+        checks.update(kernel_checks(kernel))
+        reads_allowed = (kernel["actual_child_reaped"] is True and kernel["owned_children_exhaustion_verified"] is True
+            and kernel["process_group_absent_after_reap"] is True and kernel["remaining_owned_children"] == [])
+        gov.require(reads_allowed, "POST_FIN_READ_FORBIDDEN_WITHOUT_REAL_KERNEL_EXHAUSTION")
+        after = source_snapshot(gov, source, repository, index_path, tar_path, args)
+        publish("source-after.json", after)
+        atime = gov.compare_source(before, after)
+        native_wire, native_stat = gov.capture(raw/"native-big-result.json")
+        native = json.loads(native_wire)
+        publish("native-result-capture.json", {"bytes": len(native_wire),
+            "sha256": hashlib.sha256(native_wire).hexdigest(), "stat_fields": native_stat,
+            "native_result_not_rewritten": True, "native_data_read_by_parent": False})
+        shadow_summary = native.get("shadow", {})
+        native_summary = {"business_resource_complete": native.get("business_resource_complete"),
+            "import_proof_complete": native.get("import_proof_complete"),
+            "original_resource_gates": native.get("resource_gates"),
+            "observed_phases": shadow_summary.get("phases"),
+            "actual_handler_resources": shadow_summary.get("handler_resources"),
+            "native_reason": shadow_summary.get("reason"),
+            "native_cli_lifecycle": native.get("native_cli_lifecycle")}
+        checks.update(whole_raw_git_code_bytes_modes_and10_stable_stats_unchanged=True)
+        try:
+            checks.update(native_checks(native, kernel, gov, args))
+            checks["families_point_five_literal_native_enforced_per_capture"] = (
+                checks["canonical_full_pre_and_open"] and checks["native_observed_import_closure_verified_no_alien_relabel"])
+        except KeyError as error:
+            checks["native_required_completion_fields_present"] = False
+            errors.append({"stage": "native_receipt_qualification", "class": type(error).__name__,
+                           "reason": "NATIVE_CANONICAL_COMPLETION_FIELDS_MISSING"})
+    except BaseException as error:
+        errors.append(safe_failure(error, "canonical_direct_big_supervision"))
+    complete = bool(checks) and all(value is True for value in checks.values()) and not errors
+    report = {"schema": "rc6.native-direct-big-supervision.v1", "status": "GREEN" if complete else "RED",
+        "source_sha": args.sha, "source_tree": args.tree, "source_index_sha256": args.index_sha256,
+        "source_tar_sha256": args.tar_sha256, "canonical_big_and_observed_import_gates_closed": complete,
+        "checks": checks, "errors": errors, "actual_native_summary": native_summary,
+        "observed_code_atime_changes": atime,
+        "code_all11_stats_unchanged_claim": False,
+        "code_atime_scope": "ACTUAL_BEFORE_AND_AFTER; IMPORT_ATIME_CHANGES_DISCLOSED; NO_ATTRIBUTION_TO_ALL_CHILD_ACTIVITY",
+        "native_data_all11_custody_claim_is_from_actual_native_receipt_only": True,
+        "data_root_preserved": str(data), "raw_root_preserved": str(raw), "native_data_read_by_parent": False,
+        "no_previous_red_or_alien_receipt_reclassified": True, "final_candidate_eligible": False,
+        "artifact_validated": False, "image_validated": False, "runtime_validated": False,
+        "mode": "PRODUCTION_PAPER / SIMULATION", "real_orders_sent": 0, "ppi_watch": "UNTOUCHED",
+        "import_scope": "ACTUAL_NATIVE_LAUNCHER_AND_WORKER_OBSERVED_WINDOWS; NOT_FULL_LIFETIME_OR_IMAGE_ATTESTATION",
+        "network_scope": "ACTUAL_CLI_ORIGINAL_PYTHON_INET_AUDIT_AND_IPV6_CREATION_FILTER; NO_TRANSITIVE_NETWORK_ATTESTATION"}
+    publish("harness-final.json", report)
+    print("BIG_NATIVE_FINAL="+json.dumps(report, sort_keys=True), flush=True)
+    return 0 if complete else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--epoch", type=Path, required=True)
+    parser.add_argument("--python", required=True)
+    for key in ("sha", "tree", "index-sha256", "tar-sha256"):
+        parser.add_argument("--"+key, required=True)
+    args = parser.parse_args()
+    if (not args.epoch.is_absolute() or not Path(args.python).is_absolute()
+            or any(re.fullmatch(r"[0-9a-f]{40}", getattr(args, key)) is None for key in ("sha", "tree"))
+            or any(re.fullmatch(r"[0-9a-f]{64}", getattr(args, key)) is None for key in ("index_sha256", "tar_sha256"))):
+        parser.error("EXACT_ABSOLUTE_PATHS_AND_FULL_SHA_DIGESTS_REQUIRED")
+    raise SystemExit(main(args))

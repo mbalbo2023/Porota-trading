@@ -1,0 +1,9 @@
+{
+  "management_deadline": 25302.561583427,
+  "owned_log_bytes_fstat_only": 59,
+  "phase": "execution",
+  "pid": 22965,
+  "scope": "LOCAL_FOCAL_PARENT_ONLY_NOT_GLOBAL_FIN",
+  "stage": "poll",
+  "wall_seconds": 25.061693057999946
+}

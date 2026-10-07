@@ -1,0 +1,216 @@
+{
+  "original_diagnostic_source": "d9e7fb7d567ff745193c125dc9cd8df4e91ec5d6",
+  "original_diagnostic_state": "RED_TIMEOUT_BEFORE_FSYNC_CURRENT",
+  "remaining_uncertainty": [
+    "FULL_NATIVE_12000_60000_PIPELINE_90S_NOT_REPLAYED_FOR_THIS_CHANGE",
+    "CPU_RSS_SAVINGS_NOT_MEASURED",
+    "PREVIOUS_SOURCE_CAPTURE_025_FAILURE_CAUSE_UNKNOWN",
+    "HORIZON_ARCHIVE_UI_HEALTH_ARTIFACT_RUNTIME_GATES_SEPARATE"
+  ],
+  "schema": "rc6.packed-capture-allocation-native-evidence.v1",
+  "scope": "SOURCE_CODE_AND_NATIVE_FOCALS_NOT_BIG_OR_HORIZON_OR_FINAL_ARTIFACT_ACCEPTANCE",
+  "stages": [
+    {
+      "acceptance_complete": false,
+      "alien_imports": [],
+      "artifact_validated": false,
+      "code_overlay_count": 0,
+      "cpu_rss_savings_measured": false,
+      "distribution_count": 157,
+      "elapsed_seconds": 23.909071896996466,
+      "files": [
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 59857,
+          "preserved_filename": "0b380438/focal-receipt.json",
+          "preserved_sha256": "72984617d8dc61e4112e8fe86eb068486a53fd12af02c95b00de1c9077ba05f4",
+          "raw_bytes": 59857,
+          "raw_filename": "focal-receipt.json",
+          "raw_sha256": "72984617d8dc61e4112e8fe86eb068486a53fd12af02c95b00de1c9077ba05f4"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 11412,
+          "preserved_filename": "0b380438/entry-preflight.json",
+          "preserved_sha256": "8623e991b2ac924e606300a8182d79ef5b4ec429b50319ebddbdb30a65853f1e",
+          "raw_bytes": 11412,
+          "raw_filename": "entry-preflight.json",
+          "raw_sha256": "8623e991b2ac924e606300a8182d79ef5b4ec429b50319ebddbdb30a65853f1e"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 1544,
+          "preserved_filename": "0b380438/wrapper-before.json",
+          "preserved_sha256": "55b1170d05fb121d6917a09b188c6692ad334c6c30f59075af07aae8f5afb7c3",
+          "raw_bytes": 1544,
+          "raw_filename": "wrapper-before.json",
+          "raw_sha256": "55b1170d05fb121d6917a09b188c6692ad334c6c30f59075af07aae8f5afb7c3"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 8296,
+          "preserved_filename": "0b380438/run_focal.py",
+          "preserved_sha256": "6f8e0dcee98748149a899fb0233c8d2c60c5ceedef748ad915e06a8f29e0905a",
+          "raw_bytes": 8296,
+          "raw_filename": "run_focal.py",
+          "raw_sha256": "6f8e0dcee98748149a899fb0233c8d2c60c5ceedef748ad915e06a8f29e0905a"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 1951,
+          "preserved_filename": "0b380438/build_pin.py",
+          "preserved_sha256": "9bf9a9688a23b61995eeb1dcb57d356db1a054f32b2ef716c06e9c5f1c3b320f",
+          "raw_bytes": 1951,
+          "raw_filename": "build_pin.py",
+          "raw_sha256": "9bf9a9688a23b61995eeb1dcb57d356db1a054f32b2ef716c06e9c5f1c3b320f"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 160882,
+          "preserved_filename": "0b380438/source.index.json.gz",
+          "preserved_sha256": "d0fc463523ffef60bc84bc63086da50b656865552f194b3c5b9390e45ebff123",
+          "raw_bytes": 482364,
+          "raw_filename": "source.index.json",
+          "raw_sha256": "821bf4654b9437deeb9d942cd8447e461527e0fc32f5024ab72bdcc1354ba16d"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 3607,
+          "preserved_filename": "0b380438/native-focal.xml.gz",
+          "preserved_sha256": "888aa65b5445987deb4148511f5a4253ff0102a06f3813fa7109dfe6314615e1",
+          "raw_bytes": 26529,
+          "raw_filename": "native-focal.xml",
+          "raw_sha256": "156deecb21745b67840de1e7be429bc06b28ef3576c8e296c2919d068a82e6db"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 868,
+          "preserved_filename": "0b380438/focal.log.gz",
+          "preserved_sha256": "d35a8053a1eb80e2bc921076190e5205d709138303cb804f9ee8b77d36bf0a27",
+          "raw_bytes": 1593,
+          "raw_filename": "focal.log",
+          "raw_sha256": "d355ba4981d710af9d3787932e831f95a74b0be1e908b7be93bc2cf6a78e7870"
+        }
+      ],
+      "import_count": 95,
+      "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+      "native_cases": 162,
+      "native_states": {
+        "ERROR": 0,
+        "FAILURE": 0,
+        "PASS": 162,
+        "SKIPPED": 0
+      },
+      "network_attempts": 0,
+      "preflight_exact_names_versions": true,
+      "raw_directory": "/tmp/rc6-packed-capture-0b380438-157-raw",
+      "runtime_validated": false,
+      "source_files": 1650,
+      "source_sha": "0b3804388d1071959d16a0f382827aaf018b6429",
+      "source_sha_modes_git_blobs_unchanged": true,
+      "source_tar_sha256": "507368015340790093c4260959d018fb483b8761bb043f4837729d609ae3d413",
+      "source_tree": "191ff6b66a69fad2234db6c50ff743c91fa45c6f"
+    },
+    {
+      "acceptance_complete": false,
+      "alien_imports": [],
+      "artifact_validated": false,
+      "code_overlay_count": 0,
+      "cpu_rss_savings_measured": false,
+      "distribution_count": 157,
+      "elapsed_seconds": 4.6573414459999185,
+      "files": [
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 30197,
+          "preserved_filename": "93489456/focal-receipt.json",
+          "preserved_sha256": "bf0e9aefce06a9cbb36cb0b84e776858b8bd905d06947de091871659bb4ea4fa",
+          "raw_bytes": 30197,
+          "raw_filename": "focal-receipt.json",
+          "raw_sha256": "bf0e9aefce06a9cbb36cb0b84e776858b8bd905d06947de091871659bb4ea4fa"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 11412,
+          "preserved_filename": "93489456/entry-preflight.json",
+          "preserved_sha256": "9adee09d7d460b52d4e1fb35ff9af5f12c367acf5dee593e3208c37f3195e329",
+          "raw_bytes": 11412,
+          "raw_filename": "entry-preflight.json",
+          "raw_sha256": "9adee09d7d460b52d4e1fb35ff9af5f12c367acf5dee593e3208c37f3195e329"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 1369,
+          "preserved_filename": "93489456/wrapper-before.json",
+          "preserved_sha256": "7c9cabfdb9f47f43eac58e111932ec96a168c0eb6b02168bec9e1f44c05756c8",
+          "raw_bytes": 1369,
+          "raw_filename": "wrapper-before.json",
+          "raw_sha256": "7c9cabfdb9f47f43eac58e111932ec96a168c0eb6b02168bec9e1f44c05756c8"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 8129,
+          "preserved_filename": "93489456/run_focal.py",
+          "preserved_sha256": "d85e2347c730b707452ed75dc287436fbf6b3795bed9a4a91e93aa49e7580c4a",
+          "raw_bytes": 8129,
+          "raw_filename": "run_focal.py",
+          "raw_sha256": "d85e2347c730b707452ed75dc287436fbf6b3795bed9a4a91e93aa49e7580c4a"
+        },
+        {
+          "encoding": "ORIGINAL_BYTES",
+          "preserved_bytes": 1951,
+          "preserved_filename": "93489456/build_pin.py",
+          "preserved_sha256": "c2698badabcdc5915a8e2a081c32ab88cf950182237537b12eb630d45eb28a90",
+          "raw_bytes": 1951,
+          "raw_filename": "build_pin.py",
+          "raw_sha256": "c2698badabcdc5915a8e2a081c32ab88cf950182237537b12eb630d45eb28a90"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 160884,
+          "preserved_filename": "93489456/source.index.json.gz",
+          "preserved_sha256": "315106f4a985985742c9862cb11cece58fbcbb4b7e5aedcc1437265280e65648",
+          "raw_bytes": 482364,
+          "raw_filename": "source.index.json",
+          "raw_sha256": "4c8307e9088e9bf5cf6ed9f809ee4f515154ca465df18a55733ec2facdd66ea4"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 703,
+          "preserved_filename": "93489456/native-focal.xml.gz",
+          "preserved_sha256": "e9ff2781e137cd53c19c0a9bd5574aebeecd95608e1f75c09a165e01300daf82",
+          "raw_bytes": 5859,
+          "raw_filename": "native-focal.xml",
+          "raw_sha256": "70718abdd20c139732a4e0c2ea0f87de49210076b6bfead7117dc1fb8c9ea007"
+        },
+        {
+          "encoding": "LOSSLESS_GZIP_ORIGINAL_BYTES",
+          "preserved_bytes": 855,
+          "preserved_filename": "93489456/focal.log.gz",
+          "preserved_sha256": "308e5d74a6314d1e2ec43888d76cebd7eaf99a37e4a778f915980b1c65d47710",
+          "raw_bytes": 1431,
+          "raw_filename": "focal.log",
+          "raw_sha256": "ab494da6db5c3304b9fdf0039d64ee67f5c8415ba934d80c362a105f2744e43c"
+        }
+      ],
+      "import_count": 88,
+      "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+      "native_cases": 35,
+      "native_states": {
+        "ERROR": 0,
+        "FAILURE": 0,
+        "PASS": 35,
+        "SKIPPED": 0
+      },
+      "network_attempts": 0,
+      "preflight_exact_names_versions": true,
+      "raw_directory": "/tmp/rc6-packed-capture-93489456-157-raw",
+      "runtime_validated": false,
+      "source_files": 1650,
+      "source_sha": "934894569810b1bbc176ce93ba95cc1ee51cfb0c",
+      "source_sha_modes_git_blobs_unchanged": true,
+      "source_tar_sha256": "172b4b1943b8ef590f6ae6eea2914a594582f52a0b2f86f5e179f60bade73225",
+      "source_tree": "5f82f191cd38ecf3caef7263580d9632f068d541"
+    }
+  ]
+}

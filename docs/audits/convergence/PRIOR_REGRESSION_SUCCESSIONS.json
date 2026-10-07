@@ -1,0 +1,171 @@
+{
+  "ast_hash_algorithm": "sha256(ast.dump(node, annotate_fields=True, include_attributes=False).encode('utf-8'))",
+  "ast_metadata_interpreter": "3.12.14",
+  "authorization_base_sha": "9d51af4585829ecfb1a734717638f806bf80e3ed",
+  "limits": [
+    "Only the five named nodes have authorized successors; other prior regression guards remain under the unchanged original gate requirements.",
+    "Equal AST hashes do not attest semantic equivalence; UPDATED_AST retains the original node and requires ordinary ROOT FIP path-evolution explanation.",
+    "The helper has no Git/network/filesystem/test executor and does not authenticate supplied JUnit counts independently. ROOT must validate the single immutable JUnit receipt.",
+    "All linked parent requirement rows must declare the actual selected native node. This documentation does not replace ROOT requirement-matrix wiring.",
+    "Raw selected case metadata comes from the prior3cfe source/JUnit. It is not rerun by this document and does not authenticate current final release, financial independence, provider behavior or runtime.",
+    "AST dump hashes are interpreter-structure metadata; original/current source blobs and SHA256 are independently bound and remain interpreter-independent."
+  ],
+  "module_path": "scripts/rc6_prior_regression_successors.py",
+  "module_sha256": "b0ba30248e5244ebf4e66dd7923b5b23343350441f57d9a47a6c3a9a7d37bdfb",
+  "new_helper_execution": {
+    "executed": false,
+    "reason": "ROOT_EXCLUSIVE_CPU_WINDOW; SOURCE_ONLY_COMMIT_REQUESTED",
+    "tests_run": 0
+  },
+  "original_source_sha": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+  "recorded_native_junit": {
+    "bytes": 729880,
+    "case_count": 4802,
+    "path_as_received": "/tmp/rc6_governed_3cfe112b_py311.xml",
+    "scope": "PRIOR_RECORDED_SELECTED_NATIVE_CASE_FAMILIES; NOT_A_FRESH_SUCCESSION_HELPER_OR_FULL_SUITE_GREEN_EXECUTION",
+    "sha256": "f61b24e4e2f5637d9721c6e778d2b71869e1c0ad9cbc1d2d9d4b4984ca5d820b",
+    "suite_attributes": [
+      {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "4802",
+        "time": "1306.805",
+        "timestamp": "2026-10-05T10:06:23.461384+00:00"
+      }
+    ]
+  },
+  "recorded_native_relations": [
+    {
+      "contract_change": "Reject insufficient capacity for actual durable positions while preserving PAPER authority; an approved dynamic cohort does not waive the complete EXIT capacity requirement.",
+      "current_blob": "b0618f3c6b46421cff2d14cb57938a89ea70d512",
+      "current_file_sha256": "26659ee6f56cf7124deec242eaf05a1ac8be89a5a81ea76428ac57e4c770c6c0",
+      "current_function_ast_sha256": "d9f35510084bcce942fdfcb5b1524cbd84c7eccb43facaecca15d83be37fdb66",
+      "current_git_mode": "100644",
+      "linked_requirement_ids": [
+        "U05"
+      ],
+      "minimum_cases": 1,
+      "original_blob": "756eaa7a799b8a81ce383ea9b2fd2fc545735b6a",
+      "original_file_sha256": "565d399250aa05d6d3ac2fcbef602363996b25b374a92a677f212fd3f2e33b6e",
+      "original_function_ast_sha256": "3efcec66eb5ffdf7cbfa08316a7659454199520d9fddd19c8091e62a2ef77721",
+      "original_git_mode": "100644",
+      "original_node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_reserves_real_durable_positions_without_paper_authority_change",
+      "recorded_cases": [
+        {
+          "classname": "tests.test_issue465_budget_adversarial",
+          "name": "test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions",
+          "outcome": "PASS",
+          "time": "0.609"
+        }
+      ],
+      "successor_node": "tests/test_issue465_budget_adversarial.py::test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions"
+    },
+    {
+      "contract_change": "Reject insufficient global EXIT capacity before budget bootstrap instead of allowing a smaller EXIT floor to run and merely reporting its deficit.",
+      "current_blob": "b0618f3c6b46421cff2d14cb57938a89ea70d512",
+      "current_file_sha256": "26659ee6f56cf7124deec242eaf05a1ac8be89a5a81ea76428ac57e4c770c6c0",
+      "current_function_ast_sha256": "c27d06e4fc00768172f698e5e3e0406e271cd5eb3bdb56877c40fc9b39734100",
+      "current_git_mode": "100644",
+      "linked_requirement_ids": [
+        "U05"
+      ],
+      "minimum_cases": 1,
+      "original_blob": "756eaa7a799b8a81ce383ea9b2fd2fc545735b6a",
+      "original_file_sha256": "565d399250aa05d6d3ac2fcbef602363996b25b374a92a677f212fd3f2e33b6e",
+      "original_function_ast_sha256": "898da4486ce210a63788535927aeeb3cb757fafbc190768eb7032c116c27fc7f",
+      "original_git_mode": "100644",
+      "original_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow",
+      "recorded_cases": [
+        {
+          "classname": "tests.test_issue465_budget_adversarial",
+          "name": "test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap",
+          "outcome": "PASS",
+          "time": "0.002"
+        }
+      ],
+      "successor_node": "tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_rejects_unserviceable_exit_demand_before_bootstrap"
+    },
+    {
+      "contract_change": "Reject a stale CURRENT using durable high-water authority instead of returning a complete older cut; members from different generations remain forbidden.",
+      "current_blob": "44eb1d7f6a824def80fe9d089b438652e525dd92",
+      "current_file_sha256": "72a976d1321daf085747d07429e3364d3505106409779e3012d763fa42353026",
+      "current_function_ast_sha256": "eb24251cf4bb6e8f2f7144cb0fe83e2beff0dad8b9cc48c9a53f4572b01fd2d4",
+      "current_git_mode": "100644",
+      "linked_requirement_ids": [
+        "U20"
+      ],
+      "minimum_cases": 1,
+      "original_blob": "f113847f83542d57a1a8a7cff863a44e6b1009ff",
+      "original_file_sha256": "a54299fe047d9118d15ea81d3b87d740458ee33303eefd6b52e2fb1d3a0a63ad",
+      "original_function_ast_sha256": "3fd3928b0a0520c9bb5d902664e15aea87eab68b18112af421e05cb33da4fa2e",
+      "original_git_mode": "100644",
+      "original_node": "tests/test_issue465_generations.py::test_stale_current_returns_complete_prior_cut_without_borrowing_newer_members",
+      "recorded_cases": [
+        {
+          "classname": "tests.test_issue465_generations",
+          "name": "test_stale_current_is_rejected_by_durable_high_water_without_borrowing_newer_members",
+          "outcome": "PASS",
+          "time": "0.041"
+        }
+      ],
+      "successor_node": "tests/test_issue465_generations.py::test_stale_current_is_rejected_by_durable_high_water_without_borrowing_newer_members"
+    },
+    {
+      "contract_change": "Reject export of an uncommitted source transaction rather than opening the source through SQLite lock negotiation; failed export publishes no bundle and preserves the source.",
+      "current_blob": "39e969219433e1c18e226dded72824b699af3e41",
+      "current_file_sha256": "2acd4ebe1e3314c9615970802cbd2dff1c551b8666a438cb2a7dd8e26e2a58f4",
+      "current_function_ast_sha256": "db866f0ebc55d23a1a6de3d21ffd34380fd3881309cd6cbb883bc4da840f11d1",
+      "current_git_mode": "100644",
+      "linked_requirement_ids": [
+        "U24"
+      ],
+      "minimum_cases": 1,
+      "original_blob": "f7b0040eb83d02112d9d27a6681bf8361be5876f",
+      "original_file_sha256": "335b3287badc5a85851cb9095df531cc45994e3b59bec39d2f6511d96a6bdb13",
+      "original_function_ast_sha256": "fb33c25696076f18716358f445c204b90e3b625e888240ee60f09394d31266ff",
+      "original_git_mode": "100644",
+      "original_node": "tests/test_issue465_historical_package.py::test_database_lock_short_timeout_does_not_publish",
+      "recorded_cases": [
+        {
+          "classname": "tests.test_issue465_historical_package",
+          "name": "test_dirty_source_transaction_does_not_publish",
+          "outcome": "PASS",
+          "time": "0.003"
+        }
+      ],
+      "successor_node": "tests/test_issue465_historical_package.py::test_dirty_source_transaction_does_not_publish"
+    },
+    {
+      "contract_change": "Allow verified unpinned generation rotation and bounded ACK compaction while retaining its durable receipt and recovery authority; a permanent per-generation ACK ledger is not required.",
+      "current_blob": "69034598fabef7d7fdcd2535507467b57a8074c7",
+      "current_file_sha256": "34f121db4fd1b5c8d8a529d2d2c0213ea61c19dba6473b9de37634ba98836b99",
+      "current_function_ast_sha256": "b11b33a2855e2066fe3ca7737adc195c33850e27ab1b50f2536dd583ad474902",
+      "current_git_mode": "100644",
+      "linked_requirement_ids": [
+        "U15",
+        "U18"
+      ],
+      "minimum_cases": 1,
+      "original_blob": "1b81acefd7b2781a6ef7c7c8be9dfe438011801a",
+      "original_file_sha256": "0299277bd5d1e97b5de6258a378d68df57e5e473f7bc9a5aec3ea8e541ce474f",
+      "original_function_ast_sha256": "a781b9bab0cb6f60265d5c84a5086a5138fc480f8f1980f1350d9dc288dc7bec",
+      "original_git_mode": "100644",
+      "original_node": "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_but_ack_ledger_remains",
+      "recorded_cases": [
+        {
+          "classname": "tests.test_issue465_source_retention_policy",
+          "name": "test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction",
+          "outcome": "PASS",
+          "time": "0.009"
+        }
+      ],
+      "successor_node": "tests/test_issue465_source_retention_policy.py::test_acknowledged_unpinned_generation_rotates_and_receipt_survives_ack_compaction"
+    }
+  ],
+  "recorded_native_source_sha": "3cfe112bb8061c5492d078e15a7ab41f698e2b0f",
+  "schema": "rc6.prior-regression-successions.v1",
+  "status": "SOURCE_ONLY_NOT_EXECUTED"
+}

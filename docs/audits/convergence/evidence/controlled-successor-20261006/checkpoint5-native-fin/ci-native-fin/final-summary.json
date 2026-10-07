@@ -1,0 +1,371 @@
+{
+  "311": {
+    "ci_failed_ready100": {
+      "actual_pytest_pid": 22637,
+      "adopted_reaped": 100,
+      "cleanup_bound_seconds": 5,
+      "cleanup_seconds": 0.0006416400028683711,
+      "kernel_wait4_zero": false,
+      "management_accepted": false,
+      "owned_fin_closed": true,
+      "phase_green": false,
+      "returncode": 1,
+      "scope": "ACTUAL_FRESH_MINIREPO_PRIVATE157UNCHANGED_NOT_FULL_GOV",
+      "source_provenance": {
+        "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+        "member": "scripts/rc6_controlled_native_child_manager.py",
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+      },
+      "supervisor_pid": 22633
+    },
+    "collection_kernel": {
+      "actual_launch_to_pid_reap_wall_seconds": 0.6025511240004562,
+      "peak_rss_bytes": 50933760,
+      "pid": 22497,
+      "returncode": 0,
+      "termination_reap_restore_cleanup_seconds": 7.456100138369948e-05
+    },
+    "execution_kernel": {
+      "actual_launch_to_pid_reap_wall_seconds": 101.7332354909995,
+      "peak_rss_bytes": 80928768,
+      "pid": 22498,
+      "returncode": 0,
+      "termination_reap_restore_cleanup_seconds": 0.2511212909994356
+    },
+    "installed_metadata157_unchanged": true,
+    "junit": {
+      "case_identity_sha256": "d522129c1def4224607a9e82e0f68f60fb37dbf8ef9cabf12b2b3e9b1cb0f0d1",
+      "cases": 67,
+      "collection_and_junit_set_equal": true,
+      "duplicate_case_ids": 0,
+      "errors": 0,
+      "failures": 0,
+      "path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311/junit.xml",
+      "sha256": "547c3ea9929d509bbe4efb15995a9ef26e299f2b250956679d8e97d01596737e",
+      "skipped": 0
+    },
+    "native_controls": [
+      {
+        "adopted_reaped": 0,
+        "case": "liveDetached6",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 5.017209170000569,
+        "directory": "test_live_detached6_remains_un0",
+        "followup_ECHILD": true,
+        "followup_scope": "SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE",
+        "main_pid": 22948,
+        "main_returncode": 1,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 22948,
+            "signal": 0
+          },
+          {
+            "pgid": 22948,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": false,
+        "phase_green": false,
+        "postmain_exhaustion": false,
+        "signals": [],
+        "supervisor_pid": 22947,
+        "wait4_zero_sticky_red": true
+      },
+      {
+        "adopted_reaped": 0,
+        "case": "simpleExit",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 0.00010155999916605651,
+        "directory": "test_normal_exit0_has_same_par0",
+        "followup_ECHILD": null,
+        "followup_scope": null,
+        "main_pid": 22946,
+        "main_returncode": 0,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 22946,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": true,
+        "phase_green": true,
+        "postmain_exhaustion": true,
+        "signals": [],
+        "supervisor_pid": 22945,
+        "wait4_zero_sticky_red": false
+      },
+      {
+        "adopted_reaped": 100,
+        "case": "ready100",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 5.019423688001552,
+        "directory": "test_ready100_real_owned_zombi0",
+        "followup_ECHILD": true,
+        "followup_scope": "SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE",
+        "main_pid": 22740,
+        "main_returncode": 1,
+        "manager_sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 22740,
+            "signal": 0
+          },
+          {
+            "pgid": 22740,
+            "signal": 0
+          },
+          {
+            "pgid": 22740,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": false,
+        "phase_green": false,
+        "postmain_exhaustion": false,
+        "signals": [],
+        "supervisor_pid": 22739,
+        "wait4_zero_sticky_red": false
+      },
+      {
+        "adopted_reaped": 100,
+        "case": "ready100",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 0.0006096830002206843,
+        "directory": "test_ready100_real_owned_zombi1",
+        "followup_ECHILD": null,
+        "followup_scope": null,
+        "main_pid": 22844,
+        "main_returncode": 1,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 22844,
+            "signal": 0
+          },
+          {
+            "pgid": 22844,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": true,
+        "phase_green": false,
+        "postmain_exhaustion": true,
+        "signals": [],
+        "supervisor_pid": 22843,
+        "wait4_zero_sticky_red": false
+      }
+    ],
+    "receipt_sha256": "e68825815590a49f1373b8f9a52a634d4ce3f11380817b42e7ae1b3bbdfb7057",
+    "retained": {
+      "aliases_retained": 48,
+      "allocated_bytes_nofollow_deduplicated": 699559936,
+      "entries": 18083,
+      "floor_10pct_inodes_ok": true,
+      "floor_2GiB_ok": true,
+      "free_bytes": 21202071552,
+      "free_inodes": 1897627,
+      "free_inodes_fraction": 0.9048590660095215,
+      "hardlinked_regular_entries_retained": 8,
+      "logical_bytes_nofollow_deduplicated": 663515923,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch311",
+      "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+      "special_entries_retained": 2,
+      "unique_inodes": 18079
+    },
+    "source9_bytes_and_original10_unchanged": true
+  },
+  "312": {
+    "ci_failed_ready100": {
+      "actual_pytest_pid": 23107,
+      "adopted_reaped": 100,
+      "cleanup_bound_seconds": 5,
+      "cleanup_seconds": 0.0006336679980449844,
+      "kernel_wait4_zero": false,
+      "management_accepted": false,
+      "owned_fin_closed": true,
+      "phase_green": false,
+      "returncode": 1,
+      "scope": "ACTUAL_FRESH_MINIREPO_PRIVATE157UNCHANGED_NOT_FULL_GOV",
+      "source_provenance": {
+        "git_blob": "b221f59f4edbb7b04097aec57e91ffbef648100e",
+        "member": "scripts/rc6_controlled_native_child_manager.py",
+        "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8"
+      },
+      "supervisor_pid": 23103
+    },
+    "collection_kernel": {
+      "actual_launch_to_pid_reap_wall_seconds": 0.6022572529982426,
+      "peak_rss_bytes": 49967104,
+      "pid": 22964,
+      "returncode": 0,
+      "termination_reap_restore_cleanup_seconds": 6.920200030435808e-05
+    },
+    "execution_kernel": {
+      "actual_launch_to_pid_reap_wall_seconds": 94.71485432899863,
+      "peak_rss_bytes": 75390976,
+      "pid": 22965,
+      "returncode": 0,
+      "termination_reap_restore_cleanup_seconds": 0.2512635310013138
+    },
+    "installed_metadata157_unchanged": true,
+    "junit": {
+      "case_identity_sha256": "d522129c1def4224607a9e82e0f68f60fb37dbf8ef9cabf12b2b3e9b1cb0f0d1",
+      "cases": 67,
+      "collection_and_junit_set_equal": true,
+      "duplicate_case_ids": 0,
+      "errors": 0,
+      "failures": 0,
+      "path": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312/junit.xml",
+      "sha256": "97f058e647ddea4355de22ddddcb2553eb50de422261ca6bfa62b718700908f3",
+      "skipped": 0
+    },
+    "native_controls": [
+      {
+        "adopted_reaped": 0,
+        "case": "liveDetached6",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 5.021904048000579,
+        "directory": "test_live_detached6_remains_un0",
+        "followup_ECHILD": true,
+        "followup_scope": "SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE",
+        "main_pid": 23416,
+        "main_returncode": 1,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 23416,
+            "signal": 0
+          },
+          {
+            "pgid": 23416,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": false,
+        "phase_green": false,
+        "postmain_exhaustion": false,
+        "signals": [],
+        "supervisor_pid": 23415,
+        "wait4_zero_sticky_red": true
+      },
+      {
+        "adopted_reaped": 0,
+        "case": "simpleExit",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 6.758999734302051e-05,
+        "directory": "test_normal_exit0_has_same_par0",
+        "followup_ECHILD": null,
+        "followup_scope": null,
+        "main_pid": 23414,
+        "main_returncode": 0,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 23414,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": true,
+        "phase_green": true,
+        "postmain_exhaustion": true,
+        "signals": [],
+        "supervisor_pid": 23413,
+        "wait4_zero_sticky_red": false
+      },
+      {
+        "adopted_reaped": 100,
+        "case": "ready100",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 5.017316890000075,
+        "directory": "test_ready100_real_owned_zombi0",
+        "followup_ECHILD": true,
+        "followup_scope": "SEPARATE_SAME_PID_FAILED_CONTROL_DIAGNOSTIC_NOT_PHASE_ACCEPTANCE",
+        "main_pid": 23210,
+        "main_returncode": 1,
+        "manager_sha256": "ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 23210,
+            "signal": 0
+          },
+          {
+            "pgid": 23210,
+            "signal": 0
+          },
+          {
+            "pgid": 23210,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": false,
+        "phase_green": false,
+        "postmain_exhaustion": false,
+        "signals": [],
+        "supervisor_pid": 23209,
+        "wait4_zero_sticky_red": false
+      },
+      {
+        "adopted_reaped": 100,
+        "case": "ready100",
+        "cleanup_bound_seconds": 5,
+        "cleanup_seconds": 0.0008046319999266416,
+        "directory": "test_ready100_real_owned_zombi1",
+        "followup_ECHILD": null,
+        "followup_scope": null,
+        "main_pid": 23312,
+        "main_returncode": 1,
+        "manager_sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+        "observed_python_killpg_requests": [
+          {
+            "pgid": 23312,
+            "signal": 0
+          },
+          {
+            "pgid": 23312,
+            "signal": 0
+          }
+        ],
+        "original_result_reclassified": false,
+        "owned_fin_closed": true,
+        "phase_green": false,
+        "postmain_exhaustion": true,
+        "signals": [],
+        "supervisor_pid": 23311,
+        "wait4_zero_sticky_red": false
+      }
+    ],
+    "receipt_sha256": "6e341a496da6423da64d13f6e1121f5b95b01853cae45f97a5c87c4b911869ba",
+    "retained": {
+      "aliases_retained": 48,
+      "allocated_bytes_nofollow_deduplicated": 781639680,
+      "entries": 9814,
+      "floor_10pct_inodes_ok": true,
+      "floor_2GiB_ok": true,
+      "free_bytes": 20420300800,
+      "free_inodes": 1887808,
+      "free_inodes_fraction": 0.900177001953125,
+      "hardlinked_regular_entries_retained": 8,
+      "logical_bytes_nofollow_deduplicated": 762609372,
+      "removed": false,
+      "root": "/workspace/scratch/rc6-ci-owned-drain-focals-v2-fctzpnml/v2-epoch312",
+      "scope": "THIS_NEW_DIAGNOSTIC_NAMESPACE_ONLY_NOT_GLOBAL_CLEANUP_GREEN",
+      "special_entries_retained": 2,
+      "unique_inodes": 9810
+    },
+    "source9_bytes_and_original10_unchanged": true
+  },
+  "scope": "FROZEN_UNCOMMITTED_PROGRAMMATIC_FOCALS_ONLY_SOURCE_SHA_FULL_GOV_BIG_HORIZON_BROWSER_ARTIFACT_IMAGE_RUNTIME_QUALIFICATION_PENDING",
+  "v1_harness_format_failure_preserved": true,
+  "v2_same67_case_identity": true
+}

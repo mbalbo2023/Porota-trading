@@ -1,0 +1,3411 @@
+{
+  "artifact_validated": false,
+  "classification": "SCOPED_WRAPPER_GUARDS_GREEN",
+  "command": [
+    "-q",
+    "--strict-markers",
+    "tests/test_rc6_native_archive_horizon_wrapper.py",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml=/tmp/rc6-budget-horizon-ed97-28-20261005/native-wrapper-guards.junit.xml",
+    "--basetemp=/tmp/rc6-budget-horizon-ed97-28-20261005/fixtures/pytest"
+  ],
+  "deployed": false,
+  "environment_qualification_before_fixtures": {
+    "executable": "/workspace/venv_rc6_frozen311/bin/python",
+    "explicitly_permitted_python_minors": [
+      "3.11",
+      "3.12"
+    ],
+    "installed_closure": {
+      "duplicate_names": [],
+      "expected_total": 157,
+      "installed_total": 157,
+      "installed_unique_total": 157,
+      "missing": [],
+      "schema": "rc6.installed-distribution-closure.v1",
+      "status": "GREEN",
+      "unexpected": [],
+      "version_mismatch": []
+    },
+    "lock_hash_gaps": {
+      "build": [],
+      "runtime": []
+    },
+    "platform": {
+      "architecture": "x86_64",
+      "libc_name": "glibc",
+      "libc_version": "2.41",
+      "os": "linux",
+      "python_minor": "3.11"
+    },
+    "python_version": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+    "scope": "INSTALLED_METADATA_EXACT157_VERSIONS_AND_HASH_LOCKS_NOT_WHEEL_BYTES_OR_IMAGE_ID",
+    "source_lock_sha256": {
+      "ops/policy/rc6-supply-chain-v1.json": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "requirements.build.lock.txt": "99580ecdbe0eda85a1894ddd4d8cd41aab94da5c40035668c67092c28092344b",
+      "requirements.lock.txt": "c521c7503b2930290aa7acb7e549750d761ba36d74849d0981d91dc5e285d6ce"
+    },
+    "sys_base_prefix": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu",
+    "sys_prefix": "/workspace/venv_rc6_frozen311"
+  },
+  "final_input_provenance": null,
+  "fixture_created_after_literal157_and_hashlocks_qualification": true,
+  "fixture_namespace": "/tmp/rc6-budget-horizon-ed97-28-20261005/fixtures",
+  "import_graph_after": {
+    "actual_venv_sites": [
+      "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages"
+    ],
+    "module_count": 270,
+    "modules": {
+      "__future__": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/__future__.py"
+        }
+      ],
+      "_collections_abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_collections_abc.py"
+        }
+      ],
+      "_compression": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_compression.py"
+        }
+      ],
+      "_distutils_hack": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_distutils_hack/__init__.py"
+        }
+      ],
+      "_frozen_importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "_frozen_importlib_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "_pytest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/__init__.py"
+        }
+      ],
+      "_pytest._argcomplete": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_argcomplete.py"
+        }
+      ],
+      "_pytest._code": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/__init__.py"
+        }
+      ],
+      "_pytest._code.code": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/code.py"
+        }
+      ],
+      "_pytest._code.source": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/source.py"
+        }
+      ],
+      "_pytest._io": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/__init__.py"
+        }
+      ],
+      "_pytest._io.pprint": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/pprint.py"
+        }
+      ],
+      "_pytest._io.saferepr": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/saferepr.py"
+        }
+      ],
+      "_pytest._io.terminalwriter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/terminalwriter.py"
+        }
+      ],
+      "_pytest._io.wcwidth": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/wcwidth.py"
+        }
+      ],
+      "_pytest._py": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/__init__.py"
+        }
+      ],
+      "_pytest._py.error": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+        }
+      ],
+      "_pytest._py.path": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+        }
+      ],
+      "_pytest._version": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_version.py"
+        }
+      ],
+      "_pytest.assertion": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/__init__.py"
+        }
+      ],
+      "_pytest.assertion._compare_any": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_any.py"
+        }
+      ],
+      "_pytest.assertion._compare_mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_mapping.py"
+        }
+      ],
+      "_pytest.assertion._compare_sequence": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_sequence.py"
+        }
+      ],
+      "_pytest.assertion._compare_set": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_set.py"
+        }
+      ],
+      "_pytest.assertion._guards": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_guards.py"
+        }
+      ],
+      "_pytest.assertion._typing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_typing.py"
+        }
+      ],
+      "_pytest.assertion.compare_text": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/compare_text.py"
+        }
+      ],
+      "_pytest.assertion.highlight": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/highlight.py"
+        }
+      ],
+      "_pytest.assertion.rewrite": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/rewrite.py"
+        }
+      ],
+      "_pytest.assertion.truncate": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/truncate.py"
+        }
+      ],
+      "_pytest.assertion.util": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/util.py"
+        }
+      ],
+      "_pytest.cacheprovider": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/cacheprovider.py"
+        }
+      ],
+      "_pytest.capture": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/capture.py"
+        }
+      ],
+      "_pytest.compat": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/compat.py"
+        }
+      ],
+      "_pytest.config": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/__init__.py"
+        }
+      ],
+      "_pytest.config.argparsing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/argparsing.py"
+        }
+      ],
+      "_pytest.config.exceptions": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/exceptions.py"
+        }
+      ],
+      "_pytest.config.findpaths": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/findpaths.py"
+        }
+      ],
+      "_pytest.debugging": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/debugging.py"
+        }
+      ],
+      "_pytest.deprecated": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/deprecated.py"
+        }
+      ],
+      "_pytest.doctest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/doctest.py"
+        }
+      ],
+      "_pytest.faulthandler": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/faulthandler.py"
+        }
+      ],
+      "_pytest.fixtures": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/fixtures.py"
+        }
+      ],
+      "_pytest.freeze_support": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/freeze_support.py"
+        }
+      ],
+      "_pytest.helpconfig": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/helpconfig.py"
+        }
+      ],
+      "_pytest.hookspec": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/hookspec.py"
+        }
+      ],
+      "_pytest.junitxml": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/junitxml.py"
+        }
+      ],
+      "_pytest.legacypath": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/legacypath.py"
+        }
+      ],
+      "_pytest.logging": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/logging.py"
+        }
+      ],
+      "_pytest.main": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/main.py"
+        }
+      ],
+      "_pytest.mark": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/__init__.py"
+        }
+      ],
+      "_pytest.mark.expression": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/expression.py"
+        }
+      ],
+      "_pytest.mark.structures": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/structures.py"
+        }
+      ],
+      "_pytest.monkeypatch": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/monkeypatch.py"
+        }
+      ],
+      "_pytest.nodes": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/nodes.py"
+        }
+      ],
+      "_pytest.outcomes": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/outcomes.py"
+        }
+      ],
+      "_pytest.pastebin": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pastebin.py"
+        }
+      ],
+      "_pytest.pathlib": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pathlib.py"
+        }
+      ],
+      "_pytest.pytester": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pytester.py"
+        }
+      ],
+      "_pytest.python": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python.py"
+        }
+      ],
+      "_pytest.python_api": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python_api.py"
+        }
+      ],
+      "_pytest.raises": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/raises.py"
+        }
+      ],
+      "_pytest.recwarn": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/recwarn.py"
+        }
+      ],
+      "_pytest.reports": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/reports.py"
+        }
+      ],
+      "_pytest.runner": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/runner.py"
+        }
+      ],
+      "_pytest.scope": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/scope.py"
+        }
+      ],
+      "_pytest.setuponly": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/setuponly.py"
+        }
+      ],
+      "_pytest.setupplan": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/setupplan.py"
+        }
+      ],
+      "_pytest.skipping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/skipping.py"
+        }
+      ],
+      "_pytest.stash": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/stash.py"
+        }
+      ],
+      "_pytest.subtests": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/subtests.py"
+        }
+      ],
+      "_pytest.terminal": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/terminal.py"
+        }
+      ],
+      "_pytest.threadexception": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/threadexception.py"
+        }
+      ],
+      "_pytest.timing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/timing.py"
+        }
+      ],
+      "_pytest.tmpdir": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/tmpdir.py"
+        }
+      ],
+      "_pytest.tracemalloc": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/tracemalloc.py"
+        }
+      ],
+      "_pytest.unittest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/unittest.py"
+        }
+      ],
+      "_pytest.unraisableexception": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/unraisableexception.py"
+        }
+      ],
+      "_pytest.warning_types": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/warning_types.py"
+        }
+      ],
+      "_pytest.warnings": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/warnings.py"
+        }
+      ],
+      "_sitebuiltins": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sitebuiltins.py"
+        }
+      ],
+      "_sysconfigdata__linux_x86_64-linux-gnu": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sysconfigdata__linux_x86_64-linux-gnu.py"
+        }
+      ],
+      "_weakrefset": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_weakrefset.py"
+        }
+      ],
+      "abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/abc.py"
+        }
+      ],
+      "argparse": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/argparse.py"
+        }
+      ],
+      "ast": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ast.py"
+        }
+      ],
+      "base64": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/base64.py"
+        }
+      ],
+      "bdb": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bdb.py"
+        }
+      ],
+      "bisect": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bisect.py"
+        }
+      ],
+      "bz2": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bz2.py"
+        }
+      ],
+      "calendar": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/calendar.py"
+        }
+      ],
+      "cmd": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/cmd.py"
+        }
+      ],
+      "code": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/code.py"
+        }
+      ],
+      "codecs": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codecs.py"
+        }
+      ],
+      "codeop": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codeop.py"
+        }
+      ],
+      "collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/__init__.py"
+        }
+      ],
+      "collections.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/abc.py"
+        }
+      ],
+      "contextlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py"
+        }
+      ],
+      "copy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py"
+        }
+      ],
+      "copyreg": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copyreg.py"
+        }
+      ],
+      "csv": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/csv.py"
+        }
+      ],
+      "dataclasses": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dataclasses.py"
+        }
+      ],
+      "datetime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/datetime.py"
+        }
+      ],
+      "decimal": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/decimal.py"
+        }
+      ],
+      "difflib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/difflib.py"
+        }
+      ],
+      "dis": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dis.py"
+        }
+      ],
+      "email": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/__init__.py"
+        }
+      ],
+      "email._encoded_words": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_encoded_words.py"
+        }
+      ],
+      "email._parseaddr": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_parseaddr.py"
+        }
+      ],
+      "email._policybase": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_policybase.py"
+        }
+      ],
+      "email.base64mime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/base64mime.py"
+        }
+      ],
+      "email.charset": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/charset.py"
+        }
+      ],
+      "email.encoders": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/encoders.py"
+        }
+      ],
+      "email.errors": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/errors.py"
+        }
+      ],
+      "email.feedparser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/feedparser.py"
+        }
+      ],
+      "email.header": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/header.py"
+        }
+      ],
+      "email.iterators": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/iterators.py"
+        }
+      ],
+      "email.message": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/message.py"
+        }
+      ],
+      "email.parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/parser.py"
+        }
+      ],
+      "email.quoprimime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/quoprimime.py"
+        }
+      ],
+      "email.utils": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/utils.py"
+        }
+      ],
+      "encodings": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/__init__.py"
+        }
+      ],
+      "encodings.aliases": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/aliases.py"
+        }
+      ],
+      "encodings.unicode_escape": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/unicode_escape.py"
+        }
+      ],
+      "encodings.utf_8": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/utf_8.py"
+        }
+      ],
+      "enum": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/enum.py"
+        }
+      ],
+      "fnmatch": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/fnmatch.py"
+        }
+      ],
+      "functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/functools.py"
+        }
+      ],
+      "genericpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/genericpath.py"
+        }
+      ],
+      "gettext": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/gettext.py"
+        }
+      ],
+      "glob": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/glob.py"
+        }
+      ],
+      "hashlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/hashlib.py"
+        }
+      ],
+      "heapq": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/heapq.py"
+        }
+      ],
+      "html": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/__init__.py"
+        }
+      ],
+      "html.entities": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/entities.py"
+        }
+      ],
+      "importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/__init__.py"
+        }
+      ],
+      "importlib._abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_abc.py"
+        }
+      ],
+      "importlib._bootstrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "importlib._bootstrap_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "importlib.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/abc.py"
+        }
+      ],
+      "importlib.machinery": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/machinery.py"
+        }
+      ],
+      "importlib.metadata": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/__init__.py"
+        }
+      ],
+      "importlib.metadata._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_adapters.py"
+        }
+      ],
+      "importlib.metadata._collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_collections.py"
+        }
+      ],
+      "importlib.metadata._functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_functools.py"
+        }
+      ],
+      "importlib.metadata._itertools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_itertools.py"
+        }
+      ],
+      "importlib.metadata._meta": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_meta.py"
+        }
+      ],
+      "importlib.metadata._text": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_text.py"
+        }
+      ],
+      "importlib.resources": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/__init__.py"
+        }
+      ],
+      "importlib.resources._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_adapters.py"
+        }
+      ],
+      "importlib.resources._common": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_common.py"
+        }
+      ],
+      "importlib.resources._itertools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_itertools.py"
+        }
+      ],
+      "importlib.resources._legacy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_legacy.py"
+        }
+      ],
+      "importlib.resources.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/abc.py"
+        }
+      ],
+      "importlib.resources.readers": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/readers.py"
+        }
+      ],
+      "importlib.util": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/util.py"
+        }
+      ],
+      "iniconfig": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/__init__.py"
+        }
+      ],
+      "iniconfig._parse": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/_parse.py"
+        }
+      ],
+      "iniconfig.exceptions": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/exceptions.py"
+        }
+      ],
+      "inspect": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/inspect.py"
+        }
+      ],
+      "io": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/io.py"
+        }
+      ],
+      "ipaddress": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ipaddress.py"
+        }
+      ],
+      "json": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py"
+        }
+      ],
+      "json.decoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/decoder.py"
+        }
+      ],
+      "json.encoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py"
+        }
+      ],
+      "json.scanner": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/scanner.py"
+        }
+      ],
+      "keyword": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/keyword.py"
+        }
+      ],
+      "linecache": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/linecache.py"
+        }
+      ],
+      "locale": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/locale.py"
+        }
+      ],
+      "logging": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/logging/__init__.py"
+        }
+      ],
+      "lzma": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/lzma.py"
+        }
+      ],
+      "ntpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ntpath.py"
+        }
+      ],
+      "numbers": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/numbers.py"
+        }
+      ],
+      "opcode": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/opcode.py"
+        }
+      ],
+      "operator": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/operator.py"
+        }
+      ],
+      "os": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/os.py"
+        }
+      ],
+      "os.path": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "pathlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py"
+        }
+      ],
+      "pdb": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pdb.py"
+        }
+      ],
+      "pkgutil": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pkgutil.py"
+        }
+      ],
+      "platform": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/platform.py"
+        }
+      ],
+      "pluggy": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/__init__.py"
+        }
+      ],
+      "pluggy._callers": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_callers.py"
+        }
+      ],
+      "pluggy._hooks": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_hooks.py"
+        }
+      ],
+      "pluggy._manager": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_manager.py"
+        }
+      ],
+      "pluggy._result": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_result.py"
+        }
+      ],
+      "pluggy._tracing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_tracing.py"
+        }
+      ],
+      "pluggy._version": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_version.py"
+        }
+      ],
+      "pluggy._warnings": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_warnings.py"
+        }
+      ],
+      "posixpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "pprint": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pprint.py"
+        }
+      ],
+      "py": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/py.py"
+        }
+      ],
+      "py.error": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+        }
+      ],
+      "py.path": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+        }
+      ],
+      "pygments": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/__init__.py"
+        }
+      ],
+      "pygments.console": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/console.py"
+        }
+      ],
+      "pygments.filter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filter.py"
+        }
+      ],
+      "pygments.filters": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filters/__init__.py"
+        }
+      ],
+      "pygments.formatter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatter.py"
+        }
+      ],
+      "pygments.formatters": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/__init__.py"
+        }
+      ],
+      "pygments.formatters._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/_mapping.py"
+        }
+      ],
+      "pygments.formatters.terminal": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/terminal.py"
+        }
+      ],
+      "pygments.lexer": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexer.py"
+        }
+      ],
+      "pygments.lexers": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/__init__.py"
+        }
+      ],
+      "pygments.lexers._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/_mapping.py"
+        }
+      ],
+      "pygments.lexers.diff": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/diff.py"
+        }
+      ],
+      "pygments.lexers.python": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/python.py"
+        }
+      ],
+      "pygments.modeline": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/modeline.py"
+        }
+      ],
+      "pygments.plugin": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/plugin.py"
+        }
+      ],
+      "pygments.regexopt": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/regexopt.py"
+        }
+      ],
+      "pygments.styles": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/__init__.py"
+        }
+      ],
+      "pygments.styles._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/_mapping.py"
+        }
+      ],
+      "pygments.token": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/token.py"
+        }
+      ],
+      "pygments.unistring": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/unistring.py"
+        }
+      ],
+      "pygments.util": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/util.py"
+        }
+      ],
+      "pytest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pytest/__init__.py"
+        }
+      ],
+      "quopri": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/quopri.py"
+        }
+      ],
+      "random": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/random.py"
+        }
+      ],
+      "re": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/__init__.py"
+        }
+      ],
+      "re._casefix": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_casefix.py"
+        }
+      ],
+      "re._compiler": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_compiler.py"
+        }
+      ],
+      "re._constants": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_constants.py"
+        }
+      ],
+      "re._parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_parser.py"
+        }
+      ],
+      "reprlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/reprlib.py"
+        }
+      ],
+      "runpy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/runpy.py"
+        }
+      ],
+      "scripts": [
+        {
+          "blob_id": null,
+          "mode": null,
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts",
+          "relative_path": "scripts",
+          "sha256": null
+        },
+        {
+          "blob_id": null,
+          "mode": null,
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts",
+          "relative_path": "scripts",
+          "sha256": null
+        }
+      ],
+      "scripts.porota_dependency_repro_audit": [
+        {
+          "blob_id": "ab6ff825020c4e29dc1030029afbd3a27ae82ba1",
+          "mode": "100644",
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts/porota_dependency_repro_audit.py",
+          "relative_path": "scripts/porota_dependency_repro_audit.py",
+          "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+        }
+      ],
+      "selectors": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/selectors.py"
+        }
+      ],
+      "shlex": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shlex.py"
+        }
+      ],
+      "shutil": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shutil.py"
+        }
+      ],
+      "signal": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/signal.py"
+        }
+      ],
+      "site": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/site.py"
+        }
+      ],
+      "socket": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py"
+        }
+      ],
+      "sqlite3": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/__init__.py"
+        }
+      ],
+      "sqlite3.dbapi2": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/dbapi2.py"
+        }
+      ],
+      "stat": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/stat.py"
+        }
+      ],
+      "string": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/string.py"
+        }
+      ],
+      "struct": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/struct.py"
+        }
+      ],
+      "subprocess": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py"
+        }
+      ],
+      "sysconfig": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sysconfig.py"
+        }
+      ],
+      "tempfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tempfile.py"
+        }
+      ],
+      "test_rc6_native_archive_horizon_wrapper": [
+        {
+          "blob_id": "bd271c2379d11e8a7b03746dfbd880694b4eb971",
+          "mode": "100644",
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/tests/test_rc6_native_archive_horizon_wrapper.py",
+          "relative_path": "tests/test_rc6_native_archive_horizon_wrapper.py",
+          "sha256": "999e6e5ba1cf1edd483a9a9279430785bdcc2b9cc309ae3d9144a61666d6a6d7"
+        }
+      ],
+      "textwrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/textwrap.py"
+        }
+      ],
+      "threading": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py"
+        }
+      ],
+      "token": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/token.py"
+        }
+      ],
+      "tokenize": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tokenize.py"
+        }
+      ],
+      "traceback": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/traceback.py"
+        }
+      ],
+      "types": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/types.py"
+        }
+      ],
+      "typing": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py"
+        }
+      ],
+      "unittest": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/__init__.py"
+        }
+      ],
+      "unittest.case": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/case.py"
+        }
+      ],
+      "unittest.loader": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/loader.py"
+        }
+      ],
+      "unittest.main": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/main.py"
+        }
+      ],
+      "unittest.result": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/result.py"
+        }
+      ],
+      "unittest.runner": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/runner.py"
+        }
+      ],
+      "unittest.signals": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/signals.py"
+        }
+      ],
+      "unittest.suite": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/suite.py"
+        }
+      ],
+      "unittest.util": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/unittest/util.py"
+        }
+      ],
+      "urllib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/__init__.py"
+        }
+      ],
+      "urllib.parse": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/parse.py"
+        }
+      ],
+      "uuid": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/uuid.py"
+        }
+      ],
+      "warnings": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/warnings.py"
+        }
+      ],
+      "weakref": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/weakref.py"
+        }
+      ],
+      "xml": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/__init__.py"
+        }
+      ],
+      "xml.etree": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/__init__.py"
+        }
+      ],
+      "xml.etree.ElementPath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementPath.py"
+        }
+      ],
+      "xml.etree.ElementTree": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementTree.py"
+        }
+      ],
+      "zipfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipfile.py"
+        }
+      ],
+      "zipimport": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipimport.py"
+        }
+      ]
+    },
+    "scope": "ACTUAL_MODULE_LOCATIONS_NOT_EXECUTION_COUNTS",
+    "stdlib": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11",
+    "unexpected": []
+  },
+  "import_graph_before_fixtures": {
+    "actual_venv_sites": [
+      "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages"
+    ],
+    "module_count": 240,
+    "modules": {
+      "__future__": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/__future__.py"
+        }
+      ],
+      "_collections_abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_collections_abc.py"
+        }
+      ],
+      "_compression": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_compression.py"
+        }
+      ],
+      "_distutils_hack": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_distutils_hack/__init__.py"
+        }
+      ],
+      "_frozen_importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "_frozen_importlib_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "_pytest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/__init__.py"
+        }
+      ],
+      "_pytest._code": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/__init__.py"
+        }
+      ],
+      "_pytest._code.code": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/code.py"
+        }
+      ],
+      "_pytest._code.source": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_code/source.py"
+        }
+      ],
+      "_pytest._io": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/__init__.py"
+        }
+      ],
+      "_pytest._io.pprint": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/pprint.py"
+        }
+      ],
+      "_pytest._io.saferepr": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/saferepr.py"
+        }
+      ],
+      "_pytest._io.terminalwriter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/terminalwriter.py"
+        }
+      ],
+      "_pytest._io.wcwidth": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_io/wcwidth.py"
+        }
+      ],
+      "_pytest._py": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/__init__.py"
+        }
+      ],
+      "_pytest._py.error": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+        }
+      ],
+      "_pytest._py.path": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+        }
+      ],
+      "_pytest._version": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_version.py"
+        }
+      ],
+      "_pytest.assertion": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/__init__.py"
+        }
+      ],
+      "_pytest.assertion._compare_any": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_any.py"
+        }
+      ],
+      "_pytest.assertion._compare_mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_mapping.py"
+        }
+      ],
+      "_pytest.assertion._compare_sequence": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_sequence.py"
+        }
+      ],
+      "_pytest.assertion._compare_set": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_compare_set.py"
+        }
+      ],
+      "_pytest.assertion._guards": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_guards.py"
+        }
+      ],
+      "_pytest.assertion._typing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/_typing.py"
+        }
+      ],
+      "_pytest.assertion.compare_text": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/compare_text.py"
+        }
+      ],
+      "_pytest.assertion.highlight": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/highlight.py"
+        }
+      ],
+      "_pytest.assertion.rewrite": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/rewrite.py"
+        }
+      ],
+      "_pytest.assertion.truncate": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/truncate.py"
+        }
+      ],
+      "_pytest.assertion.util": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/assertion/util.py"
+        }
+      ],
+      "_pytest.cacheprovider": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/cacheprovider.py"
+        }
+      ],
+      "_pytest.capture": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/capture.py"
+        }
+      ],
+      "_pytest.compat": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/compat.py"
+        }
+      ],
+      "_pytest.config": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/__init__.py"
+        }
+      ],
+      "_pytest.config.argparsing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/argparsing.py"
+        }
+      ],
+      "_pytest.config.exceptions": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/exceptions.py"
+        }
+      ],
+      "_pytest.config.findpaths": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/config/findpaths.py"
+        }
+      ],
+      "_pytest.debugging": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/debugging.py"
+        }
+      ],
+      "_pytest.deprecated": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/deprecated.py"
+        }
+      ],
+      "_pytest.doctest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/doctest.py"
+        }
+      ],
+      "_pytest.fixtures": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/fixtures.py"
+        }
+      ],
+      "_pytest.freeze_support": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/freeze_support.py"
+        }
+      ],
+      "_pytest.hookspec": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/hookspec.py"
+        }
+      ],
+      "_pytest.legacypath": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/legacypath.py"
+        }
+      ],
+      "_pytest.logging": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/logging.py"
+        }
+      ],
+      "_pytest.main": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/main.py"
+        }
+      ],
+      "_pytest.mark": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/__init__.py"
+        }
+      ],
+      "_pytest.mark.expression": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/expression.py"
+        }
+      ],
+      "_pytest.mark.structures": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/mark/structures.py"
+        }
+      ],
+      "_pytest.monkeypatch": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/monkeypatch.py"
+        }
+      ],
+      "_pytest.nodes": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/nodes.py"
+        }
+      ],
+      "_pytest.outcomes": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/outcomes.py"
+        }
+      ],
+      "_pytest.pathlib": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pathlib.py"
+        }
+      ],
+      "_pytest.pytester": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/pytester.py"
+        }
+      ],
+      "_pytest.python": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python.py"
+        }
+      ],
+      "_pytest.python_api": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/python_api.py"
+        }
+      ],
+      "_pytest.raises": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/raises.py"
+        }
+      ],
+      "_pytest.recwarn": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/recwarn.py"
+        }
+      ],
+      "_pytest.reports": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/reports.py"
+        }
+      ],
+      "_pytest.runner": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/runner.py"
+        }
+      ],
+      "_pytest.scope": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/scope.py"
+        }
+      ],
+      "_pytest.stash": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/stash.py"
+        }
+      ],
+      "_pytest.subtests": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/subtests.py"
+        }
+      ],
+      "_pytest.terminal": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/terminal.py"
+        }
+      ],
+      "_pytest.timing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/timing.py"
+        }
+      ],
+      "_pytest.tmpdir": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/tmpdir.py"
+        }
+      ],
+      "_pytest.warning_types": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/warning_types.py"
+        }
+      ],
+      "_sitebuiltins": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sitebuiltins.py"
+        }
+      ],
+      "_sysconfigdata__linux_x86_64-linux-gnu": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_sysconfigdata__linux_x86_64-linux-gnu.py"
+        }
+      ],
+      "_weakrefset": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/_weakrefset.py"
+        }
+      ],
+      "abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/abc.py"
+        }
+      ],
+      "argparse": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/argparse.py"
+        }
+      ],
+      "ast": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ast.py"
+        }
+      ],
+      "base64": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/base64.py"
+        }
+      ],
+      "bdb": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bdb.py"
+        }
+      ],
+      "bisect": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bisect.py"
+        }
+      ],
+      "bz2": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/bz2.py"
+        }
+      ],
+      "calendar": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/calendar.py"
+        }
+      ],
+      "codecs": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/codecs.py"
+        }
+      ],
+      "collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/__init__.py"
+        }
+      ],
+      "collections.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/collections/abc.py"
+        }
+      ],
+      "contextlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py"
+        }
+      ],
+      "copy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py"
+        }
+      ],
+      "copyreg": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copyreg.py"
+        }
+      ],
+      "csv": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/csv.py"
+        }
+      ],
+      "dataclasses": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dataclasses.py"
+        }
+      ],
+      "datetime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/datetime.py"
+        }
+      ],
+      "decimal": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/decimal.py"
+        }
+      ],
+      "dis": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/dis.py"
+        }
+      ],
+      "email": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/__init__.py"
+        }
+      ],
+      "email._encoded_words": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_encoded_words.py"
+        }
+      ],
+      "email._parseaddr": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_parseaddr.py"
+        }
+      ],
+      "email._policybase": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/_policybase.py"
+        }
+      ],
+      "email.base64mime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/base64mime.py"
+        }
+      ],
+      "email.charset": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/charset.py"
+        }
+      ],
+      "email.encoders": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/encoders.py"
+        }
+      ],
+      "email.errors": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/errors.py"
+        }
+      ],
+      "email.feedparser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/feedparser.py"
+        }
+      ],
+      "email.header": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/header.py"
+        }
+      ],
+      "email.iterators": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/iterators.py"
+        }
+      ],
+      "email.message": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/message.py"
+        }
+      ],
+      "email.parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/parser.py"
+        }
+      ],
+      "email.quoprimime": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/quoprimime.py"
+        }
+      ],
+      "email.utils": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/email/utils.py"
+        }
+      ],
+      "encodings": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/__init__.py"
+        }
+      ],
+      "encodings.aliases": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/aliases.py"
+        }
+      ],
+      "encodings.utf_8": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/encodings/utf_8.py"
+        }
+      ],
+      "enum": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/enum.py"
+        }
+      ],
+      "fnmatch": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/fnmatch.py"
+        }
+      ],
+      "functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/functools.py"
+        }
+      ],
+      "genericpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/genericpath.py"
+        }
+      ],
+      "gettext": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/gettext.py"
+        }
+      ],
+      "glob": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/glob.py"
+        }
+      ],
+      "hashlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/hashlib.py"
+        }
+      ],
+      "html": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/__init__.py"
+        }
+      ],
+      "html.entities": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/html/entities.py"
+        }
+      ],
+      "importlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/__init__.py"
+        }
+      ],
+      "importlib._abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_abc.py"
+        }
+      ],
+      "importlib._bootstrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap.py"
+        }
+      ],
+      "importlib._bootstrap_external": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/_bootstrap_external.py"
+        }
+      ],
+      "importlib.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/abc.py"
+        }
+      ],
+      "importlib.machinery": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/machinery.py"
+        }
+      ],
+      "importlib.metadata": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/__init__.py"
+        }
+      ],
+      "importlib.metadata._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_adapters.py"
+        }
+      ],
+      "importlib.metadata._collections": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_collections.py"
+        }
+      ],
+      "importlib.metadata._functools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_functools.py"
+        }
+      ],
+      "importlib.metadata._itertools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_itertools.py"
+        }
+      ],
+      "importlib.metadata._meta": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_meta.py"
+        }
+      ],
+      "importlib.metadata._text": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/metadata/_text.py"
+        }
+      ],
+      "importlib.resources": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/__init__.py"
+        }
+      ],
+      "importlib.resources._adapters": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_adapters.py"
+        }
+      ],
+      "importlib.resources._common": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_common.py"
+        }
+      ],
+      "importlib.resources._itertools": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_itertools.py"
+        }
+      ],
+      "importlib.resources._legacy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/_legacy.py"
+        }
+      ],
+      "importlib.resources.abc": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/abc.py"
+        }
+      ],
+      "importlib.resources.readers": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/resources/readers.py"
+        }
+      ],
+      "importlib.util": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/importlib/util.py"
+        }
+      ],
+      "iniconfig": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/__init__.py"
+        }
+      ],
+      "iniconfig._parse": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/_parse.py"
+        }
+      ],
+      "iniconfig.exceptions": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/iniconfig/exceptions.py"
+        }
+      ],
+      "inspect": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/inspect.py"
+        }
+      ],
+      "io": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/io.py"
+        }
+      ],
+      "ipaddress": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ipaddress.py"
+        }
+      ],
+      "json": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py"
+        }
+      ],
+      "json.decoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/decoder.py"
+        }
+      ],
+      "json.encoder": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py"
+        }
+      ],
+      "json.scanner": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/scanner.py"
+        }
+      ],
+      "keyword": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/keyword.py"
+        }
+      ],
+      "linecache": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/linecache.py"
+        }
+      ],
+      "locale": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/locale.py"
+        }
+      ],
+      "logging": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/logging/__init__.py"
+        }
+      ],
+      "lzma": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/lzma.py"
+        }
+      ],
+      "ntpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/ntpath.py"
+        }
+      ],
+      "numbers": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/numbers.py"
+        }
+      ],
+      "opcode": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/opcode.py"
+        }
+      ],
+      "operator": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/operator.py"
+        }
+      ],
+      "os": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/os.py"
+        }
+      ],
+      "os.path": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "pathlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pathlib.py"
+        }
+      ],
+      "pkgutil": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pkgutil.py"
+        }
+      ],
+      "platform": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/platform.py"
+        }
+      ],
+      "pluggy": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/__init__.py"
+        }
+      ],
+      "pluggy._callers": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_callers.py"
+        }
+      ],
+      "pluggy._hooks": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_hooks.py"
+        }
+      ],
+      "pluggy._manager": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_manager.py"
+        }
+      ],
+      "pluggy._result": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_result.py"
+        }
+      ],
+      "pluggy._tracing": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_tracing.py"
+        }
+      ],
+      "pluggy._version": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_version.py"
+        }
+      ],
+      "pluggy._warnings": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pluggy/_warnings.py"
+        }
+      ],
+      "posixpath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/posixpath.py"
+        }
+      ],
+      "pprint": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/pprint.py"
+        }
+      ],
+      "py": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/py.py"
+        }
+      ],
+      "py.error": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/error.py"
+        }
+      ],
+      "py.path": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/_pytest/_py/path.py"
+        }
+      ],
+      "pygments": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/__init__.py"
+        }
+      ],
+      "pygments.console": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/console.py"
+        }
+      ],
+      "pygments.filter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filter.py"
+        }
+      ],
+      "pygments.filters": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/filters/__init__.py"
+        }
+      ],
+      "pygments.formatter": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatter.py"
+        }
+      ],
+      "pygments.formatters": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/__init__.py"
+        }
+      ],
+      "pygments.formatters._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/_mapping.py"
+        }
+      ],
+      "pygments.formatters.terminal": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/formatters/terminal.py"
+        }
+      ],
+      "pygments.lexer": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexer.py"
+        }
+      ],
+      "pygments.lexers": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/__init__.py"
+        }
+      ],
+      "pygments.lexers._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/_mapping.py"
+        }
+      ],
+      "pygments.lexers.diff": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/diff.py"
+        }
+      ],
+      "pygments.lexers.python": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/lexers/python.py"
+        }
+      ],
+      "pygments.modeline": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/modeline.py"
+        }
+      ],
+      "pygments.plugin": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/plugin.py"
+        }
+      ],
+      "pygments.regexopt": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/regexopt.py"
+        }
+      ],
+      "pygments.styles": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/__init__.py"
+        }
+      ],
+      "pygments.styles._mapping": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/styles/_mapping.py"
+        }
+      ],
+      "pygments.token": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/token.py"
+        }
+      ],
+      "pygments.unistring": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/unistring.py"
+        }
+      ],
+      "pygments.util": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pygments/util.py"
+        }
+      ],
+      "pytest": [
+        {
+          "origin": "ACTUAL_VENV",
+          "path": "/workspace/venv_rc6_frozen311/lib/python3.11/site-packages/pytest/__init__.py"
+        }
+      ],
+      "quopri": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/quopri.py"
+        }
+      ],
+      "random": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/random.py"
+        }
+      ],
+      "re": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/__init__.py"
+        }
+      ],
+      "re._casefix": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_casefix.py"
+        }
+      ],
+      "re._compiler": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_compiler.py"
+        }
+      ],
+      "re._constants": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_constants.py"
+        }
+      ],
+      "re._parser": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/re/_parser.py"
+        }
+      ],
+      "reprlib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/reprlib.py"
+        }
+      ],
+      "runpy": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/runpy.py"
+        }
+      ],
+      "scripts": [
+        {
+          "blob_id": null,
+          "mode": null,
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts",
+          "relative_path": "scripts",
+          "sha256": null
+        },
+        {
+          "blob_id": null,
+          "mode": null,
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts",
+          "relative_path": "scripts",
+          "sha256": null
+        }
+      ],
+      "scripts.porota_dependency_repro_audit": [
+        {
+          "blob_id": "ab6ff825020c4e29dc1030029afbd3a27ae82ba1",
+          "mode": "100644",
+          "origin": "PINNED_COMPLETE_SOURCE",
+          "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/source/scripts/porota_dependency_repro_audit.py",
+          "relative_path": "scripts/porota_dependency_repro_audit.py",
+          "sha256": "206c9659a7a788eeabeeead9642ce98ec3a391c17d5c70b89fe084cfb1d88488"
+        }
+      ],
+      "selectors": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/selectors.py"
+        }
+      ],
+      "shlex": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shlex.py"
+        }
+      ],
+      "shutil": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/shutil.py"
+        }
+      ],
+      "signal": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/signal.py"
+        }
+      ],
+      "site": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/site.py"
+        }
+      ],
+      "socket": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py"
+        }
+      ],
+      "sqlite3": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/__init__.py"
+        }
+      ],
+      "sqlite3.dbapi2": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sqlite3/dbapi2.py"
+        }
+      ],
+      "stat": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/stat.py"
+        }
+      ],
+      "string": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/string.py"
+        }
+      ],
+      "struct": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/struct.py"
+        }
+      ],
+      "subprocess": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/subprocess.py"
+        }
+      ],
+      "sysconfig": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/sysconfig.py"
+        }
+      ],
+      "tempfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tempfile.py"
+        }
+      ],
+      "textwrap": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/textwrap.py"
+        }
+      ],
+      "threading": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py"
+        }
+      ],
+      "token": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/token.py"
+        }
+      ],
+      "tokenize": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/tokenize.py"
+        }
+      ],
+      "traceback": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/traceback.py"
+        }
+      ],
+      "types": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/types.py"
+        }
+      ],
+      "typing": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/typing.py"
+        }
+      ],
+      "urllib": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/__init__.py"
+        }
+      ],
+      "urllib.parse": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/urllib/parse.py"
+        }
+      ],
+      "uuid": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/uuid.py"
+        }
+      ],
+      "warnings": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/warnings.py"
+        }
+      ],
+      "weakref": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/weakref.py"
+        }
+      ],
+      "xml": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/__init__.py"
+        }
+      ],
+      "xml.etree": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/__init__.py"
+        }
+      ],
+      "xml.etree.ElementPath": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementPath.py"
+        }
+      ],
+      "xml.etree.ElementTree": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/xml/etree/ElementTree.py"
+        }
+      ],
+      "zipfile": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipfile.py"
+        }
+      ],
+      "zipimport": [
+        {
+          "origin": "STDLIB",
+          "path": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/zipimport.py"
+        }
+      ]
+    },
+    "scope": "ACTUAL_MODULE_LOCATIONS_NOT_EXECUTION_COUNTS",
+    "stdlib": "/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11",
+    "unexpected": []
+  },
+  "junit": {
+    "bytes": 8705,
+    "cases": [
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_restart_factory_recovery_is_charged_to_the_original_full_cycle_clock",
+        "seconds": "0.014",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_non_restart_cycle_does_not_construct_a_new_worker_or_change_scope",
+        "seconds": "0.013",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete[4-4]",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete[1201-4]",
+        "seconds": "0.009",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_four_cuts_or_an_incomplete_wheel_cannot_claim_horizon_complete[1201-1201]",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_legacy_or_incomplete_member_snapshots_are_rejected[projection.sqlite]",
+        "seconds": "0.013",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_legacy_or_incomplete_member_snapshots_are_rejected[manifest.json]",
+        "seconds": "0.011",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_current_five_member_shape_is_preserved_as_metadata_only_control",
+        "seconds": "0.009",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_even1202_placeholder_cuts_cannot_replace_a_measured_native_contract",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_a_fifo_index_is_rejected_without_opening_a_blocking_reader",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_internet_socket_send_methods_are_blocked_before_transport_without_connecting[send]",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_internet_socket_send_methods_are_blocked_before_transport_without_connecting[sendall]",
+        "seconds": "0.009",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_local_unix_socket_ipc_remains_allowed_and_guards_are_restored",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_complete_source_qualification_uses_real_git_objects_and_exact_modes",
+        "seconds": "0.069",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[file_bytes]",
+        "seconds": "0.054",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[physical_mode]",
+        "seconds": "0.049",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[blob_id_index]",
+        "seconds": "0.047",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[mode_index]",
+        "seconds": "0.048",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[extra_file]",
+        "seconds": "0.046",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[empty_directory]",
+        "seconds": "0.046",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_incomplete_or_drifted_source_pin_is_rejected_before_any_worker_fixture[commit_digest_index]",
+        "seconds": "0.048",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_rehashing_the_index_cannot_authorize_a_changed_uncommitted_blob",
+        "seconds": "0.048",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_replace_refs_cannot_change_the_git_qualification_authority",
+        "seconds": "0.066",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_five_original_member_bytes_are_bound_to_manifest_and_actual_pointer",
+        "seconds": "0.016",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings[payload]",
+        "seconds": "0.016",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings[rebound_manifest]",
+        "seconds": "0.012",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings[pointer]",
+        "seconds": "0.010",
+        "status": "PASS"
+      },
+      {
+        "classname": "tests.test_rc6_native_archive_horizon_wrapper",
+        "name": "test_equal_five_member_dictionaries_do_not_bypass_original_hash_and_clock_bindings[clock]",
+        "seconds": "0.011",
+        "status": "PASS"
+      }
+    ],
+    "errors": 0,
+    "failures": 0,
+    "path": "/tmp/rc6-budget-horizon-ed97-28-20261005/native-wrapper-guards.junit.xml",
+    "sha256": "8b3748298ca113cabed75a35243db2a31ba0fe533ceec5d2a6b9927288463b01",
+    "skipped": 0,
+    "tests": 28
+  },
+  "limits": [
+    "One scoped test execution; no addition to old suite counts or original55/R counts.",
+    "No actual1201-wheel, normal4, provider/PPI timing, OS isolation, image or finalFIP authority.",
+    "Two intentional unconnected-INET negative sends are rejected by test-local guards; outer transport counter remains zero."
+  ],
+  "native_full_worker_cycles_executed": 0,
+  "native_horizon_ticks_executed": 0,
+  "overlay_count": 0,
+  "phase": "INTERMEDIATE_EXACT_COMPLETE_OWN_GIT_SOURCE_NOT_FINAL_CANDIDATE",
+  "private_execution_guard": {
+    "network_attempt_count": 0,
+    "network_attempts_first64": [],
+    "primary_sqlite_sealed_after_fixture": false,
+    "scope": "AUDITED_PRIVATE_SQLITE_AND_NO_NETWORK_NOT_PROVIDER_AUTHORITY",
+    "sqlite_allowed": 0,
+    "sqlite_memory": 0,
+    "sqlite_primary_setup": 0,
+    "sqlite_rejected_count": 0,
+    "sqlite_rejected_first64": []
+  },
+  "pytest_exit_code": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "runner": {
+    "path": "/tmp/rc6_budget_horizon_ed97_guard_runner.py",
+    "scope": "EXTERNAL_CONTROLLED_HARNESS_EXECUTED_AS_MAIN_WITHOUT_IMPORTED_OUTSIDE_PROJECT_SOURCE",
+    "sha256": "4816236b89d0ffe2a44c6aa7d9aa2e4ec640e68f7ff84f3fd0defdc7e961c270"
+  },
+  "runtime_validated": false,
+  "schema": "rc6.native-horizon-wrapper-scoped-guard-receipt.v1",
+  "scope": "28_CONTROLLED_CLOCK_METADATA_MINIATURE_GIT_FIFO_SOCKET_GUARDS_NOT_NATIVE_HORIZON",
+  "source_authority_after": {
+    "raw_git_commit_sha256": "bc489c4ad00f77515d78f7f769b43ff38b5b6bef88026e02e1b1a4faffecbca6",
+    "scope": "RAW_GIT_COMMIT_ALL_TREES_ALL_BLOBS_PHYSICAL_MODES_NO_REPLACEMENTS",
+    "source_files": 1732,
+    "source_sha": "ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b",
+    "source_tree": "5e42c97350684585c26cacee6d9bbb41ed1f4ef5",
+    "tree_objects_rehashed": 62
+  },
+  "source_authority_before": {
+    "raw_git_commit_sha256": "bc489c4ad00f77515d78f7f769b43ff38b5b6bef88026e02e1b1a4faffecbca6",
+    "scope": "RAW_GIT_COMMIT_ALL_TREES_ALL_BLOBS_PHYSICAL_MODES_NO_REPLACEMENTS",
+    "source_files": 1732,
+    "source_sha": "ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b",
+    "source_tree": "5e42c97350684585c26cacee6d9bbb41ed1f4ef5",
+    "tree_objects_rehashed": 62
+  },
+  "source_bytes_modes_and_git_blobs_unchanged": true,
+  "source_file_count": 1732,
+  "source_index_sha256": "390f57928ead597ed95a9cfceb3a854f5e811c61d4e8bd87e968f285baa46d96",
+  "source_index_unchanged": true,
+  "source_inventory_after_sha256": "75869265ff084301504c6e5b9b133bf83e0a0bb08c25f97bd0b98ac69a0a9990",
+  "source_inventory_before_sha256": "75869265ff084301504c6e5b9b133bf83e0a0bb08c25f97bd0b98ac69a0a9990",
+  "source_sha": "ed97efb2ede2ca4b4dc5cbc30f35b0c2b3cfa39b",
+  "source_tar_sha256": "71f0c314834bca5a6079a6de9b8c6ad2a0965e6510fc915a3891ad29415c86bd",
+  "source_tar_unchanged": true,
+  "source_tree": "5e42c97350684585c26cacee6d9bbb41ed1f4ef5",
+  "wall_seconds": 0.8769669060129672
+}

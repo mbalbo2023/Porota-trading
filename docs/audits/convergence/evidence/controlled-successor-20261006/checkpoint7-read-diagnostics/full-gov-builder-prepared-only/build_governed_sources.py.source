@@ -1,0 +1,326 @@
+"""Prepare two fresh canonical full-Git Gov sources; never execute Gov/pytest.
+
+Only a NEW reviewed preparation binding tied to a fresh GitHub FINAL ref/tree
+can enter main. Native launch bindings emitted here are deliberately blocked.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import runpy
+import stat
+import sys
+import tempfile
+import uuid
+
+WRAPPER = Path('/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py')
+WRAPPER_SHA = '7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4'
+OBJECTS = Path('/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/original-required-19-objects.json')
+OBJECTS_SHA = '492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579'
+ORIGIN = 'https://github.com/mbalbo2023/Porota-trading.git'
+PHASE_PREPARATION_LIMIT = 300  # Git/preflight only, never the native5400 watchdog.
+EPOCHS = {
+    '311': ('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python', '3.11.16'),
+    '312': ('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv312/bin/python', '3.12.14'),
+}
+FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
+          'st_size', 'st_blocks', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+
+
+def require(value, reason):
+    if not value:
+        raise ValueError(reason)
+
+
+def initial_read(path, maximum=16*1024**2):
+    path = Path(os.path.abspath(path))
+    require(not any(part.is_symlink() for part in (path, *path.parents)), 'BUILDER_PATH_ALIAS_FORBIDDEN')
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC)
+    try:
+        before = os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                and before.st_uid == os.geteuid() and before.st_size <= maximum,
+                'BUILDER_OWNED_BOUNDED_REGULAR_CONTROL_REQUIRED')
+        chunks, size = [], 0
+        while part := os.read(fd, min(1024**2, maximum+1-size)):
+            chunks.append(part)
+            size += len(part)
+            require(size <= maximum, 'BUILDER_CONTROL_BOUND_EXCEEDED')
+        after, location = os.fstat(fd), path.lstat()
+        require(size == before.st_size and all(getattr(before, key) == getattr(after, key)
+                == getattr(location, key) for key in FIELDS),
+                'BUILDER_CONTROL_ALL11_CUSTODY_CHANGED')
+        return b''.join(chunks)
+    finally:
+        os.close(fd)
+
+
+def load_wrapper():
+    raw = initial_read(WRAPPER)
+    require(hashlib.sha256(raw).hexdigest() == WRAPPER_SHA, 'REVIEWED_OUTER_WRAPPER_CHANGED')
+    return runpy.run_path(str(WRAPPER))
+
+
+def validate_authority(w, binding):
+    raw = initial_read(binding['GitHub_authority_file'])
+    require(w['digest'](raw) == binding['GitHub_authority_sha256'], 'GITHUB_FINAL_SOURCE_AUTHORITY_CHANGED')
+    row = w['document'](raw)
+    require(row['repo_id'] == 1338680554 and row['repo'] == 'mbalbo2023/Porota-trading'
+            and row['canonical_origin'] == ORIGIN
+            and row['source_truth'] == 'FRESH_CANONICAL_GITHUB_COMMIT_TREE_REF_PR_READS'
+            and row['branch'] == 'recovery/rc6-material-fix-forward-3091e93-20261006'
+            and row['sha'] == binding['source_sha'] and row['tree'] == binding['source_tree']
+            and row['PR'] == 476 and row['PR_state'] == 'open' and row['PR_draft'] is True
+            and row['read_utc'] and row['preparation_receipt_url'] == binding['preparation_receipt_url'],
+            'SOURCE_NOT_FINAL_PUBLISHED_GITHUB_REF_TREE_AND_PR')
+    return raw
+
+
+def command_env():
+    result = {key: value for key, value in os.environ.items()
+              if key in ('PATH', 'HOME', 'LANG', 'TZ') or key.startswith('LC_')}
+    result.update(PYTHONDONTWRITEBYTECODE='1', PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',
+                  GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')
+    return result
+
+
+def run_owned(w, manager, argv, cwd, controls, label, acceptable=(0,)):
+    """Only this parent can prove FIN before reading a Git/preflight stdout."""
+    output = controls/(label+'.log')
+    require(not output.exists(), 'BUILDER_COMMAND_LOG_ALREADY_EXISTS')
+    w['save'](controls/(label+'.launch-intent.json'), {'argv': argv, 'uid': os.geteuid(),
+        'owner_pid': os.getpid(), 'scope': 'SOURCE_PREPARATION_NOT_GOV_OR_TEST_GATE',
+        'management_seconds': PHASE_PREPARATION_LIMIT, 'PAPER_SHADOW_ONLY': True, 'real_orders_sent': 0})
+    def progress(stage, pid, entered, deadline, descriptor):
+        print(json.dumps({'stage': stage, 'command_label': label, 'actual_pid': pid,
+            'owned_stdout_bytes_fstat_only': os.fstat(descriptor).st_size,
+            'scope': 'PREPARATION_OWN_STDOUT_FSTAT_ONLY_NO_ACTIVE_SOURCE_PAYLOAD_READ'}), flush=True)
+    kernel = manager['managed_native_child'](argv, cwd, output, command_env(), PHASE_PREPARATION_LIMIT,
+        terminate_grace=2, progress_poll=5, progress=progress)
+    w['save'](controls/(label+'.kernel.json'), kernel)
+    require(manager['managed_custody_closed'](kernel)
+            and w['outer_infrastructure_without_logical_exit_veto'](kernel)
+            and kernel['wall_seconds'] <= PHASE_PREPARATION_LIMIT,
+            'BUILDER_OWNED_COMMAND_FIN_UNKNOWN_OR_INFRASTRUCTURE_RED:'+label)
+    manager['pre_capture_kernel_state']()
+    raw, identity = w['capture_owned'](output)
+    w['save'](controls/(label+'.stdout-custody.json'), {'sha256': w['digest'](raw), 'stat': identity,
+        'actual_kernel_returncode': kernel['returncode'], 'original_managed_phase_green': manager['managed_phase_green'](kernel)})
+    require(kernel['returncode'] in acceptable, 'BUILDER_COMMAND_NONEXPECTED_LOGICAL_FAILURE:'+label)
+    return raw, kernel
+
+
+def git_read(w, manager, location, controls, label, *arguments):
+    raw, _kernel = run_owned(w, manager, ['git', '-C', str(location), *arguments],
+                             controls, controls, label)
+    return raw
+
+
+def verify_object(w, manager, location, controls, label, row):
+    raw = git_read(w, manager, location, controls, label, 'cat-file', 'commit', row['sha'])
+    require(w['digest'](raw) == row['raw_commit_sha256']
+            and hashlib.sha1(b'commit '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == row['sha']
+            and raw.splitlines()[0] == b'tree '+row['github_tree'].encode(), 'ORIGINAL_LITERAL_OBJECT_RAW_SHA_TREE_MISMATCH')
+
+
+def preflight(w, binding):
+    """Actual selected interpreter; unmodified Source helpers, no pytest call."""
+    w['bootstrap_actual_kernel']()
+    epoch = binding['epoch']
+    require((sys.executable, platform.python_version()) == EPOCHS[epoch]
+            and sys.prefix != sys.base_prefix, 'LOCKED_INTERPRETER_REAL_PREFIX_REQUIRED')
+    root = w['safe_path'](binding['source_root'])
+    controls = w['safe_path'](binding['preparation_control_root'])
+    require(root.parent == controls.parent and root.name == 'source' and controls.name == 'preparation'
+            and root.parent.name.startswith('rc6g'+epoch+'-')
+            and root.parent.lstat().st_uid == os.geteuid()
+            and stat.S_IMODE(root.parent.lstat().st_mode) == 0o700,
+            'ONLY_FRESH_BUILDER_OWNED_SOURCE_PREFLIGHT_NAMESPACE_ALLOWED')
+    manager_raw, _ = w['source_module'](root, w['MANAGER_MEMBER'], binding['manager'])
+    manager = runpy.run_path(str(root/w['MANAGER_MEMBER']))
+    manager['pre_capture_kernel_state']()
+    runner_raw, _ = w['source_module'](root, w['NATIVE_MEMBER'], binding['native_runner'])
+    barrier = w['static_native_source_barrier'](runner_raw)
+    native = runpy.run_path(str(root/w['NATIVE_MEMBER']))
+    require(native['MAX_SOURCE_FILE'] == w['NATIVE_SOURCE_LIMIT']
+            and native['STABLE_CODE_FIELDS'] == w['STABLE10'], 'ORIGINAL_NATIVE_SOURCE_CAPTURE_CONTRACT_CHANGED')
+    first = native['source_pin'](root, binding['source_sha'], binding['source_tree'])
+    closure = native['installed_closure'](root)
+    records = w['records157']()
+    arguments, exclusions, inventory = native['approved_scope'](root, binding['source_sha'])
+    require(arguments == w['EXPECTED_ARGUMENTS'] and exclusions == w['EXPECTED_EXCLUSIONS'],
+            'ORIGINAL_ROOT_DOT_A3_SCOPE_CHANGED')
+    after = native['source_pin'](root, binding['source_sha'], binding['source_tree'])
+    atime = native['compare_source'](first, after)
+    final_kernel = manager['pre_capture_kernel_state']()
+    logical_records = {path: {key: row[key] for key in ('bytes', 'sha256', 'git_blob', 'git_mode')}
+                       for path, row in after['files'].items()}
+    w['save_raw'](controls/'source-preflight-before.index.json', native['canonical'](first))
+    w['save_raw'](controls/'source-preflight-after.index.json', native['canonical'](after))
+    w['save_raw'](controls/'scope-inventory-preparation.json', native['canonical'](inventory))
+    w['save'](controls/'installed157-closure-preparation.json', closure)
+    w['save'](controls/'normal157-records-preparation.json', records)
+    report = {'status': 'PREPARED_INPUTS_ONLY_NOT_A_GOV_OR_TEST_GATE_PASS', 'epoch': epoch,
+        'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+        'source_files': len(after['files']), 'source_directories': len(after['physical_directories']),
+        'source_original10_unchanged_during_preflight': True, 'preparation_CODE_atime_changes': atime,
+        'arguments_original': arguments, 'A3_original_exclusions': exclusions,
+        'source_inventory_sha256': w['digest'](native['canonical'](inventory)),
+        'source_records_bytes_modes_git_blobs_sha256': w['digest'](native['canonical'](logical_records)),
+        'normal_installed157_verified': True, 'wheel_and_all_package_byte_authentication': False,
+        'manager_sha256': w['digest'](manager_raw), 'native_source_sha256': w['digest'](runner_raw),
+        'barrier': barrier, 'actual_same_parent_kernel_after_preflight': final_kernel,
+        'pytest_executed': False, 'Gov_executed': False, 'Source_overlay_count': 0, 'real_orders_sent': 0}
+    sha = w['save'](controls/'preparation-source-receipt.json', report)
+    print(json.dumps({'epoch': epoch, 'preparation_receipt_sha256': sha, 'Source_files': len(after['files']),
+        'installed157': 157, 'Gov_tests_executed': False}), flush=True)
+    return 0
+
+
+def build(w, binding):
+    w['bootstrap_actual_kernel']()
+    require(binding['stage'] == 'FINAL_GITHUB_SOURCE_PREPARATION_AUTHORIZED_ONLY'
+            and binding['repo_id'] == 1338680554 and binding['PAPER_SHADOW_ONLY'] is True
+            and binding['real_orders_sent'] == 0 and binding['DEPLOY_OWNER'] == 'NOT_ACQUIRED'
+            and binding['preparation_receipt_url'].startswith('https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-')
+            and re.fullmatch('[0-9a-f]{40}', binding['source_sha'])
+            and re.fullmatch('[0-9a-f]{40}', binding['source_tree']), 'REVIEWED_FINAL_SOURCE_PREPARATION_AUTH_REQUIRED')
+    authority_raw = validate_authority(w, binding)
+    objects_raw = initial_read(OBJECTS)
+    require(w['digest'](objects_raw) == OBJECTS_SHA, 'ORIGINAL19_AUTHENTICATED_BODY_CHANGED')
+    objects = w['document'](objects_raw)['objects']
+    require(len(objects) == len({row['sha'] for row in objects}) == 19, 'EXACT19_ORIGINAL_OBJECTS_REQUIRED')
+    owned_source = w['safe_path'](binding['manager_source_root'])
+    manager_raw, _ = w['source_module'](owned_source, w['MANAGER_MEMBER'], binding['manager'])
+    manager = runpy.run_path(str(owned_source/w['MANAGER_MEMBER']))
+    manager['pre_capture_kernel_state']()
+    base = w['safe_path'](binding['new_namespace_parent'])
+    identity = base.lstat()
+    require(stat.S_ISDIR(identity.st_mode) and identity.st_uid == os.geteuid()
+            and not stat.S_IMODE(identity.st_mode) & 0o022, 'NEW_NAMESPACE_PARENT_OWNER_AND_MODE_INVALID')
+    results = []
+    for epoch, (interpreter, version) in EPOCHS.items():
+        private = Path(tempfile.mkdtemp(prefix='rc6g'+epoch+'-', dir=base))
+        require(len(os.fsencode(private)) <= 50 and private.lstat().st_uid == os.geteuid()
+                and stat.S_IMODE(private.lstat().st_mode) == 0o700
+                and private.lstat().st_dev == owned_source.lstat().st_dev, 'FRESH_OWNED_SHORT_SAMEFS_PARENT700_REQUIRED')
+        controls = private/'preparation'
+        controls.mkdir(mode=0o700)
+        w['save_raw'](controls/'fresh-GitHub-final-source-preparation-authority.json', authority_raw)
+        w['save_raw'](controls/'original-required19-input.json', objects_raw)
+        source = private/'source'
+        transport = binding['clone_transport']
+        require(transport == ORIGIN or str(w['safe_path'](transport)) == transport,
+                'CANONICAL_HTTPS_OR_EXPLICIT_OWNED_NORMAL_LOCAL_GIT_TRANSPORT_ONLY')
+        if transport != ORIGIN:
+            require(Path(transport).lstat().st_uid == os.geteuid(), 'LOCAL_TRANSPORT_FOREIGN_OWNER_FORBIDDEN')
+            raw = git_read(w, manager, Path(transport), controls, 'transport-final-commit', 'cat-file', 'commit', binding['source_sha'])
+            require(hashlib.sha1(b'commit '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == binding['source_sha']
+                    and raw.splitlines()[0] == b'tree '+binding['source_tree'].encode(), 'LOCAL_TRANSPORT_FINAL_GITHUB_COMMIT_TREE_MISMATCH')
+            require(git_read(w, manager, Path(transport), controls, 'transport-fullness', 'rev-parse',
+                    '--is-shallow-repository').strip() == b'false', 'SHALLOW_LOCAL_TRANSPORT_FORBIDDEN')
+        run_owned(w, manager, ['git', 'clone', '--no-local', '--no-hardlinks', '--no-checkout',
+                  transport, str(source)], private, controls, 'fresh-clone')
+        run_owned(w, manager, ['git', '-C', str(source), 'config', 'remote.origin.url', ORIGIN],
+                  private, controls, 'set-canonical-origin')
+        run_owned(w, manager, ['git', '-C', str(source), 'checkout', '--detach', binding['source_sha']],
+                  private, controls, 'detach-final-Source')
+        require(source.lstat().st_uid == os.geteuid() and stat.S_IMODE(source.lstat().st_mode) == 0o755
+                and stat.S_ISDIR((source/'.git').lstat().st_mode) and not (source/'.git').is_symlink()
+                and not (source/'.git/commondir').exists() and not (source/'.git/objects/info/alternates').exists()
+                and not (source/'.git/info/grafts').exists(), 'NORMAL_SOURCE755_GITDIR_NO_ALIAS_OR_OVERLAY_REQUIRED')
+        require(git_read(w, manager, source, controls, 'fresh-source-shallow', 'rev-parse',
+                    '--is-shallow-repository').strip() == b'false'
+                and git_read(w, manager, source, controls, 'fresh-source-tree', 'rev-parse',
+                    'HEAD^{tree}').strip().decode() == binding['source_tree']
+                and git_read(w, manager, source, controls, 'fresh-source-clean', 'status',
+                    '--porcelain', '--untracked-files=no').strip() == b'', 'FULL_CLEAN_FINAL_GIT_SOURCE_REQUIRED')
+        for index, row in enumerate(objects):
+            label = 'original'+str(index).zfill(2)
+            _old, exists = run_owned(w, manager, ['git', '-C', str(source), 'show-ref', '--verify',
+                '--quiet', row['local_ref']], private, controls, label+'-ref-presence', acceptable=(0, 1))
+            if exists['returncode'] == 0:
+                require(git_read(w, manager, source, controls, label+'-ref-value', 'rev-parse',
+                    row['local_ref']).strip().decode() == row['sha'], 'ORIGINAL_NEW_LOCAL_REF_CHANGED_UNEXPECTEDLY')
+            _raw, probe = run_owned(w, manager, ['git', '-C', str(source), 'cat-file', '-e', row['sha']+'^{commit}'],
+                                    private, controls, label+'-presence', acceptable=(0, 1, 128))
+            if probe['returncode'] != 0:
+                # Preserve the actual closed RED probe. New bytes are the cause
+                # for the new check; never treat the failed probe as a PASS.
+                target = binding['original_object_transport']
+                if target != ORIGIN:
+                    target = str(w['safe_path'](target))
+                    require(Path(target).lstat().st_uid == os.geteuid(), 'ORIGINAL_OBJECT_TRANSPORT_FOREIGN_OWNER_FORBIDDEN')
+                    verify_object(w, manager, Path(target), controls, label+'-mirror-raw', row)
+                run_owned(w, manager, ['git', '-C', str(source), 'fetch', '--no-tags', '--no-write-fetch-head',
+                    '--no-auto-maintenance', target, row['sha']+':'+row['local_ref']], private, controls, label+'-fetch-literal')
+            else:
+                # Required refs are bound once in this newly-exclusive .git;
+                # update-ref's all-zero oldvalue refuses an existing ref.
+                if exists['returncode'] == 1:
+                    run_owned(w, manager, ['git', '-C', str(source), 'update-ref', row['local_ref'], row['sha'], '0'*40],
+                              private, controls, label+'-bind-fresh-ref')
+            verify_object(w, manager, source, controls, label+'-verified-raw', row)
+        native_raw, _ = w['source_module'](source, w['NATIVE_MEMBER'], binding['native_runner'])
+        w['static_native_source_barrier'](native_raw)
+        pre = {'stage': 'EXPLICIT_SOURCE_PREFLIGHT_ONLY_NOT_GOV', 'epoch': epoch,
+            'builder_sha256': binding['builder_sha256'],
+            'source_root': str(source), 'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+            'preparation_control_root': str(controls), 'manager': binding['manager'], 'native_runner': binding['native_runner']}
+        w['save'](controls/'preflight-input.json', pre)
+        run_owned(w, manager, [interpreter, '-I', '-B', str(Path(__file__).absolute()), '--preflight-binding',
+                  str(controls/'preflight-input.json')], private, controls, 'selected-epoch-original-preflight')
+        pre_receipt = w['document'](initial_read(controls/'preparation-source-receipt.json'))
+        require(pre_receipt['source_sha'] == binding['source_sha'] and pre_receipt['source_tree'] == binding['source_tree']
+                and pre_receipt['normal_installed157_verified'] is True and pre_receipt['Gov_executed'] is False,
+                'SOURCE_PREFLIGHT_RECEIPT_CONTEXT_REBOUND')
+        candidate = {'schema': 'rc6.fullGov.prepared-native-binding-NOT-AUTHORIZED.v1',
+            'stage': 'SOURCE_PREPARED_NATIVE_LAUNCH_NOT_AUTHORIZED', 'repo_id': 1338680554,
+            'canonical_repo': 'mbalbo2023/Porota-trading', 'epoch': epoch, 'interpreter': interpreter,
+            'python_version': version, 'source_sha': binding['source_sha'], 'source_tree': binding['source_tree'],
+            'source_root': str(source), 'control_root': str(private/'outer-control'),
+            'gov_output_root': str(private/'native-gov'), 'execution_id': uuid.uuid4().hex,
+            'wrapper_sha256': WRAPPER_SHA, 'manager': binding['manager'], 'native_runner': binding['native_runner'],
+            'original_objects_file': str(OBJECTS), 'remote_authority_file': '<ROOT_FRESH_AUTHORITY_FOR_SPECIFIC_GOV_LAUNCH>',
+            'remote_authority_sha256': '<ROOT_FRESH_AUTHORITY_ORIGINAL_BYTES_SHA256>',
+            'durable_launch_receipt_url': '<ROOT_SPECIFIC_FINAL_SOURCE_GOV_LAUNCH_RECEIPT_PENDING>',
+            'PAPER_SHADOW_ONLY': True, 'real_orders_sent': 0, 'DEPLOY_OWNER': 'NOT_ACQUIRED'}
+        candidate_sha = w['save'](controls/'prepared-native-binding.NOT-AUTHORIZED.json', candidate)
+        results.append({'epoch': epoch, 'parent': str(private), 'source_root': str(source),
+            'original_preparation': pre_receipt, 'blocked_binding_sha256': candidate_sha,
+            'blocked_binding': str(controls/'prepared-native-binding.NOT-AUTHORIZED.json'),
+            'clone_and_all_preparation_producers_actual_FIN': True, 'Gov_pytest_executed': False})
+        print(json.dumps({'epoch': epoch, 'input_preparation_only': True, 'namespace': str(private),
+                          'blocked_binding_sha256': candidate_sha}), flush=True)
+    require(results[0]['original_preparation']['source_records_bytes_modes_git_blobs_sha256']
+            == results[1]['original_preparation']['source_records_bytes_modes_git_blobs_sha256']
+            and results[0]['original_preparation']['source_files'] == results[1]['original_preparation']['source_files'],
+            'TWO_EPOCH_GIT_SOURCE_BYTE_MODE_BLOB_RECORDS_NOT_IDENTICAL')
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--preparation-binding')
+    group.add_argument('--preflight-binding')
+    args = parser.parse_args()
+    os.umask(0o022)
+    w = load_wrapper()
+    if args.preflight_binding:
+        row = w['document'](initial_read(args.preflight_binding))
+        require(w['digest'](initial_read(__file__)) == row['builder_sha256'], 'REVIEWED_BUILDER_SOURCE_BYTES_REBOUND')
+        require(row['stage'] == 'EXPLICIT_SOURCE_PREFLIGHT_ONLY_NOT_GOV', 'EXPLICIT_PREPARATION_PREFLIGHT_REQUIRED')
+        return preflight(w, row)
+    row = w['document'](initial_read(args.preparation_binding))
+    require(w['digest'](initial_read(__file__)) == row['builder_sha256'], 'REVIEWED_BUILDER_SOURCE_BYTES_REBOUND')
+    results = build(w, row)
+    print(json.dumps({'prepared': results, 'Gov_or_pytest_executed': False, 'real_orders_sent': 0}), flush=True)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

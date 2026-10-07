@@ -1,0 +1,300 @@
+import base64
+import csv
+import datetime
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import tempfile
+import xml.etree.ElementTree as ET
+
+SOURCE = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source')
+CURRENT = Path('/workspace/scratch/rc6-ci-two-phase-py-member-focals-iv4w7fsr')
+INITIAL = Path('/workspace/scratch/rc6-ci-workspace-focals-mz4yoedv')
+RED = Path('/workspace/scratch/rc6-ci-two-phase-focals-d8ofteaw')
+ROOT = Path(tempfile.mkdtemp(prefix='rc6-ci-workspace-raw-final-', dir='/workspace/scratch'))
+print(json.dumps({'raw_preparation_namespace': str(ROOT), 'scope': 'CLOSED_RAW_PACKAGING_ONLY_NOT_NEW_TESTS'}), flush=True)
+ROWS = []
+FIELDS = ('st_dev', 'st_ino', 'st_mode', 'st_nlink', 'st_uid', 'st_gid',
+          'st_size', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns', 'st_blocks')
+MAXIMUM = 8 * 1024 * 1024
+
+
+def attributes(value):
+    return {name: getattr(value, name) for name in FIELDS}
+
+
+def parent_fd(path):
+    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for name in path.parts[1:-1]:
+            next_descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                      dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def mount_id(descriptor):
+    raw = Path('/proc/self/fdinfo/' + str(descriptor)).read_text()
+    values = [line.split(':', 1)[1].strip() for line in raw.splitlines() if line.startswith('mnt_id:')]
+    assert len(values) == 1 and values[0].isdigit()
+    return int(values[0])
+
+
+def read_owned(path):
+    path = Path(path).absolute()
+    parent = parent_fd(path)
+    try:
+        before = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        assert stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid == os.geteuid(), path
+        assert before.st_size <= MAXIMUM, path
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NOATIME,
+                             dir_fd=parent)
+        try:
+            assert attributes(before) == attributes(os.fstat(descriptor))
+            chunks = []
+            total = 0
+            while True:
+                chunk = os.read(descriptor, min(1024 * 1024, MAXIMUM + 1 - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                assert total <= MAXIMUM, path
+                chunks.append(chunk)
+            after = os.fstat(descriptor)
+            assert attributes(before) == attributes(after)
+            assert attributes(before) == attributes(os.stat(path.name, dir_fd=parent, follow_symlinks=False))
+            return b''.join(chunks), {'stat_before': attributes(before), 'stat_after': attributes(after),
+                                     'mount_id': mount_id(descriptor), 'all_11_stable': True}
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
+
+
+def exclusive(path, raw):
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(descriptor, 'wb') as output:
+        output.write(raw)
+        output.flush()
+        os.fsync(output.fileno())
+
+
+def snapshot(original, relative, classification):
+    raw, custody = read_owned(original)
+    stored = ROOT / relative
+    exclusive(stored, raw)
+    stored_raw, stored_custody = read_owned(stored)
+    original_again, after_copy = read_owned(original)
+    assert raw == stored_raw == original_again
+    assert custody['stat_before'] == after_copy['stat_after']
+    row = {'classification': classification, 'original': str(original), 'stored': str(stored),
+           'relative': str(relative), 'bytes': len(raw), 'original_sha256': hashlib.sha256(raw).hexdigest(),
+           'stored_sha256': hashlib.sha256(stored_raw).hexdigest(), 'original_custody': custody,
+           'stored_custody': stored_custody, 'bytes_preserved_without_normalization': True,
+           'original_all_11_stable_through_copy': True}
+    ROWS.append(row)
+    return raw, row
+
+
+def physical_directory(path):
+    try:
+        details = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISDIR(details.st_mode) and details.st_uid == os.geteuid()
+
+
+def list_owned_directory(path):
+    assert physical_directory(path), path
+    parent = parent_fd(path)
+    try:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                             dir_fd=parent)
+        try:
+            assert os.fstat(descriptor).st_uid == os.geteuid()
+            return sorted(os.listdir(descriptor))
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
+
+
+summary = {'classification': 'LOCAL_FOCAL_FIXTURE_AND_CI_CUSTODY_EVIDENCE_ONLY',
+           'created_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+           'namespace': str(ROOT), 'source_qualification': 'UNCOMMITTED_DIAGNOSTIC_ONLY',
+           'full_gov_predeploy_artifact_runtime_attested': False, 'real_orders_sent': 0,
+           'epochs': {}, 'actual_real_fixtures': [], 'unit_safe_postread_controls': [],
+           'metadata_current_installed_bytes_not_wheel_attestation': [],
+           'normal_native_origin_scope': 'PASSED_SOURCE_PINNED_ISOLATED_IMPORT_ASSERTIONS; PREFLIGHT_STDOUT_NOT_PERSISTED_BY_ORIGINAL_TEST; NO_INVENTED_OUTPUT',
+           'copied_venvs_db_data_or_whole_source_tar': False, 'deleted_resources': 0,
+           'global_cleanup_green_asserted': False, 'source_edits': 0, 'new_test_runs': 0}
+
+source_hashes = {
+    'scripts/porota_predeploy_test_workspace.py': '86678b88af863b3e45e6eac686b73514dee4f107ed1d9d9c9d92eba8868edf56',
+    '.github/workflows/porota-predeploy-v2.yml': '45b5ba23d59843cdc2ea84f458e40c214ae3b78fb23d44cd16ec0fd22a3c2125',
+    'tests/test_ci_productive_predeploy_contract.py': '18e0840717256861c2f9a187aac88a96e36252339a6b854da2a29bb328c3c1f2',
+    'tests/test_rc6_predeploy_scoped_cleanup.py': 'b4cf138a76c247fef54bfd00d936a00973d169d10aeebcb91e9cc74ed1d497e2',
+    'scripts/porota_predeploy_cleanup.py': '31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f',
+    'docs/audits/rc6-convergence-persistence-evidence/run_full_horizon_1201_v2.py.source': 'ac9ba0f457ee4592646d91c5654f037efbfa2bc4f758469e16b7cf51d87e7aec'}
+for relative, wanted in source_hashes.items():
+    _, row = snapshot(SOURCE / relative, Path('source-snapshots') / (relative + '.source'), 'EXACT_SOURCE_BYTES_SNAPSHOT_NOT_NEW_COMMIT')
+    assert row['original_sha256'] == wanted
+summary['frozen_source_hashes'] = source_hashes
+
+sets = {}
+for variant, root, epochs in [('initial51', INITIAL, ('311', '312')), ('red62', RED, ('311',)),
+                             ('corrected62', CURRENT, ('311', '312'))]:
+    snapshot(root / 'control/run_focals.py', Path(variant) / 'control/run_focals.py.source', 'ORIGINAL_EXTERNAL_FOCAL_HARNESS')
+    for epoch in epochs:
+        original = root / ('epoch' + epoch)
+        raw, receipt_row = snapshot(original / 'receipt.json', Path(variant) / ('epoch' + epoch) / 'receipt.json', 'CLOSED_OUTER_ORIGINAL_KERNEL_RAW')
+        receipt = json.loads(raw)
+        assert receipt['physical_fin_closed'] is True
+        for name in ('launch.json', 'progress.json', 'junit.xml', 'pytest.log'):
+            snapshot(original / name, Path(variant) / ('epoch' + epoch) / name, 'ORIGINAL_CLOSED_FOCAL_RAW')
+        junit_raw, _ = read_owned(original / 'junit.xml')
+        cases = list(ET.fromstring(junit_raw).iter('testcase'))
+        case_ids = sorted(case.attrib.get('classname', '') + '::' + case.attrib.get('name', '') for case in cases)
+        case_bytes = ('\n'.join(case_ids) + '\n').encode()
+        exclusive(ROOT / variant / ('epoch' + epoch) / 'junit-case-identities.json', (json.dumps(case_ids, indent=2) + '\n').encode())
+        sets[(variant, epoch)] = case_ids
+        kernel = receipt['original_raw_kernel']
+        summary['epochs'][variant + '_' + epoch] = {
+            'original_receipt_sha256': receipt_row['original_sha256'], 'stored_receipt': receipt_row['stored'],
+            'junit_sha256': receipt['junit']['sha256'], 'cases': receipt['junit']['cases'],
+            'pass': len(cases) - receipt['junit']['failures'] - receipt['junit']['errors'] - receipt['junit']['skipped'],
+            'fail': receipt['junit']['failures'], 'error': receipt['junit']['errors'], 'skip': receipt['junit']['skipped'],
+            'duplicates': receipt['junit']['duplicate_case_ids'], 'case_set_sha256': hashlib.sha256(case_bytes).hexdigest(),
+            'actual_pid': kernel['pid'], 'actual_supervisor_pid': kernel['supervisor_pid'],
+            'wall_seconds': kernel['wall_seconds'], 'kernel_peak_max_not_sum_rss_bytes': kernel['peak_rss_bytes'],
+            'physical_fin_closed': receipt['physical_fin_closed'], 'original_phase_green': receipt['original_managed_phase_green'],
+            'source_bytes_unchanged': receipt['source_bytes_unchanged'],
+            'kernel_echild': kernel['owned_children_exhaustion_verified'], 'pgid_absent_at_main': kernel['process_group_absent_at_main_reap'],
+            'pgid_absent_after_reap': kernel['process_group_absent_after_reap'],
+            'retained_namespace_measurement': receipt['diagnostic_namespace_retained']}
+
+for name in ('checkpoint.json', 'collection-execution-review.json', 'collection-execution-reviewed-scope.diff'):
+    snapshot(INITIAL / 'control' / name, Path('initial51/control') / name, 'PREVIOUS_CHECKPOINT_OR_EXACT_REVIEW_RAW')
+for name in list_owned_directory(RED / 'control'):
+    if name == 'run_focals.py':
+        continue
+    snapshot(RED / 'control' / name, Path('red62/control') / name, 'PRESERVED_RCA_METADATA_OR_EXACT_FIXTURE_CORRECTION_REVIEW')
+snapshot(CURRENT / 'control/launch-plan.json', Path('corrected62/control/launch-plan.json'), 'ORIGINAL_APPROVED_TWO_EPOCH_LAUNCH_PLAN')
+
+expected = {'pytest': '9.1.1', 'iniconfig': '2.3.0', 'packaging': '26.3', 'pluggy': '1.6.0', 'pygments': '2.21.0'}
+for epoch, minor in [('311', '3.11'), ('312', '3.12')]:
+    site = SOURCE.parent / ('venv' + epoch) / 'lib' / ('python' + minor) / 'site-packages'
+    for distribution, version in expected.items():
+        for name in ('METADATA', 'RECORD'):
+            snapshot(site / (distribution + '-' + version + '.dist-info') / name,
+                     Path('current-installed-metadata') / epoch / (distribution + '-' + version) / name,
+                     'LOCKED_INSTALLED_DIST_INFO_BYTES_NOT_WHEEL_BYTE_ATTESTATION')
+    raw, py_row = snapshot(site / 'py.py', Path('current-installed-metadata') / epoch / 'pytest-owned-py.py',
+                           'PYTEST_9_1_1_OWNED_RECORD_MEMBER_BYTES_NOT_SIXTH_DISTRIBUTION')
+    record, _ = read_owned(site / 'pytest-9.1.1.dist-info/RECORD')
+    rows = [row for row in csv.reader(io.StringIO(record.decode())) if row[0] == 'py.py']
+    assert len(rows) == 1
+    mode, value = rows[0][1].split('=', 1)
+    assert mode == 'sha256' and int(rows[0][2]) == len(raw)
+    assert value == base64.urlsafe_b64encode(hashlib.sha256(raw).digest()).rstrip(b'=').decode()
+    summary['metadata_current_installed_bytes_not_wheel_attestation'].append({
+        'epoch': epoch, 'five_distributions': expected, 'pytest_owned_py_member': 'py.py',
+        'py_bytes': len(raw), 'py_sha256': py_row['original_sha256'], 'record_hash_mode': mode,
+        'record_hash': value, 'record_matches_source_bytes': True})
+
+for epoch in ('311', '312'):
+    pytest_root = CURRENT / ('epoch' + epoch) / 'pytest'
+    for name in list_owned_directory(pytest_root):
+        fixture = pytest_root / name
+        if not physical_directory(fixture):
+            continue
+        for runner_name in ('runner', 'native-runner'):
+            runner = fixture / runner_name
+            if not physical_directory(runner):
+                continue
+            for control_name in list_owned_directory(runner):
+                control = runner / control_name
+                relative = Path('corrected62') / ('epoch' + epoch) / 'fixtures' / name / runner_name / control_name
+                if re.fullmatch(r'porota-predeploy-\d+-\d+\.pytest(?:-collection|-producers)?-postread\.json', control_name):
+                    raw, row = snapshot(control, relative, 'ACTUAL_EXTERNAL_SAFE_POSTREAD_CONTROL_NOT_UNKNOWN_PAYLOAD')
+                    value = json.loads(raw)
+                    summary['unit_safe_postread_controls'].append({'epoch': epoch, 'fixture': name,
+                        'classification': value['classification'], 'safe_postread': value['safe_postread'],
+                        'errors': value.get('errors', []), 'stored': row['stored'], 'sha256': row['original_sha256']})
+                if (runner_name != 'native-runner' or not physical_directory(control)
+                        or not re.fullmatch(r'porota-predeploy-\d+-\d+-[0-9a-f]{32}', control_name)):
+                    continue
+                fixture_summary = {'epoch': epoch, 'fixture': name, 'private': str(control), 'phases': {}, 'control_files': []}
+                for control_file in list_owned_directory(control):
+                    if not (control_file.startswith('porota-pytest-') and control_file.endswith('.json')) and control_file not in (
+                            'porota-test-collection.txt', 'porota-pytest-native.log', 'native-owned-junit.xml'):
+                        continue
+                    raw, row = snapshot(control / control_file, relative / control_file, 'ACTUAL_CLOSED_NATIVE_FIXTURE_CONTROL_OR_FIN_QUALIFIED_PAYLOAD')
+                    fixture_summary['control_files'].append({'name': control_file, 'stored': row['stored'], 'sha256': row['original_sha256']})
+                    if control_file.endswith('owned-fin.json'):
+                        value = json.loads(raw)
+                        kernel = value['kernel']
+                        assert value['owned_fin_closed'] is True
+                        fixture_summary['phases'][value['phase']] = {
+                            'supervisor_pid': value['supervisor_pid'], 'native_pid': kernel['pid'],
+                            'wait4_reaped_pid': kernel['wait4_reaped_pid'], 'kernel_echild': kernel['owned_children_exhaustion_verified'],
+                            'pgid_at_main': kernel['process_group_absent_at_main_reap'], 'pgid_post': kernel['process_group_absent_after_reap'],
+                            'returncode': kernel['returncode'], 'owned_fin_closed': value['owned_fin_closed'],
+                            'phase_green': value['phase_green'], 'management_acceptance': value['management_acceptance'],
+                            'management_seconds': value['management_seconds'], 'timed_out': kernel['timed_out'],
+                            'signals': kernel['owned_group_signal_observations'], 'wall_seconds': kernel['wall_seconds'],
+                            'post_fin_errors': value['post_fin_errors'], 'fin_original_sha256': row['original_sha256']}
+                    if control_file == 'porota-pytest-selected-fixture.json':
+                        value = json.loads(raw)
+                        fixture_summary['copied_fixture'] = {'classification': value['classification'],
+                            'five_distribution_versions': value['expected_distributions'],
+                            'pytest_owned_compatibility_member': value['pytest_owned_compatibility_member'],
+                            'copy_manifest_sha256': row['original_sha256'], 'file_count': len(value['files'])}
+                assert 'collection' in fixture_summary['phases']
+                if 'collection_failure' in name:
+                    assert set(fixture_summary['phases']) == {'collection'}
+                    assert fixture_summary['phases']['collection']['returncode'] == 2
+                    fixture_summary['execution_never_launched'] = True
+                elif 'timeout' in name:
+                    assert fixture_summary['phases']['execution']['timed_out'] is True
+                    assert fixture_summary['phases']['execution']['phase_green'] is False
+                    fixture_summary['real_timeout_remains_red'] = True
+                else:
+                    assert all(value['phase_green'] is True for value in fixture_summary['phases'].values())
+                summary['actual_real_fixtures'].append(fixture_summary)
+
+assert len(summary['actual_real_fixtures']) == 6
+assert sets[('initial51', '311')] == sets[('initial51', '312')]
+assert sets[('red62', '311')] == sets[('corrected62', '311')] == sets[('corrected62', '312')]
+summary['same_scenario_sets_each_epoch'] = True
+summary['distinct_corrected_scenarios_not_124'] = 62
+summary['distinct_initial_scenarios_not_102'] = 51
+summary['original_red_reclassified'] = False
+summary['raw_original_files_count'] = len(ROWS)
+summary_raw = (json.dumps(summary, indent=2, sort_keys=True) + '\n').encode()
+exclusive(ROOT / 'summary.json', summary_raw)
+index = {'schema': 'rc6-ci-workspace-closed-raw-index-v1', 'namespace': str(ROOT),
+         'created_utc': summary['created_utc'], 'scope': summary['classification'],
+         'summary_sha256': hashlib.sha256(summary_raw).hexdigest(),
+         'all_original_and_stored_sha256_equal': all(row['original_sha256'] == row['stored_sha256'] for row in ROWS),
+         'all_original_11_fields_stable': all(row['original_all_11_stable_through_copy'] for row in ROWS),
+         'raw_files_not_normalized': True, 'files': ROWS}
+index_raw = (json.dumps(index, indent=2, sort_keys=True) + '\n').encode()
+exclusive(ROOT / 'raw-index.json', index_raw)
+print(json.dumps({'namespace': str(ROOT), 'raw_index': str(ROOT / 'raw-index.json'),
+                  'raw_index_sha256': hashlib.sha256(index_raw).hexdigest(),
+                  'summary': str(ROOT / 'summary.json'), 'summary_sha256': hashlib.sha256(summary_raw).hexdigest(),
+                  'raw_original_files': len(ROWS), 'raw_total_bytes': sum(row['bytes'] for row in ROWS),
+                  'real_native_fixture_count': len(summary['actual_real_fixtures']),
+                  'external_safe_postread_control_count': len(summary['unit_safe_postread_controls']),
+                  'all_original_and_stored_sha256_equal': index['all_original_and_stored_sha256_equal'],
+                  'all_original_11_fields_stable': index['all_original_11_fields_stable']}, indent=2))

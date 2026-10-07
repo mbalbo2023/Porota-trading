@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""Private stdlib documentary controls. Source-only until explicitly dispatched.
+
+This exercises helper parsers and a controlled Git fixture, not product Native,
+Gov, financial logic, Source TAR entries, an external origin, or final D.
+"""
+import argparse
+import collections
+import copy
+import gzip
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+HELPERS = (
+    ("REGISTER", Path("/tmp/rc6_remediation_register_generate_v4_opaque_candidate_v2.py"),
+     "60bd126002caf324ed9a3f42d45f21a9dd7591d162f3501d168d02ee10d35dfc"),
+    ("SUPPLEMENT", Path("/tmp/rc6_root_supplemental_named_findings_generate_v3_opaque_candidate_v2.py"),
+     "76ece1725ca2696bbffba6bb5ebba7b7d6d8edd722d5b6f3ab42ac6afeafc696"),
+)
+CAPTURE_SHA = "1" * 40
+CAPTURE_TREE = "2" * 40
+ROOT = "docs/audits/rc6-private-publication-controlled-focal-11111111"
+CUSTODY = ROOT + "/CUSTODY.json"
+CAPSULE = ROOT + "/CAPSULE.json"
+REGISTER = "docs/audits/convergence/REMEDIATION_REGISTER.json"
+ARCHIVE = ROOT + "/epochs/b/raw/whole-source.tar.gz"
+SCOPE = "CONTROLLED_DOCUMENTARY_HELPER_GIT_PARSER_ONLY_NOT_PRODUCT_NATIVE_GOV_OR_FINANCIAL_EXECUTION"
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wire(obj):
+    return (json.dumps(obj, sort_keys=True, allow_nan=False) + "\n").encode()
+
+
+def pins():
+    result = {}
+    for label, path, expected in HELPERS:
+        raw = path.read_bytes()
+        if sha(raw) != expected:
+            raise AssertionError("helper pin changed before documentary import: " + label)
+        result[label] = {"path": str(path), "sha256": sha(raw), "bytes": len(raw)}
+    return result
+
+
+def modules():
+    pins()  # Must precede the first exec_module, including module-scope work.
+    loaded = {}
+    for label, path, _ in HELPERS:
+        spec = importlib.util.spec_from_file_location("documentary_opaque_" + label, path)
+        value = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(value)
+        loaded[label] = value
+    return loaded
+
+
+def make_source(helper, label, repo, commit):
+    # Each helper's own real constructor: tuple2 vs tuple3 is part of the ABI.
+    return helper.Source(repo, commit) if label == "REGISTER" else helper.GitSource(repo, commit)
+
+
+def close_source(source):
+    if hasattr(source, "close"):
+        source.close()
+
+
+def state(payload=None):
+    if payload is None:
+        payload = b"CONTROLLED OPAQUE BYTES; NOT A TAR PROGRAM\0" * 3301
+    originals = {"E%03d" % i: {"historical_literal": i, "scope": "SYNTHETIC_ORIGINAL_CATALOG_OBJECT"}
+                 for i in range(1, 211)}
+    files = {REGISTER: wire({"schema": "rc6.remediation-register.v1", "evidence_catalog": originals}),
+             ROOT + "/README.md": b"CONTROLLED DERIVED README; NO EXECUTION AUTHORITY\n"}
+    rows = []
+    for epoch in "ABCD":
+        directory = "epochs/" + epoch.lower() + "/raw/"
+        origin = "/UNREAD_CONTROLLED_ORIGIN/" + epoch.lower()
+        authority_name = "preparation-red.json" if epoch == "A" else "source-tar.json"
+        authority = ({"schema": "rc6.private-publication-preparation-red.v1",
+                      "source_sha": CAPTURE_SHA, "source_tree": CAPTURE_TREE,
+                      "source_files": 2158, "native_fixture_started": False, "pytest_main_invocations": 0}
+                     if epoch == "A" else {
+                         "commit": CAPTURE_SHA, "bytes": len(payload), "sha256": sha(payload),
+                         "files": 2158, "directories": 111,
+                         "stat_fields": {"st_dev": 1, "st_ino": 2, "st_mode": 33152, "st_uid": 1000,
+                                         "st_gid": 1000, "st_nlink": 1, "st_size": len(payload), "st_blocks": 1,
+                                         "st_atime_ns": 3, "st_mtime_ns": 4, "st_ctime_ns": 5}})
+        for name, original, encoding in (("whole-source.tar", payload, "GZIP_MTIME_ZERO_V1"),
+                                         (authority_name, wire(authority), "IDENTITY")):
+            named = directory + name + (".gz" if encoding != "IDENTITY" else "")
+            stored = gzip.compress(original, mtime=0) if encoding != "IDENTITY" else original
+            files[ROOT + "/" + named] = stored
+            rows.append({"protocol_epoch": epoch, "artifact_role": "ORIGINAL_CONTROLLED_RAW",
+                         "recorded_original_root": origin, "recorded_original_relative_path": name,
+                         "recorded_original_path": origin + "/" + name,
+                         "capsule_relative_path": named, "original_sha256": sha(original),
+                         "original_bytes": len(original), "original_stat_mode_octal": "0600",
+                         "encoding": encoding, "stored_sha256": sha(stored), "stored_bytes": len(stored),
+                         "stored_git_mode": "100644", "source_sha": CAPTURE_SHA, "source_tree": CAPTURE_TREE,
+                         "driver_sha256": "3" * 64, "support_sha256": "4" * 64})
+    receipt = {"schema": "rc6.external-diagnostic-original-byte-custody.v1",
+               "capsule_root_relative_to_repository": ROOT,
+               "inventory_kind": "ORIGINAL_BYTES_ONLY; CONTROLS_AND_DERIVED_README_EXCLUDED",
+               "members_count": len(rows), "members": rows}
+    capsule = {"schema": "rc6.private-publication-controlled-focal-capsule.v1",
+               "capsule_root_relative_to_repository": ROOT,
+               "source_sha": CAPTURE_SHA, "source_tree": CAPTURE_TREE,
+               "epochs": [{"epoch": "A", "status": "HARNESS_RED", "native_cases": 0}],
+               "scope": SCOPE}
+    return {"files": files, "receipt": receipt, "capsule": capsule, "originals": originals,
+            "payload": payload, "git_modes": {}}
+
+
+def declaration(data, epoch="B", authority=False):
+    suffix = "preparation-red.json" if epoch == "A" else "source-tar.json"
+    wanted = "epochs/" + epoch.lower() + "/raw/" + (suffix if authority else "whole-source.tar.gz")
+    return next(row for row in data["receipt"]["members"] if row["capsule_relative_path"] == wanted)
+
+
+def rewrite_authority(data, epoch, changes):
+    row = declaration(data, epoch, True)
+    path = ROOT + "/" + row["capsule_relative_path"]
+    value = json.loads(data["files"][path])
+    changes(value)
+    raw = wire(value)
+    data["files"][path] = raw
+    row.update(original_bytes=len(raw), original_sha256=sha(raw), stored_bytes=len(raw), stored_sha256=sha(raw))
+
+
+def rewrite_archive(data, raw):
+    row = declaration(data)
+    data["files"][ARCHIVE] = raw
+    # Named stream guards must not be masked by an unrelated stored-hash mismatch.
+    row.update(stored_sha256=sha(raw), stored_bytes=len(raw))
+
+
+def materialize(folder, data):
+    repo = folder / "repo"
+    repo.mkdir()
+    files = dict(data["files"])
+    files[CUSTODY] = wire(data["receipt"])
+    data["capsule"]["custody"] = {"path": "CUSTODY.json", "sha256": sha(files[CUSTODY]),
+                                   "bytes": len(files[CUSTODY]), "encoding": "IDENTITY", "stored_git_mode": "100644"}
+    data["capsule"]["readme"] = {"path": "README.md", "sha256": sha(files[ROOT + "/README.md"]),
+                                  "bytes": len(files[ROOT + "/README.md"]), "encoding": "IDENTITY", "stored_git_mode": "100644"}
+    files[CAPSULE] = wire(data["capsule"])
+    for name, raw in files.items():
+        target = repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        target.chmod(0o755 if data["git_modes"].get(name) == "100755" else 0o644)
+    def git(*args):
+        return subprocess.check_output(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(repo),
+            "-c", "protocol.allow=never", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgSign=false",
+            "-c", "user.name=Private Documentary Control", "-c", "user.email=control@example.invalid", *args],
+            stderr=subprocess.PIPE)
+    git("init", "-q")
+    git("add", "--all")
+    git("commit", "-qm", "Controlled documentary bytes, not a product Source")
+    return repo, git("rev-parse", "HEAD").decode().strip()
+
+
+def exercise(helper, label, name, results, mutation=None, expectation="REJECTED", epoch="B",
+             expanded_cap=None, stored_cap=None, chunk=None, check=None):
+    data = state(b"x" * 257 if expanded_cap == 256 else None)
+    if mutation:
+        mutation(data)
+    with tempfile.TemporaryDirectory(prefix="rc6-opaque-documentary-") as temp:
+        repo, commit = materialize(Path(temp), data)
+        source = make_source(helper, label, repo, commit)
+        path = ROOT + "/epochs/" + epoch.lower() + "/raw/whole-source.tar.gz"
+        original = (helper.ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES,
+                    helper.ARCHIVE_SOURCE_STORED_LIMIT_BYTES, helper.ARCHIVE_SOURCE_STREAM_CHUNK_BYTES)
+        if expanded_cap is not None:
+            helper.ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES = expanded_cap
+        if stored_cap is not None:
+            helper.ARCHIVE_SOURCE_STORED_LIMIT_BYTES = stored_cap
+        if chunk is not None:
+            helper.ARCHIVE_SOURCE_STREAM_CHUNK_BYTES = chunk
+        try:
+            try:
+                if check:
+                    value = check(source, path, data)
+                else:
+                    value = helper.opaque_source_archive_entry_metadata(source, path)
+            except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                if expectation != "REJECTED":
+                    raise
+                result = "REJECTED"
+            else:
+                if expectation != "PRESERVED":
+                    raise AssertionError("documentary adversary accepted: " + label + ":" + name)
+                if value is not None:
+                    assert value["state"] == "SOURCE_ARCHIVE_BYTES_VERIFIED_ONLY"
+                    assert value["raw_encoding_metadata"]["uncompressed_bytes"] == len(data["payload"])
+                    assert value["tar_entries_parsed_or_extracted"] is False
+                    assert value["product_or_runtime_acceptance"] is False
+                result = "PRESERVED"
+            results.append({"helper": label, "control": name, "result": result,
+                            "source_adapter": type(source).__name__, "scope": SCOPE})
+        finally:
+            (helper.ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES, helper.ARCHIVE_SOURCE_STORED_LIMIT_BYTES,
+             helper.ARCHIVE_SOURCE_STREAM_CHUNK_BYTES) = original
+            close_source(source)
+
+
+def pipeline_controls(helper, results):
+    data = state()
+    log_path = ROOT + "/budget/controlled.log"
+    data["files"][log_path] = b"CONTROLLED DOCUMENTARY LOG\n"
+    focal_path = ROOT + "/budget/focal.json"
+    data["files"][focal_path] = wire({"schema": "rc6.native-big-import-provenance-focal.v1", "raw_files": [{
+        "id": "controlled-raw", "path": log_path, "original_path": "/UNREAD_CONTROLLED_BUDGET/controlled.log",
+        "sha256": sha(data["files"][log_path]), "bytes": len(data["files"][log_path]),
+        "stored_mode": "100644", "encoding": "BYTE_EXACT", "custody": "BYTE_EXACT_ORIGINAL_RAW"}]})
+    with tempfile.TemporaryDirectory(prefix="rc6-opaque-pipeline-documentary-") as temp:
+        repo, commit = materialize(Path(temp), data)
+        source = helper.Source(repo, commit)
+        try:
+            # Use the real metadata method while deliberately bypassing unrelated
+            # full-register constructor inputs. This is not generator/D execution.
+            builder = object.__new__(helper.Builder)
+            builder.s, builder.values, builder.issues = source, {}, []
+            builder.executions = collections.defaultdict(list)
+            catalog = copy.deepcopy(data["originals"])
+            for identifier, path in (("E211", CAPSULE), ("E212", CUSTODY), ("E213", ARCHIVE), ("E214", focal_path)):
+                raw = source.read(path)
+                entry = {"path": path, "sha256": sha(raw), "bytes": len(raw),
+                         "source_scope": "PRIVATE_CONTROLLED_FIXTURE_NOT_CAPTURE_SOURCE",
+                         "current_publication_binding": source.binding(path), "evidence_kind": "CONTROLLED_DERIVED"}
+                builder.metadata(identifier, entry, raw)
+                catalog[identifier] = entry
+            assert any("custody_publication_binding" in m.get("archival_path_mapping", {})
+                       for m in catalog["E211"]["declared_raw_dossier_members"])
+            assert all("custody_publication_binding" not in m.get("archival_path_mapping", {})
+                       for m in catalog["E214"]["declared_raw_dossier_members"])
+            assert "opaque_source_archive_metadata" in catalog["E213"]
+            document = {"schema": "rc6.remediation-register.v1", "source_snapshot": {"sha": source.sha, "tree": source.tree},
+                        "evidence_catalog": catalog, "current_source_inventory": {"files": [], "guards": []}}
+            compact = helper.compact_derived(document, data["originals"], source)
+            expanded = helper.RefResolver(source, compact).expand()
+            assert expanded["evidence_catalog"] == catalog
+            assert {key: compact["evidence_catalog"][key] for key in data["originals"]} == data["originals"]
+            results.append({"helper": "REGISTER", "control": "BUILDER_DECLARED_PERS_COMPACT_RESOLVER_WITH_AND_WITHOUT_CUSTODY_EDGE",
+                            "result": "PRESERVED", "scope": SCOPE})
+            results.append({"helper": "REGISTER", "control": "ORIGINAL_210_OBJECTS_EXACT_IN_CONTROLLED_PIPELINE",
+                            "result": "PRESERVED", "scope": SCOPE})
+            def reject(name, mutate):
+                candidate = copy.deepcopy(document)
+                mutate(candidate)
+                altered = helper.compact_derived(candidate, data["originals"], source)
+                try:
+                    helper.RefResolver(source, altered).expand()
+                except (helper.RefResolutionError, ValueError, subprocess.SubprocessError):
+                    results.append({"helper": "REGISTER", "control": name, "result": "REJECTED", "scope": SCOPE})
+                else:
+                    raise AssertionError("combined derived tamper accepted: " + name)
+            reject("COMBINED_DUPLICATE_DECLARED_EDGE_RECOMPUTE_REJECTS", lambda d:
+                   d["evidence_catalog"]["E211"]["declared_raw_dossier_members"].append(
+                       copy.deepcopy(d["evidence_catalog"]["E211"]["declared_raw_dossier_members"][-1])))
+            reject("COMBINED_OPAQUE_ENCODING_TAMPER_RECOMPUTE_REJECTS", lambda d:
+                   d["evidence_catalog"]["E213"]["opaque_source_archive_metadata"]["raw_encoding_metadata"].update(uncompressed_bytes=0))
+            reject("COMBINED_ORIGIN_DEFINITION_TAMPER_RECOMPUTE_REJECTS", lambda d:
+                   d["evidence_catalog"]["E211"]["declared_raw_dossier_members"][-1]["archival_path_mapping"].update(recorded_original_path="/other/log"))
+            reject("COMBINED_PUBLICATION_TREE_TAMPER_REJECTS", lambda d:
+                   d["evidence_catalog"]["E213"]["current_publication_binding"].update(source_tree="f" * 40))
+        finally:
+            close_source(source)
+
+
+def run():
+    before = pins()
+    loaded = modules()
+    results = []
+    try:
+        for label, helper in loaded.items():
+            for epoch in "ABCD":
+                exercise(helper, label, "OWN_ADAPTER_PHASE_" + epoch + "_AUTHORITY_PRESERVED", results,
+                         expectation="PRESERVED", epoch=epoch)
+            exercise(helper, label, "SMALL_STREAM_CHUNKS_PRESERVE_FULL_OPAQUE_SHA", results,
+                     expectation="PRESERVED", chunk=17)
+            def remove_authority(d):
+                d["receipt"]["members"].remove(declaration(d, authority=True))
+                d["receipt"]["members_count"] = len(d["receipt"]["members"])
+            cases = [
+                ("MISSING_AUTHORITY_ROW_REJECTED", remove_authority),
+                ("WRONG_ROLE_REJECTED", lambda d: declaration(d).update(artifact_role="EXECUTED_ARTIFACT")),
+                ("NULL_SOURCE_AUTHORITY_REJECTED", lambda d: declaration(d).update(source_sha=None)),
+                ("WRONG_ORIGIN_JOIN_REJECTED", lambda d: declaration(d).update(recorded_original_path="/other/whole-source.tar")),
+                ("WRONG_ORIGINAL_MODE_REJECTED", lambda d: declaration(d).update(original_stat_mode_octal="100644")),
+                ("WRONG_STORED_MODE_REJECTED", lambda d: declaration(d).update(stored_git_mode="100755")),
+                ("UNKNOWN_CUSTODY_SCHEMA_REJECTED", lambda d: d["receipt"].update(schema="unknown")),
+                ("NON_ORIGINAL_INVENTORY_REJECTED", lambda d: d["receipt"].update(inventory_kind="INFERRED_EXECUTION")),
+                ("CAPTURE_TREE_CONTRADICTION_REJECTED", lambda d: d["capsule"].update(source_tree="f" * 40)),
+                ("BCD_AUTHORITY_SHA_CONTRADICTION_REJECTED", lambda d: rewrite_authority(d, "B", lambda o: o.update(sha256="f" * 64))),
+                ("BCD_AUTHORITY_COMMIT_CONTRADICTION_REJECTED", lambda d: rewrite_authority(d, "B", lambda o: o.update(commit="f" * 40))),
+                ("BCD_AUTHORITY_STAT_BOOL_REJECTED", lambda d: rewrite_authority(d, "B", lambda o: o["stat_fields"].update(st_size=True))),
+            ]
+            for name, mutation in cases:
+                exercise(helper, label, name, results, mutation=mutation)
+            def duplicate(d):
+                d["receipt"]["members"].append(copy.deepcopy(declaration(d)))
+                d["receipt"]["members_count"] = len(d["receipt"]["members"])
+            exercise(helper, label, "DUPLICATE_ARCHIVE_DECLARATION_REJECTED", results, mutation=duplicate)
+            for name, changes in (("A_NATIVE_FLAG_NOT_ZERO_REJECTED", lambda o: o.update(native_fixture_started=True)),
+                                  ("A_PYTEST_COUNT_NOT_ZERO_REJECTED", lambda o: o.update(pytest_main_invocations=1))):
+                exercise(helper, label, name, results, epoch="A", mutation=lambda d, changes=changes: rewrite_authority(d, "A", changes))
+            for stem in ("CRC", "TRUNCATED", "CONCAT", "MTIME"):
+                def stream_mutation(d, stem=stem):
+                    raw = d["files"][ARCHIVE]
+                    if stem == "CRC":
+                        altered = bytearray(raw); altered[-8] ^= 1; raw = bytes(altered)
+                    elif stem == "TRUNCATED": raw = raw[:-1]
+                    elif stem == "CONCAT": raw += gzip.compress(b"", mtime=0)
+                    else: raw = raw[:4] + (1).to_bytes(4, "little") + raw[8:]
+                    rewrite_archive(d, raw)
+                exercise(helper, label, "OPAQUE_GZIP_" + stem + "_REJECTED", results, mutation=stream_mutation)
+            exercise(helper, label, "SEPARATE_EXPANDED_CAP_BOUNDARY_SHIM_REJECTED", results, expanded_cap=256)
+            exercise(helper, label, "STORED_CAP_PREALLOCATION_BOUNDARY_SHIM_REJECTED", results, stored_cap=17)
+            exercise(helper, label, "UNKNOWN_DIRECT_TAR_PATH_REJECTED", results, check=lambda s,p,d:
+                     helper.opaque_source_archive_entry_metadata(s, ROOT + "/unknown.tar.gz"))
+            exercise(helper, label, "PASSED_BYTES_INDEPENDENT_GIT_MISMATCH_REJECTED", results, check=lambda s,p,d:
+                     helper.opaque_source_archive_entry_metadata(s, p, s.read(p) + b"tampered"))
+            for field in ("TYPE", "KIND", "MODE", "OID"):
+                def bad_entry(source, path, data, field=field):
+                    entry = source.entries[path]
+                    mode, oid = entry[0], entry[-1]
+                    altered = {"TYPE": [mode, oid], "KIND": (mode, "tree", oid),
+                               "MODE": ("120000", oid), "OID": (mode, "not-a-blob-oid")}[field]
+                    source.entries[path] = altered
+                    try:
+                        return helper.source_archive_read_bounded(source, path)
+                    finally:
+                        source.entries[path] = entry
+                exercise(helper, label, "OWN_SOURCE_ENTRY_" + field + "_PREALLOCATION_REJECTED", results, check=bad_entry)
+        pipeline_controls(loaded["REGISTER"], results)
+    finally:
+        after = pins()
+        if before != after:
+            raise AssertionError("helper sources changed during documentary controls")
+    assert len({(r["helper"], r["control"]) for r in results}) == len(results)
+    return {"schema": "rc6.opaque-source-archive-documentary-controls.v1", "scope": SCOPE,
+            "helper_sources_before": before, "helper_sources_after": after, "helper_sources_unchanged": True,
+            "results": results, "invocation_controls": len(results),
+            "outcomes": dict(collections.Counter(r["result"] for r in results)),
+            "original_v3_64_and_v4_168_receipts_unchanged": True,
+            "counting_boundary": "New documentary helper compatibility controls only; old scopes overlap and no market scenarios or Native execution are added.",
+            "source_tar_entries_parsed_or_extracted": False, "external_origins_read": False,
+            "product_native_tests_executed": 0, "gov_executed": False, "final_register_generated": False}
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.parse_args()
+    print(json.dumps(run(), sort_keys=True))

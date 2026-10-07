@@ -1,0 +1,6 @@
+tree 088f804a6aa72d3db1a11246ba185a7140207bb4
+parent 77ee81b35061a5aac12048712f6112bf25cc6cfe
+author Codex <codex@openai.com> 1791231178 +0000
+committer Codex <codex@openai.com> 1791231178 +0000
+
+test: prepare sealed small native fixtures before browser RPC

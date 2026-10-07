@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="7" skipped="0" tests="14" time="4.835" timestamp="2026-10-05T12:58:34.758653+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[runtime]" time="2.023"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0326e2610&gt;
+reader = 'runtime'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[entry_signals]" time="0.002"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0326e2810&gt;
+reader = 'entry_signals'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[lab]" time="0.002"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0330b1310&gt;
+reader = 'lab'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[families]" time="0.002"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe032693dd0&gt;
+reader = 'families'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[stages]" time="0.001"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0327fee10&gt;
+reader = 'stages'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[metadata]" time="0.002"><failure message="AssertionError: The guard must cover an actual native WAL SHM&#10;assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0325619d0&gt;
+reader = 'metadata'
+
+    @pytest.mark.parametrize("reader", ("runtime", "entry_signals", "lab", "families", "stages", "metadata"))
+    def test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody(native, monkeypatch, reader):
+        before = source_inventory(native.database)
+&gt;       assert "-shm" in before, "The guard must cover an actual native WAL SHM"
+E       AssertionError: The guard must cover an actual native WAL SHM
+E       assert '-shm' in {'': (33, 2879656, 1000, 1000, 33188, 1, ...)}
+
+tests/test_rc6_native_source_reads.py:93: AssertionError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[symlink]" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[parent_symlink]" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[hardlink]" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_original_identity_replacement_between_stat_and_copy_is_rejected" time="0.087" /><testcase classname="tests.test_rc6_native_source_reads" name="test_expired_capture_deadline_never_opens_sqlite_or_changes_source" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source" time="0.002"><failure message="rc6_audit_evidence.sqlite_scratch.SnapshotError: SCRATCH_DISK_BACKED_REQUIRED">native = NativeFixture(database=PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/native-paper.db'), as_of...ine.PaperBroker object at 0x7fe032a8dad0&gt;, clock=[datetime.datetime(2026, 10, 5, 16, 0, tzinfo=datetime.timezone.utc)])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fe0326f6d10&gt;
+
+    def test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source(native, monkeypatch):
+        from rc6_audit_evidence import sqlite_scratch
+        root = artifact_root(native.database) / "sqlite-read-scratch"
+        root.mkdir(mode=0o700)
+        monkeypatch.setenv("DATA_DIR", str(native.database.parent.parent))
+        monkeypatch.setenv("PAPER_V17_DB_PATH", str(native.database))
+        monkeypatch.setenv("POROTA_SQLITE_SCRATCH_ROOT", str(root))
+        monkeypatch.setenv("POROTA_SQLITE_SCRATCH_MAX_BYTES", str(512*1024**2))
+        monkeypatch.setenv("POROTA_SQLITE_SCRATCH_RESERVE_BYTES", str(2*1024**3))
+        monkeypatch.setenv("POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT", "10")
+        before = source_inventory(native.database)
+&gt;       with source_reads.source_connection(native.database, deadline=time.monotonic()+.5) as (connection, info):
+
+tests/test_rc6_native_source_reads.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_shadow_runtime/source_reads.py:28: in source_connection
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_snapshot.py:115: in readonly_copy
+    with private_scratch(path, main_bytes=before[''][4],
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_scratch.py:350: in private_scratch
+    lease.acquire()
+rc6_audit_evidence/sqlite_scratch.py:157: in acquire
+    self.filesystem = _storage_type(self.root)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/tmp/pytest-of-agent/pytest-315/native-private-source-read0/artifacts/native-paper.db/sqlite-read-scratch')
+
+    def _storage_type(path):
+        """Read the owning Linux mount; opaque or volatile scratch fails closed."""
+        try:
+            candidates = []
+            with open("/proc/self/mountinfo", encoding="utf-8") as mounts:
+                for line in mounts:
+                    fields = line.split()
+                    separator = fields.index("-")
+                    mount = Path(re.sub(r"\\([0-7]{3})", lambda found: chr(int(found[1], 8)), fields[4]))
+                    if path == mount or mount in path.parents:
+                        candidates.append((len(mount.parts), fields[separator + 1]))
+            filesystem = max(candidates)[1]
+        except (OSError, ValueError, IndexError):
+            raise SnapshotError("SCRATCH_FILESYSTEM_UNVERIFIED") from None
+        if filesystem in {"tmpfs", "ramfs", "devtmpfs", "proc", "sysfs", "cgroup", "cgroup2"}:
+&gt;           raise SnapshotError("SCRATCH_DISK_BACKED_REQUIRED")
+E           rc6_audit_evidence.sqlite_scratch.SnapshotError: SCRATCH_DISK_BACKED_REQUIRED
+
+rc6_audit_evidence/sqlite_scratch.py:128: SnapshotError</failure></testcase><testcase classname="tests.test_rc6_native_source_reads" name="test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars" time="0.244" /><testcase classname="tests.test_rc6_component_archive" name="test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration" time="1.512" /></testsuite></testsuites>

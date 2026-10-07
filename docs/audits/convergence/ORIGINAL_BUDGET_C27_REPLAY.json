@@ -1,0 +1,723 @@
+{
+  "schema": "rc6.original-budget-c27-evidence-binding.v1",
+  "status": "INTERMEDIATE_HISTORICAL_EVIDENCE; CURRENT_FINAL_GREEN_PENDING",
+  "generated_at_utc": "2026-10-05T07:47:51.334905+00:00",
+  "authorization_scope": "Owned evidence/probe/docs only. No product changes, no changes to REMEDIATION_REGISTER, no deploy/provider/real orders.",
+  "source": {
+    "source_commit": "c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "source_tree": "bf3cf193434641aa89e4c746b26c77aec5d1d2b2",
+    "archive_sha256": "11681d9682ff41ff595e10550d0e3fb4d861161e2fda9237930e6fd32dcc61d9",
+    "source_files": 1109,
+    "source_unchanged": true,
+    "source_inventory_before_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+    "source_inventory_after_sha256": "d80cfead6a0ab0c5c87e32ce5fce381ca2925d622b7283b84057f9784d695c67",
+    "project_import_count": 66,
+    "alien_project_imports": [],
+    "product_network_events": [],
+    "actual_network_calls": 0,
+    "real_orders_sent": 0,
+    "real_routes_used": [],
+    "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+    "dependencies": {
+      "ppi-client": "1.3.0",
+      "pytest": "9.1.1",
+      "requests": "2.34.2"
+    },
+    "seed": null,
+    "seed_boundary": "Native PAPER IDs retain their native UUID generation; no deterministic seed or byte-identical output replay is claimed."
+  },
+  "source_product_file_bindings": [
+    {
+      "path": "rc6_ppi_global_budget.py",
+      "bytes": 56157,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "a8e99292a45a6c7d31cedb63fbb01439c0f0fe29075f2d2f43f0ff63b5cc7498"
+    },
+    {
+      "path": "bd_ppi_readonly_guard.py",
+      "bytes": 22070,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "1119c7b7e1c5bd62287edecba6a5177182f32e048e5b3db2eedf5d878116ae0f"
+    },
+    {
+      "path": "bv_paper_runtime.py",
+      "bytes": 17331,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "825b107c50c2e276ef96e06db19bdaf612dbd1c8cf7e8490f8cfa0f3a538ac51"
+    },
+    {
+      "path": "be_paper_engine.py",
+      "bytes": 123372,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "d4a765b8a5c082683755f489fd62e3921b923a341b1fda561aac68b677aa407e"
+    },
+    {
+      "path": "rc6_dynamic_universe/promotion.py",
+      "bytes": 19575,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "89985ff5eef1ae8a2772611b7248ec4cfed9a532c07a6a80c968229291e3fba0"
+    },
+    {
+      "path": "rc6_source_consolidation.py",
+      "bytes": 26965,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "ca8f5a90ac841b7b2b03a1f2e47fcb13a9afac874f5e3336f5a5e3b314f8fe07"
+    },
+    {
+      "path": "rc6_ppi_iol_reconciliation_rc6.py",
+      "bytes": 13027,
+      "mode": "0o644",
+      "mtime_ns": 1791147578000000000,
+      "sha256": "71ad9d77a9d84a77a5aaf21b945a538ae6d77ea66b8705c120354cba6dd6f012"
+    }
+  ],
+  "receipt": {
+    "path": "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json",
+    "sha256": "cd7913ddc6a13c23767c2029581431adcfc96b0e5001574c2a3ed9162139c18b",
+    "bytes": 732938,
+    "evidence_kind": "INTERMEDIATE_HISTORICAL_FULL_C27_NATIVE_REPLAY"
+  },
+  "probe": {
+    "path": "tests/probes/rc6_budget_original_c27_replay.py",
+    "sha256": "3e262a5140af023cd71e36e021fc59ee489375b4dc87eff60797ea8b93e4ddb0",
+    "bytes": 27666,
+    "evidence_kind": "RECONSTRUCTED_OFFLINE_NATIVE_CALLER_PROBE"
+  },
+  "original_evidence": {
+    "U01_DRIVER": {
+      "path": "docs/audits/convergence/evidence/original-budget-c27/u01-original-driver.py.source",
+      "sha256": "dd3c1efeb06133cea6aad69b70de6120597bf063d67fe1cbecc1d2b6500f4bf5",
+      "bytes": 15352,
+      "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+      "handoff_member": "audit_evidence/f01_f02/ra_a_f01_f02_probes.py",
+      "execution_status": "Original Clock/policy/single_flight_priority_probe definitions compiled intact; obsolete module prologue not executed"
+    },
+    "U07_DRIVER": {
+      "path": "docs/audits/convergence/evidence/original-budget-c27/u07-original-driver.py.source",
+      "sha256": "cb9261815abf6e5ac525bf03f7e2aa2f95cbf5d6e873fac1090ce3325425931c",
+      "bytes": 16232,
+      "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+      "handoff_member": "audit_evidence/finance/futures_point_in_time_probe.py",
+      "execution_status": "READ_ONLY_CONTEXT; original main not executed by this replay"
+    },
+    "U01_REPORT": {
+      "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_A_F01_F02.md",
+      "sha256": "74d2d852c9c62754cd185dfb41e86b144c450c31b155d955348e16dce47c84c9",
+      "bytes": 27241,
+      "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+      "handoff_member": "front_reports/RA_A_F01_F02.md"
+    },
+    "U07_REPORT": {
+      "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_C_FINANCE_FUTURES_HISTORY.md",
+      "sha256": "639931a75ebd4317991ae7c7a3dc385dea5a6d622151cc5c6e8d86e8e90c53a8",
+      "bytes": 19771,
+      "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+      "handoff_member": "front_reports/RA_C_FINANCE_FUTURES_HISTORY.md"
+    },
+    "U27_REPORT": {
+      "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_D_E_RISK_DATA.md",
+      "sha256": "961391b9e1c055a4267329300ab78727e2a8a5522ed7127725f1ee8c02b8e08a",
+      "bytes": 21259,
+      "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+      "handoff_member": "front_reports/RA_D_E_RISK_DATA.md"
+    }
+  },
+  "original_registry_binding": {
+    "path": "docs/audits/convergence/REGISTRO_CONVERGENCIA_RC6.csv",
+    "sha256": "9c1432c006516d23418bf059adf8c4f8d37e869186cb0ef15e3bb6768c86df21",
+    "bytes": 13596,
+    "source_scope": "ROOT_COMMITTED_SNAPSHOT",
+    "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+    "binding_source_sha": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+    "boundary": "Intermediate owner evidence; not a final frozen candidate/artifact attestation.",
+    "independent_external_authentication": false
+  },
+  "existing_guard_reference_snapshot": {
+    "source_sha": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+    "register_sha256": "9e36ee4be8331d31997c72c61cf87b76135bca137a96e2bf5474ca01351e250e",
+    "register_owner_commit": "0c4f6b02741c445fd78674bbf1f48e71f2e4526d",
+    "status": "Historical reference only; no final current GREEN replay by this tranche"
+  },
+  "native_no_network_control": {
+    "audit_hook": "All socket creation/connect/DNS denied",
+    "negative_control": "One intentional socket construction denied before product imports",
+    "blocked_dependency_initialization_events": [
+      {
+        "event": "socket.__new__",
+        "stack": [
+          "  File \"<frozen importlib._bootstrap_external>\", line 940, in exec_module\n",
+          "  File \"<frozen importlib._bootstrap>\", line 241, in _call_with_frames_removed\n",
+          "  File \"/workspace/venv_rc6/lib/python3.11/site-packages/urllib3/util/__init__.py\", line 4, in <module>\n    from .connection import is_connection_dropped\n",
+          "  File \"<frozen importlib._bootstrap>\", line 1176, in _find_and_load\n",
+          "  File \"<frozen importlib._bootstrap>\", line 1147, in _find_and_load_unlocked\n",
+          "  File \"<frozen importlib._bootstrap>\", line 690, in _load_unlocked\n",
+          "  File \"<frozen importlib._bootstrap_external>\", line 940, in exec_module\n",
+          "  File \"<frozen importlib._bootstrap>\", line 241, in _call_with_frames_removed\n",
+          "  File \"/workspace/venv_rc6/lib/python3.11/site-packages/urllib3/util/connection.py\", line 137, in <module>\n    HAS_IPV6 = _has_ipv6(\"::1\")\n",
+          "  File \"/workspace/venv_rc6/lib/python3.11/site-packages/urllib3/util/connection.py\", line 126, in _has_ipv6\n    sock = socket.socket(socket.AF_INET6)\n",
+          "  File \"/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/socket.py\", line 232, in __init__\n    _socket.socket.__init__(self, family, type, proto, fileno)\n",
+          "  File \"/workspace/porota_rc6_worktrees/budget/tests/probes/rc6_budget_original_c27_replay.py\", line 54, in deny_network\n    NETWORK_EVENTS.append({\"event\": event, \"stack\": traceback.format_stack(limit=12)})\n"
+        ]
+      }
+    ],
+    "boundary": "urllib3's local IPv6 capability socket is also blocked before creation; no bind, connect or DNS occurs. This leaves HAS_IPV6=False and does not alter the fake HTTP transport."
+  },
+  "counting_rule": "Exactly three existing original IDs. Parameter/scoped variants, SQL attempts, driver cycles, source files, imports and shared guards do not add original IDs or R scenarios. Historical RED/controls are not summed with current GREEN test totals.",
+  "harness_corrections_not_product_findings": [
+    {
+      "status": "DISCARDED_NOT_PRODUCT_RED",
+      "issue": "Initial fixture risk5% with soft4% caused legitimate EMERGENCY_POSITION_CAP. Replaced only synthetic cash/risk inputs; final native AUTO cap derives20, no override."
+    },
+    {
+      "status": "DISCARDED_NOT_PRODUCT_RED",
+      "issue": "Initial synthetic future quote lacked PPI_CATALOG prefix and was correctly rejected FUTURES_PPI_PRIMARY_IDENTITY_REQUIRED. Final quote explicitly labels PPI_CATALOG:OFFLINE_SYNTHETIC_FIXTURE_NOT_DATED_PROVIDER_EVIDENCE, as the original fixture uses :TEST."
+    },
+    {
+      "status": "PROVENANCE_CLASSIFICATION_CORRECTED",
+      "issue": "Python __mp_main__ is the same probe-file alias, not an external product import. urllib3 local IPv6 capability socket is denied and preserved separately; no network contact occurs."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "U01",
+      "ERROR": {
+        "registry": "469",
+        "id": "U01",
+        "severity": "P1",
+        "condition": "Servicio EXIT bounded pese a un owner single-flight inferior lento; conservar coalescing y cuota real.",
+        "closure": "OPENED lento, EXIT concurrente más allá de 50 ms, tres ventanas y deadline por posición; sin doble llamada ni preemption ficticia de HTTP ya enviado."
+      },
+      "original_clause_binding_intact": true,
+      "status": "INDEPENDENT_HISTORICAL_REPLAY_AVAILABLE_WITH_EXPLICIT_BOUNDARIES; FINAL_CURRENT_CLOSURE_PENDING",
+      "new_original_requirement_count": 0,
+      "new_R_scenario_count": 0,
+      "receipt": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json",
+        "sha256": "cd7913ddc6a13c23767c2029581431adcfc96b0e5001574c2a3ed9162139c18b",
+        "bytes": 732938,
+        "evidence_kind": "INTERMEDIATE_HISTORICAL_FULL_C27_NATIVE_REPLAY",
+        "json_pointer": "/requirements/U01"
+      },
+      "current_fix_contract_reference": "Deadline monotónico crítico; unirse a owner existente sin HTTP duplicado; presión por identidad y ronda duradera; LOWER suspendido tanto en acquire como START.",
+      "current_guard_references_only": [
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_deadline_is_monotonic_and_degradation_survives_restart_without_second_wire",
+          "explicit_variants": [],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_exit_owner_alarms_during_its_existing_http_body_without_cancelling_wire",
+          "explicit_variants": [],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u01_real_exit_caller_joins_slow_opened_owner_in_three_windows",
+          "explicit_variants": [],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence",
+          "explicit_variants": [
+            "[OFF]",
+            "[SHADOW]",
+            "[feasible]",
+            "[slow_round]"
+          ],
+          "source_file_sha256": "13c7d10f09edf197b6d4022777fc5475cfaa96e203f86c4189e52ac63a2d8126",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_busy_has_durable_cross_process_barrier_and_read_only_evidence",
+          "explicit_variants": [],
+          "source_file_sha256": "13c7d10f09edf197b6d4022777fc5475cfaa96e203f86c4189e52ac63a2d8126",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_debt_survives_restart_and_only_whole_fresh_scope_clears",
+          "explicit_variants": [
+            "[incomplete]",
+            "[late]",
+            "[read_failure]",
+            "[stale]",
+            "[unknown_ledger]"
+          ],
+          "source_file_sha256": "13c7d10f09edf197b6d4022777fc5475cfaa96e203f86c4189e52ac63a2d8126",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_exit_reader_cadence.py::test_native_round_degradation_after_acquire_blocks_lower_start_without_wire_or_debt_loss",
+          "explicit_variants": [],
+          "source_file_sha256": "13c7d10f09edf197b6d4022777fc5475cfaa96e203f86c4189e52ac63a2d8126",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        }
+      ],
+      "original_reports": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_A_F01_F02.md",
+        "sha256": "74d2d852c9c62754cd185dfb41e86b144c450c31b155d955348e16dce47c84c9",
+        "bytes": 27241,
+        "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+        "handoff_member": "front_reports/RA_A_F01_F02.md"
+      },
+      "final_candidate_evidence": "PENDING parent freeze/source artifact/FIP/JUnit/runtime or independent external attestations; receipt is not upgraded by copying it",
+      "RCA": "Archived single-flight follower deadline is fixed at 50ms. An OPENED owner already draining a 120ms HTTP body causes native collect_exit_books to record EXIT_BOOK_ERROR instead of joining its result, despite feasible reserved capacity.",
+      "evidence_kinds": [
+        "OLD_NATIVE_COALESCER_RED_ORIGINAL_DRIVER_DEFINITIONS",
+        "OLD_NATIVE_SDK_CALLER_RED",
+        "POSITIVE_CONTROL_PRESERVED"
+      ],
+      "native_callers": [
+        "GlobalPPIBudget.coalesced_book",
+        "ProductionMarketReader.book/read_scope",
+        "ReadOnlyTransportGuard guarded_send",
+        "bv_paper_runtime.collect_exit_books"
+      ],
+      "red_observations": {
+        "original_driver_cycles": 3,
+        "original_cycle_spacing_seconds": 6,
+        "original_exit_errors": 3,
+        "sdk_logical_windows": 3,
+        "sdk_window_spacing_seconds": 31,
+        "owner_body_delay_seconds": 0.12,
+        "sdk_exit_failures": [
+          1,
+          1,
+          1
+        ],
+        "guarded_book_wires_per_window": [
+          1,
+          1,
+          1
+        ]
+      },
+      "positive_control": {
+        "owner_body_delay_seconds": 0.015,
+        "sdk_exit_failures": [
+          0,
+          0,
+          0
+        ],
+        "guarded_book_wires_per_window": [
+          1,
+          1,
+          1
+        ]
+      },
+      "original_driver": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/u01-original-driver.py.source",
+        "sha256": "dd3c1efeb06133cea6aad69b70de6120597bf063d67fe1cbecc1d2b6500f4bf5",
+        "bytes": 15352,
+        "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+        "handoff_member": "audit_evidence/f01_f02/ra_a_f01_f02_probes.py",
+        "execution_status": "Original Clock/policy/single_flight_priority_probe definitions compiled intact; obsolete module prologue not executed"
+      },
+      "covered_clauses": [
+        "Slow OPENED owner already sent HTTP",
+        "EXIT concurrent beyond 50ms",
+        "Three 30-second-separated logical budget windows",
+        "No duplicate HTTP",
+        "No fictitious preemption/cancellation"
+      ],
+      "unreplayed_clauses": [
+        "A historical owner exceeding the complete five-second position deadline was not replayed here",
+        "Cross-process kill/retention/round debt guards and current START revalidation are referenced, not rerun here"
+      ],
+      "external_limits": [
+        "HTTPAdapter.send is fake; no actual provider latency, OPEN capacity, wall-clock deployment or PPI contract is certified",
+        "The original intact driver itself models fetch and covers three six-second-separated cycles, not three 30-second windows",
+        "The intact original driver declares five positions but models one identity and reserve5/book6, not the full30-book cadence demand. That legacy fixture is preserved as given; the separate native SDK extension uses one actual position, demand6/book7, so its RED is not caused by insufficient mathematical capacity."
+      ]
+    },
+    {
+      "id": "U07",
+      "ERROR": {
+        "registry": "469",
+        "id": "U07",
+        "severity": "P1",
+        "condition": "Reservar EXIT para FUTUROS ACTIVE y estados canónicos de cada familia.",
+        "closure": "Mix spot/futuros, 5+5, discovery exhaustivo y cuota insuficiente; ninguna posición omitida por `status='OPEN'`."
+      },
+      "original_clause_binding_intact": true,
+      "status": "INDEPENDENT_HISTORICAL_REPLAY_AVAILABLE_WITH_EXPLICIT_BOUNDARIES; FINAL_CURRENT_CLOSURE_PENDING",
+      "new_original_requirement_count": 0,
+      "new_R_scenario_count": 0,
+      "receipt": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json",
+        "sha256": "cd7913ddc6a13c23767c2029581431adcfc96b0e5001574c2a3ed9162139c18b",
+        "bytes": 732938,
+        "evidence_kind": "INTERMEDIATE_HISTORICAL_FULL_C27_NATIVE_REPLAY",
+        "json_pointer": "/requirements/U07"
+      },
+      "current_fix_contract_reference": "Una snapshot PAPER query-only cuenta spotOPEN + futureACTIVE sin excluir pendiente vencido. Unknown nunca se convierte en cero. Ledger exacto de ronda conserva cinco keys.",
+      "current_guard_references_only": [
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u05_real_controller_cold_activation_failure_blocks_every_native_market_send",
+          "explicit_variants": [
+            "[five_spots_cap15]",
+            "[five_spots_cap5]",
+            "[five_spots_five_active_cap5]",
+            "[missing_ledger]"
+          ],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u07_five_spots_and_five_active_futures_share_reserved_exit_capacity_after_restart",
+          "explicit_variants": [],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_convergence_budget_liveness.py::test_u07_unknown_ledger_is_not_misreported_as_zero",
+          "explicit_variants": [],
+          "source_file_sha256": "1d35405c4f305ea57e7bfa74258277cfc06b176b5ffcbb3d78acb2401224386a",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_exit_reader_cadence.py::test_native_exit_worker_services_mixed_positions_with_honest_cadence",
+          "explicit_variants": [
+            "[OFF]",
+            "[SHADOW]",
+            "[feasible]",
+            "[slow_round]"
+          ],
+          "source_file_sha256": "13c7d10f09edf197b6d4022777fc5475cfaa96e203f86c4189e52ac63a2d8126",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        }
+      ],
+      "original_reports": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_C_FINANCE_FUTURES_HISTORY.md",
+        "sha256": "639931a75ebd4317991ae7c7a3dc385dea5a6d622151cc5c6e8d86e8e90c53a8",
+        "bytes": 19771,
+        "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+        "handoff_member": "front_reports/RA_C_FINANCE_FUTURES_HISTORY.md"
+      },
+      "final_candidate_evidence": "PENDING parent freeze/source artifact/FIP/JUnit/runtime or independent external attestations; receipt is not upgraded by copying it",
+      "RCA": "Native RuntimePPIBudget._opened applies status='OPEN' to both ledgers. Five native FUTUROS ACTIVE are omitted; native approved runtime budgets only the five OPEN spot positions, leaving lower discovery 35 more book admissions than the correct count permits.",
+      "evidence_kinds": [
+        "OLD_NATIVE_MIXED_LEDGER_AND_RUNTIME_POLICY_RED",
+        "POSITIVE_CORRECT_COUNT_CONTROL_PRESERVED"
+      ],
+      "native_callers": [
+        "PaperBroker._open",
+        "PaperBroker._open_future",
+        "RuntimeCapacityController.state",
+        "RuntimePPIBudget._opened/_current",
+        "GlobalPPIBudget.acquire/start/finish"
+      ],
+      "red_observations": {
+        "native_open_spot": 5,
+        "native_active_futures": 5,
+        "expired_but_active_conservatively_required": 2,
+        "runtime_count": 5,
+        "correct_count": 10,
+        "window_seconds": 30,
+        "critical_book_seconds": 5,
+        "actual_exit_demand": 30,
+        "correct_exit_demand": 60,
+        "book_limit": 75,
+        "global_limit": 225,
+        "wrong_count_lower_allowed": 40,
+        "wrong_count_exit_allowed_of_60": 35
+      },
+      "positive_control": {
+        "same_archived_budget_implementation": "Only opened_count input is corrected via native budget_policy",
+        "correct_count_lower_allowed": 5,
+        "correct_count_exit_allowed_of_60": 60
+      },
+      "original_driver": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/u07-original-driver.py.source",
+        "sha256": "cb9261815abf6e5ac525bf03f7e2aa2f95cbf5d6e873fac1090ce3325425931c",
+        "bytes": 16232,
+        "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+        "handoff_member": "audit_evidence/finance/futures_point_in_time_probe.py",
+        "execution_status": "READ_ONLY_CONTEXT; original main not executed by this replay"
+      },
+      "covered_clauses": [
+        "Five OPEN spot + five ACTIVE futures created by native PaperBroker APIs",
+        "Canonical OPEN versus ACTIVE omission",
+        "Discovery spending retained in native SQL receipts",
+        "Feasible numerical envelope prevents insufficiency being mislabeled as software RED",
+        "Two expired ACTIVE obligations conservatively count toward existing EXIT demand"
+      ],
+      "unreplayed_clauses": [
+        "The 106 modeled acquire/start/finish attempts per budget are native SQL receipts, not actual SDK sends",
+        "No complete 10-position collector loop or five-second SLA is claimed by this historical replay",
+        "A genuinely insufficient physical provider envelope is not independently measured or accepted as a fixture failure"
+      ],
+      "external_limits": [
+        "Opening contracts/quotes at August 24 are explicit OFFLINE_SYNTHETIC inputs, not dated real PPI/A3 evidence",
+        "The benchmark uses the native old SDK/controller over fake HTTP. 75/225 is sufficient arithmetic capacity in this local fixture, not factual spendable PPI capacity",
+        "This does not assert five currently valid real DLR series: AGO and SEP remain ACTIVE pending exit in the synthetic ledger"
+      ]
+    },
+    {
+      "id": "U27",
+      "ERROR": {
+        "registry": "469",
+        "id": "U27",
+        "severity": "P3",
+        "condition": "`shadow_promotion` no expresa autoridad incompatible con PPI primary.",
+        "closure": "BYMA-only/IOL-only; flags selection/entry/live/promotion consistentes y consumidores inventariados."
+      },
+      "original_clause_binding_intact": true,
+      "status": "INDEPENDENT_HISTORICAL_REPLAY_AVAILABLE_WITH_EXPLICIT_BOUNDARIES; FINAL_CURRENT_CLOSURE_PENDING",
+      "new_original_requirement_count": 0,
+      "new_R_scenario_count": 0,
+      "receipt": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/native-c27-replay-receipt.json",
+        "sha256": "cd7913ddc6a13c23767c2029581431adcfc96b0e5001574c2a3ed9162139c18b",
+        "bytes": 732938,
+        "evidence_kind": "INTERMEDIATE_HISTORICAL_FULL_C27_NATIVE_REPLAY",
+        "json_pointer": "/requirements/U27"
+      },
+      "current_fix_contract_reference": "Advisory_comparison_ready OBSERVE_ONLY sin alias; selección PPI separada; entry_authority/live_decision_authority/real_money_authorized false; cada una de cinco keys debe coincidir.",
+      "current_guard_references_only": [
+        {
+          "base_node": "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_advisory_complement_requires_same_five_part_primary_identity",
+          "explicit_variants": [
+            "[currency-USD]",
+            "[family-CEDEARS]",
+            "[market-A3]",
+            "[settlement-INMEDIATA]",
+            "[ticker-YPFD]"
+          ],
+          "source_file_sha256": "f94839b236bb0d1664a09f0f1c42adafdaa2ab1cb666341750d59c07de9f1231",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_advisory_ready_keeps_separate_primary_selection_and_zero_entry_authority",
+          "explicit_variants": [],
+          "source_file_sha256": "f94839b236bb0d1664a09f0f1c42adafdaa2ab1cb666341750d59c07de9f1231",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_ppi_iol_reconciliation_rc6.py::test_complement_only_ready_is_advisory_and_never_primary_eligibility",
+          "explicit_variants": [
+            "[BYMA]",
+            "[IOL]"
+          ],
+          "source_file_sha256": "f94839b236bb0d1664a09f0f1c42adafdaa2ab1cb666341750d59c07de9f1231",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_source_consolidation.py::test_advisory_complement_never_borrows_any_part_of_primary_scope",
+          "explicit_variants": [
+            "[currency-USD]",
+            "[family-CEDEARS]",
+            "[market-A3]",
+            "[symbol-YPFD]",
+            "[term-INMEDIATA]"
+          ],
+          "source_file_sha256": "a9a00ad41698fe01010ae89dd0846c1ef99ba51b7831ae5bfa269ee31c0c6183",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_source_consolidation.py::test_advisory_conflicts_require_review_and_cannot_look_ready",
+          "explicit_variants": [],
+          "source_file_sha256": "a9a00ad41698fe01010ae89dd0846c1ef99ba51b7831ae5bfa269ee31c0c6183",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        },
+        {
+          "base_node": "tests/test_rc6_source_consolidation.py::test_complement_only_ready_means_advisory_and_never_authority",
+          "explicit_variants": [
+            "[BYMA]",
+            "[IOL]"
+          ],
+          "source_file_sha256": "a9a00ad41698fe01010ae89dd0846c1ef99ba51b7831ae5bfa269ee31c0c6183",
+          "ast_exists_in_source_snapshot": true,
+          "source_snapshot": "60dda81f5f10f8c507a99d8ea58fb870246506ab",
+          "execution_status": "NOT_REPLAYED_BY_THIS_HISTORICAL_PROBE; FINAL_FROZEN_GREEN_PENDING"
+        }
+      ],
+      "original_reports": {
+        "path": "docs/audits/convergence/evidence/original-budget-c27/ORIGINAL_RA_D_E_RISK_DATA.md",
+        "sha256": "961391b9e1c055a4267329300ab78727e2a8a5522ed7127725f1ee8c02b8e08a",
+        "bytes": 21259,
+        "evidence_kind": "PINNED_ORIGINAL_AUTHORITY_NOT_AN_INDEPENDENT_REPLAY",
+        "handoff_member": "front_reports/RA_D_E_RISK_DATA.md"
+      },
+      "final_candidate_evidence": "PENDING parent freeze/source artifact/FIP/JUnit/runtime or independent external attestations; receipt is not upgraded by copying it",
+      "RCA": "Both native producers assign a shadow_promotion flag from conflict-free/READY_SHADOW comparison, even without authoritative PPI identity. The flag is inconsistent with selection eligibility; entry/live/real-money flags already remain false.",
+      "evidence_kinds": [
+        "OLD_NATIVE_ADVISORY_FLAG_INCONSISTENCY",
+        "POSITIVE_PRIMARY_SELECTION_CONTROL",
+        "FIVE_IDENTITY_SCOPE_CONTROL_VARIANTS"
+      ],
+      "native_callers": [
+        "rc6_source_consolidation.consolidate",
+        "rc6_ppi_iol_reconciliation_rc6.reconcile"
+      ],
+      "red_observations": {
+        "IOL_ONLY": {
+          "shadow_promotion": true,
+          "selection_eligible": false,
+          "entry_authority": false,
+          "live_decision_authority": false,
+          "real_money_authorized": false
+        },
+        "BYMA_ONLY": {
+          "shadow_promotion": true,
+          "selection_eligible": false,
+          "entry_authority": false,
+          "live_decision_authority": false,
+          "real_money_authorized": false
+        }
+      },
+      "positive_control": {
+        "PPI_primary_selection": true,
+        "entry_live_real_authorities": false,
+        "scope_dimensions": [
+          "ticker",
+          "family",
+          "market",
+          "currency",
+          "settlement"
+        ],
+        "reconcile_identity_mismatch": "BLOCKED_CONFLICT and selection false for all five variants",
+        "consolidation_identity_mismatch": "Two distinct five-part identities, only exact PPI row eligible"
+      },
+      "all_archive_flag_occurrences": [
+        {
+          "path": "docs/audit/ws13_metadata_shape.json",
+          "sha256": "5328e4475c04fbe763cb57eb2532a63a3ac7913a984614d6a8d0737a568eeb4a",
+          "occurrence_line_numbers": [
+            432,
+            633,
+            875,
+            1156,
+            1289,
+            1465,
+            1706
+          ],
+          "role": "STORED_AUDIT_DOCUMENT",
+          "runtime_authority_consumer_found": false
+        },
+        {
+          "path": "docs/audit/ws13_metadata_values.json",
+          "sha256": "28d87595529d77049def242bee91b93df575699cee91ff1270a64656b89feb9f",
+          "occurrence_line_numbers": [
+            442,
+            659,
+            931,
+            1254,
+            1400,
+            1593,
+            1863
+          ],
+          "role": "STORED_AUDIT_DOCUMENT",
+          "runtime_authority_consumer_found": false
+        },
+        {
+          "path": "rc6_ppi_iol_reconciliation_rc6.py",
+          "sha256": "71ad9d77a9d84a77a5aaf21b945a538ae6d77ea66b8705c120354cba6dd6f012",
+          "occurrence_line_numbers": [
+            197
+          ],
+          "role": "PRODUCER_DICT_FIELD",
+          "runtime_authority_consumer_found": false
+        },
+        {
+          "path": "rc6_source_consolidation.py",
+          "sha256": "ca8f5a90ac841b7b2b03a1f2e47fcb13a9afac874f5e3336f5a5e3b314f8fe07",
+          "occurrence_line_numbers": [
+            239
+          ],
+          "role": "PRODUCER_DICT_FIELD",
+          "runtime_authority_consumer_found": false
+        },
+        {
+          "path": "tests/test_rc6_ppi_iol_reconciliation_rc6.py",
+          "sha256": "d541a8f6a47f7b0063c74cbf0b0fb1c4e7811d7cbd807774f3de47a50c584868",
+          "occurrence_line_numbers": [
+            32
+          ],
+          "role": "TEST_ASSERTION",
+          "runtime_authority_consumer_found": false
+        },
+        {
+          "path": "tests/test_rc6_source_consolidation.py",
+          "sha256": "e55c7db013c76b1edb6b5d8cfeb1af39394bf384c6b5c6dc7db1000d249a4b60",
+          "occurrence_line_numbers": [
+            27
+          ],
+          "role": "TEST_ASSERTION",
+          "runtime_authority_consumer_found": false
+        }
+      ],
+      "covered_clauses": [
+        "IOL-only and BYMA-only",
+        "Selection/entry/live/promotion flags inventoried",
+        "Five-key identity preserved",
+        "All archived files searched for consumers"
+      ],
+      "unreplayed_clauses": [
+        "No real entry/live bypass is demonstrated or alleged",
+        "PPI_PRIMARY_POSITIVE verifies selection authority, not READY contract_state: the old reconciliation reports INSUFFICIENT_EVIDENCE while selection is true"
+      ],
+      "external_limits": [
+        "Synthetic fresh source rows do not attest broker/source identity or deployment",
+        "No runtime authority consumer of the old flag was found: two producers, two tests and two stored audit JSON files"
+      ]
+    }
+  ],
+  "reproduction": {
+    "archive_command": "git archive --format=tar --output=/tmp/rc6-budget-original-c27.tar c27dfd963c4fe83465c0f2105347e974fbbe6356",
+    "extract_command": "mkdir -p /tmp/rc6-budget-original-c27-full && tar -xf /tmp/rc6-budget-original-c27.tar -C /tmp/rc6-budget-original-c27-full",
+    "probe_command": "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /workspace/venv_rc6/bin/python tests/probes/rc6_budget_original_c27_replay.py --source-root /tmp/rc6-budget-original-c27-full --archive /tmp/rc6-budget-original-c27.tar --original-u01-driver docs/audits/convergence/evidence/original-budget-c27/u01-original-driver.py.source --receipt /tmp/rc6-budget-c27-replay.json",
+    "working_directory": "Repository containing the committed probe, not the mutable product root on sys.path; probe switches to full archive before native imports",
+    "umask": "022",
+    "exit_code": 0
+  },
+  "validation": {
+    "literal_original_rows": 3,
+    "source_inventory_files": 1109,
+    "source_changed_files": 0,
+    "internal_imports": 66,
+    "alien_product_imports": 0,
+    "product_network_events": 0,
+    "blocked_dependency_initialization_events": 1,
+    "observation_assertions": "PASS: three original clauses, with shared controls and five identity variants; no inflation of requirement/R counts",
+    "all_hashes": "SHA256 of actual packaged bytes; no final external attestation generated"
+  }
+}

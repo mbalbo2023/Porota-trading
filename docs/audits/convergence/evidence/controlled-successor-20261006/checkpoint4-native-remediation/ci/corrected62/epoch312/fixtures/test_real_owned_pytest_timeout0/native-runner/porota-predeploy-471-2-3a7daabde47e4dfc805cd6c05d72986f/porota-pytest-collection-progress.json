@@ -1,0 +1,8 @@
+{
+  "classification": "IN_PROGRESS_NOT_ACCEPTED",
+  "management_elapsed_seconds": 0.0005012420006096363,
+  "management_seconds_remaining": 59.99949302999994,
+  "native_stdout_bytes": 0,
+  "observation_scope": "SUPERVISOR_OWNED_LOG_FD_FSTAT_ONLY_NO_PAYLOAD_READS",
+  "pytest_pid": 12429
+}

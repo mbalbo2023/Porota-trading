@@ -1,0 +1,33 @@
+{
+  "Gov_pytest_runs": 0,
+  "Source_runtime_behavior_not_qualified_by_preparation": true,
+  "baseline_semantics_sha256": "8a8ee7a7b694c06de91eaffab5b57cbab15615651342d310b926b12e07ac4a91",
+  "clone_fetch_exports": 0,
+  "files": [
+    {
+      "bytes": 1911,
+      "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/final-binding.template.json",
+      "sha256": "14600ffbff78ffa909849faee474120ee29e6793b360b9c06aee17fefca21cbd"
+    },
+    {
+      "bytes": 718,
+      "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/remote-authority.template.json",
+      "sha256": "02c64186c76f99d65dd3be44bf13b8cc7fdd80de168f7c89da5373dcd29a3484"
+    },
+    {
+      "bytes": 12802,
+      "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/full-Gov-final-preparation-plan.json",
+      "sha256": "df214cd0d7e129f837ac77bb941000c0f877df51682e9ec75fde11873c364067"
+    }
+  ],
+  "original19_input_sha256": "492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579",
+  "schema": "rc6.fullGov.external-preparation-static-review.v1",
+  "source_edits": 0,
+  "stage": "PREP_ONLY_NO_EXECUTION",
+  "syntax_compile_only": true,
+  "wrapper": {
+    "bytes": 37959,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+    "sha256": "7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4"
+  }
+}

@@ -1,0 +1,746 @@
+{
+  "artifact_validated": false,
+  "canonical_big_gates_closed": false,
+  "child_finalization": {
+    "errors": [],
+    "finalization_thread_finished": true,
+    "forced_termination": false,
+    "forced_termination_attempted": false,
+    "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+    "inherited_tracker_preserved": false,
+    "initial": {
+      "forkserver_alive_fd": null,
+      "forkserver_pid": null,
+      "resource_tracker_fd": null,
+      "resource_tracker_pid": null
+    },
+    "joined_children": [],
+    "kernel_echild_before_phase_return": true,
+    "management_bound_seconds": 5,
+    "signal_guard_installed_and_witnessed": true,
+    "signal_vetoed": false,
+    "status": "GREEN",
+    "stopped_owned_infrastructure": [
+      {
+        "kernel_identity": {
+          "PPid": "8694",
+          "Pid": "8699",
+          "Uid": "1000\t1000\t1000\t1000"
+        },
+        "kind": "resource_tracker",
+        "pid": 8699
+      }
+    ],
+    "termination_signal_attempts": [],
+    "unexpected_kernel_children": [],
+    "wall_seconds": 0.006452059999901394
+  },
+  "clean_previous_families_failure_gc_causality_proven": false,
+  "code_atime_changes_count": 1,
+  "diagnostic_only": true,
+  "factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.059061285000000296,
+    "elapsed_seconds": 0.0652137090000906,
+    "finished_at_monotonic": 7065.834276443,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638452,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 7065.768933143
+  },
+  "families_window": {
+    "end_monotonic": 7009.363157686,
+    "gc_collections": 620,
+    "gc_overlap_wall_seconds": 1.1733184749991779,
+    "gen2_collections": [
+      {
+        "generation": 2,
+        "start": {
+          "at_monotonic": 7007.579015228,
+          "child_cpu_seconds": 15.615835667,
+          "collected": 0,
+          "diagnostic_event": "GC",
+          "generation": 2,
+          "peak_rss_bytes": 517496832,
+          "phase": "start",
+          "uncollectable": 0
+        },
+        "stop": {
+          "at_monotonic": 7008.121799755,
+          "child_cpu_seconds": 16.15860369,
+          "collected": 0,
+          "diagnostic_event": "GC",
+          "generation": 2,
+          "peak_rss_bytes": 517496832,
+          "phase": "stop",
+          "uncollectable": 0
+        },
+        "wall_seconds": 0.5427845270005491
+      },
+      {
+        "generation": 2,
+        "start": {
+          "at_monotonic": 7008.482696607,
+          "child_cpu_seconds": 16.519497945,
+          "collected": 0,
+          "diagnostic_event": "GC",
+          "generation": 2,
+          "peak_rss_bytes": 552624128,
+          "phase": "start",
+          "uncollectable": 0
+        },
+        "stop": {
+          "at_monotonic": 7009.021741434,
+          "child_cpu_seconds": 17.05663822,
+          "collected": 0,
+          "diagnostic_event": "GC",
+          "generation": 2,
+          "peak_rss_bytes": 552624128,
+          "phase": "stop",
+          "uncollectable": 0
+        },
+        "wall_seconds": 0.5390448269999979
+      }
+    ],
+    "start_monotonic": 7007.200303688,
+    "wall_seconds": 2.1628539980001733
+  },
+  "final_candidate_eligible": false,
+  "fsync": {
+    "blocked_seconds": 0.30381904000023496,
+    "completed_at_monotonic": 7065.837982634,
+    "entered_at_monotonic": 7065.530556666,
+    "fsync_completed": true,
+    "fsync_entered": true,
+    "member": "report.json.gz",
+    "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+  },
+  "full_open_dataset": false,
+  "gc_by_generation": {
+    "0": {
+      "collections": 13640,
+      "wall_seconds": 1.0364682330355208
+    },
+    "1": {
+      "collections": 1240,
+      "wall_seconds": 0.8116267460145536
+    },
+    "2": {
+      "collections": 42,
+      "wall_seconds": 11.748017589001392
+    }
+  },
+  "gc_event_count": 29844,
+  "gc_pairs_count": 14922,
+  "handler_resources": {
+    "checkpoint_restore": {
+      "calls": 3,
+      "cpu_seconds": 6.805474867000003,
+      "elapsed_seconds": 6.806404388998999,
+      "peak_rss_bytes": 1650331648,
+      "restored_sequences": [
+        1
+      ]
+    },
+    "entry_signals": {
+      "calls": 1,
+      "cpu_seconds": 0.04541492499999933,
+      "elapsed_seconds": 0.045271173999935854
+    },
+    "families": {
+      "calls": 1,
+      "cpu_seconds": 2.1610549499999987,
+      "elapsed_seconds": 2.1628539980001733
+    },
+    "funnel": {
+      "calls": 1,
+      "cpu_seconds": 8.484694052999998,
+      "elapsed_seconds": 8.48526597899945
+    },
+    "lab": {
+      "calls": 1,
+      "cpu_seconds": 0.12032094399999949,
+      "elapsed_seconds": 0.12021750600069936
+    },
+    "native_orchestrator": {
+      "calls": 2,
+      "cpu_seconds": 12.670601273,
+      "elapsed_seconds": 12.671521143999598,
+      "peak_rss_bytes": 502075392
+    },
+    "native_stage_enrichment": {
+      "calls": 1,
+      "cpu_seconds": 0.6206734419999993,
+      "elapsed_seconds": 0.620641899000475,
+      "peak_rss_bytes": 502075392
+    },
+    "projection_header": {
+      "calls": 2,
+      "cpu_seconds": 0.08905670899999052,
+      "elapsed_seconds": 0.08889642800022557
+    },
+    "projection_prepare": {
+      "calls": 1,
+      "cpu_seconds": 2.5619052619999962,
+      "elapsed_seconds": 2.5629474649995245
+    },
+    "publication": {
+      "calls": 1,
+      "cpu_seconds": 47.522423880999995,
+      "elapsed_seconds": 47.846190380000735,
+      "peak_rss_bytes": 1650331648
+    },
+    "storage_encode": {
+      "calls": 7,
+      "cpu_seconds": 5.939979907999991,
+      "elapsed_seconds": 5.939508969999224,
+      "peak_rss_bytes": 1650331648
+    },
+    "storage_metrics": {
+      "calls": 4,
+      "cpu_seconds": 2.398507225000003,
+      "elapsed_seconds": 2.3984696360003,
+      "peak_rss_bytes": 1604870144
+    },
+    "storage_prepare": {
+      "calls": 4,
+      "cpu_seconds": 39.893003797999995,
+      "elapsed_seconds": 39.8934542449997,
+      "peak_rss_bytes": 1287356416
+    }
+  },
+  "instrumentation_can_change_gc_allocation_positions": true,
+  "kernel_supervision": {
+    "actual_child_reaped": true,
+    "actual_launch_to_pid_reap_wall_seconds": 91.96856669800036,
+    "adopted_descendants_reaped": [],
+    "command": [
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+      "-I",
+      "-B",
+      "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-gcdiag-86615-h07w9s7d/gc_diagnostic_harness.py",
+      "--child"
+    ],
+    "cpu_system_seconds": 3.512578,
+    "cpu_user_seconds": 88.504985,
+    "execution_subject": "EXACT_CANONICAL_BIG_CLI_WITH_DECLARED_TRACKED_GOV_GUARD_AND_FINALIZATION",
+    "kernel_owned_child_observations": [
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "before_popen_after_subreaper_activation"
+      },
+      {
+        "errno": 10,
+        "outcome": "ECHILD",
+        "phase": "after_main_pid_reap"
+      }
+    ],
+    "kernel_pre_popen_echild_verified": true,
+    "kernel_wait4_zero_observed_irreversible_red": false,
+    "late_observed_main_reap_irreversible_red": false,
+    "native_cycle_deadline_seconds": 90,
+    "outer_management_watchdog_is_not_native_acceptance_deadline": true,
+    "owned_child_exhaustion_method": "EXCLUSIVE_SUBREAPER_PRESPAWN_ECHILD_AND_POST_MAIN_WAIT4_WNOHANG_ECHILD",
+    "owned_children_exhaustion_verified": true,
+    "owned_cleanup_management_bound_seconds": 5,
+    "owned_group_signal_observations": [],
+    "peak_rss_bytes": 1650331648,
+    "phase_acceptance_deadline_seconds": 300,
+    "pid": 8694,
+    "proc_task_children_examined": false,
+    "process_group_absent_after_reap": true,
+    "process_group_absent_at_main_reap": true,
+    "remaining_owned_children": [],
+    "residual_descendants_observed": [],
+    "returncode": 1,
+    "scope": "EXACT_PYTEST_PHASE_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NOT SUM_OF_CONCURRENT_RSS",
+    "sigint_failure_grace_seconds": 20,
+    "subreaper_previous_state": 0,
+    "subreaper_restore_attempted_on_all_activated_paths": true,
+    "supervisor_errors": [],
+    "supervisor_kernel_identity_before_spawn": {
+      "Pid": "8687",
+      "Tgid": "8687",
+      "Uid": "1000\t1000\t1000\t1000"
+    },
+    "supervisor_native_tid": 8687,
+    "supervisor_pid": 8687,
+    "termination_reap_restore_cleanup_seconds": 0.00011941699995077215,
+    "timed_out": false,
+    "wait4_reaped_pid": 8694,
+    "wall_seconds": 91.96901996900033
+  },
+  "known_launcher_mp_alias_alien": true,
+  "largest_gc_pairs": [
+    {
+      "generation": 2,
+      "start": {
+        "at_monotonic": 7049.577336321,
+        "child_cpu_seconds": 57.611852064000004,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1283850240,
+        "phase": "start",
+        "uncollectable": 0
+      },
+      "stop": {
+        "at_monotonic": 7050.755844797,
+        "child_cpu_seconds": 58.790348495,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1283850240,
+        "phase": "stop",
+        "uncollectable": 0
+      },
+      "wall_seconds": 1.1785084759994788
+    },
+    {
+      "generation": 2,
+      "start": {
+        "at_monotonic": 7041.262231159,
+        "child_cpu_seconds": 49.297124149000005,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1270349824,
+        "phase": "start",
+        "uncollectable": 0
+      },
+      "stop": {
+        "at_monotonic": 7042.307189202,
+        "child_cpu_seconds": 50.3422865,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1270349824,
+        "phase": "stop",
+        "uncollectable": 0
+      },
+      "wall_seconds": 1.0449580429994967
+    },
+    {
+      "generation": 2,
+      "start": {
+        "at_monotonic": 7031.58092833,
+        "child_cpu_seconds": 39.615594841000004,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1036029952,
+        "phase": "start",
+        "uncollectable": 0
+      },
+      "stop": {
+        "at_monotonic": 7032.40935019,
+        "child_cpu_seconds": 40.44438392,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 1036029952,
+        "phase": "stop",
+        "uncollectable": 0
+      },
+      "wall_seconds": 0.8284218600001623
+    },
+    {
+      "generation": 2,
+      "start": {
+        "at_monotonic": 7026.989847606,
+        "child_cpu_seconds": 35.024590662,
+        "collected": 0,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 962760704,
+        "phase": "start",
+        "uncollectable": 0
+      },
+      "stop": {
+        "at_monotonic": 7027.765685565,
+        "child_cpu_seconds": 35.800435024,
+        "collected": 6,
+        "diagnostic_event": "GC",
+        "generation": 2,
+        "peak_rss_bytes": 962760704,
+        "phase": "stop",
+        "uncollectable": 0
+      },
+      "wall_seconds": 0.7758379590004552
+    }
+  ],
+  "mechanism": "UNCHANGED_TRACKED_GC_CALLBACK_START_STOP_WITH_NATIVE_STACK_10S; NO_PROFILER_OR_GC_TUNING",
+  "native_business_resource_complete": false,
+  "native_data_custody": {
+    "": {
+      "sha256": "4b6eb9c812607fa5f54b32c949287b154ce09245d01d12e332754137558f1728",
+      "st_atime_ns": 1791296822456035246,
+      "st_blocks": 45240,
+      "st_ctime_ns": 1791296822436035339,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 1346177,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791296822436035339,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "native_data_custody_unchanged": true,
+  "native_import_proof_complete": false,
+  "native_reason": "SHADOW_CONSERVATIVE_CYCLE_DEADLINE",
+  "phases": [
+    "BOUNDED_READ",
+    "PREOPEN_COMMITTED"
+  ],
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "receipt_hashes": {
+    "child-cli-before.json": {
+      "bytes": 1521,
+      "sha256": "a0265e31caba99cb7818ce44226d95b33911eebb1bb59bf22797ce4858c4b894"
+    },
+    "child-final-receipt.json": {
+      "bytes": 1523,
+      "sha256": "cf939c4dfd089d7bd9f233a4bbfb87c10ed68db2cebed3d55b2ed4d4438b49bf"
+    },
+    "child-finalization.json": {
+      "bytes": 1006,
+      "sha256": "c132b219dc8ac07e270d5b0e9083d36c920c1b3e9f1304f61d14531799c73751"
+    },
+    "child-infrastructure-before.json": {
+      "bytes": 123,
+      "sha256": "aabfd18817b597ee475734b64d849f44be1b51c131a29380fb7e5b475206d36d"
+    },
+    "child-installed-closure.json": {
+      "bytes": 1806,
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    "child-namespace.json": {
+      "bytes": 629,
+      "sha256": "3352092e84e5ed3a196f7481031c74a4891e02bbe386227102720d09c098588f"
+    },
+    "child-offline-capability.json": {
+      "bytes": 604,
+      "sha256": "5d4fb73194874469a92a5a8cde6da5e78c7499bdb81b5ef6a3c880253e98ffb8"
+    },
+    "harness-final.json": {
+      "bytes": 1386,
+      "sha256": "739dc51cf240606c48ab7a46480d2f130f101195b2e873300d5d910df08f62e4"
+    },
+    "kernel-supervision.json": {
+      "bytes": 2214,
+      "sha256": "124af68774b7c2344a2aca10346722e9ed0f0caebb68c9920b5c72a2afa9cab8"
+    },
+    "launch.json": {
+      "bytes": 3112,
+      "sha256": "c9bc431cd2b2c9ca31e31480c20751f20ca11acb439f55f645bd1e8a1d60f9a5"
+    },
+    "native-big-result.json": {
+      "bytes": 749628,
+      "sha256": "60a3b7f88cb9c9d20bbc099ef5d07fc216d4045ca51dddc0e6a896cdc44d4346"
+    },
+    "native-gc-stacks.log": {
+      "bytes": 5859780,
+      "sha256": "40d65ffc5ac075669a25433303996d8adcc0cdf6c3a52c3f705ccb8bb6315fed"
+    },
+    "native.log": {
+      "bytes": 138,
+      "sha256": "4ed45c9cd13a6ef444b23920715b4eb6c6caed476a8a597c2982fe327e35010c"
+    },
+    "parent-installed-closure.json": {
+      "bytes": 1806,
+      "sha256": "3554a5103ddaffde59822dc574c1b43c5b805ac506b7f1a1f95ebc5b5a433439"
+    },
+    "source-after.json": {
+      "bytes": 1858503,
+      "sha256": "9f9ebcea6e2bdfb22b49512bc641a8644c5ee81a2a60d8514091f5406d65fe44"
+    },
+    "source-before.json": {
+      "bytes": 1858503,
+      "sha256": "0e65ac2a49ce135c437c2dbded6a068073da4c9aa1a397b4d2aa8677007b6d6b"
+    }
+  },
+  "resource_gates": {
+    "actual_evidence_bytes": 36884206,
+    "actual_rss_bytes": 1650331648,
+    "actual_slow_fsync_exit_isolation": true,
+    "child_cleanup_completed": false,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "reported_worker_rss_bytes": 1650331648,
+    "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "runtime_validated": false,
+  "schema": "rc6.recovery.original86615-whole-heap-gc-diagnostic.v1",
+  "single_diagnostic_execution_no_retry": true,
+  "source_capture_gc_events": 0,
+  "source_code10stable_fields_bytes_modes_rawgit_unchanged": true,
+  "source_index_sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779",
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "stack_lines": [
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 137 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 254 in _deepcopy_dict",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 146 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 231 in _deepcopy_dict",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 146 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 231 in _deepcopy_dict",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 146 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 206 in _deepcopy_list",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 146 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 231 in _deepcopy_dict",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/copy.py\", line 146 in deepcopy",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_dynamic_universe/orchestrator.py\", line 55 in plan",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_dynamic_universe/live.py\", line 107 in run_shadow",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 351 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 258 in iterencode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 200 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py\", line 238 in dumps",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_performance/common.py\", line 28 in canonical",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_performance/common.py\", line 32 in digest",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/funnel.py\", line 82 in _event",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/funnel.py\", line 134 in _planner_stages",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/funnel.py\", line 533 in evaluate_runtime_funnel",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 332 in measured",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 372 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 114 in _shape",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 472 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 350 in prepare_publication_storage",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 819 in commit_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 388 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 249 in iterencode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 200 in encode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py\", line 238 in dumps",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 55 in _canonical",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 363 in _named",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 375 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 416 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 433 in _capture_original",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 424 in capture",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in <dictcomp>",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 350 in prepare_publication_storage",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 819 in commit_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 388 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 258 in iterencode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 200 in encode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py\", line 238 in dumps",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 55 in _canonical",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 363 in _named",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 375 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 416 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 433 in _capture_original",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 424 in capture",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in <dictcomp>",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 350 in prepare_publication_storage",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 819 in commit_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 388 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 224 in iterencode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py\", line 200 in encode",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py\", line 238 in dumps",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 307 in gc_callback",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 91 in <genexpr>",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\"{\"at_monotonic\": 7051.961705616, \"child_cpu_seconds\": 59.996153934000006, \"collected\": 0, \"diagnostic_event\": \"GC\", \"generation\": 0, \"peak_rss_bytes\": 1283850240, \"phase\": \"start\", \"uncollectable\": 0}",
+    ", line 91 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 297 in append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 392 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 406 in _append",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 433 in _capture_original",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 257 in capture",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 423 in capture",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in <dictcomp>",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 476 in __init__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/publication_storage.py\", line 350 in prepare_publication_storage",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\"{\"at_monotonic\": 7051.961853385, \"child_cpu_seconds\": 59.996301262, \"collected\": 0, \"diagnostic_event\": \"GC\", \"generation\": 0, \"peak_rss_bytes\": 1283850240, \"phase\": \"stop\", \"uncollectable\": 0}",
+    ", line 819 in commit_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 388 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"<string>\", line 4 in __hash__",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 496 in _proof",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/packed_storage.py\", line 506 in metrics",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 830 in <dictcomp>",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 830 in pack",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 883 in commit_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 388 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 439 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>",
+    "Timeout (0:00:10)!",
+    "Thread 0x00007f907ed676c0 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 327 in wait",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/queues.py\", line 231 in _feed",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 982 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1045 in _bootstrap_inner",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/threading.py\", line 1002 in _bootstrap",
+    "",
+    "Thread 0x00007f907fa58740 (most recent call first):",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 97 in visit",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 114 in _shape",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/serialization.py\", line 371 in decode_storage",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 662 in _wire_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/persistence.py\", line 733 in read_writer_generation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 367 in operation",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/rc6_shadow_runtime/worker.py\", line 260 in tick",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 443 in _shadow_child_work",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py\", line 206 in _shadow_child",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 108 in run",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/process.py\", line 314 in _bootstrap",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 135 in _main",
+    "  File \"/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/multiprocessing/spawn.py\", line 122 in spawn_main",
+    "  File \"<string>\", line 1 in <module>"
+  ],
+  "status": "RED_DIAGNOSTIC_ONLY"
+}

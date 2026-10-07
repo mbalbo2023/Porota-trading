@@ -1,0 +1,11 @@
+{
+  "governed_actual_status": "GREEN",
+  "junit_cases": 4802,
+  "junit_sha256": "f61b24e4e2f5637d9721c6e778d2b71869e1c0ad9cbc1d2d9d4b4984ca5d820b",
+  "original_gate_sha256": "014744e3d2120f50d83d89f6b8dc788d28688fcfa0bde25abc32d9bdfefd0c92",
+  "reason": "REGRESSION_NOT_EXECUTED:tests/test_issue465_budget_adversarial.py::test_tighter_global_cap_exposes_unserviceable_demand_without_lower_borrow",
+  "scope": "NATIVE_ORIGINAL_GATE_WITH_ACTUAL_FROZEN_GOVERNED_JUNIT",
+  "source_sha": "3cfe112bb8061c5492d078e15a7ab41f698e2b0f",
+  "source_tree": "42bf778b4bb3d1b06bb84ec750c1f1d031657f00",
+  "status": "RED"
+}

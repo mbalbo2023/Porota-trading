@@ -1,0 +1,405 @@
+"""One ROW/TUPLE component pair; external ALIEN diagnostic, always RED.
+
+No Source function/module is replaced or rebound. Source original helpers and
+native subprocess_phase own copying, deadlines, PAPER guards and child custody.
+Parent reads no producer payload, Source or DATA until full original kernel FIN.
+A fresh pair cannot recreate the canonical heap or qualify/speed up canonical BIG.
+"""
+from __future__ import annotations
+import argparse
+from datetime import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import resource
+import sqlite3
+import stat
+import struct
+import sys
+import time
+from urllib.parse import urlsplit, unquote
+
+EPOCH=Path(__file__).absolute().parent
+BASE=Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum')
+FROZEN=BASE/'rc6-native-big-0f73e2c-oz3nr9js'
+SOURCE=FROZEN/'source'
+REPOSITORY=FROZEN/'repository'
+PIN=FROZEN/'pin/source.index.json'
+DATABASE=FROZEN/'data-slow/data/paper_v17/observer_v17.db'
+PYTHON=str(BASE/'venv311/bin/python')
+SHA='0f73e2cd681672b7a9a3065e99a72915ba93f4fd'
+TREE='36227e546cb311546f08b80880064dde86a6f630'
+INDEX_SHA='8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a'
+DATABASE_SHA='d0268e7d50c7509c14c5f77e6f5bed7c00b3552aac619b450c8df391528ac2a5'
+MANAGER_SHA='316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67'
+PRE_ISO='2026-10-05T13:20:00+00:00'
+LIMIT=60
+RSS_LIMIT=2*1024**3
+EVIDENCE_LIMIT=128*1024**2
+FIELDS=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks',
+        'st_atime_ns','st_mtime_ns','st_ctime_ns')
+RAW=EPOCH/'raw'
+gov=None
+sys.dont_write_bytecode=True
+
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+
+def read_owned(path, limit=EVIDENCE_LIMIT):
+    path=Path(path).absolute()
+    require(path.resolve(strict=True)==path and not any(p.is_symlink() for p in path.parents),
+            'UNALIASED_FILE_REQUIRED')
+    fd=os.open(path,os.O_RDONLY|os.O_NOATIME|os.O_NOFOLLOW|os.O_NONBLOCK)
+    try:
+        before=os.fstat(fd)
+        require(stat.S_ISREG(before.st_mode) and before.st_nlink==1
+                and before.st_uid==os.geteuid() and before.st_size<=limit,'BOUNDED_OWNED_REGULAR_FILE_REQUIRED')
+        parts=[];size=0
+        while block:=os.read(fd,min(1024**2,limit+1-size)):
+            parts.append(block);size+=len(block)
+            require(size<=limit,'FILE_BOUND_EXCEEDED')
+        after=os.fstat(fd);location=path.lstat()
+        require(size==before.st_size and all(getattr(before,k)==getattr(after,k)==getattr(location,k)
+                for k in FIELDS),'ALL11_CHANGED_DURING_NOATIME_CAPTURE')
+        return b''.join(parts),{k:getattr(before,k) for k in FIELDS}
+    finally:
+        os.close(fd)
+
+
+def publish(path, value):
+    gov.publish(path,gov.canonical(value))
+
+
+def safe_error(error, stage):
+    literal=str(error).partition(':')[0]
+    row={'stage':stage,'class':type(error).__name__,
+         'reason':literal if re.fullmatch(r'[A-Z][A-Z0-9_]{0,191}',literal) else 'NON_LITERAL_EXCEPTION'}
+    if isinstance(error,OSError) and type(error.errno) is int:row['errno']=error.errno
+    return row
+
+
+def data_custody():
+    rows={}
+    for suffix in ('','-wal','-shm','-journal'):
+        member=Path(str(DATABASE)+suffix)
+        try:member.lstat()
+        except FileNotFoundError:
+            require(bool(suffix),'SOURCE_DATABASE_MISSING');continue
+        wire,attrs=read_owned(member,512*1024**2)
+        rows[suffix]={**attrs,'sha256':hashlib.sha256(wire).hexdigest()}
+    return rows
+
+
+def load_gov():
+    global gov
+    require(sys.executable==PYTHON and platform.python_version()=='3.11.16'
+            and os.getuid()==os.geteuid()!=0,'EXACT_LOCKED_NONROOT311_REQUIRED')
+    manager,attrs=read_owned(SOURCE/'scripts/rc6_controlled_governed_runner.py')
+    require(hashlib.sha256(manager).hexdigest()==MANAGER_SHA,'ORIGINAL_TRACKED_MANAGER_REQUIRED')
+    if str(SOURCE) not in sys.path:sys.path.insert(0,str(SOURCE))
+    from scripts import rc6_controlled_governed_runner
+    gov=rc6_controlled_governed_runner
+    require(Path(gov.__file__).absolute()==SOURCE/'scripts/rc6_controlled_governed_runner.py',
+            'ORIGINAL_SOURCE_MANAGER_ORIGIN_REQUIRED')
+
+
+def setup(output, phase):
+    namespace=gov.phase_namespace(SOURCE,output,phase)
+    capability=gov.restrict_inet_creation()
+    observations={'inet_socket_attempts':[],'inet_socket_constructor_requests':[],
+                  'subprocess_executable_counts':{}}
+    witness=gov.install_phase_audit(observations)
+    publish(output/(phase+'.namespace.json'),namespace)
+    publish(output/(phase+'.offline-capability.json'),capability)
+    publish(output/(phase+'.installed-closure.json'),gov.installed_closure(SOURCE))
+    return namespace,capability,observations,witness
+
+
+def binding():
+    from scripts.rc6_native_import_provenance import prepare_binding
+    wire,_=read_owned(PIN)
+    require(hashlib.sha256(wire).hexdigest()==INDEX_SHA,'EXACT_SOURCE_INDEX_REQUIRED')
+    return prepare_binding(source_root=str(SOURCE),source_repo=str(REPOSITORY),
+                           source_sha=SHA,source_tree=TREE,source_index=str(PIN))
+
+
+def source_snapshot(bound):
+    physical_before=gov.physical_namespace(SOURCE)
+    rows={}
+    for name,expected in bound['files'].items():
+        wire,attrs=gov.capture(SOURCE/name)
+        blob=hashlib.sha1(b'blob '+str(len(wire)).encode()+b'\0'+wire).hexdigest()
+        mode='100'+format(stat.S_IMODE(attrs['st_mode']),'03o')
+        require(hashlib.sha256(wire).hexdigest()==expected['sha256']
+                and blob==expected['blob_id'] and mode==expected['mode'],'PHYSICAL_SOURCE_PIN_MISMATCH')
+        rows[name]={'sha256':expected['sha256'],'git_blob':blob,'git_mode':mode,
+                    'bytes':len(wire),'stat_fields':attrs}
+    physical_after=gov.physical_namespace(SOURCE)
+    require(physical_before==physical_after and set(rows)==set(physical_after['files']),
+            'SOURCE_NAMESPACE_CHANGED_OR_NONLITERAL')
+    return {'source_sha':SHA,'source_tree':TREE,'source_index_sha256':INDEX_SHA,
+            'files':rows,'physical_directories':physical_after['directories'],'overlay_count':0,
+            'git_metadata':{'source_repo':str(REPOSITORY),'source_root':str(SOURCE),'raw_git_bound':True}}
+
+
+def sealed_files():
+    plan_wire,_=read_owned(EPOCH/'plan.json')
+    plan=json.loads(plan_wire)
+    for name,expected in plan['artifacts'].items():
+        wire,attrs=read_owned(EPOCH/name)
+        require(len(wire)==expected['bytes'] and hashlib.sha256(wire).hexdigest()==expected['sha256'],
+                'PREAPPROVED_EXTERNAL_SCRIPT_BYTES_CHANGED')
+    require(plan['source_sha']==SHA and plan['source_tree']==TREE
+            and plan['original_database_sha256']==DATABASE_SHA,'EXACT_EXTERNAL_PLAN_PIN_REQUIRED')
+    return plan
+
+
+def install_sqlite_guard(namespace):
+    observations=[]
+    witness=object();registration={'seen':False}
+    scratch=Path(namespace['tmpdir'])
+    def audit(event,arguments):
+        if event=='rc6.row_tuple.sqlite_audit' and arguments==(witness,):registration['seen']=True
+        if event!='sqlite3.connect':return
+        value=arguments[0]
+        require(type(value) is str,'PRIVATE_SNAPSHOT_URI_REQUIRED')
+        parsed=urlsplit(value)
+        path=Path(unquote(parsed.path)).absolute()
+        allowed=(parsed.scheme=='file' and not parsed.netloc and parsed.query=='mode=ro'
+                 and path!=DATABASE and path.is_relative_to(scratch)
+                 and path.resolve(strict=True)==path and not path.is_symlink()
+                 and not any(p.is_symlink() for p in path.parents))
+        observations.append({'path':str(path),'private_scratch_only':bool(allowed),
+                             'original_source_sqlite_opened':path==DATABASE,'uri_query':parsed.query})
+        require(allowed,'SQLITE_MUST_ONLY_OPEN_ORIGINAL_PRIVATE_SNAPSHOT')
+    sys.addaudithook(audit);sys.audit('rc6.row_tuple.sqlite_audit',witness)
+    require(registration['seen'],'SQLITE_OPERATION_AUDIT_NOT_INSTALLED')
+    return observations
+
+
+def helper_identities():
+    from rc6_shadow_runtime import families,source_reads
+    from rc6_audit_evidence import sqlite_snapshot
+    pairs=(('families._read',families._read,SOURCE/'rc6_shadow_runtime/families.py'),
+           ('families._mapping',families._mapping,SOURCE/'rc6_shadow_runtime/families.py'),
+           ('families._fresh',families._fresh,SOURCE/'rc6_shadow_runtime/families.py'),
+           ('source_reads.source_connection',source_reads.source_connection.__wrapped__,
+            SOURCE/'rc6_shadow_runtime/source_reads.py'),
+           ('sqlite_snapshot.readonly_copy',sqlite_snapshot.readonly_copy.__wrapped__,
+            SOURCE/'rc6_audit_evidence/sqlite_snapshot.py'))
+    rows={}
+    for name,function,path in pairs:
+        code=function.__code__
+        require(Path(code.co_filename).absolute()==path,'UNCHANGED_NORMAL_SOURCE_HELPER_ORIGIN_REQUIRED')
+        rows[name]={'function_identity':id(function),'code_identity':id(code),
+                    'module':function.__module__,'filename':code.co_filename,'first_line':code.co_firstlineno}
+    require(families.QUERY_BUDGET_SECONDS==.5 and families.MAX_ROWS==20000,'ORIGINAL_READ_LIMITS_REQUIRED')
+    return rows
+
+
+def typed(value):
+    """Lossless exact-type values and ordered keys, never default=str."""
+    cls=type(value)
+    if value is None:return ['none']
+    if cls is bool:return ['bool',value]
+    if cls is int:return ['int',str(value)]
+    if cls is float:return ['float64-ieee754-be',struct.pack('>d',value).hex()]
+    if cls is str:return ['str',value]
+    if cls is bytes:return ['bytes',value.hex()]
+    if cls is list:return ['list',[typed(v) for v in value]]
+    if cls is tuple:return ['tuple',[typed(v) for v in value]]
+    if cls is dict:return ['dict',[[typed(k),typed(v)] for k,v in value.items()]]
+    raise ValueError('UNSUPPORTED_NONLOSSLESS_NATIVE_VALUE_TYPE')
+
+
+def child(variant):
+    load_gov();sealed_files();output=RAW/variant
+    namespace,capability,observations,audit_witness=setup(output,'execution')
+    infrastructure=gov.child_infrastructure_snapshot()
+    require(all(v is None for v in infrastructure.values()),'FRESH_NATIVE_CHILD_INFRASTRUCTURE_REQUIRED')
+    bound=binding();before=source_snapshot(bound);data_before=data_custody()
+    publish(output/'child.source-before.json',before);publish(output/'child.data-before.json',data_before)
+    plan=sealed_files()
+    require(data_before==plan['input_data_all11_and_hash'],'ORIGINAL_CLOSED_DATA_ALL11_PIN_REQUIRED')
+    sql_observations=install_sqlite_guard(namespace)
+    if str(EPOCH) not in sys.path:sys.path.insert(0,str(EPOCH))
+    import pair_components_v2
+    require(Path(pair_components_v2.__file__).absolute()==EPOCH/'pair_components_v2.py','EXTERNAL_COMPONENT_ORIGIN_REQUIRED')
+    identities_before=helper_identities();metrics=[];result=None;errors=[]
+    at=datetime.fromisoformat(PRE_ISO)
+    started_wall,started_cpu=time.monotonic(),time.process_time()
+    try:
+        if variant=='ROW_control':result=pair_components_v2.row_control(DATABASE,at,metrics)
+        elif variant=='TUPLE_component':result=pair_components_v2.tuple_component(DATABASE,at,metrics)
+        else:raise ValueError('LITERAL_COMPONENT_VARIANT_REQUIRED')
+    except BaseException as error:errors.append(safe_error(error,'one_native_component_read'))
+    finished_wall,finished_cpu=time.monotonic(),time.process_time()
+    # All typed serialization and identity checks follow the actual source
+    # context-manager return/raise; they do not modify its 0.5 deadline.
+    identities_after=helper_identities();native_rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
+    # Genuine owned-child/tracker closure precedes producer postread evidence.
+    finalization=gov.finalize_child_infrastructure(infrastructure,limit=5)
+    require(finalization['status']=='GREEN','OWNED_CHILD_FINALIZATION_RED')
+    typed_wire=None;identity_facts=None;counts=None
+    if result is not None:
+        try:
+            require(type(result) is dict and list(result)==['metadata','quotes','cash','truncated','errors'],
+                    'NATIVE_ORDERED_FULL_RESULT_REQUIRED')
+            rows=result['metadata'];ids=[id(row) for row in rows];meta_ids=[id(row['metadata']) for row in rows]
+            identity_facts={'metadata_rows_are_exact_distinct_dicts':all(type(row) is dict for row in rows)
+                                and len(ids)==len(set(ids)),
+                            'metadata_values_are_exact_distinct_private_dicts':
+                                all(type(row['metadata']) is dict for row in rows) and len(meta_ids)==len(set(meta_ids))}
+            require(all(identity_facts.values()),'PRIVATE_METADATA_IDENTITY_CONTRACT_RED')
+            counts={key:len(value) for key,value in result.items()}
+            typed_wire=json.dumps(typed(result),ensure_ascii=True,separators=(',',':'),allow_nan=False).encode()+b'\n'
+            require(len(typed_wire)<=EVIDENCE_LIMIT,'TYPED_EVIDENCE_QUOTA_EXCEEDED')
+            gov.publish(output/'typed-native-result.json',typed_wire)
+        except BaseException as error:errors.append(safe_error(error,'typed_lossless_post_read'))
+    require(identities_before==identities_after,'SOURCE_HELPER_IDENTITY_CHANGED')
+    after=source_snapshot(bound);data_after=data_custody()
+    atimes=gov.compare_source(before,after)
+    require(data_before==data_after,'SOURCE_DATABASE_ALL11_CHANGED')
+    publish(output/'child.source-after.json',after);publish(output/'child.data-after.json',data_after)
+    publish(output/'child.result.json',{'status':'DIAGNOSTIC_RED','DIAGNOSTIC_ONLY':True,'ALIEN':True,
+        'gate_qualified':False,'native_import_proof_qualified':False,'canonical_BIG_qualified':False,
+        'variant':variant,'pid':os.getpid(),'parent_pid':os.getppid(),'source_sha':SHA,'source_tree':TREE,
+        'external_entry_module':__name__,'normal_source_imports_no_alias_rebinding':True,
+        'native_original_read_deadline_seconds':.5,'original_helpers_before':identities_before,
+        'original_helpers_after':identities_after,'native_result_returned':result is not None,'counts':counts,
+        'read_started_monotonic':started_wall,'read_finished_monotonic':finished_wall,
+        'observed_instrumented_read_wall_seconds':finished_wall-started_wall,
+        'observed_instrumented_read_cpu_seconds':finished_cpu-started_cpu,'sparse_phase_events':metrics,
+        'observer_body_times_are_lower_bounds_never_subtracted_for_qualification':True,
+        'no_GC_policy_callbacks_profile_trace_dummy_heap_extra_SQL_or_cache':True,
+        'post_read_native_process_peak_rss_bytes':native_rss,'child_cleanup':finalization,
+        'typed_native_result_sha256':hashlib.sha256(typed_wire).hexdigest() if typed_wire else None,
+        'typed_native_result_bytes':len(typed_wire) if typed_wire else None,'private_identity_facts':identity_facts,
+        'Source10_and_rawGit_preserved':True,'source_atime_changes_disclosed':atimes,'Data11_preserved':True,
+        'sqlite_open_observations':sql_observations,'original_source_database_never_opened_by_SQLite':
+            bool(sql_observations) and all(row['private_scratch_only'] and not row['original_source_sqlite_opened']
+                                          for row in sql_observations),
+        'capability':capability,'inet_observations':observations,'inet_operation_audit_witness':audit_witness,
+        'network_observation_scope':'THIS_PYTHON_PROCESS_ONLY_NO_BINARY_KERNEL_OR_TRANSITIVE_ATTESTATION',
+        'errors':errors,'mode':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':0,'PPI_Watch':'UNTOUCHED',
+        'isolated_fresh_process_does_not_reproduce_canonical_500MB_heap_context':True})
+    # Nonzero is intentional and immutable: this external native component can
+    # provide facts but never pass an import/material gate, even if _read returns.
+    return 1
+
+
+def postread_barrier(kernel):
+    post_echild=any(row.get('phase')=='after_main_pid_reap' and row.get('outcome')=='ECHILD'
+                    for row in kernel['kernel_owned_child_observations'])
+    closed=(kernel['actual_child_reaped'] and kernel['wait4_reaped_pid']==kernel['pid']
+        and kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+        and kernel['process_group_absent_at_main_reap'] and kernel['process_group_absent_after_reap']
+        and not kernel['kernel_wait4_zero_observed_irreversible_red']
+        and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['timed_out']
+        and kernel['subreaper_restore_attempted_on_all_activated_paths'] is True
+        and not kernel['owned_group_signal_observations'] and not kernel['supervisor_errors']
+        and not kernel['residual_descendants_observed'] and not kernel['remaining_owned_children']
+        and not kernel['adopted_descendants_reaped'] and kernel['termination_reap_restore_cleanup_seconds']<=5
+        and kernel['actual_launch_to_pid_reap_wall_seconds']<=LIMIT
+        and type(kernel['peak_rss_bytes']) is int and kernel['peak_rss_bytes']<RSS_LIMIT and post_echild)
+    return bool(closed),post_echild
+
+
+def parent():
+    load_gov();plan=sealed_files()
+    require(not RAW.exists(),'FRESH_UNEXECUTED_EXTERNAL_PAIR_NAMESPACE_REQUIRED')
+    RAW.mkdir(mode=0o700)
+    for variant in ('ROW_control','TUPLE_component'):(RAW/variant).mkdir(mode=0o700)
+    namespace,capability,observations,audit_witness=setup(RAW,'collection')
+    bound=binding();source_before=source_snapshot(bound);data_before=data_custody()
+    require(data_before==plan['input_data_all11_and_hash'],'ORIGINAL_CLOSED_DATA_PIN_REQUIRED')
+    publish(RAW/'parent.source-before.json',source_before);publish(RAW/'parent.data-before.json',data_before)
+    summaries={};typed_wires={};barriers={};errors=[];atimes=[]
+    for variant in ('ROW_control','TUPLE_component'):
+        output=RAW/variant
+        env={'PATH':os.defpath,'LC_ALL':'C.UTF-8','LANG':'C.UTF-8','TZ':'UTC',
+             'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1'}
+        command=[PYTHON,'-I','-B',str(Path(__file__).absolute()),'--child',variant]
+        publish(output/'launch.json',{'command':command,'cwd':str(SOURCE),'source_sha':SHA,'source_tree':TREE,
+            'variant':variant,'one_invocation_only':True,'outer_management_seconds':LIMIT,
+            'original_copy_and_consumer_deadline_seconds':.5,'owned_cleanup_seconds':5,
+            'maximum_rss_bytes':RSS_LIMIT,'maximum_total_evidence_bytes':EVIDENCE_LIMIT,
+            'status':'DIAGNOSTIC_RED','DIAGNOSTIC_ONLY':True,'gate_qualified':False})
+        print(json.dumps({'stage':'PAIR_VARIANT_START','variant':variant,'supervisor_pid':os.getpid(),
+                          'source_sha':SHA,'DIAGNOSTIC_ONLY':True}),flush=True)
+        kernel=gov.subprocess_phase(command,SOURCE,output/'native.log',env,limit=LIMIT)
+        publish(output/'kernel-supervision.json',kernel)
+        closed,post_echild=postread_barrier(kernel);barriers[variant]=closed
+        publish(output/'postread-kernel-barrier.json',{'postread_allowed':closed,
+            'all_original_kernel_resource_guards_closed':closed,'post_main_actual_ECHILD':post_echild,
+            'no_requirement_of_exit_zero_for_an_explicit_ALIEN_diagnostic':True,
+            'timeout_signals_zero_late_reap_residual_RED_never_reset':True})
+        print(json.dumps({'stage':'PAIR_VARIANT_FIN','variant':variant,'pid':kernel['pid'],
+            'actual_child_reaped':kernel['actual_child_reaped'],'full_postread_barrier':closed,
+            'native_exitcode':kernel['returncode'],'DIAGNOSTIC_ONLY':True}),flush=True)
+        if not closed:
+            errors.append({'stage':variant,'reason':'KERNEL_NOT_CLOSED_NO_SOURCE_DATA_PAYLOAD_POSTREAD'})
+            break # no second child or postread follows UNKNOWN/residual/timeout
+        # ONLY after full FIN; never poll Source, DATA, logs or child payload.
+        after=source_snapshot(bound);data_after=data_custody()
+        atimes.append({'variant':variant,'changes':gov.compare_source(source_before,after)})
+        require(data_before==data_after,'ORIGINAL_SOURCE_DATABASE_ALL11_CHANGED')
+        publish(output/'parent.source-after.json',after);publish(output/'parent.data-after.json',data_after)
+        try:
+            wire,attrs=read_owned(output/'child.result.json');summary=json.loads(wire)
+            summaries[variant]={'summary':summary,'raw_sha256':hashlib.sha256(wire).hexdigest(),'raw_stat11':attrs}
+            require(summary['pid']==kernel['pid'] and summary['DIAGNOSTIC_ONLY'] is True
+                    and summary['gate_qualified'] is False,'ACTUAL_PID_ALIEN_RECEIPT_REQUIRED')
+            require(summary['Data11_preserved'] and summary['Source10_and_rawGit_preserved']
+                    and summary['child_cleanup']['status']=='GREEN'
+                    and summary['original_source_database_never_opened_by_SQLite']
+                    and not summary['inet_observations']['inet_socket_attempts'],'ACTUAL_COMPONENT_CUSTODY_OR_INET_RED')
+            if summary['native_result_returned'] and not summary['errors']:
+                twire,tattrs=read_owned(output/'typed-native-result.json')
+                require(hashlib.sha256(twire).hexdigest()==summary['typed_native_result_sha256'],
+                        'ACTUAL_TYPED_PAYLOAD_DIGEST_MISMATCH')
+                typed_wires[variant]=twire
+        except BaseException as error:
+            errors.append(safe_error(error,variant+'_closed_payload_read'))
+            # Preserve the actual RED; no blind retry of this variant.
+    comparison=None
+    if len(typed_wires)==2:
+        comparison={'lossless_full_ordered_typed_bytes_equal':typed_wires['ROW_control']==typed_wires['TUPLE_component'],
+            'per_variant_sha256':{k:hashlib.sha256(v).hexdigest() for k,v in typed_wires.items()},
+            'both_metadata_private_identity_contracts_verified':all(
+                all(row['summary']['private_identity_facts'].values()) for row in summaries.values()),
+            'covers':'All returned columns, SQL types, binary float bits, ordered keys/rows, metadata, quotes, cash, errors and truncation; no default=str',
+            'mutations_or_canonical_resource_savings_proven':False}
+        if not comparison['lossless_full_ordered_typed_bytes_equal']:
+            errors.append({'stage':'lossless_compare','reason':'TYPED_NATIVE_OUTPUT_DIFFERENCE'})
+    all_closed=len(barriers)==2 and all(barriers.values())
+    evidence_bytes=None
+    if all_closed:
+        evidence_bytes=sum(p.lstat().st_size for p in RAW.rglob('*') if p.is_file())
+        if evidence_bytes>EVIDENCE_LIMIT:errors.append({'stage':'quota','reason':'EVIDENCE_QUOTA_EXCEEDED'})
+    publish(RAW/'pair-final.json',{'schema':'rc6.row-tuple.exact-isolated-component-diagnostic.v1',
+        'status':'DIAGNOSTIC_RED','DIAGNOSTIC_ONLY':True,'ALIEN':True,'gate_qualified':False,
+        'source_sha':SHA,'source_tree':TREE,'original_database_sha256':DATABASE_SHA,
+        'full_kernel_postread_barriers':barriers,'original_kernel_manager_unchanged':True,
+        'per_variant_observed_closed_results':summaries,'lossless_comparison':comparison,
+        'Source10_atime_disclosure':atimes,'observed_raw_evidence_bytes':evidence_bytes,
+        'maximum_evidence_bytes':EVIDENCE_LIMIT,'maximum_rss_bytes':RSS_LIMIT,'errors':errors,
+        'no_full_BIG_retry_or_Source_edit':True,'one_each_no_retries':True,'real_orders_sent':0,
+        'mode':'PRODUCTION_PAPER / SIMULATION','PPI_Watch':'UNTOUCHED',
+        'performance_scope':'Instrumented fresh isolated components only; no reproduction of prior canonical 500MB heap, no proved canonical saving/cause',
+        'network_scope':'Original process-local DENIED observations and offline IPv6 capability; no binary/kernel-transitive networking attestation',
+        'material_gates_closed':[],'final_candidate_eligible':False})
+    return 1
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--child',choices=('ROW_control','TUPLE_component'))
+    args=parser.parse_args()
+    raise SystemExit(child(args.child) if args.child else parent())

@@ -1,0 +1,1464 @@
+#!/usr/bin/env python3
+"""Generate source-bound ROOT supplemental membership outside Git worktrees.
+
+This is a declarative Git/AST/JSON inventory. It does not execute mapped guards,
+Gov, native producers, product imports, provider requests, image or runtime.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import collections
+import copy
+import csv
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+import zlib
+
+MATRIX_PATH = "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json"
+REGISTRY_PATH = "docs/audits/convergence/REGISTRO_CONVERGENCIA_RC6.csv"
+REGISTRY_SHA256 = "9c1432c006516d23418bf059adf8c4f8d37e869186cb0ef15e3bb6768c86df21"
+FUTURE_ROOT_PATH = "docs/audits/convergence/ROOT_SUPPLEMENTAL_NAMED_FINDING_BINDINGS.json"
+DOCUMENTARY_MEMBER_LIMIT_BYTES = 32 * 1024 * 1024
+DEFAULT_IDS = (
+    "NEW_ARCHIVE_DIRECTORY_ATIME_MUTATION",
+    "NEW_CANONICAL_LIVE_FILE_QUOTA_DRIFT",
+    "NEW_GIT_REPLACEMENT_OBJECT_AUTHORITY",
+    "NEW_INSTALLED_DISTRIBUTION_METADATA_DUPLICATE",
+    "NEW_SIGNED_ZERO_SUBTREE_COLLAPSE",
+    "NEW_SOURCE_GIT_MODE_EVOLUTION",
+)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+class RefResolutionError(ValueError):
+    """Unresolvable documentary XML/gzip is unavailable, never execution."""
+
+
+def decode_known_xml(data, path):
+    """Only exact XML or one known gzip XML member; no arbitrary archives."""
+    if path.endswith(".xml.gz"):
+        if len(data) < 18 or data[:3] != b"\x1f\x8b\x08":
+            raise RefResolutionError("known gzip XML member has an invalid header")
+        inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        limit = 32 * 1024 * 1024
+        try:
+            decoded = inflater.decompress(data, limit + 1)
+            if len(decoded) > limit or inflater.unconsumed_tail:
+                raise RefResolutionError("gzip XML exceeds32MiB uncompressed bound")
+            decoded += inflater.flush(limit + 1 - len(decoded))
+        except zlib.error as error:
+            raise RefResolutionError("gzip XML CRC/stream validation failed") from error
+        if len(decoded) > limit or not inflater.eof or inflater.unused_data:
+            raise RefResolutionError("gzip XML truncated, concatenated or oversized")
+        encoding = {"encoding": "gzip-single-XML-member", "gzip_mtime": int.from_bytes(data[4:8], "little"),
+                    "compressed_sha256": digest(data), "compressed_bytes": len(data),
+                    "uncompressed_sha256": digest(decoded), "uncompressed_bytes": len(decoded)}
+    elif path.endswith(".xml"):
+        if len(data) > 32 * 1024 * 1024:
+            raise RefResolutionError("XML exceeds32MiB metadata bound")
+        decoded = data
+        encoding = {"encoding": "identity-XML", "compressed_sha256": digest(data), "compressed_bytes": len(data),
+                    "uncompressed_sha256": digest(data), "uncompressed_bytes": len(data)}
+    else:
+        raise RefResolutionError("metadata resolver only accepts XML or known.xml.gz members")
+    return decoded, encoding
+
+
+def sha256(data):
+    return digest(data)
+
+
+def canonical(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
+
+def raw_member_ref(binding):
+    return {key: binding[key] for key in ("source_sha", "source_tree", "path", "blob", "git_mode", "sha256", "bytes")}
+
+
+def decode_known_raw_member(data, path):
+    """Decode a named documentary member, never an arbitrary archive."""
+    formats = (
+        (".json.gz", "JSON"), (".xml.gz", "XML"),
+        (".source.gz", "SOURCE"), (".py.gz", "SOURCE"),
+        (".log.gz", "TEXT"), (".txt.gz", "TEXT"), (".md.gz", "TEXT"),
+        (".jsonl.gz", "TEXT"), (".raw.gz", "RAW"),
+        (".stdout.gz", "RAW"), (".stderr.gz", "RAW"),
+    )
+    limit = DOCUMENTARY_MEMBER_LIMIT_BYTES
+    if path.endswith(".gz"):
+        tag = next((tag for suffix, tag in formats if path.endswith(suffix)), None)
+        if tag is None:
+            raise RefResolutionError("unknown gzip documentary member format")
+        if len(data) < 18 or data[:3] != b"\x1f\x8b\x08":
+            raise RefResolutionError("known gzip documentary member has an invalid header")
+        inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            decoded = inflater.decompress(data, limit + 1)
+            if len(decoded) > limit or inflater.unconsumed_tail:
+                raise RefResolutionError("gzip documentary member exceeds 32MiB uncompressed bound")
+            decoded += inflater.flush(limit + 1 - len(decoded))
+        except zlib.error as error:
+            raise RefResolutionError("gzip documentary member CRC/stream validation failed") from error
+        if len(decoded) > limit or not inflater.eof or inflater.unused_data:
+            raise RefResolutionError("gzip documentary member truncated, concatenated or oversized")
+        encoding = {"encoding": "gzip-single-" + tag + "-member",
+                    "gzip_mtime": int.from_bytes(data[4:8], "little"),
+                    "compressed_sha256": sha256(data), "compressed_bytes": len(data),
+                    "uncompressed_sha256": sha256(decoded), "uncompressed_bytes": len(decoded)}
+    else:
+        if len(data) > limit:
+            raise RefResolutionError("documentary metadata member exceeds 32MiB bound")
+        decoded = data
+        tag = "JSON" if path.endswith(".json") else "XML" if path.endswith(".xml") else "RAW"
+        encoding = {"encoding": "identity-" + tag,
+                    "compressed_sha256": sha256(data), "compressed_bytes": len(data),
+                    "uncompressed_sha256": sha256(data), "uncompressed_bytes": len(data)}
+    return decoded, encoding
+
+def decode_known_json(data, path):
+    if not path.endswith((".json", ".json.gz")):
+        raise RefResolutionError("JSON metadata requires exact .json or known .json.gz")
+    decoded, encoding = decode_known_raw_member(data, path)
+    try:
+        obj = strict_json(decoded)
+        canonical(obj)  # Reject nonfinite JSON constants without rewriting fields.
+    except (ValueError, UnicodeError) as error:
+        raise RefResolutionError("RAW JSON metadata is invalid or ambiguous") from error
+    return obj, encoding
+
+def predeploy_origin_mapping(record, roots):
+    """Validate literal origin joins only; never resolve or open local origins."""
+    namespace = record.get("original_namespace")
+    relative = record.get("original_root_relative_path")
+    absolute = record.get("original_absolute_path")
+    if (type(namespace) is not str or namespace not in roots
+            or type(relative) is not str or relative.startswith("/") or "\\" in relative or "\0" in relative
+            or any(part in ("", ".", "..") for part in relative.split("/"))
+            or type(absolute) is not str or absolute != roots[namespace] + "/" + relative):
+        raise RefResolutionError("predeploy declared origin is missing, escaping or contradictory")
+    return {"namespace": namespace, "declared_root": roots[namespace],
+            "root_relative_path": relative, "absolute_path": absolute,
+            "scope": "LITERAL_ORIGIN_JOIN_ONLY_NO_LOCAL_ORIGIN_OPEN_OR_RETROSPECTIVE_QUALIFICATION"}
+
+
+def declared_predeploy_cleanup_members(source, receipt_path, receipt):
+    """Bind explicit SRE copy declarations, without executing or opening TARs."""
+    field = "raw_files"
+    declarations = receipt.get(field)
+    count = receipt.get("raw_file_count")
+    if (not isinstance(declarations, list) or type(count) is not int
+            or count != len(declarations)):
+        raise RefResolutionError("predeploy RAW declaration count or shape is invalid")
+    roots = receipt.get("original_roots")
+    if type(roots) is not dict or set(roots) != {"RAW", "WHOLE_SOURCE"}:
+        raise RefResolutionError("predeploy exact RAW/WHOLE_SOURCE origin roots are required")
+    for root in roots.values():
+        if (type(root) is not str or not root.startswith("/") or root == "/"
+                or "\\" in root or "\0" in root
+                or any(part in ("", ".", "..") for part in root.split("/")[1:])):
+            raise RefResolutionError("predeploy origin root is not an exact absolute path")
+    if (roots["RAW"] == roots["WHOLE_SOURCE"]
+            or roots["RAW"].startswith(roots["WHOLE_SOURCE"] + "/")
+            or roots["WHOLE_SOURCE"].startswith(roots["RAW"] + "/")):
+        raise RefResolutionError("predeploy origin namespaces overlap")
+    archive = receipt.get("whole_source_archive")
+    if type(archive) is not dict or archive.get("in_git_packet") is not False:
+        raise RefResolutionError("predeploy whole-source archive must remain explicitly external")
+    archive_origin = predeploy_origin_mapping(archive, roots)
+    if archive.get("external_path") != archive_origin["absolute_path"]:
+        raise RefResolutionError("predeploy external TAR hint contradicts its declared origin")
+    directory = receipt_path.rsplit("/", 1)[0] + "/" if "/" in receipt_path else ""
+    originals, stored_paths, members = set(), set(), []
+    for key, declaration in enumerate(declarations):
+        if not isinstance(declaration, dict):
+            raise RefResolutionError("predeploy RAW declaration must be an object")
+        origin_mapping = predeploy_origin_mapping(declaration, roots)
+        original = declaration.get("original_relative_path")
+        stored = declaration.get("stored_relative_path")
+        for name in (original, stored):
+            if (not isinstance(name, str) or name.startswith("/") or "\\" in name or "\0" in name
+                    or any(part in ("", ".", "..") for part in name.split("/"))):
+                raise RefResolutionError("predeploy RAW mapping is not an exact relative path")
+        path = directory + stored
+        if original in originals or stored in stored_paths or path == receipt_path:
+            raise RefResolutionError("predeploy RAW mapping is duplicate or self-referential")
+        originals.add(original)
+        stored_paths.add(stored)
+        mode = declaration.get("stored_mode")
+        if mode not in ("100644", "100755"):
+            raise RefResolutionError("predeploy RAW declaration has no exact stored Git mode")
+        declared_encoding = declaration.get("encoding")
+        if declared_encoding not in ("BYTE_EXACT", "GZIP_MTIME_ZERO_LOSSLESS"):
+            raise RefResolutionError("predeploy RAW encoding is not supported explicitly")
+        if declared_encoding == "BYTE_EXACT" and path.endswith(".gz"):
+            raise RefResolutionError("BYTE_EXACT gzip-suffixed member is ambiguous")
+        try:
+            data = source.read(path)
+            decoded, encoding = decode_known_raw_member(data, path)
+            binding = source.binding(path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("predeploy declared RAW member unavailable or invalid: " + path) from error
+        gzip = "gzip_mtime" in encoding
+        if ((declared_encoding == "BYTE_EXACT" and gzip)
+                or (declared_encoding == "GZIP_MTIME_ZERO_LOSSLESS"
+                    and (not gzip or encoding["gzip_mtime"] != 0))):
+            raise RefResolutionError("predeploy explicit encoding differs from stored RAW bytes")
+        expected = {
+            "stored_sha256": encoding["compressed_sha256"],
+            "stored_bytes": encoding["compressed_bytes"],
+            "original_sha256": encoding["uncompressed_sha256"],
+            "original_bytes": encoding["uncompressed_bytes"],
+        }
+        for name, actual in expected.items():
+            if type(declaration.get(name)) is not type(actual) or declaration[name] != actual:
+                raise RefResolutionError("predeploy RAW hash or length mismatch: " + name)
+        if (binding["git_mode"] != mode or binding["sha256"] != expected["stored_sha256"]
+                or binding["bytes"] != expected["stored_bytes"]):
+            raise RefResolutionError("predeploy RAW declaration differs from committed Git binding")
+        original_blob = declaration.get("original_git_blob")
+        if original_blob is not None:
+            actual_blob = hashlib.sha1(b"blob " + str(len(decoded)).encode() + b"\0" + decoded).hexdigest()
+            if type(original_blob) is not str or original_blob != actual_blob:
+                raise RefResolutionError("predeploy original Git blob differs from decoded original bytes")
+        members.append({
+            "receipt_declaration_pointer": [field, key],
+            "declared_reference_sha256": sha256(canonical(declaration)),
+            "publication_binding": raw_member_ref(binding),
+            "raw_encoding_metadata": encoding,
+            "archival_path_mapping": {
+                "original_relative_path": original,
+                "original_relative_path_role": "ARCHIVAL_DECLARATION_IDENTIFIER_NOT_LOCAL_FILESYSTEM_PATH",
+                "original_origin_binding": origin_mapping,
+                "stored_relative_path": stored,
+                "declared_encoding": declared_encoding,
+                "stored_git_mode": mode,
+                "scope": "EXPLICIT_PUBLISHED_CUSTODY_MAPPING_NO_SUFFIX_OR_EXECUTION_INFERENCE",
+            },
+            "scope": "RAW_MEMBER_CUSTODY_ONLY_NO_NEW_EXECUTION_COUNT_OR_CAPTURE_SOURCE_INFERENCE",
+        })
+    return members
+
+
+def declared_big_import_focal_members(source, receipt_path, receipt):
+    """Bind known byte-exact Budget members, keeping both run scopes literal."""
+    declarations = receipt.get("raw_files")
+    if type(declarations) is not list:
+        raise RefResolutionError("BIG import focal RAW declarations must be a list")
+    members, identifiers, paths = [], set(), set()
+    for key, declaration in enumerate(declarations):
+        if type(declaration) is not dict:
+            raise RefResolutionError("BIG import focal RAW declaration must be an object")
+        identifier = declaration.get("id")
+        path = declaration.get("path")
+        original = declaration.get("original_path")
+        if (type(identifier) is not str or not identifier or len(identifier) > 4096
+                or identifier in identifiers
+                or type(path) is not str or path.startswith("/") or "\\" in path or "\0" in path
+                or any(part in ("", ".", "..") for part in path.split("/"))
+                or path in paths or path == receipt_path):
+            raise RefResolutionError("BIG import focal id/path is missing, ambiguous or escaping")
+        if (type(original) is not str or not original.startswith("/") or original == "/"
+                or "\\" in original or "\0" in original
+                or any(part in ("", ".", "..") for part in original.split("/")[1:])):
+            raise RefResolutionError("BIG import focal original hint must be an exact absolute path")
+        if (declaration.get("encoding") != "BYTE_EXACT"
+                or declaration.get("custody") != "BYTE_EXACT_ORIGINAL_RAW" or path.endswith(".gz")):
+            raise RefResolutionError("BIG import focal encoding must be explicit unambiguous BYTE_EXACT")
+        mode = declaration.get("stored_mode")
+        if mode not in ("100644", "100755"):
+            raise RefResolutionError("BIG import focal stored Git mode is required")
+        identifiers.add(identifier)
+        paths.add(path)
+        try:
+            data = source.read(path)
+            _, encoding = decode_known_raw_member(data, path)
+            binding = source.binding(path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("BIG import focal declared RAW unavailable or invalid: " + path) from error
+        for name, actual in (("sha256", encoding["compressed_sha256"]), ("bytes", encoding["compressed_bytes"])):
+            if type(declaration.get(name)) is not type(actual) or declaration[name] != actual:
+                raise RefResolutionError("BIG import focal RAW hash or length mismatch: " + name)
+        if (binding["git_mode"] != mode or binding["sha256"] != declaration["sha256"]
+                or binding["bytes"] != declaration["bytes"]):
+            raise RefResolutionError("BIG import focal declaration differs from committed Git binding")
+        members.append({
+            "receipt_declaration_pointer": ["raw_files", key],
+            "declared_reference_sha256": sha256(canonical(declaration)),
+            "publication_binding": raw_member_ref(binding),
+            "raw_encoding_metadata": encoding,
+            "archival_path_mapping": {
+                "original_absolute_path": original,
+                "stored_git_relative_path": path,
+                "declared_encoding": "BYTE_EXACT",
+                "stored_git_mode": mode,
+                "scope": "EXPLICIT_ABSOLUTE_ORIGIN_HINT_NO_LOCAL_OPEN_OR_EXECUTION_INFERENCE",
+            },
+            "scope": "RAW_MEMBER_CUSTODY_ONLY_NO_NEW_EXECUTION_COUNT_OR_CAPTURE_SOURCE_INFERENCE",
+        })
+    return members
+
+
+
+ARCHIVE_SOURCE_STORED_LIMIT_BYTES = 32 * 1024 * 1024
+ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES = 512 * 1024 * 1024
+ARCHIVE_SOURCE_STREAM_CHUNK_BYTES = 64 * 1024
+OPAQUE_SOURCE_ARCHIVE_SCHEMA = "rc6.opaque-source-tar-byte-custody.v1"
+
+
+def source_archive_read_bounded(source, path):
+    """Inspect committed object length before allocating the stored blob."""
+    if not hasattr(source, "entries") or not hasattr(source, "git") or path not in source.entries:
+        raise RefResolutionError("opaque source archive requires the immutable Git source adapter")
+    entry = source.entries[path]
+    if type(entry) is not tuple or len(entry) not in (2, 3):
+        raise RefResolutionError("opaque archive Git entry must be its own exact two- or three-field adapter tuple")
+    if len(entry) == 2:
+        mode, blob = entry
+    else:
+        mode, kind, blob = entry
+        if kind != "blob":
+            raise RefResolutionError("opaque archive Git entry is not a raw blob")
+    if (mode not in ("100644", "100755") or type(blob) is not str
+            or re.fullmatch(r"[0-9a-f]{40}", blob) is None):
+        raise RefResolutionError("opaque archive raw Git mode or blob identity is invalid")
+    length = source.git("cat-file", "-s", blob).decode().strip()
+    if not length.isdecimal() or int(length) > ARCHIVE_SOURCE_STORED_LIMIT_BYTES:
+        raise RefResolutionError("opaque stored source archive exceeds the separate 32MiB cap")
+    data = source.read(path)
+    if len(data) != int(length) or len(data) > ARCHIVE_SOURCE_STORED_LIMIT_BYTES:
+        raise RefResolutionError("opaque stored source archive length differs from its raw Git object")
+    return data
+
+
+def source_archive_gzip_stream_metadata(data, path, declaration):
+    """Hash one bounded gzip stream as opaque bytes, without TAR interpretation."""
+    original_length = declaration.get("original_bytes")
+    if (type(original_length) is not int or original_length < 0
+            or original_length > ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES
+            or len(data) > ARCHIVE_SOURCE_STORED_LIMIT_BYTES
+            or len(data) < 18 or data[:3] != b"\x1f\x8b\x08"
+            or int.from_bytes(data[4:8], "little") != 0):
+        raise RefResolutionError("opaque source gzip header/mtime or declared archive bound is invalid")
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    expanded_digest = hashlib.sha256()
+    expanded_length = 0
+    try:
+        for offset in range(0, len(data), ARCHIVE_SOURCE_STREAM_CHUNK_BYTES):
+            pending = data[offset:offset + ARCHIVE_SOURCE_STREAM_CHUNK_BYTES]
+            while pending:
+                emitted = inflater.decompress(pending, ARCHIVE_SOURCE_STREAM_CHUNK_BYTES)
+                expanded_length += len(emitted)
+                if expanded_length > original_length or expanded_length > ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES:
+                    raise RefResolutionError("opaque source archive exceeds declared or separate expanded cap")
+                expanded_digest.update(emitted)
+                if inflater.unused_data:
+                    raise RefResolutionError("opaque source gzip has trailing or concatenated members")
+                tail = inflater.unconsumed_tail
+                if tail and len(tail) == len(pending) and not emitted:
+                    raise RefResolutionError("opaque source gzip made no bounded streaming progress")
+                pending = tail
+        if not inflater.eof or inflater.unused_data or inflater.unconsumed_tail:
+            raise RefResolutionError("opaque source gzip is incomplete or concatenated")
+    except zlib.error as error:
+        raise RefResolutionError("opaque source gzip CRC/stream validation failed") from error
+    encoding = {"encoding": "gzip-single-OPAQUE-SOURCE-TAR-bytes", "gzip_mtime": 0,
+        "compressed_sha256": sha256(data), "compressed_bytes": len(data),
+        "uncompressed_sha256": expanded_digest.hexdigest(), "uncompressed_bytes": expanded_length,
+        "classification": "OPAQUE_SOURCE_TAR_BYTES_ONLY_NOT_METADATA_EXECUTION",
+        "stored_limit_bytes": ARCHIVE_SOURCE_STORED_LIMIT_BYTES,
+        "expanded_limit_bytes": ARCHIVE_SOURCE_EXPANDED_LIMIT_BYTES,
+        "maximum_emitted_chunk_bytes": ARCHIVE_SOURCE_STREAM_CHUNK_BYTES,
+        "tar_entries_parsed_or_extracted": False, "archived_source_executed": False}
+    for field, actual in (("stored_sha256", encoding["compressed_sha256"]),
+                          ("stored_bytes", encoding["compressed_bytes"]),
+                          ("original_sha256", encoding["uncompressed_sha256"]),
+                          ("original_bytes", encoding["uncompressed_bytes"])):
+        if type(declaration.get(field)) is not type(actual) or declaration[field] != actual:
+            raise RefResolutionError("opaque source archive compressed/expanded SHA or length mismatch: " + field)
+    return encoding
+
+
+def source_archive_context(source, receipt_path, receipt, declaration):
+    """Verify phase-specific small control authorities; never open local origins."""
+    epoch = declaration.get("protocol_epoch")
+    named = declaration.get("capsule_relative_path")
+    root = receipt.get("capsule_root_relative_to_repository")
+    if (receipt.get("schema") != "rc6.external-diagnostic-original-byte-custody.v1"
+            or epoch not in ("A", "B", "C", "D")
+            or declaration.get("artifact_role") != "ORIGINAL_CONTROLLED_RAW"
+            or type(root) is not str
+            or re.fullmatch(r"docs/audits/rc6-private-publication-controlled-focal-[0-9a-f]{8}", root) is None
+            or named != "epochs/" + epoch.lower() + "/raw/whole-source.tar.gz"
+            or receipt_path != root + "/CUSTODY.json"
+            or declaration.get("encoding") != "GZIP_MTIME_ZERO_V1"):
+        raise RefResolutionError("opaque archive is not the exact known publication source TAR declaration")
+    for field, width in (("source_sha", 40), ("source_tree", 40), ("driver_sha256", 64), ("support_sha256", 64)):
+        value = declaration.get(field)
+        if type(value) is not str or re.fullmatch(r"[0-9a-f]{" + str(width) + r"}", value) is None:
+            raise RefResolutionError("opaque source archive capture authority must be explicit non-null hashes")
+    if not root.endswith(declaration["source_sha"][:8]):
+        raise RefResolutionError("opaque archive capsule suffix and declared captured source differ")
+    capsule_path = root + "/CAPSULE.json"
+    capsule_data = source.read(capsule_path)
+    capsule, capsule_encoding = decode_known_json(capsule_data, capsule_path)
+    custody_binding = source.binding(receipt_path)
+    custody_declaration = capsule.get("custody") if type(capsule) is dict else None
+    if (type(capsule) is not dict or capsule.get("schema") != "rc6.private-publication-controlled-focal-capsule.v1"
+            or capsule.get("capsule_root_relative_to_repository") != root
+            or capsule.get("source_sha") != declaration["source_sha"]
+            or capsule.get("source_tree") != declaration["source_tree"]
+            or type(custody_declaration) is not dict
+            or custody_declaration != {"path": "CUSTODY.json", "sha256": custody_binding["sha256"],
+                "bytes": custody_binding["bytes"], "encoding": "IDENTITY", "stored_git_mode": custody_binding["git_mode"]}
+            or "gzip_mtime" in capsule_encoding):
+        raise RefResolutionError("opaque source archive lacks the exact CAPSULE to CUSTODY source/control join")
+    basename = "preparation-red.json" if epoch == "A" else "source-tar.json"
+    authority_name = "epochs/" + epoch.lower() + "/raw/" + basename
+    matches = [(i, row) for i, row in enumerate(receipt.get("members", []))
+               if type(row) is dict and row.get("capsule_relative_path") == authority_name]
+    if len(matches) != 1:
+        raise RefResolutionError("opaque source archive phase authority is missing or ambiguous")
+    index, authority_row = matches[0]
+    for field in ("protocol_epoch", "artifact_role", "source_sha", "source_tree", "driver_sha256", "support_sha256",
+                  "recorded_original_root"):
+        if authority_row.get(field) != declaration.get(field):
+            raise RefResolutionError("opaque source archive and phase authority declaration differ: " + field)
+    if (authority_row.get("encoding") != "IDENTITY" or authority_row.get("stored_git_mode") not in ("100644", "100755")
+            or authority_row.get("recorded_original_relative_path") != basename
+            or authority_row.get("recorded_original_path") != authority_row["recorded_original_root"] + "/" + basename):
+        raise RefResolutionError("opaque source archive phase authority origin/encoding is invalid")
+    authority_path = root + "/" + authority_name
+    authority_data = source.read(authority_path)
+    authority, authority_encoding = decode_known_json(authority_data, authority_path)
+    authority_binding = source.binding(authority_path)
+    for field, actual in (("stored_sha256", sha256(authority_data)), ("original_sha256", sha256(authority_data)),
+                          ("stored_bytes", len(authority_data)), ("original_bytes", len(authority_data))):
+        if type(authority_row.get(field)) is not type(actual) or authority_row[field] != actual:
+            raise RefResolutionError("opaque archive authority bytes differ from original CUSTODY declaration")
+    if authority_binding["git_mode"] != authority_row["stored_git_mode"] or "gzip_mtime" in authority_encoding:
+        raise RefResolutionError("opaque archive phase authority Git mode or encoding differs")
+    if type(authority) is not dict:
+        raise RefResolutionError("opaque archive phase authority must be exact JSON object")
+    if epoch == "A":
+        if (authority.get("schema") != "rc6.private-publication-preparation-red.v1"
+                or authority.get("source_sha") != declaration["source_sha"]
+                or authority.get("source_tree") != declaration["source_tree"]
+                or authority.get("native_fixture_started") is not False
+                or type(authority.get("pytest_main_invocations")) is not int or authority["pytest_main_invocations"] != 0
+                or type(authority.get("source_files")) is not int or authority["source_files"] != 2158):
+            raise RefResolutionError("opaque A archive must retain the exact preparation RED/zero Native authority")
+        authority_scope = "A_PREPARATION_RED_SOURCE_PIN_ONLY_ORIGINAL_TAR_SHA_FROM_CUSTODY_NOT_NATIVE_EXECUTION"
+    else:
+        stats = authority.get("stat_fields")
+        if (authority.get("commit") != declaration["source_sha"]
+                or authority.get("sha256") != declaration.get("original_sha256")
+                or type(authority.get("bytes")) is not int or authority["bytes"] != declaration.get("original_bytes")
+                or type(stats) is not dict or type(stats.get("st_size")) is not int or stats["st_size"] != authority["bytes"]
+                or set(stats) != {"st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns"}
+                or any(type(v) is not int for v in stats.values())):
+            raise RefResolutionError("opaque B/C/D archive SHA/size/commit/stat declaration is contradictory")
+        authority_scope = "BCD_RECORDED_SOURCE_TAR_SHA_SIZE_COMMIT_JOIN_ONLY_NOT_ARCHIVE_ENTRY_OR_EXECUTION_AUTHORITY"
+    return {"capsule_publication_binding": raw_member_ref(source.binding(capsule_path)),
+        "custody_publication_binding": raw_member_ref(custody_binding),
+        "authority_publication_binding": raw_member_ref(authority_binding),
+        "authority_declaration_pointer": ["members", index],
+        "authority_declaration_sha256": sha256(canonical(authority_row)),
+        "protocol_epoch": epoch, "captured_source_sha": declaration["source_sha"],
+        "captured_source_tree": declaration["source_tree"], "authority_scope": authority_scope}
+
+
+def opaque_source_archive_entry_metadata(source, path, data=None):
+    """Recompute a direct catalog TAR only through its known literal custody graph."""
+    match = re.fullmatch(r"(docs/audits/rc6-private-publication-controlled-focal-[0-9a-f]{8})/epochs/([abcd])/raw/whole-source\.tar\.gz", path)
+    if match is None:
+        raise RefResolutionError("unknown direct source archive path cannot become metadata")
+    root, lower_epoch = match.groups()
+    custody_path = root + "/CUSTODY.json"
+    receipt, _ = decode_known_json(source.read(custody_path), custody_path)
+    declarations = receipt.get("members") if type(receipt) is dict else None
+    if (type(receipt) is not dict or receipt.get("schema") != "rc6.external-diagnostic-original-byte-custody.v1"
+            or receipt.get("capsule_root_relative_to_repository") != root
+            or receipt.get("inventory_kind") != "ORIGINAL_BYTES_ONLY; CONTROLS_AND_DERIVED_README_EXCLUDED"
+            or type(declarations) is not list
+            or type(receipt.get("members_count")) is not int or receipt["members_count"] != len(declarations)):
+        raise RefResolutionError("direct source archive lacks its exact known CUSTODY inventory")
+    matches = [row for row in declarations if type(row) is dict and row.get("capsule_relative_path") == path[len(root)+1:]]
+    if len(matches) != 1:
+        raise RefResolutionError("direct source archive CUSTODY member is missing or duplicate")
+    declaration = matches[0]
+    original_mode = declaration.get("original_stat_mode_octal")
+    if type(original_mode) is not str or re.fullmatch(r"[0-7]{4}", original_mode) is None:
+        raise RefResolutionError("opaque source archive original stat mode must remain a separate literal")
+    context = source_archive_context(source, custody_path, receipt, declaration)
+    stored = source_archive_read_bounded(source, path)
+    if data is not None and (type(data) is not bytes or data != stored):
+        raise RefResolutionError("direct source archive bytes differ from its independent Git blob")
+    encoding = source_archive_gzip_stream_metadata(stored, path, declaration)
+    binding = source.binding(path)
+    if binding["git_mode"] != declaration.get("stored_git_mode") or binding["git_mode"] not in ("100644", "100755"):
+        raise RefResolutionError("opaque source archive committed Git mode differs")
+    origin_root = declaration.get("recorded_original_root")
+    relative = declaration.get("recorded_original_relative_path")
+    capture = declaration.get("recorded_original_path")
+    if (type(origin_root) is not str or not origin_root.startswith("/") or origin_root == "/"
+            or "\\" in origin_root or "\0" in origin_root or any(p in ("", ".", "..") for p in origin_root.split("/")[1:])
+            or relative != "whole-source.tar"
+            or capture != origin_root + "/" + relative):
+        raise RefResolutionError("opaque source archive literal original path is contradictory")
+    return {"schema": OPAQUE_SOURCE_ARCHIVE_SCHEMA, "publication_binding": raw_member_ref(binding),
+        "raw_encoding_metadata": encoding, "source_archive_authority": context,
+        "origin_root": origin_root, "origin_relative": relative, "recorded_original_path": capture,
+        "state": "SOURCE_ARCHIVE_BYTES_VERIFIED_ONLY", "tar_entries_parsed_or_extracted": False,
+        "archived_source_executed": False, "product_or_runtime_acceptance": False,
+        "scope": "OPAQUE_SOURCE_TAR_BYTES_ONLY_NOT_METADATA_EXECUTION_NOT_CURRENT_FILESYSTEM_CUSTODY"}
+
+
+def declared_private_publication_custody_members(source, receipt_path, receipt):
+    """Bind the explicit publication inventory; never inspect local origins.
+
+    Captured source/driver declarations remain nullable literal metadata, not
+    the Git source which publishes these RAW bytes and not execution proof.
+    """
+    directory = receipt_path.rsplit("/", 1)[0] if "/" in receipt_path else ""
+    root = receipt.get("capsule_root_relative_to_repository")
+    if (type(root) is not str or root != directory or not root or root.startswith("/")
+            or "\\" in root or "\0" in root
+            or any(part in ("", ".", "..") for part in root.split("/"))
+            or receipt_path != root + "/CUSTODY.json"
+            or receipt.get("schema") not in ("rc6.external-diagnostic-original-byte-custody.v1", "rc6.external-diagnostic-original-byte-custody.v2")
+            or receipt.get("inventory_kind") != {
+                "rc6.external-diagnostic-original-byte-custody.v1": "ORIGINAL_BYTES_ONLY; CONTROLS_AND_DERIVED_README_EXCLUDED",
+                "rc6.external-diagnostic-original-byte-custody.v2": "EXPLICIT_COPIED_SMALL_RAW_MEMBERS_AND_ONE_EXTERNAL_SOURCE_ARCHIVE_REFERENCE",
+            }.get(receipt.get("schema"))):
+        raise RefResolutionError("publication CUSTODY has no exact schema-specific original-only capsule root")
+    declarations = receipt.get("members")
+    count = receipt.get("members_count")
+    if type(declarations) is not list or type(count) is not int or count != len(declarations):
+        raise RefResolutionError("publication CUSTODY member count/list is missing or inconsistent")
+    members, paths = [], set()
+    for key, declaration in enumerate(declarations):
+        if type(declaration) is not dict:
+            raise RefResolutionError("publication original member must be an object")
+        epoch = declaration.get("protocol_epoch")
+        role = declaration.get("artifact_role")
+        named = declaration.get("capsule_relative_path")
+        if (epoch not in ("A", "B", "C", "D", "INCIDENT")
+                or type(role) is not str or not role or len(role) > 4096
+                or type(named) is not str or named.startswith("/") or "\\" in named or "\0" in named
+                or any(part in ("", ".", "..") for part in named.split("/"))
+                or named in paths or named in ("CAPSULE.json", "CUSTODY.json", "README.md")):
+            raise RefResolutionError("publication epoch/role/member path is missing, duplicate or escaping")
+        expected_prefix = "incidents/" if epoch == "INCIDENT" else "epochs/" + epoch.lower() + "/"
+        if not named.startswith(expected_prefix) or named == expected_prefix:
+            raise RefResolutionError("publication stored member is not in its literal protocol epoch")
+        paths.add(named)
+        original_root = declaration.get("recorded_original_root")
+        original_relative = declaration.get("recorded_original_relative_path")
+        original_path = declaration.get("recorded_original_path")
+        if (type(original_root) is not str or not original_root.startswith("/") or original_root == "/"
+                or "\\" in original_root or "\0" in original_root
+                or any(part in ("", ".", "..") for part in original_root.split("/")[1:])
+                or type(original_relative) is not str or original_relative.startswith("/")
+                or "\\" in original_relative or "\0" in original_relative
+                or any(part in ("", ".", "..") for part in original_relative.split("/"))
+                or type(original_path) is not str or original_path != original_root + "/" + original_relative):
+            raise RefResolutionError("publication original root/relative/absolute mapping is contradictory")
+        original_mode = declaration.get("original_stat_mode_octal")
+        mode = declaration.get("stored_git_mode")
+        if (type(original_mode) is not str or re.fullmatch(r"[0-7]{4}", original_mode) is None
+                or mode not in ("100644", "100755")):
+            raise RefResolutionError("publication original stat mode and stored Git mode must be separate")
+        authority = {}
+        for field, width in (("source_sha", 40), ("source_tree", 40),
+                             ("driver_sha256", 64), ("support_sha256", 64)):
+            if field not in declaration:
+                raise RefResolutionError("publication capture authority field is absent: " + field)
+            value = declaration[field]
+            if value is not None and (type(value) is not str or re.fullmatch(r"[0-9a-f]{" + str(width) + r"}", value) is None):
+                raise RefResolutionError("publication capture authority is neither exact hash nor explicit null")
+            authority[field] = value
+        if (authority["source_sha"] is None) != (authority["source_tree"] is None):
+            raise RefResolutionError("publication declared capture source SHA/tree nullability differs")
+        declared_encoding = declaration.get("encoding")
+        if declared_encoding not in ("IDENTITY", "GZIP_MTIME_ZERO_V1"):
+            raise RefResolutionError("publication original encoding must be supported explicitly")
+        path = root + "/" + named
+        if declared_encoding == "IDENTITY" and path.endswith(".gz"):
+            raise RefResolutionError("publication IDENTITY gzip-suffixed member is ambiguous")
+        try:
+            archive_metadata = None
+            if path.endswith(".tar.gz"):
+                archive_metadata = opaque_source_archive_entry_metadata(source, path)
+                encoding = archive_metadata["raw_encoding_metadata"]
+                binding = source.binding(path)
+            else:
+                data = source.read(path)
+                _, encoding = decode_known_raw_member(data, path)
+                binding = source.binding(path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("publication declared original unavailable or invalid: " + path) from error
+        gzip = "gzip_mtime" in encoding
+        if ((declared_encoding == "IDENTITY" and gzip)
+                or (declared_encoding == "GZIP_MTIME_ZERO_V1"
+                    and (not gzip or encoding["gzip_mtime"] != 0))):
+            raise RefResolutionError("publication declared encoding differs from stored original")
+        expected = {"stored_sha256": encoding["compressed_sha256"],
+                    "stored_bytes": encoding["compressed_bytes"],
+                    "original_sha256": encoding["uncompressed_sha256"],
+                    "original_bytes": encoding["uncompressed_bytes"]}
+        for field, actual in expected.items():
+            if type(declaration.get(field)) is not type(actual) or declaration[field] != actual:
+                raise RefResolutionError("publication original stored/decoded hash or length mismatch: " + field)
+        if (binding["git_mode"] != mode or binding["sha256"] != expected["stored_sha256"]
+                or binding["bytes"] != expected["stored_bytes"]):
+            raise RefResolutionError("publication original differs from committed Git bytes or mode")
+        members.append({
+            "receipt_declaration_pointer": ["members", key],
+            "declared_reference_sha256": sha256(canonical(declaration)),
+            "publication_binding": raw_member_ref(binding),
+            "raw_encoding_metadata": encoding,
+            "archival_path_mapping": {
+                "protocol_epoch": epoch, "artifact_role": role,
+                "recorded_original_root": original_root,
+                "recorded_original_relative_path": original_relative,
+                "recorded_original_path": original_path,
+                "original_stat_mode_octal": original_mode,
+                "stored_git_mode": mode, "capsule_relative_path": named,
+                "declared_encoding": declared_encoding,
+                "opaque_source_archive_metadata": archive_metadata,
+                "declared_capture_authority": authority,
+                "capture_authority_scope": "LITERAL_DECLARATION_ONLY_NOT_VERIFIED_BY_PUBLICATION_BYTE_CUSTODY",
+                "scope": "EXPLICIT_ORIGIN_JOIN_ONLY_NO_LOCAL_OPEN_SUFFIX_GUESS_OR_RETROSPECTIVE_QUALIFICATION",
+            },
+            "scope": "RAW_MEMBER_CUSTODY_ONLY_NO_EPOCH_VERDICT_EXECUTION_COUNT_OR_CURRENT_DATA_CUSTODY_INFERENCE",
+        })
+    return members
+
+
+def declared_private_publication_capsule_members(source, receipt_path, receipt):
+    """Verify the one-way CAPSULE -> CUSTODY -> originals documentary graph."""
+    directory = receipt_path.rsplit("/", 1)[0] + "/" if "/" in receipt_path else ""
+    if not directory or receipt_path != directory + "CAPSULE.json":
+        raise RefResolutionError("publication CAPSULE must have its exact control filename")
+    declaration = receipt.get("custody")
+    if (type(declaration) is not dict or declaration.get("path") != "CUSTODY.json"
+            or declaration.get("encoding") != "IDENTITY"
+            or declaration.get("stored_git_mode") not in ("100644", "100755")):
+        raise RefResolutionError("publication CAPSULE has no exact one-way CUSTODY declaration")
+    path = directory + declaration["path"]
+    try:
+        data = source.read(path)
+        custody, encoding = decode_known_json(data, path)
+        binding = source.binding(path)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        raise RefResolutionError("publication CAPSULE CUSTODY unavailable or invalid") from error
+    if type(custody) is not dict or custody.get("schema") != "rc6.external-diagnostic-original-byte-custody.v1":
+        raise RefResolutionError("publication CAPSULE requires the exact original-byte CUSTODY schema")
+    for field, actual in (("sha256", sha256(data)), ("bytes", len(data))):
+        if type(declaration.get(field)) is not type(actual) or declaration[field] != actual:
+            raise RefResolutionError("publication CAPSULE CUSTODY hash or length mismatch")
+    if ("gzip_mtime" in encoding or binding["git_mode"] != declaration["stored_git_mode"]
+            or binding["sha256"] != declaration["sha256"] or binding["bytes"] != declaration["bytes"]):
+        raise RefResolutionError("publication CAPSULE CUSTODY differs from committed Git binding")
+    readme_declaration = receipt.get("readme")
+    readme_members = []
+    if readme_declaration is not None:
+        if (type(readme_declaration) is not dict or readme_declaration.get("path") != "README.md"
+                or readme_declaration.get("encoding") != "IDENTITY"
+                or readme_declaration.get("stored_git_mode") not in ("100644", "100755")):
+            raise RefResolutionError("publication derived README declaration is invalid")
+        readme_path = directory + "README.md"
+        readme_data = source.read(readme_path)
+        readme_binding = source.binding(readme_path)
+        for field, actual in (("sha256", sha256(readme_data)), ("bytes", len(readme_data))):
+            if type(readme_declaration.get(field)) is not type(actual) or readme_declaration[field] != actual:
+                raise RefResolutionError("publication derived README SHA/length differs")
+        if readme_binding["git_mode"] != readme_declaration["stored_git_mode"]:
+            raise RefResolutionError("publication derived README Git mode differs")
+        readme_members.append({"receipt_declaration_pointer": ["readme"],
+            "declared_reference_sha256": sha256(canonical(readme_declaration)),
+            "publication_binding": raw_member_ref(readme_binding),
+            "scope": "DERIVED_README_CONTROL_BINDING_ONLY_NOT_ORIGINAL_RAW_OR_EXECUTION_AUTHORITY"})
+    raw_members = declared_private_publication_custody_members(source, path, custody)
+    dependency = {
+        "receipt_declaration_pointer": ["custody"],
+        "declared_reference_sha256": sha256(canonical(declaration)),
+        "publication_binding": raw_member_ref(binding),
+        "raw_encoding_metadata": encoding,
+        "scope": "ONE_WAY_CAPSULE_TO_CUSTODY_CONTROL_BINDING_ONLY_NO_SELF_HASH_OR_EXECUTION_VERDICT",
+    }
+    for member in raw_members:
+        mapping = member["archival_path_mapping"]
+        mapping["custody_publication_binding"] = raw_member_ref(binding)
+        mapping["custody_declaration_pointer"] = member["receipt_declaration_pointer"]
+        mapping["custody_declaration_sha256"] = member["declared_reference_sha256"]
+        member["receipt_declaration_pointer"] = ["custody"]
+        member["declared_reference_sha256"] = dependency["declared_reference_sha256"]
+    return [dependency] + readme_members + raw_members
+
+
+
+def identity_external_source_archive_reference_metadata(source, receipt_path, receipt):
+    """Bind small Git authorities; an external TAR hint is never fresh byte proof."""
+    root = receipt.get("capsule_root_relative_to_repository")
+    if (receipt.get("schema") != "rc6.external-diagnostic-original-byte-custody.v2"
+            or type(root) is not str
+            or re.fullmatch(r"docs/audits/rc6-private-publication-type-identity-controlled-[0-9a-f]{8}", root) is None
+            or receipt_path != root + "/CUSTODY.json"
+            or receipt.get("inventory_kind") != "EXPLICIT_COPIED_SMALL_RAW_MEMBERS_AND_ONE_EXTERNAL_SOURCE_ARCHIVE_REFERENCE"
+            or type(receipt.get("members")) is not list
+            or type(receipt.get("members_count")) is not int
+            or receipt["members_count"] != len(receipt["members"])):
+        raise RefResolutionError("identity reference requires its exact v2 small-member CUSTODY")
+    external = receipt.get("external_source_archive")
+    if (type(external) is not dict or external.get("artifact_role") != "EXTERNAL_WHOLE_GIT_SOURCE_SNAPSHOT_OPAQUE"
+            or external.get("protocol_epoch") != "B" or external.get("reference_only") is not True
+            or external.get("copied_into_git") is not False
+            or external.get("authority_capsule_relative_path") != "epochs/b/raw/source-tar.json"
+            or external.get("verification_scope") != "STREAM_SHA_LENGTH_AND_RAW_CUSTODY; NO_TAR_BODY_PARSE_OR_ARTIFACT_EXECUTION"
+            or type(external.get("original_stream_sha256_and_eleven_stats_verified_by_preserver")) is not bool
+            or any(key in external for key in ("encoding", "stored_sha256", "stored_bytes", "stored_git_mode", "capsule_relative_path"))):
+        raise RefResolutionError("identity source TAR must be an explicit reference-only declaration without a fictitious stored member")
+    for field, width in (("source_sha", 40), ("source_tree", 40), ("driver_sha256", 64),
+                         ("support_sha256", 64), ("original_sha256", 64), ("authority_original_sha256", 64)):
+        if type(external.get(field)) is not str or re.fullmatch(r"[0-9a-f]{" + str(width) + r"}", external[field]) is None:
+            raise RefResolutionError("identity external reference requires explicit full hashes: " + field)
+    if not root.endswith(external["source_sha"][:8]):
+        raise RefResolutionError("identity capsule suffix differs from literal captured source")
+    original_root = external.get("recorded_original_root")
+    if (type(original_root) is not str or not original_root.startswith("/") or original_root == "/"
+            or "\\" in original_root or "\0" in original_root
+            or any(part in ("", ".", "..") for part in original_root.split("/")[1:])
+            or external.get("recorded_original_relative_path") != "whole-source.tar"
+            or external.get("recorded_original_path") != original_root + "/whole-source.tar"):
+        raise RefResolutionError("identity external original root/relative/absolute join is contradictory")
+    fields = {"st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_size", "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns"}
+    stats = external.get("original_stat_fields_at_preservation")
+    mode = external.get("original_stat_mode_octal")
+    if (type(external.get("original_bytes")) is not int or external["original_bytes"] <= 0
+            or type(mode) is not str or re.fullmatch(r"[0-7]{4}", mode) is None
+            or type(stats) is not dict or set(stats) != fields or any(type(v) is not int for v in stats.values())
+            or stats["st_size"] != external["original_bytes"] or not stat.S_ISREG(stats["st_mode"])
+            or stat.S_IMODE(stats["st_mode"]) != int(mode, 8)):
+        raise RefResolutionError("identity external declared size/stat/mode fields are inconsistent")
+    authority_name = external["authority_capsule_relative_path"]
+    matches = [row for row in receipt["members"] if type(row) is dict and row.get("capsule_relative_path") == authority_name]
+    if len(matches) != 1:
+        raise RefResolutionError("identity external reference small authority is missing or duplicate")
+    row = matches[0]
+    for field in ("protocol_epoch", "source_sha", "source_tree", "driver_sha256", "support_sha256", "recorded_original_root"):
+        if row.get(field) != external[field]:
+            raise RefResolutionError("identity external reference and authority differ: " + field)
+    if (row.get("artifact_role") != "ORIGINAL_CONTROLLED_RAW" or row.get("encoding") != "IDENTITY"
+            or row.get("recorded_original_relative_path") != "source-tar.json"
+            or row.get("recorded_original_path") != original_root + "/source-tar.json"
+            or row.get("original_sha256") != external["authority_original_sha256"]):
+        raise RefResolutionError("identity external authority declaration/origin is contradictory")
+    authority_path = root + "/" + authority_name
+    data = source.read(authority_path)
+    authority, encoding = decode_known_json(data, authority_path)
+    binding = source.binding(authority_path)
+    for key, actual in (("stored_sha256", sha256(data)), ("original_sha256", sha256(data)),
+                        ("stored_bytes", len(data)), ("original_bytes", len(data))):
+        if type(row.get(key)) is not type(actual) or row[key] != actual:
+            raise RefResolutionError("identity external small authority SHA/length differs from committed bytes")
+    if (binding["git_mode"] != row.get("stored_git_mode") or "gzip_mtime" in encoding
+            or type(authority) is not dict or authority.get("commit") != external["source_sha"]
+            or authority.get("sha256") != external["original_sha256"]
+            or type(authority.get("bytes")) is not int or authority["bytes"] != external["original_bytes"]
+            or type(authority.get("stat_fields")) is not dict
+            or set(authority["stat_fields"]) != fields
+            or any(type(v) is not int for v in authority["stat_fields"].values())
+            or authority["stat_fields"] != stats):
+        raise RefResolutionError("identity external source-tar JSON commit/SHA/length/stat join differs")
+    capsule_path = root + "/CAPSULE.json"
+    capsule, _ = decode_known_json(source.read(capsule_path), capsule_path)
+    custody_binding = source.binding(receipt_path)
+    if (type(capsule) is not dict or capsule.get("schema") != "rc6.private-publication-type-identity-controlled-capsule.v1"
+            or capsule.get("capsule_root_relative_to_repository") != root
+            or capsule.get("custody") != {"path": "CUSTODY.json", "sha256": custody_binding["sha256"], "bytes": custody_binding["bytes"]}
+            or type(capsule.get("source")) is not dict or capsule["source"].get("sha") != external["source_sha"]
+            or capsule["source"].get("tree") != external["source_tree"]):
+        raise RefResolutionError("identity CAPSULE to CUSTODY captured-source join is inconsistent")
+    policy = capsule.get("external_source_archive_policy")
+    if (type(policy) is not dict or policy.get("body_copied_into_git") is not False
+            or policy.get("custody_reference_field") != "external_source_archive"
+            or policy.get("source_tar_member_parse_or_executed_artifact_authority_claimed") is not False):
+        raise RefResolutionError("identity CAPSULE external-reference policy differs")
+    # No read, resolve, stat, existence probe or digest of recorded_original*.
+    return {"external_declaration_verbatim": copy.deepcopy(external),
+        "custody_publication_binding": raw_member_ref(custody_binding),
+        "capsule_publication_binding": raw_member_ref(source.binding(capsule_path)),
+        "authority_publication_binding": raw_member_ref(binding),
+        "state": "NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER",
+        "external_body_read_or_hashed": False, "copied_into_git": False,
+        "reference_only": True, "tar_entries_parsed_or_extracted": False,
+        "scope": "SMALL_COMMITTED_AUTHORITY_AND_LITERAL_EXTERNAL_REFERENCE_JOIN_ONLY_NOT_FRESH_EXTERNAL_BYTE_OR_CURRENT_FILESYSTEM_CUSTODY"}
+
+
+def declared_private_identity_custody_members(source, receipt_path, receipt):
+    """Verify copied v2 originals, preserving the external hint separately."""
+    identity_external_source_archive_reference_metadata(source, receipt_path, receipt)
+    for row in receipt["members"]:
+        if (type(row) is not dict or row.get("protocol_epoch") not in ("A", "B")
+                or type(row.get("capsule_relative_path")) is not str
+                or row["capsule_relative_path"].endswith((".tar", ".tar.gz"))):
+            raise RefResolutionError("identity v2 copied originals must be small A/B metadata, never the external TAR body")
+    return declared_private_publication_custody_members(source, receipt_path, receipt)
+
+
+def declared_private_identity_capsule_members(source, receipt_path, receipt):
+    """Bind the exact identity CAPSULE -> CUSTODY -> small original graph."""
+    directory = receipt_path.rsplit("/", 1)[0] if "/" in receipt_path else ""
+    declaration = receipt.get("custody")
+    if (receipt.get("schema") != "rc6.private-publication-type-identity-controlled-capsule.v1"
+            or receipt_path != directory + "/CAPSULE.json"
+            or receipt.get("capsule_root_relative_to_repository") != directory
+            or type(declaration) is not dict or set(declaration) != {"path", "sha256", "bytes"}
+            or declaration.get("path") != "CUSTODY.json"):
+        raise RefResolutionError("identity CAPSULE must have its exact small CUSTODY declaration")
+    custody_path = directory + "/CUSTODY.json"
+    data = source.read(custody_path)
+    custody, encoding = decode_known_json(data, custody_path)
+    binding = source.binding(custody_path)
+    for key, actual in (("sha256", sha256(data)), ("bytes", len(data))):
+        if type(declaration.get(key)) is not type(actual) or declaration[key] != actual:
+            raise RefResolutionError("identity CAPSULE CUSTODY SHA/length differs from committed bytes")
+    if "gzip_mtime" in encoding or binding["git_mode"] not in ("100644", "100755"):
+        raise RefResolutionError("identity CUSTODY must remain a plain regular committed Git control")
+    raw_members = declared_private_identity_custody_members(source, custody_path, custody)
+    dependency = {"receipt_declaration_pointer": ["custody"],
+        "declared_reference_sha256": sha256(canonical(declaration)),
+        "publication_binding": raw_member_ref(binding), "raw_encoding_metadata": encoding,
+        "scope": "IDENTITY_CAPSULE_TO_CUSTODY_CONTROL_BINDING_ONLY_NOT_EXTERNAL_BYTES_OR_EXECUTION_VERDICT"}
+    for member in raw_members:
+        mapping = member["archival_path_mapping"]
+        mapping["custody_publication_binding"] = raw_member_ref(binding)
+        mapping["custody_declaration_pointer"] = member["receipt_declaration_pointer"]
+        mapping["custody_declaration_sha256"] = member["declared_reference_sha256"]
+        member["receipt_declaration_pointer"] = ["custody"]
+        member["declared_reference_sha256"] = dependency["declared_reference_sha256"]
+    # README is a named derived control without a SHA declaration in CAPSULE.
+    # Verify its immutable Git binding, never label it an original RAW member.
+    readme_path = directory + "/README.md"
+    readme_data = source.read(readme_path)
+    _, readme_encoding = decode_known_raw_member(readme_data, readme_path)
+    readme_member = {"receipt_declaration_pointer": ["capsule_root_relative_to_repository"],
+        "declared_reference_sha256": sha256(canonical(directory)),
+        "publication_binding": raw_member_ref(source.binding(readme_path)),
+        "raw_encoding_metadata": readme_encoding,
+        "scope": "NAMED_DERIVED_README_GIT_BINDING_ONLY_NOT_RAW_DECLARATION_OR_EXECUTION_AUTHORITY"}
+    return [dependency, readme_member] + raw_members
+
+
+def identity_external_reference_for_control(source, path, receipt):
+    if receipt.get("schema") == "rc6.external-diagnostic-original-byte-custody.v2":
+        return identity_external_source_archive_reference_metadata(source, path, receipt)
+    if receipt.get("schema") == "rc6.private-publication-type-identity-controlled-capsule.v1":
+        directory = path.rsplit("/", 1)[0]
+        custody_path = directory + "/CUSTODY.json"
+        custody, _ = decode_known_json(source.read(custody_path), custody_path)
+        return identity_external_source_archive_reference_metadata(source, custody_path, custody)
+    raise RefResolutionError("unknown identity control cannot supply external-source reference metadata")
+
+
+def declared_native_big_witness_v3_members(source, receipt_path, receipt):
+    """Bind known BIG v3 originals and explicit origins without verdict joins.
+
+    Capture/copy-time stats are literal declarations. Current local origins,
+    Source TAR and DATA are never resolved or opened by documentary custody.
+    """
+    declarations = receipt.get("raw_records")
+    if type(declarations) is not list:
+        raise RefResolutionError("BIG v3 RAW declarations must be a list")
+    directory = receipt_path.rsplit("/", 1)[0] + "/" if "/" in receipt_path else ""
+    if not directory or receipt_path != directory + "CUSTODY.json":
+        raise RefResolutionError("BIG v3 requires an exact CUSTODY control path")
+    members, paths = [], set()
+    stat_fields = {"st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                   "st_size", "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns"}
+    for key, declaration in enumerate(declarations):
+        if type(declaration) is not dict:
+            raise RefResolutionError("BIG v3 RAW declaration must be an object")
+        path = declaration.get("path")
+        if (type(path) is not str or path.startswith("/") or "\\" in path or "\0" in path
+                or any(part in ("", ".", "..") for part in path.split("/"))
+                or not path.startswith(directory) or path in paths
+                or path in (receipt_path, directory + "README.md")):
+            raise RefResolutionError("BIG v3 stored path is missing, duplicate, escaping or a control")
+        paths.add(path)
+        root = declaration.get("origin_root")
+        relative = declaration.get("origin_relative")
+        capture = declaration.get("capture_path")
+        if (type(root) is not str or not root.startswith("/") or root == "/"
+                or "\\" in root or "\0" in root
+                or any(part in ("", ".", "..") for part in root.split("/")[1:])
+                or type(relative) is not str or relative.startswith("/")
+                or "\\" in relative or "\0" in relative
+                or any(part in ("", ".", "..") for part in relative.split("/"))
+                or type(capture) is not str or capture != root + "/" + relative):
+            raise RefResolutionError("BIG v3 explicit origin root/relative/capture join is contradictory")
+        mode = declaration.get("stored_git_mode")
+        if mode not in ("100644", "100755"):
+            raise RefResolutionError("BIG v3 declared stored Git mode is missing or ambiguous")
+        captured_stats = declaration.get("original_stat_at_preservation")
+        if (type(captured_stats) is not dict or set(captured_stats) != stat_fields
+                or any(type(value) is not int for value in captured_stats.values())
+                or type(declaration.get("all11stats_preserved_during_copy")) is not bool):
+            raise RefResolutionError("BIG v3 original copy-time stat declaration is incomplete or ambiguous")
+        declared_encoding = declaration.get("encoding")
+        if declared_encoding not in ("identity", "gzip-mtime0"):
+            raise RefResolutionError("BIG v3 RAW encoding must be explicit identity or gzip-mtime0")
+        if declared_encoding == "identity" and path.endswith(".gz"):
+            raise RefResolutionError("BIG v3 identity gzip-suffixed RAW is ambiguous")
+        try:
+            data = source.read(path)
+            _, encoding = decode_known_raw_member(data, path)
+            binding = source.binding(path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("BIG v3 declared RAW member unavailable or invalid: " + path) from error
+        gzip = "gzip_mtime" in encoding
+        if ((declared_encoding == "identity" and gzip)
+                or (declared_encoding == "gzip-mtime0"
+                    and (not gzip or encoding["gzip_mtime"] != 0))):
+            raise RefResolutionError("BIG v3 declared encoding differs from committed RAW bytes")
+        expected = {"sha256": encoding["compressed_sha256"], "bytes": encoding["compressed_bytes"],
+                    "original_sha256": encoding["uncompressed_sha256"],
+                    "original_bytes": encoding["uncompressed_bytes"]}
+        for field, actual in expected.items():
+            if type(declaration.get(field)) is not type(actual) or declaration[field] != actual:
+                raise RefResolutionError("BIG v3 compressed/original SHA or length mismatch: " + field)
+        if (binding["git_mode"] != mode or binding["sha256"] != expected["sha256"]
+                or binding["bytes"] != expected["bytes"]
+                or captured_stats["st_size"] != expected["original_bytes"]):
+            raise RefResolutionError("BIG v3 RAW differs from committed mode/bytes or declared original stat size")
+        members.append({
+            "receipt_declaration_pointer": ["raw_records", key],
+            "declared_reference_sha256": sha256(canonical(declaration)),
+            "publication_binding": raw_member_ref(binding),
+            "raw_encoding_metadata": encoding,
+            "archival_path_mapping": {
+                "origin_root": root, "origin_relative": relative, "capture_path": capture,
+                "stored_git_relative_path": path, "stored_git_mode": mode,
+                "declared_encoding": declared_encoding,
+                "captured_stat_scope": "LITERAL_ORIGINAL_PRESERVATION_DECLARATION_NOT_CURRENT_LOCAL_FILESYSTEM_CUSTODY",
+                "scope": "EXPLICIT_ORIGIN_JOIN_ONLY_NO_LOCAL_SOURCE_TAR_OR_DATA_OPEN_OR_SUFFIX_GUESS",
+            },
+            "scope": "RAW_MEMBER_CUSTODY_ONLY_NO_EXECUTION_RESULT_IMPORT_COMPLETENESS_COUNT_OR_CURRENT_DATA_CUSTODY_INFERENCE",
+        })
+    return members
+
+
+def declared_raw_dossier_members(source, receipt_path, receipt):
+    """Verify only explicit members of known dossier schemas, with no count join.
+
+    Parent JSON fields stay literal. Paths refer to committed Git members; local
+    capture/TAR paths are never opened. Derived pointers bind exact declarations.
+    """
+    if not isinstance(receipt, dict):
+        return []
+    schema = receipt.get("schema")
+    if schema == "rc6.native-big-whole-source-witness-custody.v3":
+        return declared_native_big_witness_v3_members(source, receipt_path, receipt)
+    if schema == "rc6.external-diagnostic-original-byte-custody.v2":
+        return declared_private_identity_custody_members(source, receipt_path, receipt)
+    if schema == "rc6.private-publication-type-identity-controlled-capsule.v1":
+        return declared_private_identity_capsule_members(source, receipt_path, receipt)
+    if schema == "rc6.external-diagnostic-original-byte-custody.v1":
+        return declared_private_publication_custody_members(source, receipt_path, receipt)
+    if schema == "rc6.private-publication-controlled-focal-capsule.v1":
+        return declared_private_publication_capsule_members(source, receipt_path, receipt)
+    if schema == "rc6.predeploy-cleanup-controlled-custody.v1":
+        return declared_predeploy_cleanup_members(source, receipt_path, receipt)
+    if schema == "rc6.native-big-import-provenance-focal.v1":
+        return declared_big_import_focal_members(source, receipt_path, receipt)
+    specifications = {
+        "rc6.native-big-whole-source-witness-custody.v2": ("raw_records", "path", False, "sha256", "bytes", "encoding"),
+        "rc6.ux-function-scope-native-dossier.v1": ("stored_original_records", "filename", True, "stored_sha256", "stored_bytes", "compression"),
+        "rc6.packed-scalar-dispatch-native-dossier.v1": ("stored_originals", "stored_path", True, "stored_sha256", "stored_bytes", "storage"),
+        "rc6.sre-compact-source-readonly-packet.v1": ("files", None, True, "sha256", "bytes", None),
+        "rc6.fresh-github-source-ro-packet-copy-custody.v1": ("files", "stored_relative_path", True, "sha256", "bytes", None),
+        "rc6.source-scratch-cleanup.raw-custody.v1": ("records", "stored_relative", True, "sha256", "bytes", None),
+    }
+    if schema not in specifications:
+        return []
+    field, path_key, relative_to_receipt, hash_key, size_key, encoding_key = specifications[schema]
+    declarations = receipt.get(field)
+    mapped = schema in ("rc6.sre-compact-source-readonly-packet.v1", "rc6.fresh-github-source-ro-packet-copy-custody.v1")
+    if not isinstance(declarations, dict if mapped else list):
+        raise RefResolutionError("known dossier member declarations have an invalid shape")
+    pairs = declarations.items() if mapped else enumerate(declarations)
+    directory = receipt_path.rsplit("/", 1)[0] + "/" if "/" in receipt_path else ""
+    archival_custody = None
+    archival_custody_binding = None
+    if schema == "rc6.sre-compact-source-readonly-packet.v1":
+        custody_path = directory + "CUSTODY.json"
+        try:
+            custody, _ = decode_known_json(source.read(custody_path), custody_path)
+            archival_custody_binding = raw_member_ref(source.binding(custody_path))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("SRE archival mapping CUSTODY unavailable or invalid") from error
+        if not isinstance(custody, dict) or custody.get("schema") != "rc6.fresh-github-source-ro-packet-copy-custody.v1":
+            raise RefResolutionError("SRE packet requires the exact fresh-copy CUSTODY schema")
+        archival_custody = custody.get("files")
+        control_name = receipt_path.rsplit("/", 1)[-1]
+        if not isinstance(archival_custody, dict) or set(archival_custody) != set(declarations) | {control_name}:
+            raise RefResolutionError("SRE CUSTODY original-member mapping is missing or ambiguous")
+        control = archival_custody[control_name]
+        control_binding = source.binding(receipt_path)
+        if (custody.get("original_control_sha256") != control_binding["sha256"]
+                or not isinstance(control, dict) or control.get("original_relative_path") != control_name
+                or control.get("stored_relative_path") != control_name):
+            raise RefResolutionError("SRE CUSTODY does not bind the literal original packet control")
+        for key, actual in (("sha256", control_binding["sha256"]), ("bytes", control_binding["bytes"]),
+                            ("mode", {"100644": "0644", "100755": "0755"}[control_binding["git_mode"]])):
+            if type(control.get(key)) is not type(actual) or control[key] != actual:
+                raise RefResolutionError("SRE CUSTODY packet control hash/length/mode mismatch")
+        stored_paths = set()
+        for original, record in archival_custody.items():
+            stored = record.get("stored_relative_path") if isinstance(record, dict) else None
+            if (not isinstance(original, str) or original.startswith("/") or "\\" in original or "\0" in original
+                    or any(part in ("", ".", "..") for part in original.split("/"))
+                    or not isinstance(record, dict)
+                    or record.get("original_relative_path") != original
+                    or not isinstance(stored, str) or stored.startswith("/") or "\\" in stored or "\0" in stored
+                    or any(part in ("", ".", "..") for part in stored.split("/"))
+                    or stored in stored_paths):
+                raise RefResolutionError("SRE CUSTODY original/stored mapping is not unique and exact")
+            stored_paths.add(stored)
+    members = []
+    seen = set()
+    for key, declaration in pairs:
+        if not isinstance(declaration, dict):
+            raise RefResolutionError("known dossier member declaration must be an object")
+        named = key if path_key is None else declaration.get(path_key)
+        mapping = None
+        if archival_custody is not None:
+            mapping = archival_custody[key]
+            for name in ("sha256", "bytes", "mode"):
+                if (name not in declaration or type(mapping.get(name)) is not type(declaration[name])
+                        or mapping[name] != declaration[name]):
+                    raise RefResolutionError("SRE CUSTODY stored-member hash/length/mode differs from literal packet")
+            named = mapping["stored_relative_path"]
+        elif schema == "rc6.fresh-github-source-ro-packet-copy-custody.v1" and declaration.get("original_relative_path") != key:
+            raise RefResolutionError("SRE CUSTODY key differs from original member name")
+        if (not isinstance(named, str) or named.startswith("/") or "\\" in named or "\0" in named
+                or any(part in ("", ".", "..") for part in named.split("/"))):
+            raise RefResolutionError("declared dossier path is not an exact relative Git member")
+        path = directory + named if relative_to_receipt else named
+        if path in seen or path == receipt_path:
+            raise RefResolutionError("duplicate or self-referential dossier member")
+        seen.add(path)
+        try:
+            data = source.read(path)  # Missing declared RAW is a hard rejection.
+            _, encoding = decode_known_raw_member(data, path)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise RefResolutionError("declared dossier RAW member unavailable or invalid: " + path) from error
+        expected = {
+            hash_key: encoding["compressed_sha256"], size_key: encoding["compressed_bytes"],
+        }
+        if "original_sha256" in declaration or "original_bytes" in declaration:
+            expected.update(original_sha256=encoding["uncompressed_sha256"],
+                            original_bytes=encoding["uncompressed_bytes"])
+        for name, actual in expected.items():
+            if name not in declaration or type(declaration[name]) is not type(actual) or declaration[name] != actual:
+                raise RefResolutionError("declared dossier compressed/uncompressed hash or length mismatch: " + name)
+        if encoding_key is not None:
+            declared_encoding = declaration.get(encoding_key)
+            gzip = "gzip_mtime" in encoding
+            if declared_encoding in ("identity", "none"):
+                valid = not gzip
+            elif declared_encoding == "gzip-lossless":
+                valid = gzip
+            elif declared_encoding in ("gzip-mtime0", "GZIP_MTIME_0_LOSSLESS"):
+                valid = gzip and encoding["gzip_mtime"] == 0
+            else:
+                valid = False
+            if not valid:
+                raise RefResolutionError("declared dossier encoding differs from the RAW member")
+        binding = source.binding(path)
+        if "mode" in declaration and declaration["mode"] != {"100644": "0644", "100755": "0755"}[binding["git_mode"]]:
+            raise RefResolutionError("declared dossier file mode differs from committed Git mode")
+        member = {
+            "receipt_declaration_pointer": [field, key],
+            "declared_reference_sha256": sha256(canonical(declaration)),
+            "publication_binding": raw_member_ref(binding), "raw_encoding_metadata": encoding,
+            "scope": "RAW_MEMBER_CUSTODY_ONLY_NO_NEW_EXECUTION_COUNT_OR_CAPTURE_SOURCE_INFERENCE",
+        }
+        if mapping is not None:
+            member["archival_path_mapping"] = {
+                "custody_publication_binding": archival_custody_binding,
+                "custody_declaration_pointer": ["files", key],
+                "custody_declaration_sha256": sha256(canonical(mapping)),
+                "original_relative_path": key, "stored_relative_path": named,
+                "scope": "EXPLICIT_PUBLISHED_CUSTODY_MAPPING_NO_SUFFIX_OR_EXECUTION_INFERENCE",
+            }
+        members.append(member)
+    return members
+
+def xml_metadata_from_raw(data, tracked):
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as error:
+        raise RefResolutionError("RAW XML metadata is not a valid XML member") from error
+    cases = []
+    for case in root.iter("testcase"):
+        path = case.get("file")
+        name = case.get("name", "")
+        node = path + "::" + name if path in tracked else None
+        if node is None:
+            parts = case.get("classname", "").split(".")
+            for end in range(len(parts), 0, -1):
+                candidate = "/".join(parts[:end]) + ".py"
+                if candidate in tracked:
+                    suffix = "::".join(parts[end:])
+                    node = candidate + "::" + (suffix + "::" if suffix else "") + name
+                    break
+        status = "FAIL" if case.find("failure") is not None else "ERROR" if case.find("error") is not None else "SKIP" if case.find("skipped") is not None else "PASS"
+        cases.append({"node": node, "raw_classname": case.get("classname"), "raw_name": case.get("name"),
+                      "recorded_status": status, "seconds": case.get("time")})
+    return {"root_tag": root.tag, "root_attributes": dict(root.attrib),
+            "suites": [dict(suite.attrib) for suite in root.iter("testsuite")], "cases": cases,
+            "actual_case_count": len(cases),
+            "actual_case_outcomes": dict(collections.Counter(case["recorded_status"] for case in cases)),
+            "source_binding_not_inferred_from_this_rebind": True}
+
+
+def declared_xml_receipt_members(source, receipt):
+    """Resolve explicit raw_refs XML members without changing receipt scope.
+
+    Only named XML/XML.gz Git paths declared by a raw_refs mapping are opened.
+    Absolute capture paths stay literal metadata and are never read locally.
+    Each member keeps its own case count; counts across members are not summed.
+    """
+    members = []
+
+    def visit(value, pointer=(), depth=0):
+        if depth > 64:
+            raise RefResolutionError("RAW receipt declaration graph exceeds64levels")
+        if isinstance(value, dict):
+            if "raw_refs" in value:
+                references = value["raw_refs"]
+                if not isinstance(references, dict):
+                    raise RefResolutionError("declared raw_refs must be a mapping")
+                for path, declaration in references.items():
+                    if not isinstance(path, str) or not path.endswith((".xml", ".xml.gz")):
+                        continue
+                    if path.startswith("/"):
+                        # Captured /tmp locations are retained by the parent JSON,
+                        # with no invented byte availability or local read.
+                        continue
+                    if "\\" in path or "\0" in path or any(part in ("", ".", "..") for part in path.split("/")):
+                        raise RefResolutionError("declared XML path is not an exact relative Git member")
+                    if not isinstance(declaration, dict):
+                        raise RefResolutionError("declared XML raw_refs entry must preserve a metadata object")
+                    data = source.read(path)  # Missing compressed member rejects.
+                    decoded, encoding = decode_known_xml(data, path)
+                    declared_checks = {
+                        "sha256": encoding["compressed_sha256"],
+                        "bytes": encoding["compressed_bytes"],
+                        "original_uncompressed_sha256": encoding["uncompressed_sha256"],
+                        "original_uncompressed_bytes": encoding["uncompressed_bytes"],
+                    }
+                    for key, actual in declared_checks.items():
+                        if key in declaration and (type(declaration[key]) is not type(actual) or declaration[key] != actual):
+                            raise RefResolutionError("declared XML compressed/uncompressed hash or length mismatch: " + key)
+                    if declaration.get("encoding") == "gzip-mtime0" and (
+                        encoding["encoding"] != "gzip-single-XML-member" or encoding["gzip_mtime"] != 0
+                    ):
+                        raise RefResolutionError("declared gzip-mtime0 encoding differs from the RAW member")
+                    binding = source.binding(path)
+                    members.append({
+                        "receipt_declaration_pointer": list(pointer + ("raw_refs", path)),
+                        "declared_reference_verbatim": copy.deepcopy(declaration),
+                        "publication_binding": {key: binding[key] for key in ("source_sha", "source_tree", "path", "blob", "git_mode", "sha256", "bytes")},
+                        "xml_encoding": encoding,
+                        "raw_xml_metadata": xml_metadata_from_raw(decoded, source.entries),
+                        "case_count_scope": "THIS_RAW_MEMBER_ONLY_NO_SUM_OR_ROOT_CURRENT_EXECUTION_INFERENCE",
+                    })
+            for key, child in value.items():
+                if key != "raw_refs":
+                    visit(child, pointer + (key,), depth + 1)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, pointer + (index,), depth + 1)
+
+    visit(receipt)
+    return members
+
+
+def strict_json(data):
+    def pairs(items):
+        obj = {}
+        for key, value in items:
+            if key in obj:
+                raise ValueError(f"duplicate JSON key: {key}")
+            obj[key] = value
+        return obj
+    return json.loads(data, object_pairs_hook=pairs)
+
+
+class GitSource:
+    def __init__(self, repo, sha):
+        self.repo = repo.resolve(strict=True)
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ValueError("source requires a full immutable lower-case commit SHA")
+        self.sha = sha
+        if self.git("rev-parse", "--verify", sha + "^{commit}").decode().strip() != sha:
+            raise ValueError("source is not the requested raw commit")
+        self.tree = self.git("rev-parse", sha + "^{tree}").decode().strip()
+        self.entries = {}
+        self.cache = {}
+        for raw in self.git("ls-tree", "-r", "-z", "--full-tree", sha).split(b"\0"):
+            if not raw:
+                continue
+            header, path = raw.split(b"\t", 1)
+            mode, kind, oid = header.decode().split()
+            self.entries[path.decode()] = (mode, kind, oid)
+
+    def git(self, *args):
+        return subprocess.run(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(self.repo), *args],
+                              check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30).stdout
+
+    def read(self, path):
+        if path not in self.entries:
+            raise ValueError(f"declared source path not committed: {path}")
+        mode, kind, oid = self.entries[path]
+        if mode not in ("100644", "100755") or kind != "blob":
+            raise ValueError(f"source path is not a regular committed blob: {path}")
+        if oid not in self.cache:
+            length = int(self.git("cat-file", "-s", oid))
+            if length > 64 * 1024 * 1024:
+                raise ValueError("source member exceeds documentary 64MiB bound")
+            data = self.git("cat-file", "blob", oid)
+            if len(data) != length or hashlib.sha1(b"blob " + str(length).encode() + b"\0" + data).hexdigest() != oid:
+                raise ValueError("raw Git blob identity mismatch")
+            self.cache[oid] = data
+        return self.cache[oid]
+
+    def binding(self, path):
+        data = self.read(path)
+        mode, _, oid = self.entries[path]
+        return {"path": path, "blob": oid, "git_mode": mode, "sha256": digest(data), "bytes": len(data),
+                "source_sha": self.sha, "source_tree": self.tree,
+                "source_scope": "ROOT_COMMITTED_PUBLICATION_NOT_CAPTURE_SOURCE", "workingtree_bytes_used": False}
+
+    def json(self, path):
+        return decode_known_json(self.read(path), path)[0]
+
+
+def external_output(source, path):
+    if not path.is_absolute() or not path.parent.is_dir():
+        raise ValueError("out requires an absolute external path with an existing parent")
+    for candidate in [path, *path.parents]:
+        if candidate.is_symlink():
+            raise ValueError("output symlink alias is not permitted")
+    target = path.resolve(strict=False)
+    roots = [source.repo]
+    roots += [Path(line[9:]).resolve(strict=False) for line in source.git("worktree", "list", "--porcelain").decode().splitlines()
+              if line.startswith("worktree ")]
+    if any(target == root or root in target.parents for root in roots):
+        raise ValueError("output must stay outside ROOT and every linked worktree")
+    if target.exists():
+        info = target.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("output target must be a regular single-link file")
+    return target
+
+
+def owner_index(obj):
+    for key in ("programming_requirements", "findings", "requirements", "entries"):
+        if isinstance(obj.get(key), list):
+            rows = obj[key]
+            indexed = {row["id"]: row for row in rows}
+            if len(indexed) != len(rows):
+                raise ValueError("upstream owner index has duplicate IDs")
+            return indexed
+    guard = obj.get("guard_mapping", {})
+    return guard.get("mapping", {}) if isinstance(guard, dict) else {}
+
+
+def unique_guard(source, node, cache):
+    base = node.split("[", 1)[0]
+    path, *parts = base.split("::")
+    if path not in cache:
+        cache[path] = ast.parse(source.read(path), filename=path)
+    children = cache[path].body
+    selected = None
+    for part in parts:
+        matches = [item for item in children if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and item.name == part]
+        if len(matches) != 1:
+            raise ValueError(f"guard AST declaration must be unique: {base}")
+        selected = matches[0]
+        children = selected.body
+    if not isinstance(selected, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        raise ValueError(f"guard node is not a function: {base}")
+    return {"pytest_node": node, "base_node": base, "source_binding": source.binding(path),
+            "line": selected.lineno, "ast_sha256": digest(ast.dump(selected, include_attributes=False).encode()),
+            "ast_hash_python_version": sys.version.split()[0], "unique_AST_definition": True,
+            "execution_status": "NOT_EXECUTED_BY_THIS_SOURCE_ONLY_GENERATOR"}
+
+
+def build(source, finding_ids):
+    matrix = source.json(MATRIX_PATH)
+    if matrix.get("schema") != "rc6.convergence-closure.v1":
+        raise ValueError("unsupported closure schema")
+    registry_bytes = source.read(REGISTRY_PATH)
+    if digest(registry_bytes) != REGISTRY_SHA256:
+        raise ValueError("original registry literal byte authority changed")
+    rows = list(csv.DictReader(io.StringIO(registry_bytes.decode("utf-8-sig"), newline="")))
+    original = {row["id"]: row for row in rows}
+    if len(rows) != 55 or len(original) != 55:
+        raise ValueError("original registry must retain exactly55 unique rows")
+    requirements = {row["id"]: row for row in matrix["requirements"]}
+    if len(matrix["requirements"]) != 55 or set(requirements) != set(original):
+        raise ValueError("current closure must retain the original55 IDs")
+    for identifier, row in requirements.items():
+        if row["original_requirement"] != original[identifier]:
+            raise ValueError("current closure parent differs from original literal registry")
+    findings = {row["id"]: row for row in matrix["additional_findings"]}
+    if len(findings) != len(matrix["additional_findings"]):
+        raise ValueError("duplicate current named finding ID")
+    if len(set(finding_ids)) != len(finding_ids):
+        raise ValueError("duplicate requested named finding ID")
+    ast_cache = {}
+    bindings = []
+    for identifier in finding_ids:
+        if identifier not in findings:
+            raise ValueError(f"named finding absent from committed closure: {identifier}")
+        finding = findings[identifier]
+        parents = finding["linked_requirement_ids"]
+        if not parents or len(set(parents)) != len(parents) or not set(parents) <= set(original):
+            raise ValueError("named finding must retain unique valid original parents")
+        owner_path = finding["owner_mapping"]
+        original_workstream = finding["workstream"]
+        if finding.get("ownership_scope") == "ROOT_INTEGRATION_SUPPLEMENTAL_NAMED_FINDING_BINDINGS":
+            previous = source.json(owner_path)
+            if previous.get("schema") != "rc6.root-supplemental-named-finding-bindings.v1":
+                raise ValueError("previous ROOT supplement has another schema")
+            previous_rows = previous.get("bindings", [])
+            candidates = [row for row in previous_rows if row.get("id") == identifier]
+            if len(candidates) != 1 or len({row.get("id") for row in previous_rows}) != len(previous_rows):
+                raise ValueError("previous ROOT supplement has no unique exact finding membership")
+            prior = candidates[0]
+            if prior.get("exact_root_named_membership") is not True or prior.get("exact_upstream_owner_membership") is not False:
+                raise ValueError("previous ROOT supplement cannot replace an upstream owner membership")
+            owner_path = prior["upstream_owner_mapping"]["source_binding"]["path"]
+            original_workstream = prior["original_workstream"]
+        owner = source.json(owner_path)
+        indexed = owner_index(owner)
+        if identifier in indexed:
+            raise ValueError("finding already has exact upstream ownership; supplementary upstream=False is inapplicable")
+        receipt_path = finding["evidence_receipt"]
+        receipt, receipt_encoding = decode_known_json(source.read(receipt_path), receipt_path)
+        guards = [unique_guard(source, node, ast_cache) for node in finding["test_nodes"]]
+        if not guards:
+            raise ValueError("named finding has no current native guard definition")
+        binding = {
+            "id": identifier, "root_binding_owner": "ROOT_INTEGRATION",
+            "exact_root_named_membership": True,
+            "exact_upstream_owner_membership": False,
+            "ownership_scope": "ROOT_INTEGRATION_SUPPLEMENTAL_NAMED_FINDING_BINDINGS",
+            "membership_authority": "EXACT_ROOT_NAMED_FINDING_FROM_COMMITTED_CLOSURE_ONLY",
+            "original_workstream": original_workstream, "root_closure_finding_verbatim": finding,
+            "linked_requirement_ids": parents,
+            "original_parent_clauses": [original[parent] for parent in parents],
+            "upstream_owner_mapping": {
+                "source_binding": source.binding(owner_path),
+                "exact_new_finding_id_present_in_upstream_typed_index": identifier in indexed,
+                "original_parent_ids_present_in_upstream_index": [parent for parent in parents if parent in indexed],
+                "boundary": "Original owner document is unchanged. ROOT supplementary membership does not create upstream OWNER exact membership.",
+            },
+            "current_code_bindings": [source.binding(path) for path in finding["code_paths"]],
+            "current_native_guards": guards,
+            "actual_receipt": {"publication_binding": source.binding(receipt_path),
+                "original_raw_metadata_verbatim": receipt,
+                "raw_json_encoding_metadata": receipt_encoding,
+                "declared_xml_receipt_members": declared_xml_receipt_members(source, receipt),
+                "declared_raw_dossier_members": declared_raw_dossier_members(source, receipt_path, receipt),
+                "explicit_top_level_scope": receipt.get("scope"),
+                "scope_limits_verbatim": receipt.get("scope_limits", receipt.get("limits")),
+                "capture_identity_policy": "All capture source/environment/count/scope fields retain their original RAW values; ROOT publication source is not a rewrite of execution source.",
+            },
+            "current_source_execution_status": "PENDING_EXACT_FROZEN_NATIVE_GOVERNED_EXECUTION",
+            "new_original_requirement_or_attack": False,
+        }
+        bindings.append(binding)
+    return {
+        "schema": "rc6.root-supplemental-named-finding-bindings.v1",
+        "status": "ROOT_SOURCE_ONLY_DECLARATIVE_NAMED_BINDINGS_NOT_EXECUTED",
+        "scope": "ROOT_INTEGRATION_SUPPLEMENTAL_SOURCE_MAPPING_NO_GOV_NATIVE_RUNTIME_IMAGE_PROVIDER_OR_FINANCIAL_REPLAY",
+        "future_canonical_path": FUTURE_ROOT_PATH,
+        "source_snapshot": {"source_sha": source.sha, "source_tree": source.tree,
+            "selection": "Explicit immutable Git source; no replace objects; committed raw blobs+modes; no workingtree overlays.",
+            "source_closure_binding": source.binding(MATRIX_PATH),
+            "source_original_registry_binding": source.binding(REGISTRY_PATH),
+            "rebind_required_if_source_advances": True, "final_frozen_source_sha": None,
+            "final_fip_digest": None, "final_governed_junit_digest": None, "final_artifact_digest": None,
+            "document_order": "Pin stable source S; commit document D referencing S and explicit ROOT ownership; freeze C after D; actual Gov/FIP/image/artifact bind C. No output selfhash.",
+        },
+        "bindings": bindings,
+        "validation": {"named_finding_count": len(bindings), "original_parent_ids_verified_against_literal55": True,
+            "exact_root_named_membership": True,
+            "exact_upstream_owner_membership_for_requested_IDS": {row["id"]: row["exact_upstream_owner_membership"] for row in bindings},
+            "code_and_guard_regular_blobs_modes_bound": True,
+            "unique_guard_AST_base_count": len({guard["base_node"] for row in bindings for guard in row["current_native_guards"]}),
+            "raw_receipt_metadata_scope_preserved_verbatim": True,
+            "known_xml_gzip_receipts_validated_without_summing_case_counts": True,
+            "known_raw_gzip_dossier_members_validated_without_scope_or_count_rewrite": True,
+            "upstream_owner_documents_modified": False, "workingtree_bytes_read": False,
+            "native_tests_executed": 0, "governed_suite_executed": False, "self_hash_included": False},
+        "acceptance_boundary": "ROOT can declare these exact supplemental IDs in its own versioned mapping. Presence/AST/source hashes are not proof of current execution, runtime, provider capacity, deployed image, or all parent-clause semantics.",
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--source", required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--finding-id", action="append", help="Explicit repeated ROOT finding ID; default is the six reviewed supplemental IDs.")
+    args = parser.parse_args(argv)
+    temporary = None
+    try:
+        source = GitSource(args.repo, args.source)
+        target = external_output(source, args.out)
+        output = build(source, args.finding_id or DEFAULT_IDS)
+        data = (json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode()
+        descriptor, temporary = tempfile.mkstemp(prefix=".rc6-root-named-bindings-", dir=target.parent)
+        with os.fdopen(descriptor, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o644)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        external_output(source, target)
+        os.replace(temporary, target)
+        temporary = None
+        print(json.dumps({"status": output["status"], "source_sha": source.sha, "source_tree": source.tree,
+            "out": str(target), "sha256": digest(data), "bytes": len(data),
+            "finding_count": len(output["bindings"]), "native_tests_executed": 0}))
+        return 0
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(json.dumps({"status": "ROOT_SUPPLEMENTAL_SOURCE_BINDING_REJECTED", "error": str(error)}), file=sys.stderr)
+        return 2
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

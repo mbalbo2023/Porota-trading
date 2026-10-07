@@ -1,0 +1,20 @@
+{
+  "inet_socket_attempts": [],
+  "inet_socket_constructor_requests": [
+    {
+      "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+      "event": "socket.__new__",
+      "family": 10,
+      "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+    },
+    {
+      "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+      "event": "socket.__new__",
+      "family": 10,
+      "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+    }
+  ],
+  "subprocess_executable_counts": {
+    "git": 4
+  }
+}

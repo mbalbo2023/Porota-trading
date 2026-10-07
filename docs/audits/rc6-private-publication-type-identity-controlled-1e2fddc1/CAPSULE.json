@@ -1,0 +1,142 @@
+{
+  "capsule_root_relative_to_repository": "docs/audits/rc6-private-publication-type-identity-controlled-1e2fddc1",
+  "counts": {
+    "new_case_nodeids": [
+      "tests/test_rc6_publication_type_identity.py::test_candidate_builtin_roles_keep_financial_serialization_and_real_instruments_reuse",
+      "tests/test_rc6_publication_type_identity.py::test_candidate_role_still_checks_final_children_after_original_count_callback",
+      "tests/test_rc6_publication_type_identity.py::test_historical_e24_pre_audit_changes_full_role_wire_and_fix_keeps_original_8764_callbacks[False]",
+      "tests/test_rc6_publication_type_identity.py::test_historical_e24_pre_audit_changes_full_role_wire_and_fix_keeps_original_8764_callbacks[True]",
+      "tests/test_rc6_publication_type_identity.py::test_non_candidate_role_preserves_self_clearing_counter_count_mutation_and_full_wire",
+      "tests/test_rc6_publication_type_identity.py::test_private_append_hook_keeps_legacy_subclass_comparisons_and_never_adds_type_callbacks",
+      "tests/test_rc6_publication_type_identity.py::test_private_type_checks_add_no_metaclass_eq_ne_or_hash_callbacks[candidate_construction]",
+      "tests/test_rc6_publication_type_identity.py::test_private_type_checks_add_no_metaclass_eq_ne_or_hash_callbacks[eligible_child]",
+      "tests/test_rc6_publication_type_identity.py::test_private_type_checks_add_no_metaclass_eq_ne_or_hash_callbacks[snapshot_child]",
+      "tests/test_rc6_publication_type_identity.py::test_private_type_checks_add_no_metaclass_eq_ne_or_hash_callbacks[snapshot_root]"
+    ],
+    "new_current_cases": 10,
+    "overlap_with_previous_d": 468,
+    "sum_across_protocol_epochs_is_not_a_unique_test_count": true,
+    "unique_current_nodes": 478
+  },
+  "custody": {
+    "bytes": 46630,
+    "path": "CUSTODY.json",
+    "sha256": "6de9fc170ee3980e646639ec3cfdeff7216f923ff2185c1d927592cb84dce08c"
+  },
+  "epochs": [
+    {
+      "collection_started": false,
+      "failure_observation_member": "epochs/a/preparation/preparation-a-red.json",
+      "fixture_started": false,
+      "native_pid": null,
+      "native_started": false,
+      "observed_exit_code": 1,
+      "original_stdout_stderr_capture_scope": "ORIGINAL_TOOL_EXCEPTION_EXCERPT_ONLY; FULL_STREAM_AND_ENV_VALUES_NOT_CAPTURED",
+      "protocol_epoch": "A",
+      "reason": "CACHE_AND_AUTOLOAD_DISABLED_REQUIRED",
+      "source_export_started": false,
+      "status": "PREPARATION_RED"
+    },
+    {
+      "acceptance_complete": false,
+      "actual_launch_to_pid_reap_wall_seconds": 31.364678056997946,
+      "actual_reaped_pid": 240143,
+      "all_eleven_code_stats_unchanged_claimed": false,
+      "all_phase_reports_pass": 1434,
+      "call_phase_pass": 478,
+      "collection_before_fixtures": true,
+      "exact_classname_name_join": true,
+      "exact_denied_ipv6_import_probe_count": 1,
+      "forbidden_sqlite_connects_observed": 0,
+      "full_governed_suite_image_runtime_or_big_validated": false,
+      "import_observation_scope": "ACTUALLY_RECORDED_RETAINED_SYS_MODULES_SNAPSHOTS; NOT_UNLOADED_OR_TRANSITIVE",
+      "junit_failure_error_skip_counts": [
+        0,
+        0,
+        0
+      ],
+      "kernel_lifetime_peak_rss_bytes": 455413760,
+      "kernel_original_sha256": "10278787e88d76ac47772bcf05a60047fe36a73b0bddc63d5d1ce2deb5872f26",
+      "management_timeout_seconds": 180,
+      "native_fixture_data_custody_scope": "OWN_NATIVE_GUARD_ASSERTIONS; NOT_GLOBAL_DATA_CUSTODY",
+      "native_pid": 240143,
+      "native_source_code_atime_observed_separately": true,
+      "native_source_stable_ten_stats_modes_blobs_namespace_mounts_unchanged": true,
+      "native_test_elapsed_seconds": 27.333924997990835,
+      "network_observation_scope": "THIS_PYTHON_PROCESS_DNS_CONNECT_SEND_AND_KNOWN_CLIENT_EXECUTABLES; NOT_KERNEL_OR_TRANSITIVE_CHILD_ATTESTATION",
+      "network_operations_permitted": false,
+      "one_pytest_main_invocation": 1,
+      "original_product_limits_changed": false,
+      "owned_process_group_absent_after_reap": true,
+      "pre_and_post_kernel_echild_verified": true,
+      "private_sqlite_connects_observed": 314,
+      "protocol_epoch": "B",
+      "publisher_performance_measured": false,
+      "receipt_original_sha256": "6c4bec108579d07123e058cb6eb1d11f1e86f42b1fd95292420b0be13617cf1d",
+      "retained_import_snapshots": 3,
+      "socket_descriptor_creation_or_close_may_have_occurred": true,
+      "source_protocol_not_relabelled_from_a": true,
+      "status": "GREEN",
+      "supervisor_pid": 240094,
+      "unique_nodes": 478,
+      "xml_original_sha256": "445b330e9a9fbba5158cf1d242b387403b58591d8973f8c5fd7fb8f4c2318c96"
+    }
+  ],
+  "excluded_claims": [
+    "BIG90_PRE_AND_OPEN_COMPLETION",
+    "PERFORMANCE_SAVINGS",
+    "NINE_HOUR_HORIZON",
+    "FULL_GOVERNED_SUITE",
+    "IMAGE_OR_DEPLOYMENT",
+    "GLOBAL_DATA_CUSTODY",
+    "KERNEL_OR_TRANSITIVE_NETWORK_ATTESTATION"
+  ],
+  "external_source_archive_policy": {
+    "body_copied_into_git": false,
+    "custody_reference_field": "external_source_archive",
+    "reason": "AVOID_RECURSIVE_FULL_GIT_SOURCE_TAR_EMBEDDING; KEEP_ACTUAL_ORIGINAL_B_RAW_EXTERNAL",
+    "source_tar_member_parse_or_executed_artifact_authority_claimed": false
+  },
+  "historical_broad_enumeration_incident": {
+    "authority_capsule_path": "docs/audits/rc6-private-publication-controlled-focal-e24bc025",
+    "current_protected_historical_directory_all_eleven_custody": "NOT_VERIFIED",
+    "historical_data_reopened_or_atime_restored_for_this_capsule": false,
+    "historical_execution_time_receipts_keep_their_original_temporal_scope": true,
+    "primary_original_sha256": "066356836981dc5f59591bf8e9c9f8d70f71454eacaeb3aab1e9fa37857ddcd5",
+    "scope_supplement_original_sha256": "e4808b00a9faaae0976e5befe1988db126d0ba5631f4c59d0d444cdefeeb92ad",
+    "time_and_pid": "NOT_OBSERVED",
+    "visited_directory_set": "UNKNOWN"
+  },
+  "historical_comparison": {
+    "capsule_path": "docs/audits/rc6-private-publication-controlled-focal-e24bc025",
+    "custody_sha256": "b58784b9c9a3a376503bb8bb64908b65bb0ebea1f9689fe97e76d796e27ac317",
+    "published_d_collection_original_sha256": "ef44300dbc5883533855a5b655b1be172abb40a9eb4c629d55cd1cee980a3af0",
+    "published_d_collection_path": "epochs/d/raw/collection-before-fixtures.json.gz",
+    "published_d_collection_stored_sha256": "dcd601e27b32a5195f14745839fe9102253ecae44c2b1ca2734525b7052dc3ba"
+  },
+  "independent_review": {
+    "actual_kernel_sha256": "10278787e88d76ac47772bcf05a60047fe36a73b0bddc63d5d1ce2deb5872f26",
+    "actual_raw_receipt_sha256": "6c4bec108579d07123e058cb6eb1d11f1e86f42b1fd95292420b0be13617cf1d",
+    "actual_xml_sha256": "445b330e9a9fbba5158cf1d242b387403b58591d8973f8c5fd7fb8f4c2318c96",
+    "current_root_governed_big_or_performance_certified": false,
+    "qualified_unique_nodes": 478,
+    "reviewer_role": "FINANCE_SOURCE_AND_ACTUAL_RAW_READ_ONLY",
+    "scope": "16_DECLARED_ARTIFACTS_AND_COLLECTION_CALL_THREE_PHASE_JUNIT_JOIN; NO_NEW_NATIVE_OR_HISTORICAL_DATA",
+    "tar_witness_metadata_join_verified_without_independent_tar_body_rehash": true
+  },
+  "infrastructure": {
+    "distribution_metadata_total": 157,
+    "installed_distribution_bytes_authenticated": false,
+    "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+    "python_version": "3.11.16",
+    "runner_sha256": "210c510c80274280085c3d53ae5d64e16fbb02223cc7d0be5cda062b19cfb47b",
+    "support_sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21"
+  },
+  "schema": "rc6.private-publication-type-identity-controlled-capsule.v1",
+  "source": {
+    "files": 2254,
+    "overlays": 0,
+    "sha": "1e2fddc10d0e313bc5a6298e8fa60fe7c9f560f8",
+    "tree": "b984539931a25a5f77eae55116c4fa9543d53748"
+  }
+}

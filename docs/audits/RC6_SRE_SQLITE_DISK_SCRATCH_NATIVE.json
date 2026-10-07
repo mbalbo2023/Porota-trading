@@ -1,0 +1,1057 @@
+{
+  "assertion_scope": "FRESH_CANONICAL_NATIVE_GIT_SOURCE_AND_SYNTHETIC_DATA_LAYOUT; NOT_FINAL_FROZEN_CI_OR_RUNTIME_ATTESTATION",
+  "contract": {
+    "admission": "compressed image + exact unpacked image + 2 bundles + (512MiB - verified occupied scratch) + one shared 2 GiB residual reserve; DATA filesystem independently validates free bytes/inodes/source peak.",
+    "consumers": [
+      "observer",
+      "dashboard",
+      "post-start-health",
+      "preopen-history-reader"
+    ],
+    "history_default": "/app/data/market_history.db",
+    "history_override": "Explicit canonical absolute path inside /app/data; no aliases/escape; nondefault missing target fails NEED_COPY_TARGET. One snapshot config shared by observer/dashboard/native probe; pretransfer target must equal launcher target.",
+    "max_bytes": 536870912,
+    "min_free_inode_percent": 10,
+    "mode": "0700",
+    "owner_gid": 1000,
+    "owner_uid": 1000,
+    "reserve_bytes": 2147483648,
+    "root": "artifact_root(primary PAPER database)/sqlite-read-scratch",
+    "source_boundary": "Pretransfer probe opens no source SQLite; source sizes are admission observations. Actual copy still performs identity/hash/causal verification. Existing-root inspector may create only owned empty lease.",
+    "source_peak": "Shared helper estimator counts block-rounded MAIN/WAL plus max(source SHM,reconstructed SHM) + 1 MiB metadata margin + 4 allocation blocks. No duplicated estimator.",
+    "stale_sessions": "Preserve identified private crash residue, count it toward quota and allow bounded next copy only when residual+source peak fits. Unknown custody blocks. No automatic residue deletion.",
+    "temporary_storage": "No global TMPDIR change, no enlargement of /tmp 32 MiB, private copy sets temp_store=MEMORY."
+  },
+  "contract_evidence_forward_regression": {
+    "baseline_guard_sha256": "47ccb94beaa990ef0e6d4f40876637f04b804d3565cd08e871752fc4d6902233",
+    "baseline_manager_sha256": "34cc9eab13699a26059c31aafafcdbc82e533ff13431d1f102a60323d765fb45",
+    "baseline_sha": "5e48e8088043777f86683a23a910ef0c9a82a921",
+    "baseline_tree": "228158a369979c496112c72f77733fc9aa1d1cc4",
+    "change": "Restore intended real newlines and forward normalized value. Default ENABLED remains. No new enum, family restriction or entry authority.",
+    "fix_commit": "c7868dd6",
+    "green": {
+      "actual_case_count": 4,
+      "cases": [
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[None-ENABLED]",
+          "seconds": 0.003,
+          "status": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[ enabled -ENABLED]",
+          "seconds": 0.002,
+          "status": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[OFF-OFF]",
+          "seconds": 0.191,
+          "status": "PASS"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[disabled-DISABLED]",
+          "seconds": 0.162,
+          "status": "PASS"
+        }
+      ],
+      "path": "/tmp/porota-sre-contract-forward-green.xml",
+      "sha256": "44dd858acad343422cb7ebeea6fe66a43281b86397e6e2f7d4a3c3b530e9ad55",
+      "suite_properties": {},
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "0",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "4",
+          "time": "0.490",
+          "timestamp": "2026-10-05T06:37:40.179400+00:00"
+        }
+      ]
+    },
+    "native_negative": "Real imported runner OFF/DISABLED exits before forbidden Store, observer_state and ProductionMarketReader; positive ENABLED case verifies forwarding and does not request provider work.",
+    "rca": "Literal backslash-n in a comment also commented the intended assignment; present at seed0f810c16 (Git blame 9e41c470). Explicit host.env override was dropped while native runner defaulted ENABLED.",
+    "red": {
+      "actual_case_count": 4,
+      "cases": [
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[None-ENABLED]",
+          "seconds": 0.007,
+          "status": "FAIL"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[ enabled -ENABLED]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[OFF-OFF]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        },
+        {
+          "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[disabled-DISABLED]",
+          "seconds": 0.002,
+          "status": "FAIL"
+        }
+      ],
+      "path": "/tmp/porota-sre-contract-forward-red.xml",
+      "sha256": "eee12e71f2a7594c23099fbbf90cf93aa8835cdf84de2e50b912f3a7a0972a3a",
+      "suite_properties": {},
+      "suites": [
+        {
+          "errors": "0",
+          "failures": "4",
+          "hostname": "9905252a2cbf",
+          "name": "pytest",
+          "skipped": "0",
+          "tests": "4",
+          "time": "0.200",
+          "timestamp": "2026-10-05T06:36:26.524038+00:00"
+        }
+      ]
+    },
+    "test_commit": "f3c0ce47"
+  },
+  "external_limits": {
+    "actual_deployment_or_runtime": "NOT_EXECUTED",
+    "actual_production_source_schema_path_free_disk_inodes": "NO_VERIFICADO",
+    "economic_edge": "NO_DEMOSTRADO",
+    "large_OPEN_pipeline_90s": "PENDING_NATIVE_GREEN; aa8previous90sRED_PRE_ONLY",
+    "large_post_start_health_2s": "PENDING_NATIVE_12K_COMMITTED_OPEN_SOURCE",
+    "market_execution": "NO_VERIFICADO",
+    "ppi_watch": "NOT_TOUCHED",
+    "provider_called": false,
+    "provider_capacity_open": "NO_VERIFICADO",
+    "real_routes": "NOT_CALLED"
+  },
+  "final_native_receipt": {
+    "actual_case_count": 170,
+    "cases": [
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_production_scratch_owner_is_the_fixed_image_identity_and_not_ci_euid",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_generated_both_launcher_envs_filter_preview_scratch_and_pin_reviewed_history",
+        "seconds": 0.041,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env[POROTA_SQLITE_SCRATCH_ROOT-/tmp/scratch]",
+        "seconds": 0.016,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env[POROTA_SQLITE_SCRATCH_MAX_BYTES-536870913]",
+        "seconds": 0.015,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env[POROTA_SQLITE_SCRATCH_RESERVE_BYTES-0]",
+        "seconds": 0.015,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env[POROTA_SQLITE_SCRATCH_MIN_FREE_INODE_PERCENT-0]",
+        "seconds": 0.013,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_launcher_scratch_overrides_fail_before_publishing_any_runtime_env[POROTA_SQLITE_SCRATCH_ROOT-/app/data/a\\nUNREVIEWED=1]",
+        "seconds": 0.014,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[data/market_history.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/tmp/history.db]",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/app/data/../secret.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/app/data/review/./history.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/app/data//history.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/app/data/history.db\\nTOKEN=secret]",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_target_rejects_escape_or_unsupported_alias_without_echoing_path[/app/data/history.db;touch-x]",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_history_selected_target_is_native_measured_and_missing_copy_never_migrates",
+        "seconds": 0.028,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state[primary_hardlink]",
+        "seconds": 0.011,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state[wal_symlink]",
+        "seconds": 0.013,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state[source_world_write]",
+        "seconds": 0.01,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state[hot_journal]",
+        "seconds": 0.013,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_pretransfer_metadata_rejects_source_custody_or_busy_state[parent_alias]",
+        "seconds": 0.012,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete[root_mode]",
+        "seconds": 0.016,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete[root_alias]",
+        "seconds": 0.016,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete[unknown_residue]",
+        "seconds": 0.014,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_scratch_admission_rejects_unknown_custody_and_does_not_fix_or_delete[busy_lease]",
+        "seconds": 0.014,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_candidate_stream_probe_runs_with_native_python_without_checkout_and_preserves_source",
+        "seconds": 0.074,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_native_tmpfs_is_rejected_before_launcher_creates_any_scratch_namespace",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset[target_alias]",
+        "seconds": 0.023,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset[parent_alias]",
+        "seconds": 0.021,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_reviewed_history_cannot_alias_another_dataset[source_hardlink]",
+        "seconds": 0.021,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_fifo_history_config_fails_bounded_without_opening_sqlite_or_allocating_scratch",
+        "seconds": 0.021,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_scratch_reserve_grows_only_by_unoccupied_quota_and_shares_two_gib_headroom",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_real_launcher_disk_layout_copies_more_than_observer_tmpfs_and_cleans_private_copy",
+        "seconds": 0.667,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_scratch.py::test_deployment_wiring_runs_candidate_disk_probe_before_transfer_and_pins_history",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller[OFF-OFF_BASELINE]",
+        "seconds": 0.378,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller[SHADOW-SHADOW_BASELINE]",
+        "seconds": 0.168,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_six_inputs_flow_through_canonical_env_into_real_capacity_controller[APPROVED-APPROVED_DYNAMIC]",
+        "seconds": 0.213,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_shipped_configuration_and_missing_inputs_never_autoactivate",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_DYNAMIC_CAPACITY_MODE-LIVE]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_CAPACITY_POLICY_PATH-/app/ops/policy/../secret.json]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_CAPACITY_REPORT_PATH-/run/secrets/SYNTHETIC_SECRET.json]",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_CAPACITY_REPORT_PATH-/app/data/rc6-capacity/a.json\\nPPI_TOKEN=SYNTHETIC_SECRET]",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_CAPACITY_SHADOW_PATH-/app/data/rc6-capacity/foreign-shadow]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_invalid_config_is_rejected_without_echoing_sensitive_values[POROTA_DYNAMIC_SHADOW_ROOT-/wrong/root]",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_config_symlink_parent_and_world_writable_input_are_rejected",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_package_and_hook_match_same_image_source_before_container_mutation",
+        "seconds": 0.031,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_correct_files_with_wrong_image_source_labels_are_rejected",
+        "seconds": 0.029,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[missing_module]",
+        "seconds": 0.034,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[extra_module]",
+        "seconds": 0.03,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[hardlink]",
+        "seconds": 0.035,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[world_writable]",
+        "seconds": 0.03,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_mount_package_is_complete_and_all_regular_modes_and_aliases_are_checked[metadata_mode]",
+        "seconds": 0.028,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_actual_launcher_argv_mounts_validated_input_roots_readonly_for_both_children",
+        "seconds": 0.205,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[None-ENABLED]",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[ enabled -ENABLED]",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[OFF-OFF]",
+        "seconds": 0.189,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_convergence_sre_launcher.py::test_contract_evidence_env_forwarding_preserves_default_and_disabled_native_runner_boundary[disabled-DISABLED]",
+        "seconds": 0.176,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_policy_retention_is_exactly_three_for_paper_and_history",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_policy_keeps_two_gib_as_final_reserve_not_start_gate",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_pretransfer_formula_is_dynamic_from_exact_artifact_and_image_size",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_backup_plan_keeps_three_newest",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_backup_plan_preserves_explicit_pin_beyond_three",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_tmp_candidates_require_prefix_and_age",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_disk_band_boundaries",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_housekeeping_policy.py::test_no_automatic_sqlite_or_containerd_mutation",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_canonical_deploy_checks_disk_before_frozen_artifact_transfer",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_full_docker_load_deploy_route_is_unique_and_guarded",
+        "seconds": 0.005,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_canonical_deploy_uses_policy_for_final_disk_floor",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_deploy_transfer_step_cannot_precede_guard_by_reordering",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_disk_metric_probe_avoids_runner_shell_positional_expansion",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_needed",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_final_cleanup_runs_after_runtime_validation_and_is_measured",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_disk_deploy_guard.py::test_final_cleanup_revalidates_critical_approval_after_cleanup",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_reads_main_wal_without_source_shm_and_cleans_only_own_copy",
+        "seconds": 0.006,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_scratch_total_byte_quota_rejects_before_source_copy_or_sqlite",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[bytes]",
+        "seconds": 0.004,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_preserves_required_free_space_and_inode_reserves[inodes]",
+        "seconds": 0.005,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_runtime_scratch_root_is_primary_dataset_scoped_for_separate_history_source",
+        "seconds": 0.006,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_partial_runtime_scratch_configuration_cannot_fall_back_to_tmp",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_rejects_volatile_tmpfs_instead_of_increasing_it",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[symlink]",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[public_root]",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[unknown_residue]",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_unverifiable_scratch_custody_fails_closed_and_preserves_evidence[aliased_lease]",
+        "seconds": 0.004,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_disk_scratch_cleans_owned_copy_after_consumer_error_and_expired_deadline",
+        "seconds": 0.107,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[hardlink]",
+        "seconds": 0.009,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_cleanup_preserves_current_copy_if_custody_changes_during_consumer_read[marker_replacement]",
+        "seconds": 0.007,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_sqlite_disk_scratch.py::test_NEW_killed_reader_residue_counts_toward_quota_but_does_not_block_affordable_restart",
+        "seconds": 0.065,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_default_ignores_old_variable_and_uses_own_directory",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_old_path_rejected_before_sqlite_or_directory_creation[observer/observer_production.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_old_path_rejected_before_sqlite_or_directory_creation[observer_production.db]",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_old_path_rejected_before_sqlite_or_directory_creation[observer/renamed.db]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_alias_is_not_an_independent_database[symlink]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_alias_is_not_an_independent_database[hardlink]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_existing_unmarked_legacy_is_not_adopted_or_migrated",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_fresh_dataset_keeps_old_bytes_and_starts_without_imports",
+        "seconds": 0.05,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_changed_initial_capital_cannot_rebase_an_existing_history[ARS]",
+        "seconds": 0.012,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_changed_initial_capital_cannot_rebase_an_existing_history[USD]",
+        "seconds": 0.023,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_changed_initial_capital_cannot_rebase_an_existing_history[USD_MEP]",
+        "seconds": 0.017,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_changed_initial_capital_cannot_rebase_an_existing_history[USD_CCL]",
+        "seconds": 0.014,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_invalid_capital_does_not_create_files[NaN]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_invalid_capital_does_not_create_files[Infinity]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_invalid_capital_does_not_create_files[-1]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_invalid_capital_does_not_create_files[]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_invalid_capital_does_not_create_files[not-money]",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_equivalent_capital_not_a_false_configuration_change",
+        "seconds": 0.02,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_capital_identity_does_not_round_with_decimal_context",
+        "seconds": 0.017,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_standalone_test_store_is_not_automatically_promoted_to_runtime",
+        "seconds": 0.033,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_broken_identity_is_not_repaired[namespace-OLD]",
+        "seconds": 0.021,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_broken_identity_is_not_repaired[origin-IMPORTED]",
+        "seconds": 0.012,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_broken_identity_is_not_repaired[imported_legacy-1]",
+        "seconds": 0.015,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_broken_identity_is_not_repaired[dataset_id-invalid]",
+        "seconds": 0.019,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_dashboard_does_not_create_or_fall_back_to_legacy",
+        "seconds": 0.284,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_all_entrypoints_use_new_path_even_with_old_env",
+        "seconds": 0.484,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_selector_routes_dashboard_and_runtime_to_same_new_image_and_store",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_runtime_bad_arguments_do_not_initialize_storage",
+        "seconds": 0.01,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_two_processes_initialize_exactly_one_dataset",
+        "seconds": 0.189,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_offline_candle_worker_uses_new_store_and_stops_cleanly",
+        "seconds": 0.244,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_dashboard_allocation_endpoint_rejects_unmarked_history",
+        "seconds": 0.003,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_paper_workspace_v17.py::test_report_and_backup_namespaces_do_not_collide_for_two_databases",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_t1_policy_is_fail_closed_by_default_and_ambiguous",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_t1_date_and_boundary_do_not_invent_broker_hour",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_t1_weekend_and_byma_holiday_are_respected",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_pending_receivable_releases_only_after_full_t1_date",
+        "seconds": 0.077,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_sale_on_friday_stays_pending_through_monday_settlement_day",
+        "seconds": 0.052,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_pending_confirmation_never_accepts_fabricated_available_at",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_unknown_settlement_remains_blocked",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_ci_is_unchanged_by_hotfix",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_observer_runtime_explicitly_enables_t1_policy",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_t1_settlement_hotfix.py::test_mep_catalog_funding_isolated_from_labor_day_policy",
+        "seconds": 0.049,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_runtime_dependency_is_packaged_installed_rolled_back_and_verified",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_local_v2_reconciliation_is_required_even_when_remote_refresh_is_closed_only",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_dashboard_is_recreated_directly_from_verified_candidate",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_all_verified_dashboard_modules_are_explicit_image_inputs",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_contract_reconciliation_reuses_the_immutable_candidate_image",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_contract_reconciliation_cannot_race_observer_startup_catalog_refresh",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_late_verification_uses_retained_stable_image_tag",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_contract_runner_uses_host_timeout_and_python_entrypoint",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_iol_fail_safe_contract_is_packaged_and_migrated_before_runtime_audit",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_scope_rejects_watchlist_as_universe_authority",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_live_safety_checks_do_not_use_heavy_quick_check",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_sector_map_runtime_verifier_keeps_stdin_attached",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_history_cutoff_repair_is_decoupled_from_code_deploy",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_runtime_audit_outer_budget_covers_measured_route_cycle",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_v2_fails_closed_without_two_parent_promotion_merge",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_zero_known_error_output_path_is_writable_by_dashboard_runtime_before_audit",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_waits_boundedly_for_scalping_recovery_before_immediate_audit",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_stability_fails_on_any_runtime_container_restart",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_has_lightweight_exit139_soak_after_full_audits",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_preopen_failure_preserves_diagnostics_before_fail_closed_exit",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_reclaims_own_transient_artifacts_before_preopen_disk_gate",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_rc6_deploy_runtime_completeness.py::test_deploy_refreshes_byma_authority_before_dry_preopen",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_learning_policies_stay_shadow_except_authorized_sector_risk_guard",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_hard_safety_blocks_are_separate_from_learning_policies",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_binding_paper_requires_explicit_evidence_release_tests_and_authorization",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_no_function_can_auto_promote",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_counterfactual_outcomes_are_classified_for_learning",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_summary_compares_actual_paper_with_counterfactual_binding",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_shadow_binding_contract_rc6.py::test_repository_candidate_declares_economic_gate_shadow",
+        "seconds": 0.002,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_container_rootfs.py::test_ci_inspecciona_la_imagen_configurada_y_no_un_tag_viejo",
+        "seconds": 0.13,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_container_rootfs.py::test_bot_usa_rootfs_de_solo_lectura_y_escrituras_explicitadas",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_container_rootfs.py::test_init_prepara_la_cache_para_el_usuario_sin_privilegios",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_container_rootfs.py::test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_container_rootfs.py::test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas",
+        "seconds": 0.001,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_deploy_nonroot.py::test_referencia_no_se_interpola_dentro_del_shell_remoto",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_deploy_nonroot.py::test_deploy_usa_sudo_con_el_usuario_administrativo",
+        "seconds": 0.0,
+        "status": "PASS"
+      },
+      {
+        "node": "tests/test_deploy_nonroot.py::test_deploy_prueba_sin_copia_de_persistencia_antes_de_recrear",
+        "seconds": 0.002,
+        "status": "PASS"
+      }
+    ],
+    "path": "/tmp/porota-sre-final-canonical-disk-scratch.xml",
+    "sha256": "9bc039746651257edb8307f71b59a8c368e038e2824f58c2b7868ca65419d600",
+    "suite_properties": {
+      "rc6_native_sre_disk_copy": "{\"actual_peak_scratch_bytes\": 46112768, \"copied_rows\": 10000, \"corpus\": \"EXPLICIT_SYNTHETIC_DATA_LAYOUT_REAL_SQLITE_FILESYSTEM\", \"docker_executed\": false, \"economic_edge\": \"NO_DEMOSTRADO\", \"elapsed_seconds\": 0.18561616300212336, \"estimated_peak_bytes\": 47165440, \"explicit_fixture_owner_adapter\": false, \"market_execution\": \"NO_VERIFICADO\", \"max_bytes\": 536870912, \"owner_gid\": 1000, \"owner_uid\": 1000, \"private_session_cleaned\": true, \"production_owner_uid\": 1000, \"provider_called\": false, \"reserve_bytes\": 2147483648, \"source_bytes\": 46100480, \"source_sha256\": \"7d24d42d9a5829bd9fbc6b898f9042ece1c9dc02da8e14f346970497f8bf37a1\", \"source_unchanged\": true, \"tmpfs_limit_bytes\": 33554432}"
+    },
+    "suites": [
+      {
+        "errors": "0",
+        "failures": "0",
+        "hostname": "9905252a2cbf",
+        "name": "pytest",
+        "skipped": "0",
+        "tests": "170",
+        "time": "6.124",
+        "timestamp": "2026-10-05T06:45:49.186754+00:00"
+      }
+    ]
+  },
+  "finding": "Runtime observer /tmp is 32 MiB; historical native source MAIN73,646,080B exceeds that limit. Defaults previously used temporary storage without proving Docker layout compatibility.",
+  "native_copy": {
+    "actual_peak_scratch_bytes": 46112768,
+    "copied_rows": 10000,
+    "corpus": "EXPLICIT_SYNTHETIC_DATA_LAYOUT_REAL_SQLITE_FILESYSTEM",
+    "docker_executed": false,
+    "economic_edge": "NO_DEMOSTRADO",
+    "elapsed_seconds": 0.18561616300212336,
+    "estimated_peak_bytes": 47165440,
+    "explicit_fixture_owner_adapter": false,
+    "market_execution": "NO_VERIFICADO",
+    "max_bytes": 536870912,
+    "owner_gid": 1000,
+    "owner_uid": 1000,
+    "private_session_cleaned": true,
+    "production_owner_uid": 1000,
+    "provider_called": false,
+    "reserve_bytes": 2147483648,
+    "source_bytes": 46100480,
+    "source_sha256": "7d24d42d9a5829bd9fbc6b898f9042ece1c9dc02da8e14f346970497f8bf37a1",
+    "source_unchanged": true,
+    "tmpfs_limit_bytes": 33554432
+  },
+  "schema": "rc6.sre-sqlite-disk-scratch-native.v1",
+  "source": {
+    "bad_source_paths": [],
+    "code_tested_sha": "eb9c43ff04c76d0a382375c54093b0d71e51a37e",
+    "code_tested_tree": "7be251c3cdc835ee8b9aea532009eae9d9ddc343",
+    "files_sha256": {
+      ".github/workflows/porota-deploy-v2-promote.yml": "5d0520359622f1a70b8981673f9f030891660d4a5c706bd1dfbd80591887d63a",
+      "ops/policy/rc6-disk-housekeeping-v1.json": "c6b36aa5cb8d458926f4f88dde7bf640c473059dc53b74b96900a5e6dd65f524",
+      "porota_mode_manager.py": "80ae0c708b9fc9bfd516f0b677d21e1fe60379540146119c9fe2d0bb5d5c9603",
+      "rc6_audit_evidence/sqlite_scratch.py": "b35dfc6b66d85a63736315c8bf021763ed95780e162c4cd108e6e7e745bdebe8",
+      "rc6_audit_evidence/sqlite_snapshot.py": "34e6ea35351897bc79ccb8299d1d66dc99db360a77a2b92ad41e80003b282c46",
+      "scripts/rc6_disk_space_guard.py": "3b09e8853cf3604eb740752b00c6ae98c0952b9c5764b053569f4585530eac93",
+      "scripts/rc6_sqlite_scratch_guard.py": "963ba266eb0c730be8c28c0f9463ff7e7c47fe2e3cc855c0a5e1255916c982ed",
+      "tests/test_rc6_convergence_sre_launcher.py": "47ccb94beaa990ef0e6d4f40876637f04b804d3565cd08e871752fc4d6902233",
+      "tests/test_rc6_convergence_sre_scratch.py": "96963a7aeaae2b7cab06bd4a91d74aa89dc16481272657b1fdfaa62c6f282cd3",
+      "tests/test_rc6_sqlite_disk_scratch.py": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a"
+    },
+    "physical_modes": {
+      "0644": 1318,
+      "0755": 12
+    },
+    "regular_single_link_only": true
+  },
+  "syntax": {
+    "bash_blocks": 36,
+    "status": "GREEN",
+    "yaml_files": 2
+  },
+  "validation_notes": [
+    "170 actual cases (forward 4 + 2 new final helper guards beyond preceding 164); exact XML counters agree with actual testcase elements. 0 failures / 0 errors / 0 skips.",
+    "Two nonfatal Pytest xunit2 record_property metadata warnings originate in canonical helper tests; no test failure. SRE native copy uses supported suite property.",
+    "An intermediate rerun used early worktree cwd and could not find helper testfile; no tests ran and that receipt was invalidated. Subsequent canonical 164 and this fresh canonical 170 were executed with explicit cwd.",
+    "Fixture owner adapter exists for CI host UID variation; observed native positive here used actual UID/GID1000 without adapter. Production identity remains exactly 1000. Native Docker argv was captured at real launcher callsite; Docker itself was not executed."
+  ]
+}

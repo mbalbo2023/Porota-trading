@@ -1,0 +1,498 @@
+{
+  "schema": "rc6.ux-convergence-id-test-map.v1",
+  "scope": "RC6-CONVERGENCE-UX",
+  "seed_sha": "0f810c168b0bfb5362148b804f3e15ffd1855610",
+  "status": "LOCAL_SMALL_PROJECTION_GREEN; ORIGINAL_I04_HISTORY_CONCEPT_RED_REPRODUCED; LARGE_READER_GREEN_BROWSER_RED; FINAL_FREEZE_PENDING",
+  "protected_tests": {
+    "pr": 344,
+    "count": 12,
+    "literal_unchanged": 10,
+    "ux_changes": 0,
+    "producer_exceptions": [
+      "ROOT_CORE:tests/test_candle_archive_v17.py:770fcf30",
+      "HISTORY:tests/test_rc4_acceptance.py:7de2d68b"
+    ],
+    "receipt": "docs/dashboard/evidence/rc6-convergence-ux/pr344-preservation.json"
+  },
+  "ppi_watch": {
+    "pr": 107,
+    "owned_paths_changed": 0,
+    "runtime_actions": "NOT_CALLED"
+  },
+  "entries": [
+    {
+      "id": "UX470-I01",
+      "rca": "La UX aislada derivaba db+'.shadow', diferente de artifact_root(db)/dynamic-shadow del writer; esto ocultaba generaciones reales. El reader debía verificar V2 y todos sus roles, sin fallback por mtime.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/generation.py",
+        "rc6_trader_dashboard/projected_generation.py",
+        "tests/test_rc6_dashboard_projection.py"
+      ],
+      "upstream_contracts": [
+        "rc6_shadow_runtime.persistence.shadow_evidence_root",
+        "rc6_shadow_runtime.persistence.read_committed_generation",
+        "read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_ws_dash_trader_terminal_08.py::test_json_detail_redacts_secrets_and_reader_root_matches_canonical_default",
+        "tests/test_ws_dash_trader_terminal_08.py::test_mixed_or_corrupt_generation_fails_closed",
+        "tests/test_ws_dash_trader_terminal_08.py::test_canonical_reader_rejection_has_no_legacy_fallback",
+        "tests/test_ws_dash_trader_terminal_08.py::test_missing_canonical_reader_preserves_awaiting_reconciliation",
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_dashboard_projection.py::test_projection_adapter_rejects_mutations_of_a_real_native_query",
+        "tests/test_rc6_dashboard_projection.py::test_projection_reader_failure_is_sanitized_and_has_no_full_reader_fallback",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "Autenticidad del writer requiere anclaje independiente; hashes locales prueban coherencia, no autoridad frente a un writer comprometido.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
+      ]
+    },
+    {
+      "id": "UX470-I02",
+      "rca": "Labels y campos del adapter no coincidían con OFF_BASELINE/SHADOW_BASELINE, baseline_limits y slots_by_endpoint. Una recomendación SHADOW no representa capacidad OPEN factual.",
+      "fix_paths": [
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/components.py",
+        "rc6_trader_dashboard/views_universe.py",
+        "rc6_trader_dashboard/projected_generation.py",
+        "tests/test_rc6_dashboard_projection.py"
+      ],
+      "upstream_contracts": [
+        "rc6_dynamic_universe.promotion.DEFAULT_POLICY",
+        "capacity_policy",
+        "engines[*].exit_capacity_contract",
+        "read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_native_capacity_modes_are_explicit_and_never_infer_open",
+        "tests/test_rc6_dashboard_convergence.py::test_approved_capacity_uses_benchmark_sdk_and_native_writer_not_adaptor_mock",
+        "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_unpublished_filter_is_unknown_and_preserves_source_population"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-native/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "APPROVED_DYNAMIC declara config aprobada; OPEN requiere evidencia factual fresca, demanda EXIT cubierta y contrato verificado del productor."
+      ]
+    },
+    {
+      "id": "UX470-I03",
+      "rca": "La UX buscaba rows/families/evaluations/registry y funnel.counts; el productor nativo publica experiments/cohorts/registries, entries y cohortes por moneda/canal. Los datasets presentes aparentaban vacío y los counts tenían scopes distintos.",
+      "fix_paths": [
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/view_common.py",
+        "rc6_trader_dashboard/views_analytics.py",
+        "rc6_trader_dashboard/views_home.py",
+        "rc6_trader_dashboard/projected_generation.py",
+        "tests/test_rc6_dashboard_projection.py"
+      ],
+      "upstream_contracts": [
+        "rc6.runtime-entry-signals.v1",
+        "rc6.runtime-shadow-lab.v2",
+        "rc6.prospective-operational-funnel.v1",
+        "RC6_SHADOW_FAMILY_RUNTIME_V2",
+        "read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_rc6_dashboard_convergence.py::test_native_funnel_cohort_selection_is_exact_and_cards_match_widget",
+        "tests/test_rc6_dashboard_convergence.py::test_adapter_unknown_shapes_and_typed_safety_fail_closed",
+        "tests/test_ws_dash_trader_terminal_08.py::test_funnel_uses_one_committed_cohort_not_current_ready_or_other_currency",
+        "tests/test_rc6_dashboard_convergence.py::test_native_funnel_pagination_preserves_selection_and_full_population",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_full_identity_filters_keep_table_and_funnel_in_one_scope",
+        "tests/test_rc6_dashboard_projection.py::test_projected_funnel_payload_outside_requested_scope_is_rejected",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-native/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/phase-link-native-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "SHADOW prospectivo no valida edge OOS, independencia, probabilidad ni MFE/MAE continuos. Filtro ausente no selecciona otra moneda/canal/cohort.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
+      ]
+    },
+    {
+      "id": "UX470-I04",
+      "rca": "Posiciones, counts y riesgo consultaban sólo paper_positions OPEN; se omitían FUTUROS ACTIVE de su ledger propio y un close posterior podía alterar el corte pasado.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/views_live.py",
+        "rc6_trader_dashboard/views_home.py",
+        "rc6_trader_dashboard/view_common.py",
+        "rc6_trader_dashboard/components.py"
+      ],
+      "upstream_contracts": [
+        "rc6_paper_family_lifecycle.future_positions(as_of,lifecycle_ids)",
+        "rc6_paper_family_lifecycle.future_risk_snapshot",
+        "paper_future_exit_intents",
+        "bs_instrument_contracts.register_exact_time_sql"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_active_future_with_zero_spot_is_visible_in_every_risk_surface",
+        "tests/test_rc6_dashboard_convergence.py::test_future_closed_after_cut_stays_active_at_cut_and_closes_once_with_decimal_pnl",
+        "tests/test_rc6_dashboard_convergence.py::test_native_future_supervision_intent_survives_restart_and_is_visible_without_spot"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-health-future-intents.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-native/browser-gate.json"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "Reserva histórica full-notional PAPER no es margen broker ni costo/PnL. Sin quote ejecutable, conserva intent/cause/bloqueo; no inventa close."
+      ],
+      "red_baseline_receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/original-native-product-red-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-0f810c16.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-source-0f810c16.json"
+      ]
+    },
+    {
+      "id": "UX470-I05",
+      "rca": "GREEN de #470 y su truth matrix aislada usaban un contrato sintético; no probaban el productor→reader→UI real ni igualdad del hook, paquete e imagen. Un checkpoint lógico grande también exige lectura verificada acotada y medición real.",
+      "fix_paths": [
+        "tests/rc6_dashboard_native_fixture.py",
+        "tests/test_rc6_dashboard_convergence.py",
+        "tests/ci_trader_terminal_browser.py",
+        "scripts/rc6_dashboard_route_inventory.py",
+        "DASHBOARD_TRUTH_MATRIX_RC6.json",
+        "rc6_trader_dashboard/datasets.py",
+        "rc6_trader_dashboard/generation.py",
+        "rc6_trader_dashboard/projected_generation.py",
+        "tests/test_rc6_dashboard_projection.py",
+        "tests/ci_rc6_projection_large_reader.py",
+        "tests/test_rc6_projection_source_guard.py",
+        "tests/ci_rc6_projection_large_browser.py",
+        "tests/test_rc6_projection_large_browser.py",
+        "tests/ci_rc6_exact_archive_gate.py",
+        "tests/ci_rc6_original_ux_product_red.py"
+      ],
+      "upstream_contracts": [
+        "PaperBroker.on_quote",
+        "FamilyPaperExecutor",
+        "ShadowRuntime.from_environment.tick",
+        "read_committed_generation V2",
+        "SRE source/mount/image SHA-tree guard",
+        "read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_rc6_dashboard_convergence.py::test_navigation_scope_preserves_exact_contract",
+        "tests/test_ws_dash_trader_terminal_08.py::test_every_canonical_subview_is_authenticated_and_dark",
+        "tests/test_ws_dash_trader_terminal_08.py::test_legacy_urls_keep_shell_and_corresponding_subview",
+        "tests/test_ws_dash_trader_terminal_08.py::test_package_contains_no_order_provider_network_or_mutation_code",
+        "tests/test_ws_dash_04_full_dashboard_truth.py::test_every_registered_route_has_a_programmatic_surface_and_dataset_inventory",
+        "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_dashboard_projection.py::test_native_projection_filters_and_pages_reach_last_catalog_identity",
+        "tests/test_rc6_dashboard_projection.py::test_projected_payload_that_contradicts_its_filter_is_rejected_without_refiltering",
+        "tests/test_rc6_dashboard_projection.py::test_nonfinite_or_boolean_deadline_cannot_remove_the_read_budget",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments",
+        "tests/test_rc6_projection_source_guard.py::test_native_large_acceptance_rejects_small_or_preopen_cuts",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_native_small_cut_before_importing_or_launching_playwright",
+        "tests/test_rc6_projection_large_browser.py::test_large_browser_rejects_output_aliases_before_writing_or_opening_sqlite",
+        "tests/test_rc6_dashboard_projection.py::test_request_captures_source_and_same_filtered_cut_concurrently_with_one_deadline",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_never_reuses_a_different_projection_selection",
+        "tests/test_rc6_dashboard_projection.py::test_request_prefetch_does_not_override_an_explicit_generation_reader",
+        "tests/test_rc6_dashboard_projection.py::test_request_joins_the_native_reader_on_capture_or_render_failure",
+        "tests/test_rc6_dashboard_projection.py::test_request_waits_for_unused_reader_then_discards_body_at_its_original_deadline"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-native/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/pr344-preservation.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-preparation-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-negative-focal.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/large-browser-source-review.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-first-cut-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/exact-archive-wrapper-output-negatives.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-intermediate-40f-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-native-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/request-overlap-explicit-deadline-guards.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-large-request-overlap-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-browser-components-diagnostic-88df8503.json"
+      ],
+      "pending_gates": [
+        "Browser grande:40f mejora reader(max0.811644s), pero af71ff9e intermedio falla1.181601s en1280/trading/equity-spot tras49views1440GREEN. Corregir costo, ejecutar49×6/22/interacciones sin aumentar1s.",
+        "Reejecución final de navegador/import closure sobre SHA/tree/artifact congelado con implementación launcher del owner SRE."
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "El owner SRE verifica mounts/imagen; UX no despliega ni promueve artefactos.",
+        "El runner grande corresponde al benchmark nativo monofamilia ACCIONES/BYMA/ARS/A-24HS; no certifica catálogos mixtos generales.",
+        "Productor18e COMPLETE/OPEN y reader59481b3e positivo12 requests; máximo0.993331s. Browser posterior RED y diagnóstico1.118113s: la aceptación grande permanece abierta. InputDB60000, returned20000/truncated explícito; no claim60000 procesados.",
+        "af71ff9e es checkout intermedio raíz3d+commits exactos40f/ab; no modifica la rama raíz ni declara freeze final. Viewport parcial49 no equivale a294 ni browser GREEN.",
+        "47 native guards passed for bounded request overlap; complete large browser timing remains pending and prior594/af71 REDs are preserved.",
+        "Intermediate exact88df preserved55 canonical checks/57 renders before1.014564s RED; full large browser/final root freeze remain pending."
+      ],
+      "diagnostic_probes": [
+        "tests/ci_rc6_projection_browser_diagnostic.py: NOGATE_ONLY; acceptance_complete=false"
+      ]
+    },
+    {
+      "id": "AUD-468-14",
+      "rca": "El wrapper vetaba primas <= intrínseco inmediato, aunque un put europeo válido a tasa positiva puede cotizar debajo de ese valor. Solver/wrapper/dividend yield y estilo no compartían contrato.",
+      "fix_paths": [
+        "as_greeks_engine.py",
+        "ai_derivatives_engine.py",
+        "tests/test_v161.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_greeks_contract_convergence.py::test_european_put_below_immediate_exercise_intrinsic_is_valid",
+        "tests/test_rc6_greeks_contract_convergence.py::test_non_european_or_unknown_contract_never_uses_european_model",
+        "tests/test_rc6_greeks_contract_convergence.py::test_dividend_and_rate_consistency_and_upper_lower_bounds",
+        "tests/test_rc6_greeks_contract_convergence.py::test_invalid_parameters_abstain",
+        "tests/test_rc6_greeks_contract_convergence.py::test_finite_unrepresentable_discount_bounds_abstain_without_crashing",
+        "tests/test_rc6_greeks_contract_convergence.py::test_real_option_caller_requires_explicit_contract_terms",
+        "tests/test_v161.py"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/math-annual-red.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/greeks-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "Sólo BSM EUROPEAN con tasa/dividend yield explícitos. AMERICAN/UNKNOWN o términos ausentes se abstienen. Sin autoridad de entrada ni edge validado."
+      ]
+    },
+    {
+      "id": "AUD-468-15",
+      "rca": "Informe anual rotulaba Performance a variación de precio BONOS/LETRAS sin flujos; sólo ON recibía aviso. Precio no incluye cupón, amortización, interés corrido ni reinversión.",
+      "fix_paths": [
+        "rc6_annual_instrument_analysis.py",
+        "rc6_trader_dashboard/views_analytics.py",
+        "rc6_trader_dashboard/view_common.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[BONOS]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[LETRAS]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[ON]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[OBLIGACIONES]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[OBLIGACIONES_NEGOCIABLES]"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/math-annual-red.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "Cashflows/base clean-dirty/accrued no están certificados por la serie; total return/TIR quedan NO_VERIFICADO."
+      ]
+    },
+    {
+      "id": "AUD-468-16",
+      "rca": "Historia actual, candles, snapshots, decisiones y fills podían confluir por ticker o freshness del panel. Revisión/retry/currency/base y captura atómica requieren clocks y fuentes propios.",
+      "fix_paths": [
+        "rc6_trader_dashboard/history.py",
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/components.py",
+        "rc6_trader_dashboard/views_analytics.py",
+        "rc6_annual_instrument_analysis.py"
+      ],
+      "upstream_contracts": [
+        "history_versions_v2",
+        "history_checks_v2",
+        "rc6_performance.common.decision_snapshot_phase",
+        "decision_evidence_snapshots",
+        "paper_fills"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_historical_revisions_currency_basis_and_retry_clocks_are_causal",
+        "tests/test_rc6_dashboard_convergence.py::test_native_decision_and_atomic_receipt_are_distinct_linked_causal_and_read_only",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_identity_ignores_same_ticker_currency_and_history",
+        "tests/test_ws_dash_trader_terminal_08.py::test_external_canonical_history_is_read_only_and_cannot_change_ready",
+        "tests/test_ws_dash_trader_terminal_08.py::test_exact_quote_and_contract_do_not_cross_currencies",
+        "tests/test_rc6_analysis_bounded_render.py::test_analysis_identity_selector_is_family_scoped",
+        "tests/test_rc6_dashboard_convergence.py::test_native_risk_and_valuation_updates_after_cut_do_not_retrofit_old_panel"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/phase-link-native-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/risk-cut-native-green.xml"
+      ],
+      "external_limits": [
+        "El cierre integrado requiere reejecutar sobre el SHA/tree y artefacto congelados por el parent; los receipts locales no certifican runtime productivo.",
+        "Clocks fuente/known_at se verifican al signal, costos al admission, capture al recorded y commit posterior. Freshness del panel no prueba input usado por el motor.",
+        "RED nativo original demuestra la subcláusula conceptual de presentación history; no atribuye lookahead binding ni reproduce todas las cinco superficies por sí solo. Calendar date no es cut de conocimiento."
+      ],
+      "red_baseline_receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/original-native-product-red-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-0f810c16.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/original-product-red-source-0f810c16.json"
+      ]
+    },
+    {
+      "id": "M_FIXED_INCOME_ANNUAL_LABEL",
+      "finding": "AUD-468-15",
+      "rca": "Control adversarial original rehabilitado para todas las familias de renta fija: caída de precio con cupón ausente no representa retorno total.",
+      "fix_paths": [
+        "rc6_annual_instrument_analysis.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[BONOS]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[LETRAS]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[ON]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[OBLIGACIONES]",
+        "tests/test_rc6_dashboard_convergence.py::test_fixed_income_annual_price_variation_excludes_flows_and_no_total_return_claim[OBLIGACIONES_NEGOCIABLES]"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/math-annual-red.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml"
+      ],
+      "external_limits": [
+        "Sólo variación de precio; sin cuantificar rendimiento productivo ni crear flujos."
+      ]
+    },
+    {
+      "id": "U10",
+      "role": "CONSUMER_SUPPORT",
+      "rca": "Cutoffs FUT con julianday redondean submilisegundos; UI debe compartir UDF UTC exacto del productor financiero.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_future_closed_after_cut_stays_active_at_cut_and_closes_once_with_decimal_pnl",
+        "tests/test_rc6_dashboard_convergence.py::test_ttl_boundaries_never_round_stale_or_future_clocks_into_fresh",
+        "tests/test_rc6_dashboard_convergence.py::test_native_risk_and_valuation_updates_after_cut_do_not_retrofit_old_panel"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/risk-cut-native-green.xml"
+      ],
+      "external_limits": [
+        "El cierre de APIs financieras y admisión corresponde al owner financiero."
+      ]
+    },
+    {
+      "id": "U13",
+      "role": "CONSUMER_SUPPORT",
+      "rca": "Heartbeat sano del scanner no prueba child SHADOW operativo ni generación válida/fresca; preopen y spawn failure deben estar visibles.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_trader_dashboard/views_home.py",
+        "rc6_trader_dashboard/views_live.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_runtime_native_child_health_is_independent_from_generation_freshness_and_source",
+        "tests/test_rc6_dashboard_convergence.py::test_runtime_native_spawn_failure_and_preopen_are_visible"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/native-health-future-intents.xml"
+      ],
+      "external_limits": [
+        "Productor health/launcher y runtime posterior a reboot corresponden a root/SRE y gate host autorizado."
+      ]
+    },
+    {
+      "id": "U22",
+      "role": "CONSUMER_SUPPORT",
+      "rca": "Un close futuro no debe liberar collateral/exposure al corte anterior en la UI; reconstrucción canónica y counts/página comparten cut.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_future_closed_after_cut_stays_active_at_cut_and_closes_once_with_decimal_pnl"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml"
+      ],
+      "external_limits": [
+        "El cierre de portfolio_capacity(at) corresponde al owner financiero."
+      ]
+    },
+    {
+      "id": "U24",
+      "role": "CONSUMER_SUPPORT",
+      "rca": "Abrir fuente mode=ro con WAL pendiente puede crear SHM; immutable omite WAL. UX consume copia privada main+WAL coherente del helper compartido.",
+      "fix_paths": [
+        "rc6_trader_dashboard/projection.py",
+        "rc6_annual_instrument_analysis.py",
+        "rc6_trader_dashboard/projected_generation.py",
+        "tests/test_rc6_dashboard_projection.py",
+        "tests/ci_rc6_projection_large_reader.py",
+        "tests/test_rc6_projection_source_guard.py"
+      ],
+      "upstream_contracts": [
+        "rc6_audit_evidence.sqlite_snapshot.readonly_copy(validate=False)",
+        "read_committed_projection: four same-cut roles; WIRE_AND_PROJECTION_SEMANTICS; explicit local custody"
+      ],
+      "test_nodes": [
+        "tests/test_rc6_dashboard_convergence.py::test_native_worker_reader_and_all_ui_datasets_share_default_v2_cut",
+        "tests/test_rc6_dashboard_convergence.py::test_pending_wal_without_source_shm_is_read_from_copy_including_future_mark",
+        "tests/test_rc6_dashboard_convergence.py::test_expired_read_discards_body_and_never_reopens_generation_for_error_shell",
+        "tests/test_rc6_dashboard_projection.py::test_native_four_role_projection_preserves_cut_and_never_decodes_large_originals",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_rejects_uri_aliases_and_sidecars_before_connect",
+        "tests/test_rc6_projection_source_guard.py::test_source_sqlite_guard_allows_private_or_memory_handles_without_changing_arguments"
+      ],
+      "receipts": [
+        "docs/dashboard/evidence/rc6-convergence-ux/native-writer-custody-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/ux-convergence-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/expired-cut-native-green.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/committed-projection-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/projection-scope-guard.xml",
+        "docs/dashboard/evidence/rc6-convergence-ux/browser-projected/browser-gate.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/harness-source-guard-local-receipt.json",
+        "docs/dashboard/evidence/rc6-convergence-ux/source-guard-focal.xml"
+      ],
+      "external_limits": [
+        "Cierre del export y captura/copia compartida corresponden al owner de historia. El fixture finaliza writer GC antes de medir lectura; los guards de fuente permanecen intactos."
+      ]
+    }
+  ]
+}

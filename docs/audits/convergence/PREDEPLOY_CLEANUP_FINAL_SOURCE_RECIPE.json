@@ -1,0 +1,116 @@
+{
+  "compatibility": {
+    "cleanup": "Primary and secondary upload/API verification before always cleanup; final summary gated by successful measured cleanup receipt. A failed final cleanup means run is not completed-success/promotable.",
+    "fixed_tag": "porota-predeploy-v2:<candidate> unchanged; owner labels and actual ImageID bind cleanup without changing saved RepoTags or replay authority.",
+    "frozen_paths": "All primary JSON/XML/tar/gz basenames unchanged under UUID root; Raw Gov/FIP/JUnit remain the same files joined before one build. Secondary exactly JSON/XML globs.",
+    "generated_metadata": "POROTA_SOURCE_PROVENANCE.json is a declared generated metadata member of source provenance and is explicitly admitted by verify_build_context. It is not a general overlay exception to f4 whole-source validation.",
+    "governed_policy": "repository root . automatic discovery, only original Git-verified A3 exclusion, no new allowlist/exclusions/threshold changes",
+    "one_build": "Final eligibility/material proof before only docker build; Save after gates; actual same-image tiny and published loaded-ID replay continue without rebuild.",
+    "runner_environment": "f4 requires fresh clean whole Git checkout, only genuine .git omitted, no operational POROTA/PAPER/.env. Do not launch f4 inside a post-init/freeze Predeploy checkout.",
+    "runner_temp": "Final external f4 can receive RUNNER_TEMP=<new external Raw>/evidence. Workflow direct governed collection/execution receive RUNNER_TEMP=POROTA_PREDEPLOY_TMP only for those two commands; global runner temp remains cleanup-control parent.",
+    "source_exclusions": "Versioned .dockerignore image exclusions, generated metadata authority, and unique A3 test exclusion remain separate explicit contracts.",
+    "whole_git": "Fetch original source refs before Gov; archive alone is not Git authority. Maximum-member guard captures all tracked bytes/modes into a fresh zero-overlay source and retains raw Git authority from the full caller checkout."
+  },
+  "execution_evidence_used": {
+    "executed_cases": 86,
+    "scope": "THREE CONTROLLED MODULES ONLY",
+    "source_delta_root": "CHERRY_PICK_INTEGRATION_REVIEW_ONLY_NOT_REEXECUTED_ON_ROOT",
+    "source_epoch": "54048ed3c366999922d7668cec9b5b1082db8ec6"
+  },
+  "external_final_gov_runner": {
+    "bytes": 31518,
+    "sha256": "f4e99413c0e933e7a7468156c6fea937790fcdda15f1e772e99ea7fd71b50a21",
+    "status": "PREPARED_SOURCE_NOT_FINAL_GOV_EXECUTED"
+  },
+  "limits": [
+    "No final Source C freeze or current whole-root Gov inferred",
+    "No new Native/import/collection/Docker/API/build/Actions execution for this review",
+    "Historical d933/f4 source preparation packet remains byte unchanged",
+    "Material BIG90/horizon/browser and full final Gov/image/artifact gates remain Root-owned pending conditions"
+  ],
+  "material_source_compatibility_blocker_found": false,
+  "reviewed_root_sha": "ac2d9bcb23bc87f6b5079d77eab792ad295a67d9",
+  "reviewed_root_tree": "0e6cfc7885d9c9568763783a6466f41fb3daf4ad",
+  "schema": "rc6.predeploy-cleanup-final-preparation-source-review.v1",
+  "scope": "SOURCE_ONLY_COMPATIBILITY_REVIEW_NO_NEW_NATIVE_NO_GOV_DOCKER_ACTIONS_BUILD_PUBLICATION",
+  "source_components": [
+    {
+      "bytes": 38857,
+      "git_blob": "9fa5326a857e01ac932992695caa19964bb5fae8",
+      "path": ".github/workflows/porota-predeploy-v2.yml",
+      "sha256": "38ad4642f9e71b6a7493f381058b9e6af28879bbbeb5cd68b071c6c572cc24db"
+    },
+    {
+      "bytes": 36582,
+      "git_blob": "e56a103fb27bc75706457f6ccc9279f9545a92ca",
+      "path": "scripts/porota_predeploy_cleanup.py",
+      "sha256": "31f54855e581c48ffa2ba150819157ae0672390961b452e13eceafe33a85e85f"
+    },
+    {
+      "bytes": 33757,
+      "git_blob": "7e0d0cbe22a5a59deb19524bc801e386fe7a8609",
+      "path": "scripts/porota_artifact_provenance.py",
+      "sha256": "266ce536cb98bba30bba9fb3f78cbd60f51bbe606d346ef4b3f9529e3f5c9a54"
+    },
+    {
+      "bytes": 31183,
+      "git_blob": "a8728eb88aacfacae431d3b8f1599cd1dd1f2b27",
+      "path": "scripts/porota_predeploy_binding.py",
+      "sha256": "0b89a14b4f845d90064c57d48c3dfdcb568677442fffd34925b70cc9c8c02c62"
+    },
+    {
+      "bytes": 22448,
+      "git_blob": "39ae704e9fddfe8966ecf360426f745b5f9882af",
+      "path": "scripts/porota_published_artifact_evidence.py",
+      "sha256": "8c43560a8a1aa49a8d1ff6314f442b8e0e066c17c2bd963d0609017cfd2bab90"
+    },
+    {
+      "bytes": 4398,
+      "git_blob": "ebc2b470611eef6c7b97daff26fa340677dd9db7",
+      "path": "scripts/porota_artifact_http.py",
+      "sha256": "de6cb2837e679b398d943346087830860c653a3e936a6872fedf52760273e0c5"
+    },
+    {
+      "bytes": 37593,
+      "git_blob": "c46911dba97a4d9715ba6d2ca6670a98dbdeed02",
+      "path": "scripts/rc6_convergence_provenance.py",
+      "sha256": "f49035101e611b012f0b3910e27b75921486829e3849d740b78c72337149564d"
+    },
+    {
+      "bytes": 22069,
+      "git_blob": "1348c0e56d8382cef148d768c90b3d92a2889391",
+      "path": "scripts/rc6_issue465_audit_gate.py",
+      "sha256": "2285434317c22e4f29abcdf662e857b99128eb533431f6ba437775120467acdc"
+    },
+    {
+      "bytes": 55709,
+      "git_blob": "19ebdeaec109d1a18575d76580709fd0eb7e12dc",
+      "path": "scripts/rc6_archive_maximum_member_probe.py",
+      "sha256": "8b41c1eb18c6da181d2dd349f286d78f17f97ac2ae74b8206352ae17b792fabf"
+    },
+    {
+      "bytes": 9114,
+      "git_blob": "10b44c9d2449961dd543c55fad31b03f3338c8a6",
+      "path": "tests/test_rc6_archive_maximum_member_guard.py",
+      "sha256": "4c80b2435cbd955034f3d423d539c5a091d62b9e6676e9c837f4193a89ff8dd6"
+    },
+    {
+      "bytes": 34911,
+      "git_blob": "0649ae19f5b7357a9939c69ab184168befa5aef0",
+      "path": "tests/test_issue465_stress.py",
+      "sha256": "6b7743db1e323e13caa843cef4476aa8c7b0f9e58b5c890b34281f0b9e4c5c5b"
+    },
+    {
+      "bytes": 1556,
+      "git_blob": "c1488edf5fa369b82811b930c0f581be92013636",
+      "path": "ops/policy/test-policy.yaml",
+      "sha256": "1fe33e6137bc0a6769ce390d0c4fbf584624bbec36d97254bf54ab85cc75a7e9"
+    },
+    {
+      "bytes": 103636,
+      "git_blob": "a6d4abd5c46358b6b2707e4b209f14e0babb38fb",
+      "path": "ops/policy/rc6-supply-chain-v1.json",
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462"
+    }
+  ]
+}

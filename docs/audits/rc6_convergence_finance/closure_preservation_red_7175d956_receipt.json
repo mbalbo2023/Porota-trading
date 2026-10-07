@@ -1,0 +1,96 @@
+{
+  "counting_rule": "Parametrized variants are not independent economic scenarios; this receipt tests native software mechanisms and trust limits only.",
+  "economic_edge": "EDGE_NO_DEMOSTRADO",
+  "execution_counts": {
+    "errors": 0,
+    "failures": 2,
+    "skipped": 0,
+    "tests": 19
+  },
+  "external_20_sessions_master": "EXTERNAL_NO_VERIFICADO",
+  "finished_at": "2026-10-05T04:58:59.476428+00:00",
+  "finished_source_sha": "7175d9565040715551d5a10677b56689b183e26f",
+  "harness_proof": {
+    "correct_bm_git_blob_7175d956": "30f5153e3c3875c0327dedd2e70ad24b8836bd8d",
+    "correct_bm_path": "/workspace/porota_rc6_convergence/bm_exit_supervisor.py",
+    "correct_bm_sha256": "77a9964f865aa528340f9a6f20a5e5c3f78094e583bd94670f58ed7e79ad2c20",
+    "helper_path": "/workspace/porota_rc6_worktrees/finance/tests/test_issue465_historical_package.py",
+    "helper_sha256": "335b3287badc5a85851cb9095df531cc45994e3b59bec39d2f6511d96a6bdb13",
+    "log": "closure_mixed_checkout_proof.txt",
+    "wrong_bm_git_blob": "a82bba596966365ad92181b5f13118950905343b",
+    "wrong_bm_path": "/workspace/porota_rc6_worktrees/finance/bm_exit_supervisor.py",
+    "wrong_bm_sha256": "e93f5b588919be711eb4059074ae5a3585a8dcf7f2ae782e99cdd391fa07ce2b"
+  },
+  "junit_file": "closure_preservation_red_7175d956_tests.xml",
+  "junit_sha256": "e6f36c6cb852c7548488c081d3c2e108553c2ef1f352930d080c26538a510c5e",
+  "network_attempts": [],
+  "new_guard_execution": {
+    "R19": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 1
+    },
+    "R74": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 3
+    },
+    "R78": {
+      "failures": 0,
+      "parameter_independence_claimed": false,
+      "variants": 1
+    }
+  },
+  "new_guard_native_acceptance_valid": false,
+  "preservation_regression": {
+    "fixture_assertions_weakened": false,
+    "native_nodes": [
+      "tests/test_rc6_convergence_finance_review.py::test_u08_future_supervisor_after_restart_uses_exact_book_amid_newer_wrong_identity"
+    ],
+    "production_fix_required": false,
+    "rca": "Collecting both finance test files through the own worktree imported tests.test_issue465_historical_package from that worktree. Its line14 prepended the own root to sys.path; lazily imported BM came from the older finance checkout while BE came from integrated root. Full imported graph was not checked by the original harness. Canonical root independently passed both existing native guards without production changes.",
+    "signature": "sqlite3.OperationalError: no such table: paper_future_exit_intents",
+    "status": "DIAGNOSIS_AUTOCORRECTED_NO_PRODUCTIVE_SCHEMA_BUG",
+    "variants": 2
+  },
+  "pytest_exit_code": 1,
+  "real_orders_sent": 0,
+  "real_routes_used": [],
+  "schema": "rc6.finance-closure-additive-review.v1",
+  "source_file_hashes_after": {
+    "be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
+    "rc6_audit_evidence/recompute.py": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+  },
+  "source_file_hashes_before": {
+    "be_paper_engine.py": "b7edde695875c49a75da2d125b276ea19e53350b650ee5a4c3dbba3ff1791283",
+    "bs_instrument_contracts.py": "41db66209f810bb7a90363928774dc6b299d17d009e7c5775a42ba4cb141deff",
+    "rc6_audit_evidence/package.py": "177262456183b489138e2552507d743b8199040096ed266357e297402d8b12b7",
+    "rc6_audit_evidence/recompute.py": "25ff214765bb79f1f0390dc3e4097090759ce7ae74f16444c18db98dd72ece8b",
+    "rc6_paper_family_lifecycle.py": "4accb0255b66cff6f4b7230e1a929873cb4fb19885de1938ac06b839a22e1d44",
+    "rc6_performance/costs.py": "79430166f8ceb410b2771d91f67ac71f6965a4d31f9f3943a2981b5a7844dec7"
+  },
+  "source_files_match_recorded_commit": {
+    "be_paper_engine.py": true,
+    "bs_instrument_contracts.py": true,
+    "rc6_audit_evidence/package.py": true,
+    "rc6_audit_evidence/recompute.py": true,
+    "rc6_paper_family_lifecycle.py": true,
+    "rc6_performance/costs.py": true
+  },
+  "source_root": "/workspace/porota_rc6_convergence",
+  "source_sha": "7175d9565040715551d5a10677b56689b183e26f",
+  "source_status": "MIXED_CHECKOUT_IMPORT_PROVENANCE_INVALID; NOT_PRODUCTIVE_REGRESSION_OR_NATIVE_ACCEPTANCE",
+  "source_tree": "992d99d9af0384104c0f0bbe80fce106870fb3a6",
+  "source_unchanged": true,
+  "started_at": "2026-10-05T04:58:57.169301+00:00",
+  "status": "HARNESS_MIXED_CHECKOUT_INVALID_FOR_PRODUCTIVE_CLAIMS",
+  "test_file_hashes": {
+    "tests/test_rc6_convergence_finance_historical_review.py": "2fb38b4d5e5aea01f4256c21f9bcf3cfece0da6c71bd0c3b1cc96783340adfd8",
+    "tests/test_rc6_convergence_finance_review.py": "d5e89fdbd3404f9c89ee575bd6b936116d75a9f4375f26395f1b41dbc4b168df"
+  },
+  "test_source_root": "/workspace/porota_rc6_worktrees/finance"
+}

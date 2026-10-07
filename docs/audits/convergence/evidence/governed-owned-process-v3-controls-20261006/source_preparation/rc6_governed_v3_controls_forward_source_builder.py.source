@@ -1,0 +1,272 @@
+from pathlib import Path
+import ast,hashlib,os
+old=Path('/tmp/rc6_governed_v3_owned_process_controls_candidate.py')
+new=Path('/tmp/rc6_governed_v3_owned_process_controls_candidate_v2.py')
+raw=old.read_bytes()
+assert hashlib.sha256(raw).hexdigest()=='e8032918e8476a7d41d39acfeeb54e33122884a0dec0f8805be056f757375a81'
+text=raw.decode();tree=ast.parse(text)
+functions={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+finish=r'''def finish_owned(records, observations, deadline):
+    """Total cleanup result: only known Popen PGIDs and WNOHANG, never raise."""
+    begun, exhausted, errors = time.monotonic(), False, []
+    try:
+        while True:
+            for row in records:
+                if row['group_absent']:
+                    continue
+                try:
+                    os.killpg(row['pid'], 0)
+                except ProcessLookupError:
+                    row['group_absent'] = True
+                    continue
+                number = signal.SIGKILL if time.monotonic()-begun >= 1 else signal.SIGTERM
+                try:
+                    os.killpg(row['pid'], number)
+                except ProcessLookupError:
+                    row['group_absent'] = True
+                else:
+                    observations.append({'phase': 'owned_control_cleanup', 'pgid': row['pid'],
+                                         'signal': number, 'outcome': 'SENT'})
+            try:
+                found, status, usage = os.wait4(-1, os.WNOHANG)
+            except ChildProcessError as failure:
+                require(failure.errno == errno.ECHILD, 'CONTROL_CLEANUP_UNEXPECTED_WAIT4_ERROR')
+                exhausted = True
+                observations.append({'phase': 'owned_control_cleanup', 'outcome': 'ECHILD', 'errno': failure.errno})
+            else:
+                observations.append({'phase': 'owned_control_cleanup',
+                    'outcome': 'PID_REAPED' if found else 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': found,
+                    'exit_code': os.waitstatus_to_exitcode(status) if found else None,
+                    'cpu_user_seconds': usage.ru_utime if found else None,
+                    'cpu_system_seconds': usage.ru_stime if found else None,
+                    'peak_rss_bytes': usage.ru_maxrss*1024 if found else None})
+                if found:
+                    for row in records:
+                        if row['pid'] == found:
+                            row['process'].returncode = os.waitstatus_to_exitcode(status)
+            if exhausted:
+                for row in records:
+                    if row['group_absent']:
+                        continue
+                    try:
+                        os.killpg(row['pid'], 0)
+                    except ProcessLookupError:
+                        row['group_absent'] = True
+                if all(row['group_absent'] for row in records):
+                    break
+            require(len(observations) <= 1024, 'CONTROL_CLEANUP_OBSERVATION_BOUND_EXCEEDED')
+            require(time.monotonic() < deadline, 'CONTROL_OWNED_RESIDUAL_NOT_CLEARED_WITHIN_BOUND')
+            time.sleep(.01)
+    except BaseException as failure:
+        errors.append({'phase': 'owned_cleanup', 'class': type(failure).__name__, 'reason': str(failure)})
+    return {'kernel_exhaustion_verified': exhausted,
+            'all_owned_pgids_absent': all(row['group_absent'] for row in records),
+            'remaining_owned_child_state': 'NONE_KERNEL_ECHILD' if exhausted else 'UNKNOWN_OR_ACTIVE_NO_ECHILD',
+            'owned_group_states': [{'pid': row['pid'], 'group_absent': row['group_absent']} for row in records],
+            'errors': errors, 'wall_seconds': time.monotonic()-begun,
+            'absolute_management_deadline_monotonic': deadline,
+            'scope': 'NO_FOREIGN_OR_INDIVIDUAL_PID_SIGNALS_ONLY_TRACKED_POPEN_PGIDS'}
+'''
+start,end=functions['run_case'].lineno-1,functions['run_case'].end_lineno
+run=''.join(text.splitlines(keepends=True)[start:end])
+run=run.replace('def run_case(name, directory, phase, phase_require, gate, libc, baseline=False):','def run_case(name, directory, phase, phase_require, gate, libc, all_records, total_deadline, baseline=False):',1)
+run=run.replace("    records, cleanup, injected = [], [], []\n","    records, cleanup, injected, control_errors = [], [], [], []\n    cleanup_report, raw_write_error = None, None\n",1)
+run=run.replace("        records.append({'pid': process.pid, 'process': process, 'group_absent': False})", "        record = {'pid': process.pid, 'process': process, 'group_absent': False}\n        records.append(record)\n        all_records.append(record)",1)
+run=run.replace("    assert_kernel_empty(cleanup, 'before_control_case')\n    try:\n", "    try:\n        assert_kernel_empty(cleanup, 'before_control_case')\n",1)
+needle="""    finally:
+        subprocess.Popen, os.killpg = original_popen, original_killpg
+        finish_owned(records, cleanup)
+        assert_kernel_empty(cleanup, 'after_control_case')
+        require(prctl_state(libc) == 1, 'CONTROL_OUTER_SUBREAPER_CUSTODY_CHANGED')
+        publish(directory/'actual-phase.resources.json', canonical({'actual_source_function_receipt': resources,
+            'actual_extracted_main_gate_accepted': accepted, 'actual_gate_rejection_reason': gate_reason,
+            'owned_popen_registry': [{'pid': row['pid'], 'group_absent': row['group_absent'],
+                                      'returncode': row['process'].returncode} for row in records],
+            'controlled_injections': injected, 'driver_own_cleanup_observations': cleanup,
+            'baseline_gap': baseline_gap}))
+    return {'control': name, 'expected': 'BASELINE_GAP_REPRODUCED' if baseline else
+            'ACCEPTED' if name == 'NORMAL_ZERO' else 'REJECTED',
+            'actual_main_gate_accepted': accepted, 'owned_resources_cleared': True,
+            'actual_phase_receipt_relative_path': name+'/actual-phase.resources.json', 'scope': SCOPE}
+"""
+assert run.count(needle)==1
+run=run.replace(needle,r'''    except BaseException as failure:
+        control_errors.append({'phase': 'controlled_case', 'class': type(failure).__name__, 'reason': str(failure)})
+    finally:
+        # Alarm cancellation covers the whole five-second owned management
+        # window. It is never a new acceptance budget: total_deadline is fixed.
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        subprocess.Popen, os.killpg = original_popen, original_killpg
+        cleanup_report = finish_owned(records, cleanup, min(time.monotonic()+CLEANUP_SECONDS, total_deadline))
+        if cleanup_report['errors']:
+            control_errors.extend(cleanup_report['errors'])
+        try:
+            if cleanup_report['kernel_exhaustion_verified'] and cleanup_report['all_owned_pgids_absent']:
+                assert_kernel_empty(cleanup, 'after_control_case')
+            require(prctl_state(libc) == 1, 'CONTROL_OUTER_SUBREAPER_CUSTODY_CHANGED')
+        except BaseException as failure:
+            control_errors.append({'phase': 'case_custody_verification', 'class': type(failure).__name__, 'reason': str(failure)})
+        payload = {'actual_source_function_receipt': resources,
+            'actual_extracted_main_gate_accepted': accepted, 'actual_gate_rejection_reason': gate_reason,
+            'owned_popen_registry': [{'pid': row['pid'], 'group_absent': row['group_absent'],
+                                      'returncode': row['process'].returncode} for row in records],
+            'controlled_injections': injected, 'driver_own_cleanup_observations': cleanup,
+            'driver_own_cleanup_result': cleanup_report, 'control_errors': control_errors,
+            'baseline_gap': baseline_gap, 'status': 'RED' if control_errors else 'GREEN'}
+        try:
+            publish(directory/'actual-phase.resources.json', canonical(payload))
+        except BaseException as failure:
+            raw_write_error = {'phase': 'case_raw_publication', 'class': type(failure).__name__, 'reason': str(failure)}
+            control_errors.append(raw_write_error)
+    cleared = cleanup_report['kernel_exhaustion_verified'] and cleanup_report['all_owned_pgids_absent']
+    return {'control': name, 'expected': 'BASELINE_GAP_REPRODUCED' if baseline else
+            'ACCEPTED' if name == 'NORMAL_ZERO' else 'REJECTED',
+            'status': 'GREEN' if cleared and not control_errors else 'RED',
+            'actual_main_gate_accepted': accepted, 'owned_resources_cleared': cleared,
+            'control_errors': control_errors, 'raw_publication_error': raw_write_error,
+            'actual_phase_receipt_relative_path': name+'/actual-phase.resources.json', 'scope': SCOPE}
+''',1)
+main=r'''def main(args):
+    started = time.monotonic()
+    total_deadline, preempt_deadline = started+MAX_TOTAL_SECONDS, started+PREEMPT_SECONDS
+    old_alarm = signal.getsignal(signal.SIGALRM)
+    watchdog_fired = False
+    def alarm(number, frame):
+        nonlocal watchdog_fired
+        watchdog_fired = True
+        raise TimeoutError('CONTROL_WATCHDOG_PREEMPTED_FOR_OWNED_CLEANUP')
+    signal.signal(signal.SIGALRM, alarm)
+    signal.setitimer(signal.ITIMER_REAL, PREEMPT_SECONDS)
+    # This outer finally begins before every source read/fsync and covers all
+    # restoration and final-output exceptions; no later try can bypass it.
+    try:
+        require(sys.platform == 'linux' and sys.version_info[:2] in ((3, 11), (3, 12))
+                and os.getuid() == os.geteuid() != 0 and hasattr(os, 'wait4'), 'CONTROL_LINUX_NONROOT_PYTHON_REQUIRED')
+        output = safe_path(args.output_root)
+        require(not output.exists() and output.parent.is_dir() and output.parent.stat().st_uid == os.geteuid(),
+                'CONTROL_FRESH_EXTERNAL_OWNED_OUTPUT_REQUIRED')
+        before, source_bytes = {}, {}
+        for label, path, expected in (('candidate', CANDIDATE, CANDIDATE_SHA256),
+                                      ('baseline', BASELINE, BASELINE_SHA256), ('driver', Path(__file__), None)):
+            data, before[label] = capture(path, expected)
+            source_bytes[label] = data
+        output.mkdir(mode=0o700)
+        for label, data in source_bytes.items():
+            publish(output/(label+'.py.source'), data)
+        publish(output/'source-before.json', canonical(before))
+        candidate = extracted_phase(source_bytes['candidate'], CANDIDATE)
+        baseline = extracted_phase(source_bytes['baseline'], BASELINE)
+        audit = {'network_attempts': [], 'sqlite_attempts': [], 'popen_commands': []}
+        def observe(event, arguments):
+            if event.startswith('socket.'):
+                audit['network_attempts'].append(event)
+                raise RuntimeError('CONTROL_NETWORK_OPERATION_FORBIDDEN')
+            if event == 'sqlite3.connect':
+                audit['sqlite_attempts'].append(event)
+                raise RuntimeError('CONTROL_SQLITE_OPERATION_FORBIDDEN')
+            if event == 'subprocess.Popen':
+                argv = arguments[1]
+                require(arguments[0] == sys.executable and type(argv) is list
+                        and argv[:5] == [sys.executable, '-I', '-B', '-S', '-c']
+                        and len(argv) == 6 and argv[5] in SCRIPTS, 'CONTROL_UNKNOWN_EXECUTABLE_OR_SCRIPT_FORBIDDEN')
+                audit['popen_commands'].append({'executable': sys.executable,
+                    'script_sha256': hashlib.sha256(argv[5].encode()).hexdigest()})
+        sys.addaudithook(observe)
+        libc = ctypes.CDLL(None, use_errno=True)
+        previous, active, results, outer, all_records = prctl_state(libc), False, [], [], []
+        errors, outer_cleanup, restored = [], None, None
+        subreaper_retained_for_unverified_children = False
+        try:
+            require(libc.prctl(36, 1, 0, 0, 0) == 0, 'CONTROL_OWN_SUBREAPER_REQUIRED')
+            active = True
+            assert_kernel_empty(outer, 'before_first_control_spawn')
+            cases = ('NORMAL_ZERO', 'EXIT_ONE', 'LATE_OBSERVED_REAP', 'TIMEOUT', 'ADOPTED_ALIVE',
+                     'SIGNAL_ERROR', 'SPAWN_ERROR', 'LOG_EXIT_ERROR', 'PRESPAWN_OWN_CHILD', 'BASELINE_F4_ORPHAN')
+            for name in cases:
+                remaining = preempt_deadline-time.monotonic()
+                require(not watchdog_fired and remaining > 0, 'CONTROL_TOTAL_PREEMPT_BUDGET_EXCEEDED')
+                signal.setitimer(signal.ITIMER_REAL, remaining)
+                selected = baseline if name == 'BASELINE_F4_ORPHAN' else candidate
+                result = run_case(name, output/name, *selected, libc, all_records, total_deadline,
+                                  baseline=name == 'BASELINE_F4_ORPHAN')
+                results.append(result)
+                require(result['status'] == 'GREEN' and result['owned_resources_cleared'] is True,
+                        'CONTROL_CASE_RED_OR_OWNED_EXHAUSTION_UNVERIFIED:'+name)
+            assert_kernel_empty(outer, 'after_last_control_spawn')
+        except BaseException as failure:
+            errors.append({'phase': 'controlled_execution', 'class': type(failure).__name__, 'reason': str(failure)})
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            # Same global deadline, not another five-second extension. Registry
+            # covers every actual Popen even if case RAW publication failed.
+            outer_cleanup = finish_owned(all_records, outer, min(time.monotonic()+CLEANUP_SECONDS, total_deadline))
+            errors.extend(outer_cleanup['errors'])
+            if active:
+                if outer_cleanup['kernel_exhaustion_verified'] and outer_cleanup['all_owned_pgids_absent']:
+                    try:
+                        require(libc.prctl(36, previous, 0, 0, 0) == 0,
+                                'CONTROL_SUBREAPER_INITIAL_STATE_NOT_RESTORED')
+                    except BaseException as failure:
+                        errors.append({'phase': 'outer_subreaper_restore', 'class': type(failure).__name__, 'reason': str(failure)})
+                else:
+                    subreaper_retained_for_unverified_children = True
+                    errors.append({'phase': 'outer_subreaper_restore', 'class': 'RuntimeError',
+                        'reason': 'CONTROL_SUBREAPER_RETAINED_BECAUSE_OWNED_EXHAUSTION_NOT_PROVED'})
+            try:
+                restored = prctl_state(libc)
+            except BaseException as failure:
+                errors.append({'phase': 'outer_subreaper_observation', 'class': type(failure).__name__, 'reason': str(failure)})
+        after = {}
+        try:
+            for label, path, expected in (('candidate', CANDIDATE, CANDIDATE_SHA256),
+                                          ('baseline', BASELINE, BASELINE_SHA256), ('driver', Path(__file__), None)):
+                _, after[label] = capture(path, expected)
+            require(before == after, 'CONTROL_SOURCE_ALL_ELEVEN_FIELDS_CHANGED')
+            publish(output/'source-after.json', canonical(after))
+            require(restored == previous and not subreaper_retained_for_unverified_children,
+                    'CONTROL_SUBREAPER_RESTORATION_NOT_VERIFIED')
+            require(time.monotonic() <= total_deadline, 'CONTROL_END_TO_END_WALL_BOUND_EXCEEDED')
+        except BaseException as failure:
+            errors.append({'phase': 'final_source_or_time_verification', 'class': type(failure).__name__, 'reason': str(failure)})
+        complete = not errors and not watchdog_fired and len(results) == 10 and all(r['status'] == 'GREEN' for r in results)
+        complete = complete and not audit['network_attempts'] and not audit['sqlite_attempts']
+        report = {'schema': 'rc6.governed-owned-process-controls.v1', 'scope': SCOPE,
+            'status': 'GREEN' if complete else 'RED', 'uid': os.geteuid(), 'pid': os.getpid(),
+            'interpreter': sys.executable, 'python': sys.version, 'results': results,
+            'executed_synthetic_process_controls': len(results), 'expected_controls': 10,
+            'source_before': before, 'source_after': after, 'all_eleven_source_fields_unchanged': before == after,
+            'subreaper_previous_state': previous, 'subreaper_restored_state': restored,
+            'subreaper_retained_for_unverified_children': subreaper_retained_for_unverified_children,
+            'outer_owned_cleanup_result': outer_cleanup, 'outer_kernel_observations': outer,
+            'driver_audit': audit,
+            'audit_scope': 'THIS_STDLIB_DRIVER_PROCESS; CHILD_COMMANDS_ARE_FIXED_SYNTHETIC_SOURCE_NOT_A_KERNEL_NETWORK_NAMESPACE',
+            'watchdog_preempt_seconds': PREEMPT_SECONDS, 'cleanup_management_seconds': CLEANUP_SECONDS,
+            'end_to_end_acceptance_wall_limit_seconds': MAX_TOTAL_SECONDS,
+            'watchdog_fired': watchdog_fired, 'wall_seconds_before_final_publish': time.monotonic()-started,
+            'driver_peak_rss_bytes': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
+            'errors': errors, 'product_imports': 0, 'pytest_collection_or_tests_executed': 0,
+            'full_gov_executed': False, 'artifact_or_runtime_qualified': False}
+        publish(output/'controlled-process.receipt.json', canonical(report))
+        if time.monotonic() > total_deadline:
+            publish(output/'publication-deadline-red.json', canonical({'status': 'RED',
+                'reason': 'CONTROL_PUBLICATION_OUTSIDE_END_TO_END_WALL_BOUND', 'wall_seconds': time.monotonic()-started}))
+            return 1
+        print(json.dumps({'status': report['status'], 'synthetic_process_controls': len(results),
+                          'scope': SCOPE, 'output_root': str(output)}, sort_keys=True), flush=True)
+        if time.monotonic() > total_deadline:
+            publish(output/'stdout-deadline-red.json', canonical({'status': 'RED',
+                'reason': 'CONTROL_STDOUT_OUTSIDE_END_TO_END_WALL_BOUND', 'wall_seconds': time.monotonic()-started}))
+            return 1
+        return 0 if complete else 1
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_alarm)
+'''
+replacements={'finish_owned':finish,'run_case':run,'main':main}
+for name in sorted(replacements,key=lambda n:functions[n].lineno,reverse=True):
+ node=functions[name];lines=text.splitlines(keepends=True)
+ text=''.join(lines[:node.lineno-1])+replacements[name].rstrip()+'\n'+''.join(lines[node.end_lineno:])
+b=text.encode();t=ast.parse(b);compile(t,str(new),'exec')
+fd=os.open(new,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+with os.fdopen(fd,'wb') as f:f.write(b);f.flush();os.fchmod(f.fileno(),0o644);os.fsync(f.fileno())
+print(str(new),len(b),hashlib.sha256(b).hexdigest())

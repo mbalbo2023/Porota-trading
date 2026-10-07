@@ -1,0 +1,15 @@
+{
+  "affected_visited_directory_set": "UNKNOWN",
+  "all_source_file_metadata_unchanged_inferred_from_no_content_reads": false,
+  "current_protected_directory_all_eleven_stat_custody": "NOT_VERIFIED_BY_THIS_COMMAND_ANYWHERE",
+  "file_or_data_contents_purposefully_opened_by_enumeration": false,
+  "historical_raw_and_execution_time_receipts": "UNCHANGED; AUTHORITY_ONLY_FOR_THEIR_EXECUTION_TIME_SNAPSHOTS",
+  "metadata_restoration_attempted": false,
+  "native_product_validation": false,
+  "old_data400_directory_custody": "NOT_VERIFIED",
+  "potential_metadata_scope": "Any visited directories across /workspace, including other protected historical DATA roots, may have had access timestamps changed. No post-hoc global rescan or protected-directory inspection was performed.",
+  "prior_record_path": "/workspace/rc6-publication-e24bc025-controlled-preparation/external-enumeration-incident.json",
+  "prior_record_sha256": "066356836981dc5f59591bf8e9c9f8d70f71454eacaeb3aab1e9fa37857ddcd5",
+  "recorded_at": "2026-10-05T23:02:56.423209+00:00",
+  "schema": "rc6.external-source-enumeration-incident-scope-supplement.v1"
+}

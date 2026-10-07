@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="45" time="98.322" timestamp="2026-10-06T13:18:36.744288+00:00" hostname="ef95cdb90b64"><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[count]" time="1.647" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[digests]" time="1.577" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[controller]" time="1.938" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[runtime]" time="1.905" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_budget_callers_preserve_primary_custody_and_mixed_exit_math[round]" time="2.324" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[count]" time="1.063" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[digests]" time="1.164" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[controller]" time="1.471" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_inherited_expired_deadline_never_captures_primary_or_becomes_zero[runtime]" time="1.477" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[2.0-0.2]" time="1.139" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_capture_cannot_reset_the_new_total_guard_or_an_earlier_deadline[0.01-0.02]" time="1.209" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_mandatory_cleanup_time_cannot_turn_an_expired_capture_into_success" time="1.130" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[symlink]" time="1.300" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[parent_symlink]" time="1.219" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_ledger_alias_is_unknown_without_source_sqlite_or_repair[hardlink]" time="1.202" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_shared_scratch_quota_failure_blocks_approval_without_mutating_primary" time="1.210" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_actual_native_writer_during_capture_stays_unknown_without_reader_source_effects" time="0.908" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[OFF]" time="0.897" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_baseline_capacity_state_does_not_capture_a_ledger_even_with_expired_deadline[SHADOW]" time="0.910" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_hot_rollback_journal_is_unknown_until_writer_finishes" time="0.268" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_observer_includes_its_own_capture_time_and_never_borrows_another_round" time="1.818" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[verified]" time="3.894" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[no_admission]" time="2.964" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[unverified_source]" time="3.694" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[discarded]" time="3.988" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[read_error]" time="4.052" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_late_native_round_keeps_only_its_verified_first_admission_count[foreign_observer]" time="3.587" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_current_future_scope_cannot_be_replaced_by_the_first_admission_subset" time="15.408" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_same_native_count_with_changed_identity_never_clears_from_frozen_scope" time="14.101" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[False]" time="3.100"><failure message="rc6_ppi_global_budget.BudgetBackpressure: PPI_BUDGET_CLOCK_ROLLBACK">native_ledger = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7fc91abf4ed0&gt;, &lt;be_paper_engine.PaperStore object at 0x7fc919d72190&gt;, &lt;rc6_dynamic_universe.promotion.RuntimeCapacityController object at 0x7fc919919850&gt;)
+wire = (&lt;tests.test_rc6_ppi_capacity_benchmark.Clock object at 0x7fc91abf4ed0&gt;, [('POST', 'https://clientapi.portfoliopersona...1&amp;type=ACCIONES&amp;settlement=A-24HS'), ...], {'status': 200, 'mode': 'fresh', 'latency': 0.02, 'fail_calls': set(), ...})
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7fc91abf4fd0&gt;
+discard_while_active = False
+
+    @pytest.mark.parametrize("discard_while_active", (False, True))
+    def test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire(native_ledger, wire, monkeypatch, discard_while_active):
+        import requests
+        from bd_ppi_readonly_guard import ProductionMarketReader
+        clock, store, controller = native_ledger
+        runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+        reader = ProductionMarketReader("OFFLINE_KEY", "OFFLINE_SECRET", budget=runtime, consumer="EXIT_READER")
+        identity = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+        entered, release, second = threading.Event(), threading.Event(), threading.Event()
+        original_send = requests.adapters.HTTPAdapter.send
+        original_freeze = runtime._freeze_exit_admission
+        def blocked_body(adapter, request, **kwargs):
+            if request.url.split("?", 1)[0].lower().endswith("/book"):
+                entered.set()
+                assert release.wait(5)
+            return original_send(adapter, request, **kwargs)
+        def traced_freeze(scope, budget):
+            result = original_freeze(scope, budget)
+            if entered.is_set():
+                second.set()
+            return result
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", blocked_body)
+        monkeypatch.setattr(runtime, "_freeze_exit_admission", traced_freeze)
+        try:
+            reader.login_once()
+            before = len(wire[1])
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                first = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+                assert entered.wait(5)
+                if discard_while_active:
+                    reader.discard_exit_round_scope()
+                following = pool.submit(scoped_book, reader, identity, "EXIT_CRITICAL")
+                try:
+                    assert second.wait(5)
+                    observed = reader.observe_exit_round(elapsed_seconds=.1, deadline_seconds=5)
+                    assert observed["status"] == "DEGRADED" and observed["lower_suspended"]
+                    assert observed["required_identities_count"] is None
+                    assert observed["frozen_admission_scope"] is None
+                    assert observed["fresh_required_count"] is None
+                    assert not observed["required_scope_verified_current"]
+                finally:
+                    release.set()
+&gt;               assert first.result(5)["bids"] and following.result(5)["bids"]
+                                                   ^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_budget_source_custody.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:449: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../python-owned/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_issue465_budget_adversarial.py:46: in scoped_book
+    return reader.book(identity[0], identity[1], identity[4])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bd_ppi_readonly_guard.py:411: in book
+    return shared(identity, lambda: self._read("book", ticker, instrument_type, settlement),
+rc6_ppi_global_budget.py:1760: in coalesced_book
+    return budget.coalesced_book(identity, fetch, consumer=consumer, priority=priority)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_ppi_global_budget.py:1157: in coalesced_book
+    pending, last_observed_clock = self._book_flight_pending(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;rc6_ppi_global_budget.GlobalPPIBudget object at 0x7fc919ed9410&gt;
+key = 'd85a2b78c3aa6b7070995c1fb4450ead136e35dcc7744f1ab972237fe5c58a45'
+lease = '3d1461de60584cf6a8d7b7d809da042b'
+authority = '77b563b42aa7d47296d6b39c43078853523c392a98847f296df0690d1078109b'
+age = 5, critical = True, last_observed_clock = 1791208866.04
+
+    def _book_flight_pending(self, key, lease, authority, age, *, critical, last_observed_clock):
+        """Observe a committed wait without competing with its finishing writer.
+    
+        This snapshot grants no cache, service, or send authority. A changed
+        flight/cache/pressure returns to the existing authoritative write,
+        which rechecks the clock, policy, circuits and retained envelopes.
+        """
+        with closing(self._connect()) as c:
+            c.execute("PRAGMA query_only=ON")
+            c.execute("BEGIN")
+            now = stamp(self.clock()).timestamp()
+            if now &lt; last_observed_clock or now &lt; self._get(c, "last_clock", now):
+&gt;               raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
+E               rc6_ppi_global_budget.BudgetBackpressure: PPI_BUDGET_CLOCK_ROLLBACK
+
+rc6_ppi_global_budget.py:1046: BudgetBackpressure</failure></testcase><testcase classname="tests.test_rc6_budget_source_custody" name="test_native_concurrent_admission_cannot_share_frozen_round_authority_or_duplicate_wire[True]" time="2.986" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state[IMMEDIATE]" time="3.128" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_committed_native_exit_follower_does_not_compete_with_writer_or_use_uncertain_state[EXCLUSIVE]" time="3.104" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_committed_follower_rejects_clock_rollback_between_readonly_observations" time="2.432" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_round_rejects_impossible_frozen_capture_clock_in_writer_and_reader" time="2.672" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[other_valid_bindings]" time="0.014" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[valid_empty_historical_scope]" time="0.014" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_bool]" time="0.012" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[identity_over_limit]" time="0.013" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[reserved_too_small]" time="0.012" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_bool]" time="0.011" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_negative]" time="0.013" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[demand_missing]" time="0.012" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[configuration_malformed]" time="0.012" /><testcase classname="tests.test_rc6_budget_source_custody" name="test_historical_metadata_schema_never_authorizes_an_unknown_current_scope[recommendation_malformed]" time="0.013" /></testsuite></testsuites>

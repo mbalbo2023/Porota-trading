@@ -1,0 +1,30 @@
+--- a/scripts/rc6_controlled_governed_runner.py
++++ b/scripts/rc6_controlled_governed_runner.py
+@@ -864,6 +864,13 @@
+     finally:
+         finalization = finalize_child_infrastructure(infrastructure_initial)
+         publish(output/(args.phase+'.child-finalization.json'), canonical(finalization))
++    require(finalization['status'] == 'GREEN' and finalization['finalization_thread_finished'] is True
++            and finalization['kernel_echild_before_phase_return'] is True
++            and finalization['signal_guard_installed_and_witnessed'] is True
++            and not finalization['termination_signal_attempts']
++            and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False
++            and finalization['wall_seconds'] <= 5 and not finalization['errors'],
++            'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED')
+     product_names = {Path(name).stem for name in pin['files'] if '/' not in name and name.endswith('.py')}
+     product_names |= {name.split('/')[0] for name in pin['files']
+                      if '/' in name and name.endswith('.py') and name.split('/')[0] not in ('tests', 'docs', '.github', '.agents')}
+@@ -896,13 +903,6 @@
+         **observations, 'inet_observation_scope': 'THIS_PYTEST_PYTHON_PROCESS_DNS_INET_SOCKET_AUDIT_AND_KNOWN_CLIENT_EXECUTABLES; NOT A KERNEL_NETWORK_NAMESPACE_OR TRANSITIVE_CHILD_NETWORK_ATTESTATION',
+         'import_observation_scope': 'ACTUAL_PRODUCT_MODULES_PRESENT_AT_PHASE_EXIT; NESTED_NATIVE_GUARDS_BIND_THEIR_OWN_SOURCE'}
+     publish(output/(args.phase+'.observations.json'), canonical(report))
+-    require(finalization['status'] == 'GREEN' and finalization['finalization_thread_finished'] is True
+-            and finalization['kernel_echild_before_phase_return'] is True
+-            and finalization['signal_guard_installed_and_witnessed'] is True
+-            and not finalization['termination_signal_attempts']
+-            and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False
+-            and finalization['wall_seconds'] <= 5 and not finalization['errors'],
+-            'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED')
+     return rc
+ 
+ 

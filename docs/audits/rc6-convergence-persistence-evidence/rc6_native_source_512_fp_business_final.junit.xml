@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="88" time="17.442" timestamp="2026-10-05T13:10:13.466045+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[runtime]" time="2.723" /><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[entry_signals]" time="0.012" /><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[lab]" time="0.010" /><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[families]" time="0.006" /><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[stages]" time="0.011" /><testcase classname="tests.test_rc6_native_source_reads" name="test_all_native_consumers_open_only_private_sqlite_and_preserve_original_custody[metadata]" time="0.010" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[symlink]" time="0.003" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[parent_symlink]" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_source_guard_rejects_alias_before_capture_or_worker_resolve[hardlink]" time="0.002" /><testcase classname="tests.test_rc6_native_source_reads" name="test_original_identity_replacement_between_stat_and_copy_is_rejected" time="0.094" /><testcase classname="tests.test_rc6_native_source_reads" name="test_expired_capture_deadline_never_opens_sqlite_or_changes_source" time="0.003" /><testcase classname="tests.test_rc6_native_source_reads" name="test_canonical_scratch_quota_is_shared_and_failure_preserves_original_source" time="0.011" /><testcase classname="tests.test_rc6_native_source_reads" name="test_native_worker_restart_keeps_original_keys_clocks_and_source_sidecars" time="0.269" /><testcase classname="tests.test_rc6_native_source_reads" name="test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_completed_scopes_after_transport_change" time="2.349" /><testcase classname="tests.test_rc6_component_archive" name="test_canonical_factory_and_native_publisher_keep_original_512_file_quota_and_bind_configuration" time="1.645" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_starts_at_tail_and_never_reconstructs_existing_positions" time="0.010" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_prospective_runtime_preregisters_all_six_variants_with_exact_factual_inputs" time="0.029" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_restart_duplicate_native_timestamp_and_same_input_costs_are_deterministic" time="0.057" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_future_quotes_and_late_preentry_observations_never_become_features" time="0.010" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate0-ENTRY_NATIVE_CLOCKS_UNAVAILABLE]" time="0.031" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate1-ENTRY_FUTURE_OR_REVERSED_CLOCKS]" time="0.029" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate2-FACTUAL_ENTRY_COST_AUTHORITY_MISMATCH]" time="0.026" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate3-EXECUTED_ENTRY_COST_ANCHOR_MISMATCH]" time="0.027" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_missing_or_conflicting_factual_lineage_fails_closed_without_source_changes[mutate4-FACTUAL_EOD_POLICY_UNAVAILABLE]" time="0.035" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_tampered_immutable_evidence_is_not_registered" time="0.026" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_configuration_and_checkpoint_digest_changes_invalidate_without_backfill" time="0.034" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_eod_labels_mfe_mae_net_and_cohorts_require_actual_endpoint" time="0.051" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_maxhold_and_eod_detect_without_executable_book_and_never_fill_overnight" time="0.040" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_real_orders_and_reversed_runtime_clock_fail_closed" time="0.032" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_read_only_runtime_survives_live_wal_writer_and_never_initializes_paperstore" time="0.041" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_future_position_timestamp_does_not_register_when_clock_later_catches_up" time="0.040" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_bounded_snapshot_read_censors_labels_and_empirical_touch_denominators" time="0.041" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_source_oversize_json_is_not_materialized_into_checkpoint" time="0.027" /><testcase classname="tests.test_rc6_shadow_lab_runtime" name="test_economics_model_consumes_only_new_completed_prospective_labels" time="0.074"><failure message="rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-319/test_economics_model_consumes_0')
+
+    def test_economics_model_consumes_only_new_completed_prospective_labels(tmp_path):
+        """Thirty fresh synthetic sessions exercise the runtime's OOS model path.
+    
+        No history import/model bundle is supplied to the worker. The only source
+        of its model is labels that this same API collected after preregistration.
+        """
+        path = source(tmp_path)
+        _, checkpoint = tick(path, clock(0))
+        for day in range(31):
+            base = START+timedelta(days=day)
+            for seconds, price in ((30, "99"), (90, "100"), (150, "99.5"), (210, "100.5"), (270, "99.8"), (330, "100.1")):
+                at = (base+timedelta(seconds=seconds)).isoformat()
+                add_quote(path, quote(at, price))
+                _, checkpoint = tick(path, at, checkpoint)
+            opened = (base+timedelta(seconds=390)).isoformat()
+            add_entry(path, paper_id=f"PAPER-{day}", opened=opened)
+            registration = (base+timedelta(seconds=391)).isoformat()
+            report, checkpoint = tick(path, registration, checkpoint)
+            current = next(entry for entry in report["entries"] if entry["entry"]["paper_id"] == f"PAPER-{day}")
+            if day &lt; 30:
+                assert current["economics_shadow"]["status"] == "NO_VERIFICADO"
+            else:
+                economics = current["economics_shadow"]
+                assert economics["status"] == "EVALUATED"
+                assert economics["model_observations"] == 30
+                assert datetime.fromisoformat(economics["training_cutoff"]) &lt; datetime.fromisoformat(current["entry"]["decision_at"])
+                assert economics["expected_gross_move"] == "0.06"
+                assert not economics["economic_edge_validated"]
+                assert current["entry"]["score"] == ".7"
+                assert economics["decision_effect"] == "NONE"
+                assert economics["real_order_routes"] == []
+                break
+            target = (base+timedelta(seconds=390+900)).isoformat()
+            add_quote(path, quote(target, "106"))
+&gt;           report, checkpoint = tick(path, target, checkpoint)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rc6_shadow_lab_runtime.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_shadow_lab_runtime.py:93: in tick
+    return evaluate_runtime_lab(path, as_of=at, previous=previous, runtime_config=CONFIG, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/lab.py:665: in evaluate_runtime_lab
+    source_key, tails, rows, existing, truncated = _read(database, at, prior, row_limit)
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+rc6_shadow_runtime/lab.py:109: in _read
+    with source_connection(path, deadline=deadline) as (connection, source_info):
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_shadow_runtime/source_reads.py:28: in source_connection
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_snapshot.py:138: in readonly_copy
+    if _read(Path(str(path) + suffix), info, deadline=deadline) != digests[suffix]:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+member = PosixPath('/tmp/pytest-of-agent/pytest-319/test_economics_model_consumes_0/paper.sqlite')
+expected = (33, 2902249, 33188, 1, 28672, 1791205822388363008, ...)
+deadline = 45222.296871349, destination = None, scratch_guard = None
+
+    def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
+        # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
+        # source-owner capture is required; silently degrading would change it.
+        if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+            raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+        digest = hashlib.sha256()
+        try:
+            descriptor = os.open(member, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                if _metadata(os.fstat(stream.fileno())) != expected:
+&gt;                   raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
+E                   rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY
+
+rc6_audit_evidence/sqlite_snapshot.py:61: SnapshotError</failure></testcase><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_same_snapshot_registry_native_baseline_and_causal_candidates" time="0.025" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved" time="0.023"><failure message="rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-319/test_hold_candidate_feature_do0')
+
+    def test_hold_candidate_feature_does_not_override_native_action_and_nullable_buy_preserved(tmp_path):
+&gt;       store, cp = boot(tmp_path)
+                    ^^^^^^^^^^^^^^
+
+tests/test_rc6_shadow_entry_signals.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rc6_shadow_entry_signals.py:72: in boot
+    first, checkpoint = entry.evaluate_runtime_entry_signals(store.path, as_of=FREEZE,
+rc6_shadow_runtime/entry_signals.py:553: in evaluate_runtime_entry_signals
+    source = _read_rows(database, as_of=at, tables=("decision_evidence_snapshots", "market_snapshots"),
+rc6_shadow_runtime/entry_signals.py:128: in _read_rows
+    with source_connection(path, deadline=deadline) as (c, source_info):
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_shadow_runtime/source_reads.py:28: in source_connection
+    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+/home/agent/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+rc6_audit_evidence/sqlite_snapshot.py:138: in readonly_copy
+    if _read(Path(str(path) + suffix), info, deadline=deadline) != digests[suffix]:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+member = PosixPath('/tmp/pytest-of-agent/pytest-319/test_hold_candidate_feature_do0/source.db')
+expected = (33, 2902342, 33188, 1, 4096, 1791205822585497365, ...)
+deadline = 45222.445926019, destination = None, scratch_guard = None
+
+    def _read(member, expected, *, deadline, destination=None, scratch_guard=None):
+        # Preserve source atime too. If the caller cannot obtain O_NOATIME, a
+        # source-owner capture is required; silently degrading would change it.
+        if not hasattr(os,'O_NOFOLLOW') or not hasattr(os,'O_NOATIME'):
+            raise SnapshotError('SOURCE_OWNER_CAPTURE_REQUIRED')
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME
+        digest = hashlib.sha256()
+        try:
+            descriptor = os.open(member, flags)
+            with os.fdopen(descriptor, "rb") as stream:
+                if _metadata(os.fstat(stream.fileno())) != expected:
+&gt;                   raise SnapshotError("SOURCE_SNAPSHOT_BUSY")
+E                   rc6_audit_evidence.sqlite_scratch.SnapshotError: SOURCE_SNAPSHOT_BUSY
+
+rc6_audit_evidence/sqlite_snapshot.py:61: SnapshotError</failure></testcase><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_future_outcomes_are_isolated_and_mature_oos_with_truthful_anchor_and_costs" time="0.043" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_currency_and_strategy_cohorts_do_not_mix_futures_cost_model" time="0.042" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_versions_and_configurations_never_share_oos_cohort" time="0.049" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[native_clock-NATIVE_SIGNAL_CLOCKS_REQUIRED]" time="0.022" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[signal_future-NATIVE_SIGNAL_CLOCK_ORDER_INVALID]" time="0.020" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[provider_future-NATIVE_PROVIDER_RECEIPT_CLOCK_INVALID]" time="0.022" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[old_signal-ENTRY_NOT_AFTER_PREREGISTRATION]" time="0.021" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[future_feature-FUTURE_ENTRY_FEATURE]" time="0.024" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[price_receipt-NATIVE_PRICE_VECTOR_CLOCK_INVALID]" time="0.028" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[price_identity-NATIVE_PRICE_VECTOR_IDENTITY_MISMATCH]" time="0.019" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[unregistered-STRATEGY_NOT_VALIDATED]" time="0.019" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[wrong_schema-NATIVE_ENTRY_INPUT_SCHEMA_INVALID]" time="0.023" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_native_integrity_and_no_lookahead_guards[crossed-CROSSED_BOOK]" time="0.027" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_missing_native_features_remain_unverified_without_fake_rvol" time="0.022" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_explicit_missing_exact_vector_does_not_reconstruct_or_drop_native_baseline" time="0.025" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_futures_entry_lab_requires_exact_specialized_contract" time="0.021" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_futures_cost_uncertainty_cannot_certify_modeled_net_edge[multiplier]" time="0.033" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_futures_cost_uncertainty_cannot_certify_modeled_net_edge[fee_provenance]" time="0.028" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_missing_native_depth_censors_only_microstructure_hypothesis" time="0.023" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_hash_source_safety_restart_and_budgets_are_fail_closed" time="0.043" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_backlog_bounds_and_trading_writer_do_not_create_false_complete_labels" time="0.043" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_registry_digest_and_input_outcome_rejection" time="0.004" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_oos_auc_uses_two_matured_classes_without_posthoc_score_inversion" time="0.057" /><testcase classname="tests.test_rc6_shadow_entry_signals" name="test_pure_snapshot_variants_are_isolated_even_with_input_mutation" time="0.002" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of0]" time="0.026" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of1]" time="0.032" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads[as_of2]" time="0.032" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_dispatches_all_ten_families_with_specialized_evidence_and_no_database_mutation" time="0.011" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_missing_or_stale_specialized_evidence_never_falls_back_to_equity" time="0.005" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_source_capture_is_not_provider_freshness_and_future_revision_is_unavailable" time="0.003" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_options_are_selected_by_underlying_expiry_moneyness_and_own_ancillary_clocks" time="0.006" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_new_invalid_book_invalidates_previous_receipt_and_non_equity_has_no_scanner" time="0.004" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_paper_guard_and_invalid_identity_are_explicit" time="0.004" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_observation_read_is_bounded_and_reports_partial_coverage" time="1.007" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_existing_iol_family_reference_is_bound_by_contract_and_capture_cannot_validate_nav_or_rates" time="0.009" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_real_catalog_standard_option_contract_proves_strike_dimension_without_ticker_parsing" time="0.008" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_newer_complement_publication_does_not_reuse_older_ppi_catalog_clock" time="0.004" /><testcase classname="tests.test_rc6_shadow_family_runtime" name="test_independent_feature_clocks_cannot_borrow_fresh_parent_quote_clocks" time="0.003" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes" time="0.989" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens" time="3.015" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_closed_worker_never_claims_open_capacity_or_calls_provider" time="0.331" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_missing_inwheel_preopen_fail_closed_never_backdated" time="0.129" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_readonly_worker_does_not_wait_for_trading_write_lock" time="0.363" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_source_or_configuration_invalidates_checkpoint_and_future_rejected" time="0.726" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_exclusive_evidence_lock_alias_and_quota_never_overwrite_input" time="0.005" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_canonical_child_entry_never_constructs_trading_store" time="0.016" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_canonical_supervisor_installs_shadow_child_with_existing_restart_control" time="0.019" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_audited_session_uses_next_operational_day_and_previous_close" time="0.001" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_loss" time="0.228" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_existing_byma_scraper_cache_is_observe_only_and_cannot_backfill_on_config_restart" time="0.393" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file" time="0.004" /><testcase classname="tests.test_rc6_shadow_runtime_wiring" name="test_configured_iol_cache_is_reused_and_protected_as_an_input" time="0.182" /></testsuite></testsuites>

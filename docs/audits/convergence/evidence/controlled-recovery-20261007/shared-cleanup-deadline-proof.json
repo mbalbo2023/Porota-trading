@@ -1,0 +1,108 @@
+{
+  "all_existing_test_function_AST_unchanged": true,
+  "all_input_stat11_unchanged": true,
+  "existing_Gov_other_function_class_nodes_unchanged": true,
+  "existing_stress_business_function_class_nodes_unchanged": true,
+  "inputs": [
+    {
+      "all11_unchanged": true,
+      "bytes": 55935,
+      "path": "/dev/shm/rc6-root-stress-fin-v2-20261007-0015/rc6_issue465_stress.py.proposed",
+      "sha256": "2a30fdefbe70db982385a8fba9211db7a8be0405bdaa0b8bbecf0fe8d9db769c",
+      "stat11": {
+        "st_atime_ns": 1791333507593287149,
+        "st_blocks": 112,
+        "st_ctime_ns": 1791333318389758221,
+        "st_dev": 26,
+        "st_gid": 1000,
+        "st_ino": 708,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791333318389758221,
+        "st_nlink": 1,
+        "st_size": 55935,
+        "st_uid": 1000
+      }
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 64676,
+      "path": "/dev/shm/rc6-gov-fix-20261007-0015-v2/scripts/rc6_controlled_governed_runner.py",
+      "sha256": "89ddbdfe6af4e5055b2fb5641bfb33b875c127d44c34bee2440a7f9c606c75a4",
+      "stat11": {
+        "st_atime_ns": 1791332691960625988,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791332533381322773,
+        "st_dev": 26,
+        "st_gid": 1000,
+        "st_ino": 693,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791332533381322773,
+        "st_nlink": 1,
+        "st_size": 64676,
+        "st_uid": 1000
+      }
+    },
+    {
+      "all11_unchanged": true,
+      "bytes": 24934,
+      "path": "/dev/shm/rc6-root-stress-fin-v2-20261007-0015/test_rc6_stress_native_cli_lifecycle.py.proposed",
+      "sha256": "7ea1fe3cfe74f8e720b1cd2b6abf51ef22c9a9c9feff2bc9860b330fbd65afd5",
+      "stat11": {
+        "st_atime_ns": 1791333318390703601,
+        "st_blocks": 56,
+        "st_ctime_ns": 1791333318392386192,
+        "st_dev": 26,
+        "st_gid": 1000,
+        "st_ino": 710,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791333318392386192,
+        "st_nlink": 1,
+        "st_size": 24934,
+        "st_uid": 1000
+      }
+    }
+  ],
+  "native_execution_tests": 0,
+  "new_native_controls": [
+    "invalid/extended/past/nonfinite/bool absolute deadline rejected before actual stdlib finalizer",
+    "actual early cleanup then exception cannot reset deadline or retry; Source/DATA postread barrier remainsfalse"
+  ],
+  "no_second_thread_after_missing_or_unfinished_first_receipt": true,
+  "original_SIGTERM_negative_test_source_text_exact_unchanged": true,
+  "original_six_stage_protocol_schema_kept": true,
+  "outputs": [
+    {
+      "bytes": 61718,
+      "diff": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/rc6_issue465_stress.py.diff",
+      "diff_bytes": 10967,
+      "diff_sha256": "0c665f3b652bb1ab5a3f1e5c6111c5efa8df26047544c5744c30b8468dd8d517",
+      "path": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/rc6_issue465_stress.py.proposed",
+      "sha256": "1e4a980400a676ed5a2db46433ead12fc7a1a6fd2292603580678ef076c53800"
+    },
+    {
+      "bytes": 65172,
+      "diff": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/rc6_controlled_governed_runner.py.diff",
+      "diff_bytes": 1462,
+      "diff_sha256": "2ccaee41923a4e5145d9544c85bb50a24f672d9b04307546343169488731a8c5",
+      "path": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/rc6_controlled_governed_runner.py.proposed",
+      "sha256": "fdfba719d6dde27cf7c59cc3356f2ac492bb958f73646e1c8cde503575febedf"
+    },
+    {
+      "bytes": 29729,
+      "diff": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/test_rc6_stress_native_cli_lifecycle.py.diff",
+      "diff_bytes": 5215,
+      "diff_sha256": "52bb4370993afc7cb1826d79e79a8b86b68ed593382c66bd84b48a883db32fda",
+      "path": "/dev/shm/rc6-stress-shared-deadline-v3-4khi9nhw/test_rc6_stress_native_cli_lifecycle.py.proposed",
+      "sha256": "c6da4497a11049819ab77a58597c09003cc3e6aa95e35b74fe3348c2497add17"
+    }
+  ],
+  "single_cleanup_deadline_irreversible_before_first_attempt": true,
+  "source_git_actions_api_mutations": 0,
+  "status": "PROPOSAL_ONLY_SYNTAX_AST_CHECKED_NOT_EXECUTED",
+  "two_actual_passes_share_same_absolute_deadline": true,
+  "validation_required_in_Actions": [
+    "entire unchanged stress native CLI lifecycle suite including original real SIGTERM negative",
+    "entire Gov controlled runner suite both epochs",
+    "whole frozen-source Gov and exact material gates remain required; no qualified evidence claimed here"
+  ]
+}

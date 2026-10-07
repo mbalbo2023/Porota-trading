@@ -1,0 +1,149 @@
+{
+  "acceptance_complete": false,
+  "artifacts": {
+    "family-health-311-original-failure-summary.json": {
+      "file": "family-health-311-original-failure-summary.json",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 10976,
+      "original_sha256": "846f3de9d435ed0178adda7f36b0706f579518e79af745efa4237ddd9f2f3731",
+      "stored_bytes": 10976,
+      "stored_sha256": "846f3de9d435ed0178adda7f36b0706f579518e79af745efa4237ddd9f2f3731"
+    },
+    "family-health-311-receipt.json": {
+      "file": "family-health-311-receipt.json.gz",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 817506,
+      "original_sha256": "989ce884eeac09a085a51bdd6d98e75ebd1ae34ba13debe640ec4082132c039c",
+      "stored_bytes": 281447,
+      "stored_sha256": "ce7d95c6b88147acefe4afa14aecc276d39336db8c4072f5d4370f75a7845cb2"
+    },
+    "family-health-311-started.json": {
+      "file": "family-health-311-started.json.gz",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 411596,
+      "original_sha256": "a6b78f4e5f53e556c1243e544b08b9278f17327b1aafa8fa18236094a84c68a5",
+      "stored_bytes": 142072,
+      "stored_sha256": "dbb03a7a872f2800df349a71602cedadd15dd54da305e8f39385c2ac2f455bb0"
+    },
+    "family-health-311.stderr": {
+      "file": "family-health-311.stderr",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 0,
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 0,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "family-health-311.stdout": {
+      "file": "family-health-311.stdout.gz",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 4214031,
+      "original_sha256": "6468884fe91e7b5475df5432ed320c04f8d5805ee7a7cce1ea9f9911eb263be2",
+      "stored_bytes": 7192,
+      "stored_sha256": "bfce7e81f8b98d2bfe380f8a709221e14ac28debf3c7110536452629cffaf336"
+    },
+    "family-health-311.xml": {
+      "file": "family-health-311.xml.gz",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 4214892,
+      "original_sha256": "5c3d02323ccf9262904866c71920e74aaf04981ff7b3953e8db5d74ada75319d",
+      "stored_bytes": 7101,
+      "stored_sha256": "69d0762c1e875292cad26c469d72e3f986cd953bef69e97177101da8e8128e9c"
+    },
+    "functional-run.py": {
+      "file": "functional-run.py",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 6091,
+      "original_sha256": "688b499f82ca170b7f8c3ec1fb0e749bf522a9ecd4e6f0bce9f2d40696c9eb58",
+      "stored_bytes": 6091,
+      "stored_sha256": "688b499f82ca170b7f8c3ec1fb0e749bf522a9ecd4e6f0bce9f2d40696c9eb58"
+    },
+    "preparation.json": {
+      "file": "preparation.json",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 793,
+      "original_sha256": "986749297686863f7a954a48c182315f6551b3373e1000160f2955e09266bb7d",
+      "stored_bytes": 793,
+      "stored_sha256": "986749297686863f7a954a48c182315f6551b3373e1000160f2955e09266bb7d"
+    },
+    "source.commit.raw": {
+      "file": "source.commit.raw",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 658,
+      "original_sha256": "de8fa2f9b3dfeab1f1ff05533568aa93d8757641afa02f06e841846cac0bfcae",
+      "stored_bytes": 658,
+      "stored_sha256": "de8fa2f9b3dfeab1f1ff05533568aa93d8757641afa02f06e841846cac0bfcae"
+    },
+    "source.index.json": {
+      "file": "source.index.json.gz",
+      "lossless_roundtrip_verified": true,
+      "original_bytes": 533010,
+      "original_sha256": "67dd6f6ab3faa914e502e407fb888c6bdf730726eacb3d079af724965f0e246c",
+      "stored_bytes": 172452,
+      "stored_sha256": "f291b138a061f70feffa63add6bca7e8d75f103752ad1a3b0d0306fd92cac0ff"
+    }
+  },
+  "attribution": "ONLY_ORIGINAL_6d2a9_SOURCE_NOT_PREPARED_SMALL_FIX_OR_ROOT_CURRENT",
+  "big_fixture_execution": false,
+  "chrome_execution": false,
+  "consumer1s_for_error_scope": "NOT_REACHED",
+  "driver_role": "FUNCTIONAL157_STDLIB_DRIVER_AND_SEPARATE_PRODUCT157; PLAYWRIGHT158_NOT_STARTED",
+  "installed_count": 157,
+  "launcher_pid": 214747,
+  "metadata_sha256": "754416932c5894eda247dffbc31ef666bc9b703d25ffab7fe824cffadfcdd5ac",
+  "modules": {
+    "tests.test_rc6_browser_family_health_coverage": {
+      "errors": 7,
+      "failures": 0,
+      "passed": 10,
+      "skipped": 0
+    },
+    "tests.test_rc6_browser_product_ipc": {
+      "errors": 0,
+      "failures": 0,
+      "passed": 35,
+      "skipped": 0
+    },
+    "tests.test_rc6_projection_browser_diagnostic": {
+      "errors": 0,
+      "failures": 0,
+      "passed": 13,
+      "skipped": 0
+    },
+    "tests.test_rc6_projection_large_browser": {
+      "errors": 0,
+      "failures": 0,
+      "passed": 7,
+      "skipped": 0
+    }
+  },
+  "original_raw_root": "/tmp/rc6-ux-family-health-6d2a9f14-raw",
+  "overall_green": false,
+  "pytest_pid": 214751,
+  "python": "3.11.16 (main, Sep 24 2026, 17:56:40) [Clang 22.1.3 ]",
+  "python312_execution": "NOT_STARTED_ON_THIS_SOURCE",
+  "schema": "rc6.ux-original-functional-failure-dossier.v1",
+  "source_files": 1776,
+  "source_hashes_modes_blobs_unchanged": true,
+  "source_internal_timeout_stage": "NOT_OBSERVED_IN_ORIGINAL_RAW",
+  "source_overlay_count": 0,
+  "source_sha": "6d2a9f144da872b9066cc1ffb531386d5dba56da",
+  "source_tar_retained_outside_git": {
+    "bytes": 67430400,
+    "path": "/tmp/rc6-ux-family-health-6d2a9f14-raw/source.tar",
+    "reconstructable_from_git_archive_sha": "6d2a9f144da872b9066cc1ffb531386d5dba56da",
+    "sha256": "fc74606d8e017f7cfbb71e187bedc24f2674545c3b3dde893e550b785d436a33"
+  },
+  "source_tree": "7b01f90025b251e9c3a72a79b949b561b7a45933",
+  "status": "FUNCTIONAL_SETUP_ERROR_ORIGINAL_RAW_PRESERVED",
+  "suite": {
+    "errors": "7",
+    "failures": "0",
+    "hostname": "9905252a2cbf",
+    "name": "pytest",
+    "skipped": "0",
+    "tests": "72",
+    "time": "89.026",
+    "timestamp": "2026-10-05T19:23:41.957032+00:00"
+  },
+  "sys_executable": "/workspace/venv_rc6_frozen311/bin/python"
+}

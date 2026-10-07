@@ -7,8 +7,8 @@ todavía de metadatos suficientes para operar un instrumento concreto.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 import unicodedata
 
 
@@ -63,6 +63,19 @@ def aware_datetime(value, name="fecha"):
     return result
 
 
+def utc_microseconds(value):
+    """An exact UTC instant, including offsets, without SQLite/float rounding."""
+    if value is None:
+        return None
+    delta = aware_datetime(value).astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+
+
+def register_exact_time_sql(connection):
+    """Install a read-only scalar on this connection; no schema/data mutation."""
+    connection.create_function("rc6_instant_us", 1, utc_microseconds, deterministic=True)
+
+
 def family_name(value):
     key = str(value or "").upper().strip().replace("_", "").replace("-", "").replace(" ", "")
     key = _ALIASES.get(key, key)
@@ -92,6 +105,10 @@ class InstrumentContract:
     minimum_quantity: Decimal | None = None
     paper_margin_policy: str | None = None
     paper_margin_rate: Decimal | None = None
+    price_tick: Decimal | None = None
+    price_tick_source: str | None = None
+    price_tick_known_at: str | None = None
+    price_tick_effective_at: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "family", family_name(self.family))
@@ -100,6 +117,13 @@ class InstrumentContract:
             raise ValueError("Contrato incompleto: símbolo, mercado, plazo y fuente son obligatorios")
         for field in ("cash_multiplier", "quantity_step"):
             object.__setattr__(self, field, decimal_value(getattr(self, field), field, positive=True))
+        if self.price_tick is not None:
+            object.__setattr__(self, "price_tick", decimal_value(self.price_tick, "price_tick", positive=True))
+            if not str(self.price_tick_source or "").strip():
+                raise ValueError("PRICE_TICK_PROVENANCE_REQUIRED")
+        for field in ("price_tick_known_at", "price_tick_effective_at"):
+            if getattr(self, field) is not None:
+                aware_datetime(getattr(self, field), field)
         if self.minimum_quantity is not None:
             object.__setattr__(self, "minimum_quantity", decimal_value(self.minimum_quantity, "minimum_quantity", positive=True))
             if self.minimum_quantity % self.quantity_step:
@@ -147,6 +171,73 @@ class InstrumentContract:
         if qty % self.quantity_step:
             raise ValueError("Cantidad incompatible con el lote del instrumento")
         return qty
+
+    def execution_price_terms(self):
+        """Execution grid only; it is not a cash quantum or settlement rule.
+
+        Legacy DLR snapshots retain their original digest and receive only the
+        narrowly validated standard-contract rule. Its retrieval date does not
+        establish historical effectivity, PPI series availability or fees.
+        """
+        if self.price_tick is not None:
+            return {"price_tick": self.price_tick, "source": self.price_tick_source,
+                    "known_at": self.price_tick_known_at,
+                    "effective_at": self.price_tick_effective_at,
+                    "scope": "CONTRACT_EXECUTION_GRID"}
+        if self.family == "FUTUROS":
+            from rc6_ppi_future_contract_policy import standard_dlr_terms
+            terms = standard_dlr_terms(self.symbol)
+            if (terms and self.currency == "ARS" and self.market == "A3"
+                    and self.settlement == "INMEDIATA"
+                    and self.cash_multiplier == Decimal("1000")
+                    and self.quantity_step == self.minimum_quantity == Decimal("1")
+                    and self.underlying == terms["underlying"]
+                    and aware_datetime(self.expires_at) == aware_datetime(terms["expires_at"])):
+                return {"price_tick": Decimal(terms["price_tick"]),
+                        "source": terms["price_tick_source"],
+                        "known_at": terms["price_tick_known_at"],
+                        "effective_at": terms["price_tick_effective_at"],
+                        "historical_effectivity": "NO_VERIFICADO",
+                        "scope": "STANDARD_DLR_LONG_PAPER_EXECUTION_GRID_V1"}
+        raise ValueError("EXECUTION_PRICE_GRID_REQUIRED")
+
+    def price(self, value, *, price_kind, source=None, rule=None, at=None):
+        """Validate a typed price and preserve the supplied Decimal precision."""
+        result = decimal_value(value, "precio", positive=True)
+        kind = str(price_kind or "").upper()
+        if kind in {"QUOTE", "TRADE", "FILL", "BOOK_MARK"}:
+            terms = self.execution_price_terms()
+            if result % terms["price_tick"]:
+                raise ValueError("EXECUTION_PRICE_OFF_GRID:" + kind)
+        elif kind == "PAPER_SETTLEMENT":
+            # Explicit simulator input, never an official settlement claim.
+            pass
+        elif kind in {"OFFICIAL_SETTLEMENT", "OFFICIAL_MARK"}:
+            if (not str(source or "").strip() or not isinstance(rule, dict)
+                    or rule.get("mode") != "PRESERVE_PUBLISHED_DECIMAL"
+                    or not str(rule.get("version") or "").strip()
+                    or at is None):
+                raise ValueError("OFFICIAL_PRICE_RULE_REQUIRED")
+            decision = aware_datetime(at)
+            for clock in ("known_at", "effective_at"):
+                if not rule.get(clock) or utc_microseconds(rule[clock]) > utc_microseconds(decision):
+                    raise ValueError("OFFICIAL_PRICE_RULE_NOT_KNOWN_OR_EFFECTIVE")
+            quantum = decimal_value(rule.get("quantum"), "official_price_quantum", positive=True)
+            if result % quantum:
+                raise ValueError("OFFICIAL_PRICE_PRECISION_INVALID")
+        else:
+            raise ValueError("PRICE_KIND_REQUIRED")
+        return result
+
+    def executable_fill(self, value, *, side):
+        """Quantize once in the adverse direction at the executable boundary."""
+        raw = decimal_value(value, "precio fill", positive=True)
+        direction = {"BUY": ROUND_CEILING, "SELL": ROUND_FLOOR}.get(str(side).upper())
+        if direction is None:
+            raise ValueError("EXECUTION_FILL_SIDE_REQUIRED")
+        tick = self.execution_price_terms()["price_tick"]
+        result = (raw / tick).to_integral_value(rounding=direction) * tick
+        return self.price(result, price_kind="FILL")
 
     def notional(self, price, quantity):
         if self.family == "CAUCIONES":

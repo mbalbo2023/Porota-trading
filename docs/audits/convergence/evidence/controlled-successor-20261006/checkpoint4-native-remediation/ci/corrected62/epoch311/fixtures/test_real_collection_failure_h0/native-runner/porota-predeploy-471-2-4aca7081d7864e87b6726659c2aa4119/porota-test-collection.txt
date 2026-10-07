@@ -1,0 +1,10 @@
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting test_native_owned.py _____________________
+test_native_owned.py:1: in <module>
+    raise RuntimeError("CONTROLLED_COLLECTION_FAILURE")
+E   RuntimeError: CONTROLLED_COLLECTION_FAILURE
+=========================== short test summary info ============================
+ERROR test_native_owned.py - RuntimeError: CONTROLLED_COLLECTION_FAILURE
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+no tests collected, 1 error in 0.09s

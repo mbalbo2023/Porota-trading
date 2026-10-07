@@ -1,0 +1,12 @@
+{
+  "schema": "rc6.sre-maximum-member-pytest-parent-wait4.v1",
+  "pid": 206762,
+  "returncode": 0,
+  "management_timeout": false,
+  "elapsed_wall_seconds": 128.18506630299817,
+  "cpu_user_seconds": 109.894557,
+  "cpu_system_seconds": 15.851348999999999,
+  "real_peak_rss_bytes": 342335488,
+  "scope": "EXACT_PYTEST_PID_AND_KERNEL_ACCOUNTED_REAPED_DESCENDANTS; NATIVE_CHILD_300_SECOND_POLICY_IS_SEPARATE_ACTUAL_INNER_WAIT4",
+  "source_clean_after": true
+}

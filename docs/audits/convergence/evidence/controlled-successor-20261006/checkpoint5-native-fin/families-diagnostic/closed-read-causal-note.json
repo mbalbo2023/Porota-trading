@@ -1,0 +1,412 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "PPI_Watch": "UNTOUCHED",
+  "Source_edits": false,
+  "authorized_receipt": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6022299548",
+  "binding_red": {
+    "all_function_code_identity_module_filename_firstline_stable": true,
+    "differences": [
+      {
+        "after": "ce73c6666411471788159a5577eb9b4f14a25f3682fb388933c732a420fb2c71",
+        "before": "27ff45f98f0e75da6b9e83943d77018a5c74e1a0456740144900876c45464d25",
+        "field": "code_marshal_sha256",
+        "function": "snapshot.readonly_copy"
+      }
+    ],
+    "marshal_difference_exact_cause_proven": false,
+    "no_false_equivalence_or_fingerprint_GREEN": "Only one readonly_copy marshal hash differed; no function/code replacement was observed. No captured marshal bytes or per-code fields before/after permit resolving the hash difference. Keep raw RED.",
+    "raw_native_function_and_code_bindings_equal": false,
+    "source_bytes_rawGit_mode10_preserved": true
+  },
+  "causal_conclusion": {
+    "actual_query_or_copy_or_JSON_defect_proven": false,
+    "callback_overhead_was_material_to_the_instrumented_read": true,
+    "independent_component_absent_canonical_full_tick_heap_gc_allocation_and_prior_lifecycle_state": true,
+    "measured_costs_are_diagnostic_only": true,
+    "native_Source_original_guards_and_outputs_not_modified": true,
+    "no_source_fix_proposed_as_proven_from_this_profile": true,
+    "optional_future_hypothesis_not_authorized_or_proven": "Avoid helper invocation only for exact{} metadata while allocating distinct private{} per row; 12000 calls proved, canonical savings and callback contract not proved",
+    "original_BIG_time_failure_exact_cause_unresolved": true
+  },
+  "custody": {
+    "Source_atime_changes": {
+      "diagnostic_clone": [
+        {
+          "after": 1791309637692658159,
+          "before": 1791309630033183390,
+          "kind": "file",
+          "path": "cg_paper_workspace.py"
+        },
+        {
+          "after": 1791309637692658159,
+          "before": 1791309629964257855,
+          "kind": "file",
+          "path": "_version.py"
+        },
+        {
+          "after": 1791309637660658162,
+          "before": 1791309630014549194,
+          "kind": "file",
+          "path": "bs_instrument_contracts.py"
+        },
+        {
+          "after": 1791309637660658162,
+          "before": 1791309629979947176,
+          "kind": "file",
+          "path": "am_us_equity_calendar_rc6.py"
+        },
+        {
+          "after": 1791309637668658162,
+          "before": 1791309633027718190,
+          "kind": "file",
+          "path": "fe_fixed_income_nominal_contract_rc6.py"
+        },
+        {
+          "after": 1791309637672658161,
+          "before": 1791309633134992883,
+          "kind": "file",
+          "path": "rc6_dynamic_universe/sources.py"
+        },
+        {
+          "after": 1791309637672658161,
+          "before": 1791309633129684995,
+          "kind": "file",
+          "path": "rc6_dynamic_universe/common.py"
+        },
+        {
+          "after": 1791309637672658161,
+          "before": 1791309633127071987,
+          "kind": "file",
+          "path": "rc6_dynamic_universe/__init__.py"
+        },
+        {
+          "after": 1791309637672658161,
+          "before": 1791309633133649034,
+          "kind": "file",
+          "path": "rc6_dynamic_universe/routing.py"
+        },
+        {
+          "after": 1791309637652658164,
+          "before": 1791309633178045516,
+          "kind": "file",
+          "path": "rc6_shadow_runtime/families.py"
+        },
+        {
+          "after": 1791309637680658161,
+          "before": 1791309633209736759,
+          "kind": "file",
+          "path": "rc6_shadow_runtime/source_reads.py"
+        },
+        {
+          "after": 1791309637652658164,
+          "before": 1791309633173326791,
+          "kind": "file",
+          "path": "rc6_shadow_runtime/__init__.py"
+        },
+        {
+          "after": 1791309637676658160,
+          "before": 1791309633208816697,
+          "kind": "file",
+          "path": "rc6_shadow_runtime/source_authority.py"
+        },
+        {
+          "after": 1791309637684658160,
+          "before": 1791309633113781002,
+          "kind": "file",
+          "path": "rc6_audit_evidence/sqlite_scratch.py"
+        },
+        {
+          "after": 1791309637684658160,
+          "before": 1791309633115605323,
+          "kind": "file",
+          "path": "rc6_audit_evidence/sqlite_snapshot.py"
+        },
+        {
+          "after": 1791309637688658159,
+          "before": 1791309633113002039,
+          "kind": "file",
+          "path": "rc6_audit_evidence/recompute.py"
+        },
+        {
+          "after": 1791309637680658161,
+          "before": 1791309633112205991,
+          "kind": "file",
+          "path": "rc6_audit_evidence/package.py"
+        },
+        {
+          "after": 1791309637680658161,
+          "before": 1791309633086143469,
+          "kind": "file",
+          "path": "rc6_audit_evidence/__init__.py"
+        },
+        {
+          "after": 1791309637692658159,
+          "before": 1791309633340758657,
+          "kind": "file",
+          "path": "scripts/rc6_sqlite_scratch_guard.py"
+        },
+        {
+          "after": 1791309637642708766,
+          "before": 1791309633327906075,
+          "kind": "file",
+          "path": "scripts/rc6_issue465_stress.py"
+        },
+        {
+          "after": 1791309637680658161,
+          "before": 1791309629648695930,
+          "kind": "directory",
+          "path": "rc6_audit_evidence"
+        },
+        {
+          "after": 1791309637672658161,
+          "before": 1791309629648695930,
+          "kind": "directory",
+          "path": "rc6_dynamic_universe"
+        },
+        {
+          "after": 1791309637652658164,
+          "before": 1791309629648695930,
+          "kind": "directory",
+          "path": "rc6_shadow_runtime"
+        }
+      ],
+      "original_frozen_export": []
+    },
+    "original_and_clone_Source_bytes_modes_rawGit_and10_fields_preserved": true,
+    "original_and_clone_database_hash_sidecars_all11_preserved": true,
+    "scope": "PYTHON_SQLITE_CONNECT_AUDIT_AND_OWNED_DECLARED_PROCESS_FIELDS; NO_BINARY_KERNEL_TRANSITIVE_NETWORK_PROOF",
+    "sql_audit_actual": {
+      "denied": [],
+      "registered_and_witnessed": true,
+      "requests": [
+        {
+          "original_or_cloned_source": false,
+          "private_derived_copy": true
+        }
+      ],
+      "scope": "PYTHON_SQLITE3_CONNECT_AUDIT_ONLY",
+      "source_sqlite_opened": false
+    }
+  },
+  "future_oracles_unchanged": [
+    "test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff",
+    "test_empty_native_metadata_remains_private_to_each_instrument",
+    "test_all_native_family_outputs_match_eager_reference_without_discarded_empty_quote_reads",
+    "test_observation_read_is_bounded_and_reports_partial_coverage",
+    "test_rc6_native_source_reads.py",
+    "test_rc6_source_capture_deadlines.py",
+    "test_rc6_history_snapshot_copy.py",
+    "test_rc6_sqlite_disk_scratch.py"
+  ],
+  "gate_qualified": false,
+  "import_red": {
+    "invalid": [
+      {
+        "module": "__main__",
+        "origin": "ALIEN",
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+        "phase": "BEFORE"
+      },
+      {
+        "module": "__mp_main__",
+        "origin": "ALIEN",
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+        "phase": "BEFORE"
+      },
+      {
+        "module": "__main__",
+        "origin": "ALIEN",
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+        "phase": "AFTER"
+      },
+      {
+        "module": "__mp_main__",
+        "origin": "ALIEN",
+        "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+        "phase": "AFTER"
+      }
+    ],
+    "no_main_mp_alias_rebinding": true,
+    "status": "BLOCKED_ALIEN_OR_UNPINNED",
+    "transient_closure_verified": false
+  },
+  "instrumented_timing": {
+    "all_SELECT_intervals": [
+      {
+        "cursor_iteration_list_interval_cpu_seconds": 0.033523377000000076,
+        "cursor_iteration_list_interval_wall_seconds": 0.033522516998345964,
+        "initial_native_execute_cpu_seconds": 0.009184532000000134,
+        "initial_native_execute_wall_seconds": 0.009183283000311349,
+        "query_through_original_post_list_len_wall_seconds": 0.04270579999865731,
+        "returned_or_raised": "c_return",
+        "returned_rowcount": 12000,
+        "table": "financial_instrument_catalog"
+      },
+      {
+        "cursor_iteration_list_interval_cpu_seconds": 0.0008683190000000618,
+        "cursor_iteration_list_interval_wall_seconds": 0.0008669770031701773,
+        "initial_native_execute_cpu_seconds": 0.00012635799999993758,
+        "initial_native_execute_wall_seconds": 0.0001263369995285757,
+        "query_through_original_post_list_len_wall_seconds": 0.000993314002698753,
+        "returned_or_raised": "c_return",
+        "returned_rowcount": 0,
+        "table": "market_snapshots"
+      },
+      {
+        "cursor_iteration_list_interval_cpu_seconds": 1.5402999999913902e-05,
+        "cursor_iteration_list_interval_wall_seconds": 1.638500179979019e-05,
+        "initial_native_execute_cpu_seconds": 0.010069995999999914,
+        "initial_native_execute_wall_seconds": 0.010068927997053834,
+        "query_through_original_post_list_len_wall_seconds": 0.010085312998853624,
+        "returned_or_raised": "c_return",
+        "returned_rowcount": 0,
+        "table": "ppi_intraday_points"
+      },
+      {
+        "cursor_iteration_list_interval_cpu_seconds": 5.9189999999098575e-06,
+        "cursor_iteration_list_interval_wall_seconds": 5.969002813799307e-06,
+        "initial_native_execute_cpu_seconds": 7.882700000005904e-05,
+        "initial_native_execute_wall_seconds": 7.890699998824857e-05,
+        "query_through_original_post_list_len_wall_seconds": 8.487600280204788e-05,
+        "returned_or_raised": "c_return",
+        "returned_rowcount": 0,
+        "table": "paper_equity_by_currency"
+      }
+    ],
+    "all_profile_events_received": {
+      "c_call": 66062,
+      "c_exception": 15,
+      "c_return": 66046,
+      "call": 16099,
+      "return": 16099
+    },
+    "budget_start_to_pre_yield_check162_wall_seconds": 0.07437751999896136,
+    "callback_body_wall_is_lower_bound_dispatch_timer_and_final_accumulator_not_all_included": true,
+    "callback_calls": 164321,
+    "close_guard_scratch_cleanup_164_to172_wall_seconds": 0.0017539639993628953,
+    "consumer_yield_span_162_to164_wall_seconds": 0.3689208520008833,
+    "json_loads_all_read_window_totals": {
+      "calls_completed": 27,
+      "inclusive_instrumented_cpu_seconds": 0.001892807000000829,
+      "inclusive_instrumented_wall_seconds": 0.0018467030131432693
+    },
+    "json_loads_from_metadata_mapping": 0,
+    "json_loads_metadata_zero_proof": "12000inputs exact{}; native _mapping line53 returns fresh{} before json.loads58",
+    "mapping_input_kind_counts": {
+      "EXACT_EMPTY_OBJECT_LITERAL": 12000
+    },
+    "mapping_totals": {
+      "calls_completed": 12000,
+      "inclusive_instrumented_cpu_seconds": 0.05122950900000656,
+      "inclusive_instrumented_wall_seconds": 0.05056144678746932
+    },
+    "mapping_utf8_bytes_counted": 24000,
+    "metadata_transform_gap_after_list_before_next_pragma_cpu_seconds": 0.31334635899999985,
+    "metadata_transform_gap_after_list_before_next_pragma_wall_seconds": 0.3134343780002382,
+    "native_timing_extrapolation_or_addition_of_nested_intervals": false,
+    "no_native_DICT_ZIP_exclusive_cost_claim": "Transformation gap includes dict/zip, fresh metadata, row.update, append, loop, allocation/GC and observer overhead; not separated by this profile",
+    "observed_callback_body_wall_seconds": 0.291485869,
+    "original_budget_seconds": 0.5,
+    "post_cleanup_check172_remaining_seconds": 0.05494766400079243,
+    "post_yield_check164_remaining_seconds": 0.056701628000155324,
+    "pre_yield_check162_remaining_seconds": 0.42562248000103864,
+    "profiling_cost_overlaps_and_is_not_subtracted_to_qualify": true,
+    "snapshot_copy_and_recheck_two_byte_passes": {
+      "calls_completed": 2,
+      "inclusive_instrumented_cpu_seconds": 0.046866480999999904,
+      "inclusive_instrumented_wall_seconds": 0.04686472400135244
+    },
+    "whole_read_cpu_seconds": 0.445114153,
+    "whole_read_wall_seconds": 0.44521073199939565
+  },
+  "native_original_big_red_retained": {
+    "failing_source_check": 164,
+    "native_handler_families_seconds": 0.504610402,
+    "native_json_sha256": "37ba6f845457fa16aac07393acd9b9a80b102cfa3c16158e68fd8c9679193043",
+    "reason": "TIME_BUDGET_EXHAUSTED",
+    "summary_sha256": "5a9562934ae34c63c5a88dd6a2db345169fc30caaf0c270935fb5323f9dab1f2"
+  },
+  "native_partial_or_result_lengths": {
+    "cash": 0,
+    "errors": 0,
+    "metadata": 12000,
+    "quotes": 0,
+    "truncated": 0
+  },
+  "native_read_returned": true,
+  "original_as_of": "2026-10-05T13:20:00+00:00",
+  "original_big_RED_reproduced_by_component": false,
+  "process": {
+    "PGID_absent_after_reap": true,
+    "PGID_absent_at_main_reap": true,
+    "actual_child_pid": 21155,
+    "actual_child_reaped": true,
+    "adopted_reaped": [],
+    "cleanup_seconds": 7.06350001564715e-05,
+    "forced_termination_attempts": [],
+    "kernel_returncode": 1,
+    "launch_to_pid_reap_seconds": 2.0043245519991615,
+    "original_finalization_status": "GREEN",
+    "peak_rss_bytes": 144429056,
+    "post_ECHILD_owned_exhaustion": true,
+    "postread_barrier_closed": true,
+    "pre_ECHILD": true,
+    "remaining_owned_children": [],
+    "residuals": [],
+    "signals": [],
+    "supervisor_pid": 21150,
+    "timed_out": false,
+    "wait4_reaped_pid": 21155
+  },
+  "raw_hashes": {
+    "binding_after": {
+      "bytes": 2585,
+      "sha256": "2a9fd01b8c4459dd2b5d30bbe3e460d97b777ee0cbd5c44bcb9e3b1a5efe7218"
+    },
+    "binding_before": {
+      "bytes": 2585,
+      "sha256": "a407678d077eeab10abe0c2722d4fac4ceb9956c1220e146bf733abab2857b92"
+    },
+    "final": {
+      "bytes": 8987,
+      "sha256": "650ebec36ebc596ac75734c25940f99fe281ff614fe6e8af12875f760a17c5fd"
+    },
+    "finalization": {
+      "bytes": 1595,
+      "sha256": "77c7ef156de23d4cdb58067459faa4b648b14144ed105b5b028c04f8e963d252"
+    },
+    "import_final": {
+      "bytes": 218408,
+      "sha256": "fdb6c02953009ddec30f38fd300dfaaee778f718d21bd8dea409f3fafa35c594"
+    },
+    "kernel": {
+      "bytes": 2029,
+      "sha256": "b484c1af9e6f3bc63949c7e8cb891ba404144bed5014e20d0a6aa10f48209b41"
+    },
+    "native_result": {
+      "bytes": 7104231,
+      "sha256": "512e7fa86b8558391467e8d86902285b8f86edbd4a67d164e3e09c2f95f63547"
+    },
+    "profile": {
+      "bytes": 14717,
+      "sha256": "39b05b185fba874db848982d3158f375bb0f4e6d89055e87053cefdc10c1d59d"
+    },
+    "sqlite_connect_audit": {
+      "bytes": 246,
+      "sha256": "085c66cd0e86cc2922e7d2817aaf6506ea0b37c0933bcf5202abba1b0e9f531a"
+    }
+  },
+  "real_orders_sent": 0,
+  "schema": "rc6.single-native-families-read.closed-raw-causal-note.v1",
+  "single_native_read_calls": 1,
+  "source_fixture_cutoff_notes": {
+    "catalog_clock": "PRE13:20",
+    "intraday_clocks": "AT13:35 minus30*j seconds for j0..4, all after PRE",
+    "queries_execute_but_no_intraday_rows_materialized_at_PRE": true
+  },
+  "source_index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED",
+  "tests_or_SQL_or_native_read_retried": false
+}

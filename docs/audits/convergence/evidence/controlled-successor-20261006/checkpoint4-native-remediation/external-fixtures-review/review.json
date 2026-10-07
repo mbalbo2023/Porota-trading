@@ -1,0 +1,72 @@
+{
+  "schema": "rc6.external-disk-fixture-custody-fix-forward-review.v1",
+  "base_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "base_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "UNCOMMITTED_LOCAL_PREPARATION_ONLY",
+  "paths": [
+    {
+      "path": "tests/test_issue465_stress.py",
+      "base_sha256": "115b80da213824ae173a5d7a80ce56a021d889dd21d85076e80801bf32996d19",
+      "current_sha256": "ba3f00e5c91e245c00c9651a0af39ffdb94beae5a98a46005447da2b5a1b9811",
+      "bytes": 37437
+    },
+    {
+      "path": "tests/test_rc6_history_large_preopen.py",
+      "base_sha256": "b259b56597622566899c594e58203f1348271add0836483f7211bac256602c45",
+      "current_sha256": "b2e68b5eb574fb00f2034e28388c2c38ed562d142be26acb4bd0b19bc83be3d2",
+      "bytes": 10520
+    },
+    {
+      "path": "tests/test_rc6_native_source_reads.py",
+      "base_sha256": "b5b9381a9b668bc9527a92d10694162b8ff5ba9d62fed8e8dace44e2312e8c1d",
+      "current_sha256": "a6179b76990232e546aca3a94f0e9e4ec0097c3f013bb55d195df5e28fb879a1",
+      "bytes": 14361
+    },
+    {
+      "path": "tests/test_rc6_sqlite_disk_scratch.py",
+      "base_sha256": "ebeb7855be5ae3f72a193eb004e2c02794a8be1f5366394bc97061e8ed03679a",
+      "current_sha256": "279ea6a09909ad9c325609332cf9053ae2e822a1a892be2fae0ef03649b706f3",
+      "bytes": 15144
+    },
+    {
+      "path": "tests/rc6_external_disk_fixture.py",
+      "base_sha256": null,
+      "current_sha256": "a267b150432658af81c9ec4b9c1e03b2bc7384fe876d95ae5a4b7658a347f52f",
+      "bytes": 2764
+    }
+  ],
+  "original_assertion_ast_preservation": {
+    "tests/test_issue465_stress.py": {
+      "original_function_count": 30,
+      "all_original_assertions_verbatim_ast": true,
+      "original_assertion_count": 118
+    },
+    "tests/test_rc6_history_large_preopen.py": {
+      "original_function_count": 9,
+      "all_original_assertions_verbatim_ast": true,
+      "original_assertion_count": 41
+    },
+    "tests/test_rc6_native_source_reads.py": {
+      "original_function_count": 11,
+      "all_original_assertions_verbatim_ast": true,
+      "original_assertion_count": 38
+    },
+    "tests/test_rc6_sqlite_disk_scratch.py": {
+      "original_function_count": 14,
+      "all_original_assertions_verbatim_ast": true,
+      "original_assertion_count": 40
+    }
+  },
+  "exact_constructor_replacements": 5,
+  "causal_original_red_receipt": "/workspace/scratch/rc6-cwd-custody-repro022-86615bd-wqycg5f0/receipt.json",
+  "causal_original_red_signature": "SOURCE_DIRECTORY_STABLE_CUSTODY_CHANGED:.",
+  "diff": "/workspace/scratch/rc6-external-fixtures-fix-forward-86615bd-qcsl8pc6/fix-forward.diff",
+  "diff_sha256": "7fa3060536ad38d4906d55b6c1fdf77f6ab4f347499f02b2bd66673ea2f1ead4",
+  "full_gov_or_focals_executed_by_this_agent": false,
+  "tests_and_budgets_relaxed": false,
+  "code_or_data_guards_modified": false,
+  "git_or_github_writes": false,
+  "real_orders_sent": 0,
+  "artifact_validated": false,
+  "runtime_validated": false
+}

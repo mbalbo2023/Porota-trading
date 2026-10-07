@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="6" time="5.603" timestamp="2026-10-06T14:40:00.493761+00:00" hostname="ef95cdb90b64"><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[normal]" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="74" time="1.195" /><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_standard_native_cli_reaps_actual_tracker_and_preserves_paper_business[slow-fsync]" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="74" time="1.481" /><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_existing_native_receipt_is_never_overwritten_and_no_fixture_starts" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="115" time="0.169" /><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_real_inet_bind_is_denied_before_fixture_and_native_cli_stays_red" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="124" time="0.269" /><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_silent_audit_registration_veto_fails_closed_before_native_fixture" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="152" time="0.273" /><testcase classname="tests.test_rc6_stress_native_cli_lifecycle" name="test_real_finalizer_sigterm_is_vetoed_and_cannot_turn_actual_business_into_cli_green" file="tests/test_rc6_stress_native_cli_lifecycle.py" line="178" time="2.075"><failure message="AssertionError: assert [] == ['KERNEL_WAIT4_ZERO_OBSERVED']&#10;  &#10;  Right contains one more item: 'KERNEL_WAIT4_ZERO_OBSERVED'&#10;  Use -v to get more diff">tmp_path = PosixPath('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-cli-lifecycle-corrected-fhxjyto1/311/pytest-tmp/test_real_finalizer_sigterm_is0')
+
+    def test_real_finalizer_sigterm_is_vetoed_and_cannot_turn_actual_business_into_cli_green(tmp_path):
+        command = control_process(tmp_path, """
+            import json, multiprocessing as mp, os, signal, time
+            from multiprocessing import util
+            from pathlib import Path
+            from scripts import rc6_issue465_stress as stress
+            from scripts import rc6_controlled_governed_runner as runner
+            original = stress.run_stress
+            owned, callbacks = [], []
+            def actual_business_then_forbidden_finalizer(*arguments, **options):
+                result = original(*arguments, **options)
+                child = mp.get_context('fork').Process(target=time.sleep, args=(.75,))
+                child.start()
+                owned.append(child)
+                callbacks.append(util.Finalize(child, os.kill,
+                    args=(child.pid, signal.SIGTERM), exitpriority=1))
+                return result
+            stress.run_stress = actual_business_then_forbidden_finalizer
+            code = stress.main("""+repr(cli_arguments(tmp_path))+""")
+            child = owned[0]
+            os.kill(child.pid, 0)
+            Path("""+repr(str(tmp_path/'observed.json'))+""").write_text(json.dumps({
+                'child_pid': child.pid, 'child_alive_after_signal_veto': child.is_alive(),
+                'infrastructure_after_failed_cli': runner.child_infrastructure_snapshot(),
+                'native_cli_code': code, 'real_finalizer_no_longer_active': not callbacks[0].still_active()}))
+            # The original child ends naturally; there is no forced termination or
+            # os._exit shortcut. The normal Python exit joins it before kernel reap.
+            raise SystemExit(code)
+        """)
+        kernel = native_phase(tmp_path, command)
+        # This is a deliberately failed native finalization, never a positive
+        # custody receipt. Tracker EOF/reap can race main-PID reap; retain those
+        # actual RED fields and require only the final owned drain to close safely.
+        assert kernel['returncode'] == 1 and kernel['actual_child_reaped']
+        assert kernel['wait4_reaped_pid'] == kernel['pid'] and not kernel['timed_out']
+        assert kernel['kernel_pre_popen_echild_verified'] and kernel['owned_children_exhaustion_verified']
+        assert kernel['process_group_absent_after_reap']
+        assert kernel['subreaper_restore_attempted_on_all_activated_paths']
+&gt;       assert kernel['remaining_owned_children'] == kernel['residual_descendants_observed'] == []
+E       AssertionError: assert [] == ['KERNEL_WAIT4_ZERO_OBSERVED']
+E         
+E         Right contains one more item: 'KERNEL_WAIT4_ZERO_OBSERVED'
+E         Use -v to get more diff
+
+tests/test_rc6_stress_native_cli_lifecycle.py:217: AssertionError</failure></testcase></testsuite></testsuites>

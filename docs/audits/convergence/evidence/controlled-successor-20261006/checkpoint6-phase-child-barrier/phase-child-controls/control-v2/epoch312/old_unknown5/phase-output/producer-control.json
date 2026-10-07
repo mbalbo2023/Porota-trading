@@ -1,0 +1,20 @@
+{
+  "actual_worker": {
+    "entered_monotonic": 28858.079345229,
+    "euid": 1000,
+    "pgid": 33306,
+    "pid": 33307,
+    "ppid": 33306,
+    "sid": 33306,
+    "sleep_seconds": 6,
+    "uid": 1000
+  },
+  "callback": "ACTUAL_OWNED_PROCESS_JOIN",
+  "component_only_not_Gov": true,
+  "phase_parent_pid": 33306,
+  "real_orders_sent": 0,
+  "schema": "rc6.phase-child-real-owned-worker-control.v1",
+  "stdlib_exitpriority": 0,
+  "stdlib_finalize_registered": true,
+  "termination_calls": 0
+}

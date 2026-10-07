@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="3.733" timestamp="2026-10-05T05:09:29.621305+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_provenance" name="test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard[expected]" time="1.207"><failure message="AssertionError: assert 0 != 0&#10; +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=816c76030957c5d91d05956ff04e674b6c8d6fc7|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r0/report.json'))
+field = 'expected'
+
+    @pytest.mark.parametrize("field", ["expected", "original_observed", "original_verdict"])
+    def test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard(candidate, field):
+        root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+        matrix = json.loads(path.read_text())
+        matrix["scenarios"][0]["original_scenario"][field] = "Fabricated original statement"
+        write_json(path, matrix); commit(root)
+&gt;       assert_rejected(candidate, "ORIGINAL_CLOSURE_SCENARIO_REBOUND")
+
+tests/test_rc6_convergence_provenance.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r0/report.json'))
+signature = 'ORIGINAL_CLOSURE_SCENARIO_REBOUND', kwargs = {}
+
+    def assert_rejected(candidate, signature, **kwargs):
+        result = cli(candidate, **kwargs)
+&gt;       assert result.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=816c76030957c5d91d05956ff04e674b6c8d6fc7|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode
+
+tests/test_rc6_convergence_provenance.py:138: AssertionError</failure></testcase><testcase classname="tests.test_rc6_convergence_provenance" name="test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard[original_observed]" time="0.843"><failure message="AssertionError: assert 0 != 0&#10; +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=a8fee968b5829dfa3bbbea5c805e0e5554c3c760|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r1/repo'), PosixPath('/tmp/pytest-of-agent/py...1/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r1/report.json'))
+field = 'original_observed'
+
+    @pytest.mark.parametrize("field", ["expected", "original_observed", "original_verdict"])
+    def test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard(candidate, field):
+        root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+        matrix = json.loads(path.read_text())
+        matrix["scenarios"][0]["original_scenario"][field] = "Fabricated original statement"
+        write_json(path, matrix); commit(root)
+&gt;       assert_rejected(candidate, "ORIGINAL_CLOSURE_SCENARIO_REBOUND")
+
+tests/test_rc6_convergence_provenance.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r1/repo'), PosixPath('/tmp/pytest-of-agent/py...1/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r1/report.json'))
+signature = 'ORIGINAL_CLOSURE_SCENARIO_REBOUND', kwargs = {}
+
+    def assert_rejected(candidate, signature, **kwargs):
+        result = cli(candidate, **kwargs)
+&gt;       assert result.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=a8fee968b5829dfa3bbbea5c805e0e5554c3c760|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode
+
+tests/test_rc6_convergence_provenance.py:138: AssertionError</failure></testcase><testcase classname="tests.test_rc6_convergence_provenance" name="test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard[original_verdict]" time="0.685"><failure message="AssertionError: assert 0 != 0&#10; +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=b2e82d75a58fe668227410341972e6a280dfc7f9|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r2/repo'), PosixPath('/tmp/pytest-of-agent/py...2/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r2/report.json'))
+field = 'original_verdict'
+
+    @pytest.mark.parametrize("field", ["expected", "original_observed", "original_verdict"])
+    def test_closure_scenario_cannot_rebind_pinned_original_with_a_valid_executed_guard(candidate, field):
+        root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+        matrix = json.loads(path.read_text())
+        matrix["scenarios"][0]["original_scenario"][field] = "Fabricated original statement"
+        write_json(path, matrix); commit(root)
+&gt;       assert_rejected(candidate, "ORIGINAL_CLOSURE_SCENARIO_REBOUND")
+
+tests/test_rc6_convergence_provenance.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r2/repo'), PosixPath('/tmp/pytest-of-agent/py...2/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_scenario_cannot_r2/report.json'))
+signature = 'ORIGINAL_CLOSURE_SCENARIO_REBOUND', kwargs = {}
+
+    def assert_rejected(candidate, signature, **kwargs):
+        result = cli(candidate, **kwargs)
+&gt;       assert result.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=b2e82d75a58fe668227410341972e6a280dfc7f9|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode
+
+tests/test_rc6_convergence_provenance.py:138: AssertionError</failure></testcase><testcase classname="tests.test_rc6_convergence_provenance" name="test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard" time="0.806"><failure message="AssertionError: assert 0 != 0&#10; +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=3e18693fefcb906823b8a5e199f2965a5f94d56c|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_requirement_canno0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_requirement_canno0/report.json'))
+
+    def test_closure_requirement_cannot_rebind_pinned_registry_with_a_valid_executed_guard(candidate):
+        root = candidate[0]; path = root / provenance.INPUT_ROOT / provenance.CLOSURE
+        matrix = json.loads(path.read_text())
+        original = matrix["requirements"][0]["original_requirement"]
+        field = next(name for name in original if name != "id")
+        original[field] = "Fabricated original requirement"
+        write_json(path, matrix); commit(root)
+&gt;       assert_rejected(candidate, "ORIGINAL_CLOSURE_REQUIREMENT_REBOUND")
+
+tests/test_rc6_convergence_provenance.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+candidate = (PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_requirement_canno0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-187/test_closure_requirement_canno0/report.json'))
+signature = 'ORIGINAL_CLOSURE_REQUIREMENT_REBOUND', kwargs = {}
+
+    def assert_rejected(candidate, signature, **kwargs):
+        result = cli(candidate, **kwargs)
+&gt;       assert result.returncode != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/workspace/venv_rc6_frozen311/bin/python', '/workspace/porota_rc6_convergence/scripts/rc6_conv..._NATIVE_GREEN|sha=3e18693fefcb906823b8a5e199f2965a5f94d56c|source_union=170|requirements=55|scenarios=80\n', stderr='').returncode
+
+tests/test_rc6_convergence_provenance.py:138: AssertionError</failure></testcase></testsuite></testsuites>

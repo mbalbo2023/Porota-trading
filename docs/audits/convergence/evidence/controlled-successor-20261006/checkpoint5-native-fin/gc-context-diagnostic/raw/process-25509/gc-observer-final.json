@@ -1,0 +1,38 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "callback_body_observed_cpu_seconds": 0.014025607,
+  "callback_body_observed_wall_seconds": 0.014171391,
+  "callbacks_seen": 220,
+  "cost_observations_lower_bound_not_subtracted_to_qualify": true,
+  "entry_module": "__main__",
+  "errors": [],
+  "gate_qualified": false,
+  "gc_enabled_after": true,
+  "gc_policy_observed_equal": true,
+  "gc_thresholds_after": [
+    700,
+    10,
+    10
+  ],
+  "generation_counts": {
+    "0": {
+      "start": 101,
+      "stop": 101
+    },
+    "1": {
+      "start": 8,
+      "stop": 8
+    },
+    "2": {
+      "start": 1,
+      "stop": 1
+    }
+  },
+  "instrumentation_allocations_and_IO_can_shift_GC_positions": true,
+  "native_families_read_context_events": 0,
+  "parent_pid": 25502,
+  "pid": 25509,
+  "record_kind": "GC_OBSERVER_FIN",
+  "sys_profile_after": false,
+  "sys_trace_after": false
+}

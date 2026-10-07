@@ -1,0 +1,122 @@
+{
+  "checks": [
+    {
+      "negative_control": "RED_ORIGINAL_HELPER_OBJECT_IDENTITY_FOLLOWS_REPLACEMENT",
+      "original_gate_source_record_blob": "ab083447c32e8c07c9630a7f98684c9d701540c4",
+      "original_helper_commit_sha1": "a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "original_helper_tree_blob": "ab083447c32e8c07c9630a7f98684c9d701540c4",
+      "original_helper_value_base64": "UkVQTEFDRU1FTlRfUFJJVkFURV9DT05UUk9MCg==",
+      "original_helpers_agree_on_replaced_commit": true,
+      "positive_control": "GREEN_NATIVE_NO_REPLACE_PRESERVES_RAW_OBJECT_IDENTITY",
+      "raw_no_replace_commit_sha1": "71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "raw_original_blob": "3563955904acff792415ec83ce0914392426ff75",
+      "raw_original_tree": "60d6ffa13665bd6acb0f60bff512c35e6ebb2662",
+      "replacement_ref": "refs/replace/71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "replacement_target_sha": "a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "requested_sha": "71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "role": "candidate"
+    },
+    {
+      "negative_control": "RED_ORIGINAL_HELPER_OBJECT_IDENTITY_FOLLOWS_REPLACEMENT",
+      "original_gate_source_record_blob": "3563955904acff792415ec83ce0914392426ff75",
+      "original_helper_commit_sha1": "71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "original_helper_tree_blob": "3563955904acff792415ec83ce0914392426ff75",
+      "original_helper_value_base64": "T1JJR0lOQUxfUFJJVkFURV9DT05UUk9MCg==",
+      "original_helpers_agree_on_replaced_commit": true,
+      "positive_control": "GREEN_NATIVE_NO_REPLACE_PRESERVES_RAW_OBJECT_IDENTITY",
+      "raw_no_replace_commit_sha1": "a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "raw_original_blob": "ab083447c32e8c07c9630a7f98684c9d701540c4",
+      "raw_original_tree": "ab28cc0db246aee64ea7b961d69107e887fb2feb",
+      "replacement_ref": "refs/replace/a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "replacement_target_sha": "71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "requested_sha": "a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "role": "source"
+    }
+  ],
+  "commits": [
+    {
+      "blob": "3563955904acff792415ec83ce0914392426ff75",
+      "raw_commit_base64": "dHJlZSA2MGQ2ZmZhMTM2NjViZDZhY2IwZjYwYmZmNTEyYzM1ZTZlYmIyNjYyCmF1dGhvciBPZmZsaW5lIGhlbHBlciBwcm9iZSA8b2ZmbGluZUBleGFtcGxlLmludmFsaWQ+IDE3OTExNTg0MDAgKzAwMDAKY29tbWl0dGVyIE9mZmxpbmUgaGVscGVyIHByb2JlIDxvZmZsaW5lQGV4YW1wbGUuaW52YWxpZD4gMTc5MTE1ODQwMCArMDAwMAoKT1JJR0lOQUxfUFJJVkFURV9DT05UUk9MCg==",
+      "sha": "71718b0d29e141c83eb398ab859bb4b06a45b8d9",
+      "tree": "60d6ffa13665bd6acb0f60bff512c35e6ebb2662",
+      "value_base64": "T1JJR0lOQUxfUFJJVkFURV9DT05UUk9MCg=="
+    },
+    {
+      "blob": "ab083447c32e8c07c9630a7f98684c9d701540c4",
+      "raw_commit_base64": "dHJlZSBhYjI4Y2MwZGIyNDZhZWU2NGVhN2I5NjFkNjkxMDdlODg3ZmIyZmViCmF1dGhvciBPZmZsaW5lIGhlbHBlciBwcm9iZSA8b2ZmbGluZUBleGFtcGxlLmludmFsaWQ+IDE3OTExNTg0MDAgKzAwMDAKY29tbWl0dGVyIE9mZmxpbmUgaGVscGVyIHByb2JlIDxvZmZsaW5lQGV4YW1wbGUuaW52YWxpZD4gMTc5MTE1ODQwMCArMDAwMAoKUkVQTEFDRU1FTlRfUFJJVkFURV9DT05UUk9MCg==",
+      "sha": "a04ed48d63af2fba65402fc0cac2ebbf1788b625",
+      "tree": "ab28cc0db246aee64ea7b961d69107e887fb2feb",
+      "value_base64": "UkVQTEFDRU1FTlRfUFJJVkFURV9DT05UUk9MCg=="
+    }
+  ],
+  "cpu_seconds_children": 0.10908,
+  "cpu_seconds_self": 0.259278,
+  "elapsed_seconds_including_original_source_reads_and_setup": 0.240920174997882,
+  "limitations": [
+    "NOT_FULL_FIP_OR_GATE_EXECUTION",
+    "NOT_GOVERNED_TEST_RECEIPT",
+    "NOT_FINANCIAL_OR_RUNTIME_EVIDENCE",
+    "NO_NETWORK",
+    "NO_ROOT_WRITES",
+    "NO_NEW_ORIGINAL_SCENARIO_OR_ATTACK_ID"
+  ],
+  "native_checks": 2,
+  "original_negative_controls": 2,
+  "private_repository": "/tmp/rc6-git-replace-helper-only-pef6mjve",
+  "raw_positive_controls": 2,
+  "replacement_refs_removed_after_probe": true,
+  "root_files_edited": [],
+  "root_git_mutations": [],
+  "schema": "rc6.git-replace-original-helper-only.v1",
+  "scope": "AST_EXTRACTED_ORIGINAL_GIT_HELPERS_ONLY_WITH_TWO_PRIVATE_SYNTHETIC_COMMITS",
+  "script_path": "/tmp/rc6_git_replace_original_helper_probe.py",
+  "script_sha256": "7ae10ac2d545b8b6d86a3c0930957968a937c98515249efa73f72e093ca5c926",
+  "source_helpers": [
+    {
+      "blob": "088c3d0d526a5eedded4ebcbf6cd290ca392c326",
+      "executed_segment_sha256": "789ec1227a86d7401c98a7ff0716a7a0ca5e19abfc62ea49199c1ee098388d47",
+      "extraction": "EXACT_AST_SOURCE_SEGMENTS_WITH_ORIGINAL_FUNCTION_BODIES",
+      "file_bytes": 33835,
+      "file_sha256": "1948a78f7c62f41c26ec96a8bfe8756993322a9e01b00ceeb424aa315d0b1f4b",
+      "git_mode": "100644",
+      "path": "scripts/rc6_convergence_provenance.py",
+      "selected_nodes": [
+        "ConvergenceError",
+        "git",
+        "require",
+        "tree"
+      ]
+    },
+    {
+      "blob": "e03fb968f26e7705b80f9fb3628186ed29ebd74c",
+      "executed_segment_sha256": "6e8c8a2e68d2a48e1c4684dcbf3729d264260e7a2d50d3d2937123dbe112aa2b",
+      "extraction": "EXACT_AST_SOURCE_SEGMENTS_WITH_ORIGINAL_FUNCTION_BODIES",
+      "file_bytes": 21763,
+      "file_sha256": "eb04c98b83ee88afdef72273b9dc5b9da2330b81c93d6c42d875bc84eaadb380",
+      "git_mode": "100644",
+      "path": "scripts/rc6_issue465_audit_gate.py",
+      "selected_nodes": [
+        "AuditGateError",
+        "_source_record",
+        "git",
+        "require"
+      ]
+    },
+    {
+      "blob": "7c6f679ff26be19a90343dcf64db1800aaf954c1",
+      "executed_segment_sha256": "8c5dd59b0357af0b13c1add0ffe83cec0d0a2095042f73fa8aaeee0e0cf3802a",
+      "extraction": "EXACT_AST_SOURCE_SEGMENTS_WITH_ORIGINAL_FUNCTION_BODIES",
+      "file_bytes": 33733,
+      "file_sha256": "36cca5bfd1ad676369687cb897354a73dcd144e14e0223552e40b9a444c2c6d2",
+      "git_mode": "100644",
+      "path": "scripts/porota_artifact_provenance.py",
+      "selected_nodes": [
+        "ProvenanceError",
+        "_git"
+      ]
+    }
+  ],
+  "source_read_strategy": "GIT_NO_REPLACE_FIXED_COMMITTED_BLOBS",
+  "source_sha": "107a83197a5f80e299fbe63c9b5ef27f853945be",
+  "status": "PROBE_COMPLETE"
+}

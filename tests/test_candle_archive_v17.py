@@ -325,7 +325,7 @@ def test_identidad_de_mercado_ausente_sigue_fallando_cerrado(store,history_pipel
     assert observer._download_histories(Reader(),store)==0
     assert rows(store,'production_history')==[]
     assert any(r['event_type']=='HISTORY_V2_ERROR'
-               and r['detail']=='SINID: HISTORY_MARKET_IDENTITY_MISSING'
+               and r['detail']=='SINID: HISTORY_FULL_IDENTITY_MISSING'
                for r in rows(store,'paper_events'))
 
 

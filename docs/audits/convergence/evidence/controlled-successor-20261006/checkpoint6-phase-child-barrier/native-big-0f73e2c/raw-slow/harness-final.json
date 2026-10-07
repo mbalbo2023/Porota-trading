@@ -1,0 +1,694 @@
+{
+  "actual_native_summary": {
+    "actual_handler_resources": {
+      "checkpoint_restore": {
+        "calls": 1,
+        "cpu_seconds": 0.000406102999999991,
+        "elapsed_seconds": 0.0003828469998552464,
+        "peak_rss_bytes": 104603648
+      },
+      "families": {
+        "calls": 1,
+        "cpu_seconds": 0.5215510519999995,
+        "elapsed_seconds": 0.5221184969996102
+      },
+      "native_orchestrator": {
+        "calls": 2,
+        "cpu_seconds": 10.830901188,
+        "elapsed_seconds": 10.8385210919987,
+        "peak_rss_bytes": 503107584
+      },
+      "native_stage_enrichment": {
+        "calls": 1,
+        "cpu_seconds": 0.09782155999999986,
+        "elapsed_seconds": 0.09783709700059262,
+        "peak_rss_bytes": 503107584
+      }
+    },
+    "business_resource_complete": false,
+    "import_proof_complete": true,
+    "native_cli_lifecycle": {
+      "child_infrastructure_finalization": {
+        "errors": [],
+        "finalization_thread_finished": true,
+        "forced_termination": false,
+        "forced_termination_attempted": false,
+        "forced_termination_observation_scope": "PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION",
+        "inherited_tracker_preserved": false,
+        "initial": {
+          "forkserver_alive_fd": null,
+          "forkserver_pid": null,
+          "resource_tracker_fd": null,
+          "resource_tracker_pid": null
+        },
+        "joined_children": [],
+        "kernel_echild_before_phase_return": true,
+        "management_bound_seconds": 5,
+        "protocol_steps": [
+          {
+            "completed": true,
+            "stage": "nonnegative_stdlib_finalizers",
+            "wall_seconds": 1.0125000699190423e-05
+          },
+          {
+            "completed": true,
+            "stage": "join_owned_children",
+            "wall_seconds": 4.816996806766838e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_forkserver",
+            "wall_seconds": 2.8439972084015608e-06
+          },
+          {
+            "completed": true,
+            "stage": "remaining_stdlib_finalizers",
+            "wall_seconds": 2.564000169513747e-06
+          },
+          {
+            "completed": true,
+            "stage": "stop_owned_resource_tracker",
+            "wall_seconds": 0.005932852000114508
+          },
+          {
+            "completed": true,
+            "stage": "verify_kernel_echild",
+            "wall_seconds": 2.3234002583194524e-05
+          }
+        ],
+        "signal_guard_installed_and_witnessed": true,
+        "signal_vetoed": false,
+        "status": "GREEN",
+        "stopped_owned_infrastructure": [
+          {
+            "kernel_identity": {
+              "PPid": "33093",
+              "Pid": "33098",
+              "Uid": "1000\t1000\t1000\t1000"
+            },
+            "kind": "resource_tracker",
+            "pid": 33098
+          }
+        ],
+        "termination_signal_attempts": [],
+        "unexpected_kernel_children": [],
+        "wall_seconds": 0.006392902996594785
+      },
+      "child_infrastructure_finalized_before_main_exit": true,
+      "cli_exit_code": 1,
+      "entry_module": "__main__",
+      "fresh_infrastructure_verified": true,
+      "inet_socket_attempts": [],
+      "inet_socket_constructor_requests": [
+        {
+          "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+          "event": "socket.__new__",
+          "family": 10,
+          "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+        }
+      ],
+      "infrastructure_before": {
+        "forkserver_alive_fd": null,
+        "forkserver_pid": null,
+        "resource_tracker_fd": null,
+        "resource_tracker_pid": null
+      },
+      "native_resource_exit_code": 1,
+      "offline_ipv6_creation_capability": {
+        "af_unix_ipc_functional": true,
+        "architecture": "x86_64",
+        "creation_denial_witnesses": [
+          {
+            "errno": 97,
+            "family": 10,
+            "operation": "socket_creation",
+            "socket_created": false
+          }
+        ],
+        "ipv4_creation_grants_operation_authority": false,
+        "kernel_errno": 97,
+        "native_socket_creation_denied_families": [
+          10
+        ],
+        "no_new_privileges": true,
+        "scope": "NATIVE_SOCKET_AND_SOCKETPAIR_CREATION_FAMILIES_ONLY; NOT_NAMESPACE_BINARY_OR_INHERITED_DESCRIPTOR_ATTESTATION",
+        "status": "INSTALLED_AND_KERNEL_WITNESSED",
+        "transitive_kernel_network_attestation": false
+      },
+      "operation_audit_scope": "THIS_NATIVE_CLI_PYTHON_PROCESS_ONLY; NO_TRANSITIVE_CHILD_NETWORK_ATTESTATION",
+      "original_inet_operation_audit_registration_witness_verified": true,
+      "parent_pid": 33055,
+      "pid": 33093,
+      "schema": "rc6.issue465.native-cli-lifecycle.v1",
+      "scope": "NATIVE_CLI_LAUNCHER_GUARD_AND_STDLIB_FINALIZATION_ONLY; BUSINESS_IMPORT_AND_RUNTIME_GATES_SEPARATE",
+      "status": "GREEN",
+      "subprocess_executable_counts": {
+        "git": 4
+      },
+      "unexpected_error": null
+    },
+    "native_reason": "TIME_BUDGET_EXHAUSTED",
+    "observed_phases": [
+      "BOUNDED_READ"
+    ],
+    "original_resource_gates": {
+      "actual_evidence_bytes": 516296,
+      "actual_rss_bytes": 503107584,
+      "actual_slow_fsync_exit_isolation": false,
+      "child_cleanup_completed": true,
+      "complete_committed_cycle": false,
+      "evidence_within_quota": true,
+      "maximum_evidence_bytes": 134217728,
+      "maximum_rss_bytes": 2147483648,
+      "reported_worker_rss_bytes": 503107584,
+      "rss_scope": "PARENT_RUSAGE_CHILDREN_MAXIMUM_OF_ALL_REAPED_CHILDREN_INCLUDING_GIT_PREFLIGHT",
+      "rss_within_two_gib": true,
+      "source_database_unchanged": true
+    }
+  },
+  "artifact_validated": false,
+  "canonical_big_and_observed_import_gates_closed": false,
+  "checks": {
+    "actual_kernel_peak_rss_strictly_below_2gib": true,
+    "actual_outer_management_only_300": true,
+    "exclusive_pre_and_post_echild": true,
+    "main_exit_zero": false,
+    "main_pid_reaped_exactly": true,
+    "native_required_completion_fields_present": false,
+    "no_irreversible_late_or_wait4_zero_red": true,
+    "original_owned_cleanup_5": true,
+    "pgid_absent_at_main_and_after": true,
+    "subreaper_restored_and_no_residue_or_signals": true,
+    "whole_raw_git_code_bytes_modes_and10_stable_stats_unchanged": true
+  },
+  "code_all11_stats_unchanged_claim": false,
+  "code_atime_scope": "ACTUAL_BEFORE_AND_AFTER; IMPORT_ATIME_CHANGES_DISCLOSED; NO_ATTRIBUTION_TO_ALL_CHILD_ACTIVITY",
+  "data_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/data-slow",
+  "errors": [
+    {
+      "class": "KeyError",
+      "reason": "NATIVE_CANONICAL_COMPLETION_FIELDS_MISSING",
+      "stage": "native_receipt_qualification"
+    }
+  ],
+  "final_candidate_eligible": false,
+  "image_validated": false,
+  "import_scope": "ACTUAL_NATIVE_LAUNCHER_AND_WORKER_OBSERVED_WINDOWS; NOT_FULL_LIFETIME_OR_IMAGE_ATTESTATION",
+  "mode": "PRODUCTION_PAPER / SIMULATION",
+  "native_data_all11_custody_claim_is_from_actual_native_receipt_only": true,
+  "native_data_read_by_parent": false,
+  "network_scope": "ACTUAL_CLI_ORIGINAL_PYTHON_INET_AUDIT_AND_IPV6_CREATION_FILTER; NO_TRANSITIVE_NETWORK_ATTESTATION",
+  "no_previous_red_or_alien_receipt_reclassified": true,
+  "observed_code_atime_changes": [
+    {
+      "after": 1791318098860084416,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "es_policy_context_rc6.py"
+    },
+    {
+      "after": 1791318084240151163,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "be_paper_engine.py"
+    },
+    {
+      "after": 1791318084352150655,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bi_operational_services.py"
+    },
+    {
+      "after": 1791318084236151181,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cg_paper_workspace.py"
+    },
+    {
+      "after": 1791318084360150617,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bu_instrument_catalog.py"
+    },
+    {
+      "after": 1791318084264151054,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bl_candle_engine.py"
+    },
+    {
+      "after": 1791318084268151035,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cf_sale_settlement.py"
+    },
+    {
+      "after": 1791318084260151072,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bt_caucion_paper.py"
+    },
+    {
+      "after": 1791318084436150272,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "eu_telegram_policy_rc6.py"
+    },
+    {
+      "after": 1791318098860084416,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "ck_policy_gate_hf6.py"
+    },
+    {
+      "after": 1791318084240151163,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "_version.py"
+    },
+    {
+      "after": 1791318085280146445,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "ak_byma_calendar.py"
+    },
+    {
+      "after": 1791318084380150527,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cf_intraday_scalping.py"
+    },
+    {
+      "after": 1791318098860084416,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_cost_settlement_takeprofit_shadow.py"
+    },
+    {
+      "after": 1791318084272151017,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cc_spot_liquidity.py"
+    },
+    {
+      "after": 1791318084436150272,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bn_telegram_bus.py"
+    },
+    {
+      "after": 1791318084440150254,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bw_daily_risk.py"
+    },
+    {
+      "after": 1791318084308150854,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bd_ppi_readonly_guard.py"
+    },
+    {
+      "after": 1791318098856084434,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "au_fee_schedule.py"
+    },
+    {
+      "after": 1791318084268151035,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cd_spot_ledger.py"
+    },
+    {
+      "after": 1791318098860084416,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "ch_empirical_learning.py"
+    },
+    {
+      "after": 1791318084392150472,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "fg_intraday_contract_policy_rc6.py"
+    },
+    {
+      "after": 1791318084368150581,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_multisource_discovery.py"
+    },
+    {
+      "after": 1791318098864084398,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "POROTA_SECTOR_MAP_V1.csv"
+    },
+    {
+      "after": 1791318085332146209,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bq_exit_policy.py"
+    },
+    {
+      "after": 1791318084256151090,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bs_instrument_contracts.py"
+    },
+    {
+      "after": 1791318084392150472,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "co_market_sessions_hf6.py"
+    },
+    {
+      "after": 1791318084418371582,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_paper_family_lifecycle.py"
+    },
+    {
+      "after": 1791318084372150564,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_source_consolidation.py"
+    },
+    {
+      "after": 1791318084276150999,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bf_production_paper_observer.py"
+    },
+    {
+      "after": 1791318084428150308,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "bm_exit_supervisor.py"
+    },
+    {
+      "after": 1791318098864084398,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "de_concurrent_risk_capacity_hf6.py"
+    },
+    {
+      "after": 1791318084368150581,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "am_us_equity_calendar_rc6.py"
+    },
+    {
+      "after": 1791318098860084416,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "ci_operational_context.py"
+    },
+    {
+      "after": 1791318085920143528,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "cu_history_store_v2_hf6.py"
+    },
+    {
+      "after": 1791318084392150472,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_signal_contracts.py"
+    },
+    {
+      "after": 1791318098868084380,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "dh_paper_dynamic_risk_gate_hf6.py"
+    },
+    {
+      "after": 1791318085356146100,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "fe_fixed_income_nominal_contract_rc6.py"
+    },
+    {
+      "after": 1791318085744144334,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "ops/policy/rc6-dynamic-capacity-v1.json"
+    },
+    {
+      "after": 1791318085288146408,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/orchestrator.py"
+    },
+    {
+      "after": 1791318085320146264,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/runtime.py"
+    },
+    {
+      "after": 1791318085288146408,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/capacity.py"
+    },
+    {
+      "after": 1791318085264146517,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/sources.py"
+    },
+    {
+      "after": 1791318085740144353,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/promotion.py"
+    },
+    {
+      "after": 1791318084376150545,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/common.py"
+    },
+    {
+      "after": 1791318085336146191,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/economics.py"
+    },
+    {
+      "after": 1791318085284146427,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/live.py"
+    },
+    {
+      "after": 1791318084376150545,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/__init__.py"
+    },
+    {
+      "after": 1791318085292146390,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/routing.py"
+    },
+    {
+      "after": 1791318085300146354,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_dynamic_universe/tradeability.py"
+    },
+    {
+      "after": 1791318085268146499,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/serialization.py"
+    },
+    {
+      "after": 1791318085332146209,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/stages.py"
+    },
+    {
+      "after": 1791318085252146571,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/persistence.py"
+    },
+    {
+      "after": 1791318085372146028,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/entry_signals.py"
+    },
+    {
+      "after": 1791318085920037674,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/preopen.py"
+    },
+    {
+      "after": 1791318089792125819,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/retention.py"
+    },
+    {
+      "after": 1791318085348146137,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/families.py"
+    },
+    {
+      "after": 1791318085320146264,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/source_reads.py"
+    },
+    {
+      "after": 1791318085736144371,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/archive_namespace.py"
+    },
+    {
+      "after": 1791318085384145973,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/projection.py"
+    },
+    {
+      "after": 1791318085380145991,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/funnel.py"
+    },
+    {
+      "after": 1791318085280146445,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/worker.py"
+    },
+    {
+      "after": 1791318084380150527,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/__init__.py"
+    },
+    {
+      "after": 1791318084380150527,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/source_authority.py"
+    },
+    {
+      "after": 1791318085272146482,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/packed_storage.py"
+    },
+    {
+      "after": 1791318085360146082,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_shadow_runtime/lab.py"
+    },
+    {
+      "after": 1791318085328146227,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/sqlite_scratch.py"
+    },
+    {
+      "after": 1791318085324146246,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/sqlite_snapshot.py"
+    },
+    {
+      "after": 1791318085332146209,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/recompute.py"
+    },
+    {
+      "after": 1791318085320146264,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/package.py"
+    },
+    {
+      "after": 1791318085320146264,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_audit_evidence/__init__.py"
+    },
+    {
+      "after": 1791318085368146046,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/shadow.py"
+    },
+    {
+      "after": 1791318084272151017,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/lineage.py"
+    },
+    {
+      "after": 1791318085376146010,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/metrics.py"
+    },
+    {
+      "after": 1791318084276150999,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/common.py"
+    },
+    {
+      "after": 1791318085336146191,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/costs.py"
+    },
+    {
+      "after": 1791318085368146046,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/replay.py"
+    },
+    {
+      "after": 1791318084272151017,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "rc6_performance/__init__.py"
+    },
+    {
+      "after": 1791318085344146155,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "scripts/rc6_sqlite_scratch_guard.py"
+    },
+    {
+      "after": 1791318083124156235,
+      "before": 1791316465000000000,
+      "kind": "file",
+      "path": "scripts/rc6_issue465_stress.py"
+    }
+  ],
+  "ppi_watch": "UNTOUCHED",
+  "raw_root_preserved": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/raw-slow",
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.native-direct-big-supervision.v1",
+  "source_index_sha256": "8f8e46aa0baf5cdf0e0e46dc4e1966a279260a025cbf6d82a580778f2000b79a",
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tar_sha256": "65e93c214ec23927875f70e602a22e3255b47031061eb75a229d474a661c051d",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "status": "RED"
+}

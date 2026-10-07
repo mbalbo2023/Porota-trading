@@ -1,0 +1,50 @@
+{
+  "acceptance_complete": false,
+  "archive_guard": "SHA256 exact index tar_sha256",
+  "big_acceptance_complete": false,
+  "contract_source": {
+    "function": "raw_archive_controls",
+    "lines": "34-47",
+    "path": "/workspace/rc6-root-efa69894-browser-20261006-source/tests/ci_rc6_browser_prepare.py",
+    "sha256": "73cb1d29508612182ae58b19681b4b58c7d2c45e58138984dd8e065c2d93dd34"
+  },
+  "gov_qualification_claim": false,
+  "native_execution_by_ux": false,
+  "next_plan": "Root creates new exact same-efa whole export and physical raw controls. V3 supervisor changes only Source/index/TAR path bindings and runs phase normal. No health rerun or BIG substitution.",
+  "preservation": "Both prior RAWs, old whole Source, index and TAR remain immutable; no missing sibling added to old export.",
+  "raw_commit_guards": [
+    "all path components non-symlink",
+    "regular file exists",
+    "SHA256 matches raw_git_commit_sha256_declared from complete Source pin",
+    "SHA1 of Git commit object header and raw bytes equals Source efa69894870ef6c05b63713666a904bbe88b6103",
+    "first line equals tree e2187b082a4b9af907795dfa83bbf9b82ea345df"
+  ],
+  "raw_tree_guard_scope": "Producer raw_archive_controls does not require a physical tree sibling. Supervisor independently verifies binary root/subtree Git hashes and physical whole namespace. External export may preserve exact raw tree controls without Source mutation.",
+  "required_physical_controls": [
+    "index.parent/source.commit.raw",
+    "index.parent/source.tar"
+  ],
+  "retry_b_reported_by_root": {
+    "browser": "PREPARATION_RAW_GIT_CONTROLS_REQUIRED before financial fixture and Chrome",
+    "cleanup_forced": false,
+    "health_actual_child_pid": 244442,
+    "health_cut_reported": "01:16:18",
+    "health_request_seconds": 0.03509,
+    "health_roles": 4,
+    "health_sequence": 1,
+    "health_source_custody_and_reap_clean": true,
+    "launcher_elapsed_seconds": 1.7048,
+    "producer_pid": 244415,
+    "producer_reaped": true,
+    "producer_returncode": 1,
+    "producer_stdout_bytes": 158,
+    "producer_stdout_sha256": "a08922fee57cb70fc0d0107287df758bb757e1304b7b5ad5436c5a4bbd6eed27",
+    "separate_health": "ACTUAL_GREEN independent SMALL scope",
+    "source_unchanged": true
+  },
+  "schema": "rc6.root-small-browser-export-controls-source-review.v1",
+  "status": "SOURCE_ONLY_NEW_EXPORT_PENDING",
+  "v3_index": null,
+  "v3_source": null,
+  "v3_supervisor": null
+}

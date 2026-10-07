@@ -1,0 +1,8 @@
+{
+  "details": {},
+  "error_class": "GateFailure",
+  "gate": "PROJECTED_CUT_UNAVAILABLE",
+  "recorded_at": "2026-10-05T07:26:40.665223+00:00",
+  "schema": "rc6.dashboard-native-large-browser-proof.v1",
+  "status": "RED"
+}

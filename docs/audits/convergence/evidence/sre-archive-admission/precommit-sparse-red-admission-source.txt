@@ -1,0 +1,462 @@
+#!/usr/bin/env python3
+"""Candidate-native disk admission for private SQLite/live/archive namespaces.
+
+The probe opens no source with SQLite. Its sizes are admission observations;
+the capture helper still verifies source identity and hashes when it copies.
+Only the private scratch lease may be created by the existing-root inspector.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+from pathlib import PurePosixPath
+import re
+import stat
+import sys
+
+
+MAX_BYTES = 512 * 1024**2
+LIVE_MAX_BYTES = 128 * 1024**2
+ARCHIVE_MAX_BYTES = 512 * 1024**2
+RESERVE_BYTES = 2 * 1024**3
+MIN_FREE_INODE_PERCENT = 10
+OWNER_UID = OWNER_GID = 1000
+ENV_PREFIX = "POROTA_SQLITE_SCRATCH_"
+ENV_KEYS = tuple(ENV_PREFIX + name for name in
+                 ("ROOT", "MAX_BYTES", "RESERVE_BYTES", "MIN_FREE_INODE_PERCENT"))
+SCHEMA = "rc6.sqlite-scratch-admission.v1"
+HOST_DATA = Path("/opt/porota-trading/data")
+PRIMARY_RELATIVE = Path("paper_v17/observer_v17.db")
+HISTORY_DEFAULT = "/app/data/market_history.db"
+
+
+class ScratchAdmissionError(ValueError):
+    pass
+
+
+def runtime_settings(root, environ=None):
+    values = dict(zip(ENV_KEYS, (str(root), str(MAX_BYTES), str(RESERVE_BYTES),
+                               str(MIN_FREE_INODE_PERCENT))))
+    source = {} if environ is None else environ
+    for key, value in values.items():
+        if key in source and source[key] != value:
+            raise ScratchAdmissionError("RC6_SCRATCH_CONFIGURATION_IMMUTABLE:" + key)
+    return values
+
+
+def history_container_path(environ=None):
+    raw = ({} if environ is None else environ).get("HIST_DB_PATH", HISTORY_DEFAULT)
+    if not isinstance(raw, str) or not re.fullmatch(r"/app/data/[A-Za-z0-9_./-]+", raw):
+        raise ScratchAdmissionError("RC6_HISTORY_PATH_OUTSIDE_DATA")
+    parsed = PurePosixPath(raw)
+    if (parsed.as_posix() != raw or ".." in parsed.parts
+            or parsed.suffix not in {".db", ".sqlite", ".sqlite3"}):
+        raise ScratchAdmissionError("RC6_HISTORY_PATH_OUTSIDE_DATA")
+    return raw
+
+
+def history_host_path(data_root, container_path):
+    container_path = history_container_path({"HIST_DB_PATH": container_path})
+    return _canonical(Path(data_root) / PurePosixPath(container_path).relative_to("/app/data"))
+
+
+def _history_env(repo_root, *, owner_uid=OWNER_UID):
+    path = Path(repo_root) / ".env"
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return {}
+    with os.fdopen(descriptor, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1024**2
+                or info.st_uid not in {0, owner_uid} or stat.S_IMODE(info.st_mode) & 0o7133):
+            raise ScratchAdmissionError("RC6_HISTORY_CONFIG_CUSTODY_REQUIRED")
+        result = {}
+        raw = handle.read(1024**2 + 1)
+        after = os.fstat(handle.fileno())
+        if (len(raw) != info.st_size or (info.st_dev, info.st_ino, info.st_size,
+                info.st_mtime_ns, info.st_ctime_ns) != (after.st_dev, after.st_ino,
+                after.st_size, after.st_mtime_ns, after.st_ctime_ns)):
+            raise ScratchAdmissionError("RC6_HISTORY_CONFIG_CHANGED")
+        for line in raw.decode("utf-8").splitlines():
+            if "=" not in line or line.lstrip().startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() not in {"HIST_DB_PATH", *ENV_KEYS,
+                    "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT", "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES",
+                    "POROTA_DYNAMIC_SHADOW_ROOT", "POROTA_SHADOW_RUNTIME_ROOT"}:
+                continue
+            if key.strip() in result:
+                raise ScratchAdmissionError("RC6_HISTORY_CONFIG_DUPLICATE")
+            result[key.strip()] = value.strip().strip('"').strip("'")
+        return result
+
+
+def validate_policy(policy):
+    expected = {"root_suffix": "sqlite-read-scratch", "max_bytes": MAX_BYTES,
+                "reserve_bytes": RESERVE_BYTES,
+                "min_free_inode_percent": MIN_FREE_INODE_PERCENT,
+                "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,
+                "mode": "0700", "lease": "NONBLOCKING_SINGLE_READER",
+                "crash_residue": "PRESERVE_IDENTIFIED_COUNT_TOWARD_QUOTA"}
+    actual = policy.get("sqlite", {}).get("private_read_scratch")
+    if (not isinstance(actual, dict) or actual != expected
+            or any(type(actual.get(key)) is not type(value) for key, value in expected.items())):
+        raise ScratchAdmissionError("RC6_SCRATCH_POLICY_DRIFT")
+    return expected
+
+
+def validate_shadow_policy(policy):
+    expected = {
+        "private_live_evidence": {"root_suffix": "dynamic-shadow", "max_bytes": LIVE_MAX_BYTES,
+            "maximum_files": 8192, "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,
+            "mode": "0700", "verification_level": "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA"},
+        "private_archive": {"root_suffix": "dynamic-shadow-archive", "max_bytes": ARCHIVE_MAX_BYTES,
+            "maximum_files": 32768, "owner_uid": OWNER_UID, "owner_gid": OWNER_GID,
+            "mode": "0700", "verification_level": "BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA",
+            "recovery": "PRODUCER_ONLY_PRESERVE_RESIDUE"}}
+    actual = policy.get("shadow")
+    if (not isinstance(actual, dict) or actual != expected
+            or any(type(actual.get(section, {}).get(key)) is not type(value)
+                   for section, values in expected.items() for key, value in values.items())):
+        raise ScratchAdmissionError("RC6_SHADOW_POLICY_DRIFT")
+    return expected
+
+
+def _namespace_api(name):
+    supplied = globals().get("_CANDIDATE_NAMESPACE_APIS", {}).get(name)
+    if supplied is not None:
+        return supplied
+    if name == "archive":
+        from rc6_shadow_runtime import archive_namespace
+        return vars(archive_namespace)
+    from scripts import rc6_shadow_live_namespace
+    return vars(rc6_shadow_live_namespace)
+
+
+def component_hashes(repo_root=None):
+    supplied = globals().get("_CANDIDATE_COMPONENT_SHA256")
+    if supplied is not None:
+        return dict(supplied)
+    root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    paths = {"scratch": root / "rc6_audit_evidence/sqlite_scratch.py",
+             "archive": root / "rc6_shadow_runtime/archive_namespace.py",
+             "live": root / "scripts/rc6_shadow_live_namespace.py",
+             "admission": Path(__file__)}
+    result = {}
+    for name, path in paths.items():
+        with path.open("rb") as handle:
+            raw = handle.read(1024**2 + 1)
+        if len(raw) > 1024**2:
+            raise ScratchAdmissionError("RC6_SCRATCH_PROBE_SOURCE_LIMIT")
+        result[name] = hashlib.sha256(raw).hexdigest()
+    return result
+
+
+def _api():
+    supplied = globals().get("_CANDIDATE_SCRATCH_API")
+    if supplied is not None:
+        return supplied
+    if str(Path(__file__).resolve().parents[1]) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from rc6_audit_evidence import sqlite_scratch
+    return vars(sqlite_scratch)
+
+
+def disk_backed_type(path):
+    return _api()["_storage_type"](_canonical(path))
+
+
+def _canonical(path):
+    value = Path(path)
+    if (not value.is_absolute() or value != value.absolute() or ".." in value.parts
+            or str(value) != str(path) or value.resolve() != value):
+        raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS")
+    for member in (value, *value.parents):
+        try:
+            info = member.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
+            raise ScratchAdmissionError("RC6_SCRATCH_PATH_ALIAS")
+    return value
+
+
+def _existing_parent(path):
+    for parent in (path, *path.parents):
+        if parent.exists():
+            if not parent.is_dir():
+                raise ScratchAdmissionError("RC6_SCRATCH_PARENT_INVALID")
+            return parent
+    raise ScratchAdmissionError("RC6_SCRATCH_PARENT_INVALID")
+
+
+def source_sizes(path, *, owner_uid):
+    path = _canonical(path)
+    sizes = {}
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        member = Path(str(path) + suffix)
+        try:
+            info = member.lstat()
+        except FileNotFoundError:
+            if not suffix:
+                raise ScratchAdmissionError("RC6_SCRATCH_SOURCE_UNAVAILABLE") from None
+            continue
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != owner_uid or stat.S_IMODE(info.st_mode) & 0o7133):
+            raise ScratchAdmissionError("RC6_SCRATCH_SOURCE_CUSTODY_REQUIRED")
+        sizes[suffix] = info.st_size
+    if sizes.get("-journal", 0):
+        raise ScratchAdmissionError("RC6_SCRATCH_SOURCE_BUSY")
+    if sizes[""] <= 0 or sum(sizes.values()) > MAX_BYTES:
+        raise ScratchAdmissionError("RC6_SCRATCH_SOURCE_BYTE_LIMIT")
+    return sizes
+
+
+def _drop_to_owner(owner_uid, owner_gid):
+    if os.geteuid() == 0:
+        os.setgroups([])
+        os.setgid(owner_gid)
+        os.setuid(owner_uid)
+    if os.geteuid() != owner_uid or os.getegid() != owner_gid:
+        raise ScratchAdmissionError("RC6_SCRATCH_OWNER_REQUIRED")
+
+
+def _namespace(root, name, *, owner_uid, owner_gid, device):
+    root = _canonical(root)
+    maximum = ARCHIVE_MAX_BYTES if name == "archive" else LIVE_MAX_BYTES
+    api = _namespace_api(name)
+    if not root.exists():
+        return {"state": "NOT_PRESENT", "occupied_bytes": 0,
+                "growth_remaining_bytes": maximum, "max_bytes": maximum,
+                "verification_level": "NAMESPACE_NOT_PRESENT_FULL_GROWTH_RESERVED"}
+    info = root.lstat()
+    if info.st_gid != owner_gid or info.st_dev != device:
+        raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_MOUNT_OR_GROUP_DRIFT")
+    inspector = api["inspect_archive" if name == "archive" else "inspect_live"]
+    observed = inspector(root, max_bytes=maximum, owner_uid=owner_uid)
+    expected_schema = ("rc6.shadow-archive-namespace-admission.v1" if name == "archive"
+                       else "rc6.shadow-live-namespace-admission.v1")
+    expected_level = ("BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA" if name == "archive"
+                      else "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA")
+    if (observed.get("schema") != expected_schema or observed.get("verification_level") != expected_level
+            or observed.get("max_bytes") != maximum
+            or type(observed.get("occupied_bytes")) is not int
+            or not 0 <= observed["occupied_bytes"] < maximum
+            or observed.get("growth_remaining_bytes") != maximum - observed["occupied_bytes"]
+            or observed.get("state") not in {"WITHIN_QUOTA", "RECOVERY_REQUIRED"}):
+        raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_HELPER_DRIFT")
+    return observed
+
+
+def probe(database, data_root, *, owner_uid=OWNER_UID, owner_gid=OWNER_GID,
+          allow_empty_primary=False, history_container=None):
+    database, data_root = _canonical(database), _canonical(data_root)
+    if database != data_root / PRIMARY_RELATIVE:
+        raise ScratchAdmissionError("RC6_SCRATCH_PRIMARY_DATASET_REQUIRED")
+    root = _canonical(database.parent / "artifacts" / database.name / "sqlite-read-scratch")
+    if root.exists():
+        info = root.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != owner_uid
+                or info.st_gid != owner_gid or stat.S_IMODE(info.st_mode) != 0o700):
+            raise ScratchAdmissionError("RC6_SCRATCH_ROOT_CUSTODY_REQUIRED")
+    api = _api()
+    if (api["MAX_BYTES"] != MAX_BYTES or api["RESERVE_BYTES"] != RESERVE_BYTES
+            or api["MIN_FREE_INODE_PERCENT"] != MIN_FREE_INODE_PERCENT):
+        raise ScratchAdmissionError("RC6_SCRATCH_HELPER_LIMIT_DRIFT")
+    sources = {}
+    if database.exists() or database.is_symlink() or not allow_empty_primary:
+        sources["primary"] = source_sizes(database, owner_uid=owner_uid)
+    configuration = _history_env(data_root.parent, owner_uid=owner_uid)
+    container_artifact = "/app/data/paper_v17/artifacts/observer_v17.db/"
+    runtime_settings(container_artifact + "sqlite-read-scratch", configuration)
+    immutable = {"POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT": container_artifact + "dynamic-shadow-archive",
+                 "POROTA_DYNAMIC_SHADOW_ARCHIVE_MAX_BYTES": str(ARCHIVE_MAX_BYTES),
+                 "POROTA_DYNAMIC_SHADOW_ROOT": container_artifact + "dynamic-shadow",
+                 "POROTA_SHADOW_RUNTIME_ROOT": container_artifact + "dynamic-shadow"}
+    for key, value in immutable.items():
+        if key in configuration and configuration[key] != value:
+            raise ScratchAdmissionError("RC6_SHADOW_CONFIGURATION_IMMUTABLE")
+    selected_history = history_container_path(configuration)
+    if history_container is not None:
+        selected_history = history_container_path({"HIST_DB_PATH": history_container})
+    history = history_host_path(data_root, selected_history)
+    if history.exists() or history.is_symlink():
+        sources["history_selected"] = source_sizes(history, owner_uid=owner_uid)
+    elif selected_history != HISTORY_DEFAULT:
+        raise ScratchAdmissionError("RC6_HISTORY_NEED_COPY_TARGET")
+    _drop_to_owner(owner_uid, owner_gid)
+    nearest = _existing_parent(root)
+    filesystem = api["_storage_type"](nearest)
+    filesystem_stats = os.statvfs(nearest)
+    device = data_root.stat().st_dev
+    if nearest.stat().st_dev != device:
+        raise ScratchAdmissionError("RC6_SHADOW_NAMESPACE_MOUNT_OR_GROUP_DRIFT")
+    if root.exists():
+        observed = api["inspect_scratch"](root, max_bytes=MAX_BYTES,
+            reserve_bytes=0, min_free_inode_percent=0)
+        # Inspection observes low-space metadata so safe cleanup can be tried.
+        # Admission below independently enforces the full runtime reserve.
+        occupied = observed["occupied_bytes"]
+        free = observed["free_bytes"]
+        free_inodes, total_inodes = observed["free_inodes"], observed["total_inodes"]
+        sessions = observed["residual_sessions"]
+    else:
+        occupied, sessions = 0, 0
+        free = filesystem_stats.f_bavail * filesystem_stats.f_frsize
+        free_inodes, total_inodes = filesystem_stats.f_favail, filesystem_stats.f_files
+    peaks = {name: api["snapshot_peak_bytes"](sizes[""], sizes.get("-wal", 0),
+             sizes.get("-shm", 0), allocation_unit=filesystem_stats.f_frsize)
+             for name, sizes in sources.items()}
+    if type(occupied) is not int or not 0 <= occupied < MAX_BYTES:
+        raise ScratchAdmissionError("RC6_SCRATCH_RESIDUE_BYTE_LIMIT")
+    if any(occupied + peak > MAX_BYTES for peak in peaks.values()):
+        raise ScratchAdmissionError("RC6_SCRATCH_CAPTURE_PEAK_BYTE_LIMIT")
+    archive_root = database.parent / "artifacts" / database.name / "dynamic-shadow-archive"
+    live_root = archive_root.with_name("dynamic-shadow")
+    archive = _namespace(archive_root, "archive", owner_uid=owner_uid, owner_gid=owner_gid, device=device)
+    live = _namespace(live_root, "live", owner_uid=owner_uid, owner_gid=owner_gid, device=device)
+    growth = MAX_BYTES - occupied
+    derived_growth = growth + archive["growth_remaining_bytes"] + live["growth_remaining_bytes"]
+    inode_percent = 100.0 * free_inodes / total_inodes if total_inodes > 0 else 0.0
+    safe = (free >= RESERVE_BYTES + derived_growth and inode_percent >= MIN_FREE_INODE_PERCENT
+            and archive["state"] != "RECOVERY_REQUIRED" and live["state"] != "RECOVERY_REQUIRED")
+    return {"schema": SCHEMA, "status": "GREEN" if safe else "RED",
+            "verification": "NATIVE_FILESYSTEM_METADATA_ADMISSION_NOT_SOURCE_SNAPSHOT",
+            "primary_dataset": str(database), "scratch_root": str(root),
+            "history_container": selected_history, "history_host": str(history),
+            "filesystem": filesystem, "source_sizes": sources,
+            "capture_peak_bytes": peaks, "occupied_bytes": occupied,
+            "scratch_growth_bytes": growth, "max_bytes": MAX_BYTES,
+            "archive_root": str(archive_root), "archive_namespace": archive,
+            "archive_occupied_bytes": archive["occupied_bytes"],
+            "archive_growth_bytes": archive["growth_remaining_bytes"],
+            "live_root": str(live_root), "live_namespace": live,
+            "live_occupied_bytes": live["occupied_bytes"],
+            "live_growth_bytes": live["growth_remaining_bytes"],
+            "derived_growth_bytes": derived_growth,
+            "shared_filesystem_device": device,
+            "candidate_component_sha256": component_hashes(),
+            "reserve_bytes": RESERVE_BYTES, "free_bytes": free,
+            "free_inode_percent": inode_percent, "residual_sessions": sessions,
+            "lease_owner_uid": owner_uid, "lease_owner_gid": owner_gid,
+            "source_sqlite_opened": False, "residue_deleted": False}
+
+
+def emit_probe(repo_root):
+    repo_root = Path(repo_root)
+    helper = (repo_root / "rc6_audit_evidence/sqlite_scratch.py").read_bytes()
+    archive = (repo_root / "rc6_shadow_runtime/archive_namespace.py").read_bytes()
+    live = (repo_root / "scripts/rc6_shadow_live_namespace.py").read_bytes()
+    guard = Path(__file__).read_bytes()
+    if any(len(source) > 1024**2 for source in (helper, archive, live, guard)):
+        raise ScratchAdmissionError("RC6_SCRATCH_PROBE_SOURCE_LIMIT")
+    payload = base64.b64encode(json.dumps({"helper": helper.decode("utf-8"),
+         "archive": archive.decode("utf-8"), "live": live.decode("utf-8"),
+         "hashes": {name: hashlib.sha256(source).hexdigest() for name, source in
+                    (("scratch", helper), ("archive", archive), ("live", live), ("admission", guard))},
+         "guard": guard.decode("utf-8")}, ensure_ascii=True).encode("utf-8")).decode("ascii")
+    # Payload carries reviewed source only. It carries no environment or token.
+    return ("import base64,json,sys,types\n" + "p=json.loads(base64.b64decode(" + repr(payload) + "))\n"
+        "h={'__name__':'rc6_candidate_sqlite_scratch'}\n"
+        "exec(compile(p['helper'],'<frozen-scratch-helper>','exec'),h)\n"
+        "a={}\n"
+        "for name in ('archive','live'):\n"
+        " m=types.ModuleType('rc6_candidate_'+name);sys.modules[m.__name__]=m\n"
+        " exec(compile(p[name],'<frozen-'+name+'-namespace>','exec'),vars(m));a[name]=vars(m)\n"
+        "g={'__name__':'__main__','_CANDIDATE_SCRATCH_API':h,'_CANDIDATE_NAMESPACE_APIS':a,"
+        "'_CANDIDATE_COMPONENT_SHA256':p['hashes']}\n"
+        "exec(compile(p['guard'],'<frozen-scratch-admission>','exec'),g)\n")
+
+
+def report_metrics(report):
+    """Reject missing or contradictory candidate probe fields before transfer."""
+    if not isinstance(report, dict) or report.get("schema") != SCHEMA or report.get("status") not in {"GREEN", "RED"}:
+        raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+    if report.get("candidate_component_sha256") != component_hashes():
+        raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_SOURCE_DRIFT")
+    values = []
+    for prefix, maximum in (("", MAX_BYTES), ("archive_", ARCHIVE_MAX_BYTES), ("live_", LIVE_MAX_BYTES)):
+        value = report.get(prefix + "occupied_bytes")
+        if type(value) is not int or not 0 <= value < maximum:
+            raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+        values.append(value)
+        if prefix:
+            observation = report.get(prefix + "namespace", {})
+            name = prefix.removesuffix("_")
+            present = observation.get("state") != "NOT_PRESENT" if isinstance(observation, dict) else False
+            level = ("BOUNDED_ARCHIVE_NAMESPACE_AND_CUSTODY_METADATA" if name == "archive"
+                     else "BOUNDED_LIVE_NAMESPACE_AND_CUSTODY_METADATA") if present else "NAMESPACE_NOT_PRESENT_FULL_GROWTH_RESERVED"
+            if (not isinstance(observation, dict)
+                    or type(observation.get("occupied_bytes")) is not int
+                    or type(observation.get("max_bytes")) is not int
+                    or type(observation.get("growth_remaining_bytes")) is not int
+                    or observation.get("verification_level") != level
+                    or (present and observation.get("schema") != "rc6.shadow-" + name + "-namespace-admission.v1")
+                    or (not present and value != 0)
+                    or observation.get("occupied_bytes") != value or observation.get("max_bytes") != maximum
+                    or observation.get("growth_remaining_bytes") != maximum - value
+                    or observation.get("state") not in {"WITHIN_QUOTA", "NOT_PRESENT", "RECOVERY_REQUIRED"}
+                    or report.get(prefix + "growth_bytes") != maximum - value
+                    or (report["status"] == "GREEN" and observation["state"] == "RECOVERY_REQUIRED")):
+                raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+    if (type(report.get("derived_growth_bytes")) is not int
+            or report.get("derived_growth_bytes") != MAX_BYTES + ARCHIVE_MAX_BYTES + LIVE_MAX_BYTES - sum(values)
+            or type(report.get("scratch_growth_bytes")) is not int
+            or report.get("scratch_growth_bytes") != MAX_BYTES - values[0]
+            or type(report.get("max_bytes")) is not int or report.get("max_bytes") != MAX_BYTES
+            or report.get("reserve_bytes") != RESERVE_BYTES or report.get("source_sqlite_opened") is not False
+            or report.get("residue_deleted") is not False):
+        raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+    return (*values, history_container_path({"HIST_DB_PATH": report.get("history_container")}))
+
+
+def _unique_report(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+        result[key] = value
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--emit-probe", action="store_true")
+    parser.add_argument("--validate-report", action="store_true")
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    parser.add_argument("--database", type=Path, default=HOST_DATA / PRIMARY_RELATIVE)
+    parser.add_argument("--data-root", type=Path, default=HOST_DATA)
+    parser.add_argument("--owner-uid", type=int, default=OWNER_UID)
+    parser.add_argument("--owner-gid", type=int, default=OWNER_GID)
+    parser.add_argument("--allow-empty-primary", action="store_true")
+    parser.add_argument("--history-container")
+    args = parser.parse_args(argv)
+    try:
+        if args.validate_report:
+            raw = sys.stdin.read(8193)
+            if len(raw.encode("utf-8")) > 8192:
+                raise ScratchAdmissionError("RC6_DERIVED_ADMISSION_REPORT_INVALID")
+            print(*report_metrics(json.loads(raw, object_pairs_hook=_unique_report)), sep="\n")
+            return 0
+        if args.emit_probe:
+            print(emit_probe(args.repo_root), end="")
+            return 0
+        report = probe(args.database, args.data_root,
+                       owner_uid=args.owner_uid, owner_gid=args.owner_gid,
+                       allow_empty_primary=args.allow_empty_primary,
+                       history_container=args.history_container)
+        print(json.dumps(report, sort_keys=True, allow_nan=False))
+        return 0 if report["status"] == "GREEN" else 42
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        reason = str(exc) if isinstance(exc, ValueError) and str(exc).replace("_", "").isalnum() else "RC6_SCRATCH_PROBE_FAILED"
+        print(json.dumps({"schema": SCHEMA, "status": "RED", "reason": reason}))
+        return 42
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,110 @@
+"""Two explicit affected-file focal epochs, never Gov/BIG qualification."""
+import argparse
+from collections import Counter
+import datetime
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+ROOT = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/source')
+OUTPUT = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-storage-dispatch-focal-fwd8fk5l')
+FROZEN = Path('/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source')
+RUNNER = ROOT/'scripts/rc6_controlled_governed_runner.py'
+PRODUCT = ('rc6_shadow_runtime/serialization.py','rc6_shadow_runtime/packed_storage.py')
+TESTS = tuple('tests/'+name+'.py' for name in ('test_rc6_packed_storage','test_rc6_publication_storage','test_rc6_publication_type_identity','test_rc6_funnel_storage_codec','test_rc6_packed_capture_allocations','test_rc6_packed_scalar_dispatch','test_rc6_packed_small_container','test_rc6_packed_volatile_scalars'))
+EXPECTED = {'rc6_shadow_runtime/serialization.py':'e091aebcd25396134c69876ae14d42d264887240b65fbd9867d6ea4b8b235a8a','rc6_shadow_runtime/packed_storage.py':'fa3bcf1e0813067baa8fd478f6aeedd63b4552bcbefbddd487909690c8d43466'}
+FIELDS = ('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+def read(path):
+    fd=os.open(path,os.O_RDONLY|os.O_NOATIME)
+    with os.fdopen(fd,'rb') as h:return h.read()
+def digest(raw):return hashlib.sha256(raw).hexdigest()
+def publish(path,obj):
+    data=(json.dumps(obj,sort_keys=True,indent=2)+'\n').encode()
+    with path.open('xb') as h:h.write(data)
+    path.chmod(0o600)
+    return digest(data)
+def freeze():
+    rows={}
+    for rel in PRODUCT+TESTS+('scripts/rc6_controlled_governed_runner.py',):
+        path=ROOT/rel;st=path.lstat()
+        assert not path.is_symlink() and st.st_nlink==1
+        data=read(path)
+        if rel in EXPECTED:assert digest(data)==EXPECTED[rel],rel
+        if rel in TESTS:assert data==read(FROZEN/rel),rel
+        rows[rel]={'sha256':digest(data),'stat':{k:getattr(st,k) for k in FIELDS}}
+    return rows
+def load_runner():
+    spec=importlib.util.spec_from_file_location('rc6_explicit_focal_native_kernel',RUNNER)
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def child(epoch):
+    gov=load_runner()
+    namespace=gov.phase_namespace(ROOT,epoch,'execution')
+    capability=gov.restrict_inet_creation()
+    initial=gov.child_infrastructure_snapshot()
+    gov.require(all(v is None for v in initial.values()),'FRESH_FOCAL_CHILD_INFRASTRUCTURE_REQUIRED')
+    observations={'inet_socket_attempts':[],'inet_socket_constructor_requests':[],'subprocess_executable_counts':{}}
+    audit_witness=gov.install_phase_audit(observations)
+    closure=gov.installed_closure(ROOT)
+    import pytest
+    from _pytest.junitxml import mangle_test_address
+    items=[]
+    class Observer:
+        def pytest_collection_finish(self,session):
+            for item in session.items:
+                address=mangle_test_address(item.nodeid)
+                items.append({'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]})
+    argv=['-q','-p','no:cacheprovider','-o','pythonpath=.','-o','junit_family=legacy','--basetemp='+str(epoch/'execution-private'/'pytest'),'--junitxml='+str(epoch/'junit.xml'),*TESTS]
+    publish(epoch/'child-start.json',{'kind':'UNCOMMITTED_TREE_AFFECTED_FILE_FOCAL_ONLY','source_whole_frozen':False,'argv':argv,'namespace':namespace,'offline_capability':capability,'inet_audit_witnessed':audit_witness,'closure':closure,'pid':os.getpid(),'parent_pid':os.getppid(),'pgid':os.getpgrp(),'python':sys.version,'product_sha256':EXPECTED})
+    finalization=None
+    try:
+        rc=int(pytest.main(argv,plugins=[Observer()]))
+    finally:
+        finalization=gov.finalize_child_infrastructure(initial)
+        publish(epoch/'child-finalization.json',finalization)
+    publish(epoch/'child-result.json',{'kind':'UNCOMMITTED_TREE_AFFECTED_FILE_FOCAL_ONLY','no_gov_big_predeploy_artifact_runtime_claim':True,'items':items,'pytest_exit_code':rc,'observations':observations,'finalization':finalization})
+    healthy=(finalization['status']=='GREEN' and finalization['finalization_thread_finished'] is True and finalization['kernel_echild_before_phase_return'] is True and finalization['signal_guard_installed_and_witnessed'] is True and not finalization['termination_signal_attempts'] and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False and finalization['wall_seconds']<=5 and not finalization['errors'] and not observations['inet_socket_attempts'])
+    return rc if healthy else 1
+
+def parent(label):
+    epoch=OUTPUT/label
+    epoch.mkdir(mode=0o700)
+    before=freeze();before_digest=publish(epoch/'source-before.json',before)
+    gov=load_runner()
+    command=[sys.executable,'-I','-B',str(Path(__file__).resolve()),'--child',str(epoch)]
+    environment=os.environ.copy()
+    environment.update({'PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1','PYTHONDONTWRITEBYTECODE':'1'})
+    print(json.dumps({'event':'INICIO','utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'parent_pid':os.getpid(),'epoch':str(epoch),'command':command,'product_hashes':EXPECTED,'source_before_sha256':before_digest,'focal_acceptance_deadline_seconds':300,'original_cleanup_bound_seconds':5}),flush=True)
+    kernel=gov.subprocess_phase(command,ROOT,epoch/'pytest.log',environment,300)
+    kernel_digest=publish(epoch/'kernel-result.json',kernel)
+    barrier=(kernel['actual_child_reaped'] is True and kernel['owned_children_exhaustion_verified'] is True and kernel['process_group_absent_after_reap'] is True and kernel['remaining_owned_children']==[] and any(x.get('phase')=='after_actual_main_reap' and x.get('outcome')=='ECHILD' for x in kernel['kernel_owned_child_observations']) and not kernel['supervisor_errors'])
+    result={'kind':'UNCOMMITTED_TREE_AFFECTED_FILE_FOCAL_ONLY','no_gov_big_predeploy_artifact_runtime_claim':True,'gate_qualified':False,'label':label,'status':'RED','kernel':kernel,'kernel_result_sha256':kernel_digest,'postread_barrier_closed':barrier,'product_hashes':EXPECTED,'source_before_sha256':before_digest}
+    if barrier:
+        after=freeze();result['source_after_sha256']=publish(epoch/'source-after.json',after)
+        stable=[k for k in FIELDS if k!='st_atime_ns']
+        changed=[rel for rel in before if before[rel]['sha256']!=after[rel]['sha256'] or any(before[rel]['stat'][k]!=after[rel]['stat'][k] for k in stable)]
+        result['protected_product_test_runner_bytes_and_all10_stable_fields_unchanged']=not changed
+        result['changes']=changed
+        result['atime_changes']=[rel for rel in before if before[rel]['stat']['st_atime_ns']!=after[rel]['stat']['st_atime_ns']]
+        if (epoch/'junit.xml').is_file() and (epoch/'child-result.json').is_file():
+            junit_raw=read(epoch/'junit.xml');child_result=json.loads(read(epoch/'child-result.json'))
+            cases=list(ET.fromstring(junit_raw).iter('testcase'))
+            identities=Counter((x.get('classname',''),x.get('name','')) for x in cases)
+            discovered=Counter((x['classname'],x['name']) for x in child_result['items'])
+            counts={'cases':len(cases),'pass':sum(x.find('failure') is None and x.find('error') is None and x.find('skipped') is None for x in cases),'fail':sum(x.find('failure') is not None for x in cases),'error':sum(x.find('error') is not None for x in cases),'skip':sum(x.find('skipped') is not None for x in cases),'duplicates':sum(c-1 for c in identities.values() if c>1),'collected':len(child_result['items']),'collected_matches_junit':identities==discovered}
+            result['counts']=counts;result['junit_sha256']=digest(junit_raw);result['collected_nodeids']=sorted(x['nodeid'] for x in child_result['items']);result['pytest_exit_code']=child_result['pytest_exit_code'];result['child_finalization']=child_result['finalization'];result['network_operation_attempts']=child_result['observations']['inet_socket_attempts']
+            ok=(kernel['exit']==0 and not kernel['timed_out'] and not kernel['late_observed_main_reap_irreversible_red'] and not kernel['kernel_wait4_zero_observed_irreversible_red'] and kernel['process_group_absent_at_main_reap'] is True and not kernel['residual_descendants_observed'] and not kernel['adopted_descendants_reaped'] and kernel['termination_reap_restore_cleanup_seconds']<=5 and not changed and counts['cases']>0 and counts['pass']==counts['cases'] and counts['fail']==counts['error']==counts['skip']==counts['duplicates']==0 and counts['collected_matches_junit'] and child_result['pytest_exit_code']==0 and child_result['finalization']['status']=='GREEN' and not child_result['observations']['inet_socket_attempts'])
+            if ok:result['status']='GREEN_FOCAL_ONLY'
+    receipt_digest=publish(epoch/'final.json',result)
+    print(json.dumps({'event':'FIN','utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':result['status'],'epoch':str(epoch),'counts':result.get('counts'),'receipt_sha256':receipt_digest,'postread_barrier_closed':barrier,'cpu_slot_free':True}),flush=True)
+    return 0 if result['status']=='GREEN_FOCAL_ONLY' else 1
+
+if __name__=='__main__':
+    p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--epoch');g.add_argument('--child');args=p.parse_args()
+    sys.exit(child(Path(args.child)) if args.child else parent(args.epoch))

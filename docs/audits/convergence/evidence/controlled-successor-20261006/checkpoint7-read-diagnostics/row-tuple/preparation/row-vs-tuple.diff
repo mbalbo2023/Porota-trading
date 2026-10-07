@@ -1,0 +1,19 @@
+--- ROW_control
++++ TUPLE_component
+@@ -29,6 +29,7 @@
+                 mark(metrics, "select_enter", table=table, deadline=deadline)
+                 cursor = connection.execute(f"SELECT * FROM {table} WHERE julianday({cutoff_column})<=julianday(?) ORDER BY {order_column} DESC LIMIT ?", (at.isoformat(), limit+1))
+                 mark(metrics, "select_execute_return", table=table, deadline=deadline)
++                cursor.row_factory = None
+                 rows = list(cursor)
+                 mark(metrics, "rows_materialized", table=table, count=len(rows), deadline=deadline)
+             except sqlite3.OperationalError:
+@@ -36,7 +37,7 @@
+                 break
+             if len(rows) > limit:
+                 result["truncated"].append(table)
+-            row_names = rows[0].keys() if rows else ()
++            row_names = tuple(column[0] for column in cursor.description) if rows else ()
+             for raw in rows[:limit]:
+                 row = dict(zip(row_names, raw))
+                 if kind == "metadata":

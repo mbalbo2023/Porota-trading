@@ -1,0 +1,117 @@
+{
+  "fix": "All retention inventories, CAS catalog and GC enumerate via O_DIRECTORY|O_NOFOLLOW|O_NOATIME fd plus stable identity revalidation. Existing namespace bounds and live RetentionPressure classification remain enforced.",
+  "native_guard": "tests/test_rc6_component_archive.py::test_failed_restore_and_archive_preserve_root_directory_atime_and_all_protected_custody",
+  "predecessor_sha": "7e9425e202b9e67e87aad67dd59218c509a01721",
+  "rca": "Path.iterdir/glob in archive lock checkpoint recovery and inventories update directory atime before a valid corruption rejection. Restore alone preserves origin; writer retry did not.",
+  "red": {
+    "external_probe": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_original_probe.py",
+    "external_probe_sha256": "8b39960b8053dc566b38476d5436e7df101a091c582be867f6f5e70bbb2686f7",
+    "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_7e9425e2_red.json",
+    "result": {
+      "archive_root_after_archive": [
+        33,
+        2819804,
+        1000,
+        1000,
+        16832,
+        2,
+        200,
+        0,
+        1791202348187078541,
+        1791202348186703103,
+        1791202348186703103
+      ],
+      "archive_root_after_restore": [
+        33,
+        2819804,
+        1000,
+        1000,
+        16832,
+        2,
+        200,
+        0,
+        1791202348186594706,
+        1791202348186703103,
+        1791202348186703103
+      ],
+      "archive_root_before": [
+        33,
+        2819804,
+        1000,
+        1000,
+        16832,
+        2,
+        200,
+        0,
+        1791202348186594706,
+        1791202348186703103,
+        1791202348186703103
+      ],
+      "archive_unchanged": false,
+      "provider_requests": 0,
+      "restore_unchanged": true,
+      "schema": "rc6.archive-atime-native-red.v1",
+      "scope": "PRIVATE_OFFLINE_ORIGINAL_PRODUCT_WITH_EXTERNAL_PROBE",
+      "source_sha": "7e9425e202b9e67e87aad67dd59218c509a01721",
+      "source_unchanged": true
+    },
+    "sha256": "0d050c0a1068d19f6464366ed0c9fbc2c91ea9027a631bebf6daf164a59f9b58"
+  },
+  "remaining_active_gates": [
+    "native_1201_full_tick_wheel_recovery_and_physical_archive512MiB",
+    "native2000_archives_and_gc_physical_peak",
+    "native12000catalog60000input_canonicalfactory90seconds2GiB",
+    "UI1second4MiB",
+    "health2seconds"
+  ],
+  "results": [
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_fixed_native.junit.xml",
+      "sha256": "5660f54132d975943ee7a6fc600ae431da074316f8b9f821a41a950672d68d51",
+      "skipped": "0",
+      "tests": "41",
+      "time": "11.242",
+      "timestamp": "2026-10-05T12:12:35.215664+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_final_guard.junit.xml",
+      "sha256": "c2ea14245fae8455e16afb64b9d7f2f1865cb10cfad86ad372b5dcf4dcc5578e",
+      "skipped": "0",
+      "tests": "3",
+      "time": "0.746",
+      "timestamp": "2026-10-05T12:14:46.231081+00:00"
+    },
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "path": "docs/audits/rc6-convergence-persistence-evidence/archive_v3_atime_final_native.junit.xml",
+      "sha256": "bed726f2a305b219bb95dc1058c3ec93b7e66d61614a84f978ade4dec7651540",
+      "skipped": "0",
+      "tests": "41",
+      "time": "10.557",
+      "timestamp": "2026-10-05T12:15:21.248052+00:00"
+    }
+  ],
+  "schema": "rc6.archive-directory-atime-fix.v1",
+  "scope": "OFFLINE_PRIVATE_NATIVE_SOURCE_FIX_AND_GUARDS_NO_PROVIDER_NO_RUNTIME",
+  "source_files_sha256": {
+    "rc6_shadow_runtime/archive_components.py": "d26ff0a1d542215ba38f63c7793bba518d0498a14c2eeedeeb656b684d3f338a",
+    "rc6_shadow_runtime/retention.py": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc",
+    "tests/test_rc6_component_archive.py": "acc2854820bd705a935e4232a0a6c5eed3bed2ef197476ed84a25f60d6de7281"
+  },
+  "unchanged_limits": {
+    "archive_bytes": 536870912,
+    "archive_files": 32768,
+    "live_bytes": 134217728
+  }
+}

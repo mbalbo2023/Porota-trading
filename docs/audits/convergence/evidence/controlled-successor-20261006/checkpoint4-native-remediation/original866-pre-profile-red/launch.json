@@ -1,0 +1,51 @@
+{
+  "OPEN_called": false,
+  "adapter_code_overrides": 0,
+  "child_deadline_seconds": 90,
+  "cleanup_management_seconds": 5,
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/pre_profile_v2.py",
+    "--child"
+  ],
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source",
+  "diagnostic_only": true,
+  "evidence_maximum_bytes": 134217728,
+  "families_profiled": false,
+  "fixture": {
+    "catalog": 12000,
+    "observations": 60000,
+    "open_positions": 5
+  },
+  "fixture_preparation_precedes_native_phase_deadline_as_in_original_stress": true,
+  "gate_qualified": false,
+  "gc_tuning": false,
+  "graph_roundtrips": 0,
+  "harness_sha256": "c4248a405d3c8990dfcc9bd4e0f0d1d44c27b0f70aad6d9548e7820f299b2a40",
+  "harness_stat": {
+    "st_atime_ns": 1791300651758309613,
+    "st_blocks": 64,
+    "st_ctime_ns": 1791300651558310525,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1088609,
+    "st_mode": 33152,
+    "st_mtime_ns": 1791300651558310525,
+    "st_nlink": 1,
+    "st_size": 32444,
+    "st_uid": 1000
+  },
+  "original_helper_installs_its_own_existing_handler_wrappers": true,
+  "peak_rss_validation": "PID_SPECIFIC_ORIGINAL_WAIT4; NOT_RLIMIT_RSS_OR_AS",
+  "profile_timer_python_callbacks": false,
+  "profiler": "STDLIB_CPROFILE_INTERNAL_C_TIMER_ORIGINAL_STORAGE_PREPARE_ENTER_TO_PROGRESS_ONLY",
+  "profiler_overhead_may_cause_original_deadline_RED": true,
+  "recovery_called": false,
+  "source_capture_only_prelaunch_and_post_actual_kernel_reap": true,
+  "source_index_sha256": "614c7d6d18818008ca4db15f8741ba4336a40a1b1d6587c6b9552d734f6bf779",
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "strict_peak_rss_limit_bytes": 2147483648
+}

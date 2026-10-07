@@ -1,0 +1,2 @@
+{"event": "START", "supervisor_pid": 244712, "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103", "raw": "/workspace/rc6-root-efa69894-browser-20261006-raw-retry-c", "phases": ["normal"]}
+{"event": "END", "status": "RED", "supervisor_pid": 244712, "source_sha": "efa69894870ef6c05b63713666a904bbe88b6103", "normal_browser_pass": false, "separate_live_health_pass": false, "acceptance_complete": false}

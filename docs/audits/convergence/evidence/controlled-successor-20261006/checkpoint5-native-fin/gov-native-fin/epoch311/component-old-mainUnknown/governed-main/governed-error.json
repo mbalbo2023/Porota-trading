@@ -1,0 +1,9 @@
+{
+  "exception_class": "RuntimeError",
+  "execution_id": "c508c811146847faaaf9b993f490f898",
+  "raw_logs_preserved": true,
+  "reason": "TEST_OBSERVER_VETO_SOURCE_POSTREAD_BEFORE_PHYSICAL_READ",
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED"
+}

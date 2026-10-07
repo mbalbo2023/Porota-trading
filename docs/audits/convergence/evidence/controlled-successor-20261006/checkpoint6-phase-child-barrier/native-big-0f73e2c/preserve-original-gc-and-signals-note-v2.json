@@ -1,0 +1,234 @@
+{
+  "actual_original_parent_signal_policy": "SIGINT_FAILURE_MANAGEMENT_THEN_SIGKILL_AFTER20S; POSTFAILURE_CLEANUP_SIGTERM_THEN_SIGKILL_AFTER1S_WITHIN_ORIGINAL5S; NEVER_SIGNALED_PGID_AFTER_OBSERVED_ABSENCE",
+  "actual_signal_thresholds_verified_by_ast_equal_in2e48_and0f73": {
+    "sigint_phase_failure_management_seconds": 20,
+    "sigterm_postfailure_cleanup_sigkill_threshold_seconds": 1
+  },
+  "actual_source_functions_or_thresholds_were_not_changed": true,
+  "changed_executable_scope_names_2e48_to0f73": [
+    "scripts/porota_predeploy_test_workspace.py",
+    "scripts/rc6_controlled_governed_runner.py",
+    "scripts/rc6_controlled_native_child_manager.py",
+    "tests/test_rc6_controlled_native_child_manager.py",
+    "tests/test_rc6_predeploy_scoped_cleanup.py"
+  ],
+  "cli_gc_diagnostic_source_lines": [
+    {
+      "line": 171,
+      "literal_source_line": "gc.collect()"
+    },
+    {
+      "line": 178,
+      "literal_source_line": "canonical_runtime=False, diagnostic_stacks=None, source_binding=None):"
+    },
+    {
+      "line": 207,
+      "literal_source_line": "canonical_runtime,diagnostic_stacks,import_observer,"
+    },
+    {
+      "line": 240,
+      "literal_source_line": "canonical_runtime,diagnostic_stacks,import_observer,child_qualification):"
+    },
+    {
+      "line": 269,
+      "literal_source_line": "if diagnostic_stacks is not None:"
+    },
+    {
+      "line": 270,
+      "literal_source_line": "import faulthandler"
+    },
+    {
+      "line": 271,
+      "literal_source_line": "descriptor = os.open(diagnostic_stacks, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_APPEND, 0o600)"
+    },
+    {
+      "line": 315,
+      "literal_source_line": "gc.callbacks.append(gc_callback)"
+    },
+    {
+      "line": 318,
+      "literal_source_line": "faulthandler.dump_traceback_later(10, repeat=True, file=stack_stream)"
+    },
+    {
+      "line": 442,
+      "literal_source_line": "gc.collect()"
+    },
+    {
+      "line": 501,
+      "literal_source_line": "gc.callbacks.remove(gc_callback)"
+    },
+    {
+      "line": 503,
+      "literal_source_line": "faulthandler.cancel_dump_traceback_later()"
+    },
+    {
+      "line": 505,
+      "literal_source_line": "if diagnostic_stacks is not None:"
+    },
+    {
+      "line": 585,
+      "literal_source_line": "canonical_runtime=False, diagnostic_stacks=None, source_provenance=None):"
+    },
+    {
+      "line": 598,
+      "literal_source_line": "canonical_runtime=canonical_runtime,diagnostic_stacks=diagnostic_stacks,"
+    },
+    {
+      "line": 606,
+      "literal_source_line": "allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before):"
+    },
+    {
+      "line": 613,
+      "literal_source_line": "if diagnostic_stacks is not None:"
+    },
+    {
+      "line": 614,
+      "literal_source_line": "diagnostic_stacks = Path(diagnostic_stacks).absolute()"
+    },
+    {
+      "line": 615,
+      "literal_source_line": "if (diagnostic_stacks.exists() or diagnostic_stacks.is_symlink()"
+    },
+    {
+      "line": 616,
+      "literal_source_line": "or diagnostic_stacks.parent.resolve(strict=True) != diagnostic_stacks.parent):"
+    },
+    {
+      "line": 618,
+      "literal_source_line": "diagnostic_stacks = str(diagnostic_stacks)"
+    },
+    {
+      "line": 633,
+      "literal_source_line": "canonical_runtime, diagnostic_stacks)"
+    },
+    {
+      "line": 749,
+      "literal_source_line": "\"diagnostic_only\": diagnostic_stacks is not None,"
+    },
+    {
+      "line": 750,
+      "literal_source_line": "\"diagnostic_stack_file\": diagnostic_stacks,"
+    },
+    {
+      "line": 842,
+      "literal_source_line": "canonical_runtime=args.canonical_runtime, diagnostic_stacks=args.diagnostic_stacks,"
+    }
+  ],
+  "compared_source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "created_utc": "2026-10-06T20:18:08.500500+00:00",
+  "external_contextual_v3_diagnostic_not_a_source_fix_or_acceptance": "PRIOR_CONTEXTUAL_DIAGNOSTIC_WAS_EXTERNAL_RED_ALIEN_AND_IS_NOT_INVOKED_BY_THIS_BIG",
+  "failure_signal_management20_does_not_extend_parent300_or_native90_acceptance": true,
+  "gc_contextual_source_material_fix_claim_retracted": true,
+  "harness_edits": false,
+  "native_big_executed": false,
+  "no_gc_enable_disable_threshold_override_or_profiler_sampler_supplied": true,
+  "optional_existing_cli_diagnostics_not_enabled": true,
+  "original_gc_collect_calls_required_to_remain": [
+    171,
+    442
+  ],
+  "original_gc_collect_meanings": {
+    "171": "ORIGINAL_FIXTURE_CLOSED_COLLECTION_BEFORE_IMPORT_CHECKPOINT",
+    "442": "ORIGINAL_PREOPEN_TO_OPEN_BOUNDARY_COLLECTION"
+  },
+  "parent_management300_and_cleanup5_unchanged": true,
+  "positive_big_requires_zero_signal_observations": true,
+  "relevant_native_source_files": [
+    {
+      "bytes": 52966,
+      "gc_calls": [
+        {
+          "function": "gc.collect",
+          "line": 171,
+          "literal_source_line": "gc.collect()"
+        },
+        {
+          "function": "gc.collect",
+          "line": 442,
+          "literal_source_line": "gc.collect()"
+        }
+      ],
+      "path": "scripts/rc6_issue465_stress.py",
+      "same_raw_git_bytes_2e48_and_0f73": true,
+      "sha256": "11212f6534759b2b7483b5aaf2fdf367b819ce428b04cd565791dbed8d732456"
+    },
+    {
+      "bytes": 44176,
+      "gc_calls": [],
+      "path": "rc6_shadow_runtime/families.py",
+      "same_raw_git_bytes_2e48_and_0f73": true,
+      "sha256": "75634ed7a6fec86e03b47420012d7144693393029de85389cfa631ccd5fc3398"
+    },
+    {
+      "bytes": 1334,
+      "gc_calls": [],
+      "path": "rc6_shadow_runtime/source_reads.py",
+      "same_raw_git_bytes_2e48_and_0f73": true,
+      "sha256": "731c2ab234e3534a0f1bcddf5cd2a8156c9bafbcf458e236c3e781561b14e189"
+    },
+    {
+      "bytes": 8516,
+      "gc_calls": [],
+      "path": "rc6_audit_evidence/sqlite_snapshot.py",
+      "same_raw_git_bytes_2e48_and_0f73": true,
+      "sha256": "c4cb17481d678c1d1b1e05cffb6ed6762e09d26032bc30d245d1b033df5319ea"
+    }
+  ],
+  "resource_or_import_or_fullgov_qualification": false,
+  "schema": "rc6.native-direct-big.original-gc-and-signal-policy-correction.v2",
+  "sigterm2_plan_label_retracted_not_actual_tracked_signal_type": "V1_SIGTERM2_AND_V2_SIGINT2_METADATA_LABELS_WERE_INACCURATE; TRACKED_GOV_PHASE_SIGINT_WINDOW_IS20S_NOT2; HISTORICAL_V2_MANAGER_IS_A_DIFFERENT_IMPLEMENTATION",
+  "source_edits": false,
+  "source_sha": "0f73e2cd681672b7a9a3065e99a72915ba93f4fd",
+  "source_tree": "36227e546cb311546f08b80880064dde86a6f630",
+  "supersedes_signal_description_only": {
+    "original_preserved": true,
+    "path": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-native-big-0f73e2c-oz3nr9js/preserve-original-gc-and-signals-note.json",
+    "sha256": "046a9628c0edadc7c16a4aeede01d4316cb4c5593f027385671e1cbe5d7f0e43",
+    "two_second_sigint_description_in_note1_retracted": true
+  },
+  "tracked_parent_phase_function": {
+    "line": 578,
+    "observed_original_signal_management_lines": [
+      {
+        "line": 686,
+        "literal_source_line": "signal_group(signal.SIGINT)"
+      },
+      {
+        "line": 687,
+        "literal_source_line": "if interrupted is not None and now - interrupted >= 20:"
+      },
+      {
+        "line": 688,
+        "literal_source_line": "signal_group(signal.SIGKILL)"
+      },
+      {
+        "line": 698,
+        "literal_source_line": "cleanup_deadline = cleanup_started + 5"
+      },
+      {
+        "line": 701,
+        "literal_source_line": "signal_group(signal.SIGTERM)"
+      },
+      {
+        "line": 703,
+        "literal_source_line": "if time.monotonic() - cleanup_started >= 1:"
+      },
+      {
+        "line": 704,
+        "literal_source_line": "signal_group(signal.SIGKILL)"
+      },
+      {
+        "line": 707,
+        "literal_source_line": "signal_group(signal.SIGKILL)"
+      },
+      {
+        "line": 749,
+        "literal_source_line": "signal_group(signal.SIGKILL if time.monotonic() - cleanup_started >= 1 else signal.SIGTERM)"
+      }
+    ],
+    "path": "scripts/rc6_controlled_governed_runner.py",
+    "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+    "signature": "command, root, output, env, limit"
+  },
+  "tracked_source_gc_or_families_performance_changed_2e48_to0f73": false
+}

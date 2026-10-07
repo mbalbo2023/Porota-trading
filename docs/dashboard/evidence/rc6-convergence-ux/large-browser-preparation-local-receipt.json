@@ -1,0 +1,65 @@
+{
+  "focused_pytest": {
+    "errors": "0",
+    "failures": "0",
+    "junit": "large-browser-negative-focal.xml",
+    "skipped": "0",
+    "tests": "7",
+    "time": "4.604"
+  },
+  "native_cli_small_rejection": {
+    "browser_or_screenshots_started": false,
+    "catalog_identities": 25,
+    "exit_code": 1,
+    "expected_gate": "NATIVE_LARGE_REPORT_NOT_EXERCISED",
+    "inventory_members": 55,
+    "inventory_sha256": "f2050c1961156f16804b243be97ae73bf7268c9a191f7fc24f68a045889a3e62",
+    "published_phase": "OPEN",
+    "raw_receipt": "large-browser-small-rejection.json",
+    "source_and_custody_inventory_unchanged": true
+  },
+  "positive_large_gate": {
+    "executed": false,
+    "limitations": "Negative tests validate rejection/custody only. They do not exercise Chromium on the large fixture.",
+    "maximum_html_bytes_exclusive": 4194304,
+    "maximum_render_seconds": 1,
+    "required_aliases": 22,
+    "required_viewport_checks": 294,
+    "status": "PENDING_COMPLETED_NATIVE_OPEN_CUT_AND_FROZEN_ROOT_PIN"
+  },
+  "recorded_at": "2026-10-05T06:37:24.425648+00:00",
+  "schema": "rc6.dashboard-native-large-browser-preparation.v1",
+  "status": "EXPECTED_SMALL_REJECTION_GREEN; POSITIVE_NATIVE_LARGE_BROWSER_NOT_RUN",
+  "validation": {
+    "base_sha": "8720458c50285464e6577b5522733be158e9683f",
+    "inherited_owned_overlays": {
+      "rc6_trader_dashboard/view_common.py": {
+        "git_blob": "8038b3aaff8518ed38e40ba408dcb51f2d83ecfd",
+        "sha256": "e489f4a2a4f8c08d9ce36b0ee0333b8f42258aae73bdf3a71f5336e8b4e1c7ae"
+      },
+      "tests/ci_rc6_projection_large_reader.py": {
+        "git_blob": "b512c17c1aebbdda57faa760613782e6beabb81e",
+        "sha256": "2bb2eb650f0aa4e13b6e8dda52d7b7f20b32773c7d770c90a5a1602bf83539a7"
+      },
+      "tests/test_rc6_dashboard_convergence.py": {
+        "git_blob": "dee8c5478f8918ecbdd58f4e50a1db3b1809322a",
+        "sha256": "83959efdeaf2d8fa066d47b6f64c228c8638db4b6dabe6efa31b75bc83698459"
+      },
+      "tests/test_rc6_projection_source_guard.py": {
+        "git_blob": "e055572f512f4629fb898e86e5c2f10605520bf1",
+        "sha256": "cb30d79a91f452181616e1798b9cf057124f49e89329ab794d1cf8b345b3e77c"
+      }
+    },
+    "owned_source_files": {
+      "tests/ci_rc6_projection_large_browser.py": {
+        "git_blob": "f65f9408f3218572bba64fa2359fe6333e04a7e9",
+        "sha256": "96989f9d97f0da9b388f62ebe2c806c18fe2db4aeea8cc03e9f7327fbc3304cb"
+      },
+      "tests/test_rc6_projection_large_browser.py": {
+        "git_blob": "e983b381d58dcc27fa19a355cd799663bf1cac09",
+        "sha256": "09c06bf08821e3674efe4ad39a43f36c81d2ab99509031aeeae4c9c56ceda09a"
+      }
+    },
+    "validation_kind": "development_focal_owned_overlay"
+  }
+}

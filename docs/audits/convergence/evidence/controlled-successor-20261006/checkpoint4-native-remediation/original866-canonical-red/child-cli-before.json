@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source/scripts/rc6_issue465_stress.py",
+    "--root",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/data-slow",
+    "--out",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/raw-slow/native-big-result.json",
+    "--catalog-count",
+    "12000",
+    "--observations-per-identity",
+    "5",
+    "--canonical-runtime",
+    "--slow-disk",
+    "--source-root",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/source",
+    "--source-repo",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/repository",
+    "--source-sha",
+    "86615bd8c669209e8d391d114016d923fe084dc0",
+    "--source-tree",
+    "ad192bb7f707b082e680a699e1f00f9efabc755f",
+    "--source-index",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-canonical-big-86615-MSpFSS9s/pin/source.index.json"
+  ],
+  "guard_scope": "THIS_LAUNCHER_PYTHON_AUDIT; INHERITED_IPV6_SECCOMP; NO_TRANSITIVE_INET_ATTESTATION",
+  "invocation": "runpy.run_path(EXACT_PINNED_CLI, run_name=__main__); NO_SOURCE_OVERLAY",
+  "parent_pid": 8336,
+  "pid": 8343,
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f"
+}

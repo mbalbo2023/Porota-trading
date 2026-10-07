@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Documentary actual-capsule compatibility only; never generate a register.
+
+Read the named immutable Git capsule via each helper's own source adapter.
+Verify gzip TAR bytes without TAR entries/extraction, origin or DATA opens.
+Execution of this diagnostic does not execute or requalify any archived tests.
+"""
+import argparse
+import collections
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+
+HELPERS = (
+    ("REGISTER", Path("/tmp/rc6_remediation_register_generate_v4_opaque_candidate_v2.py"),
+     "60bd126002caf324ed9a3f42d45f21a9dd7591d162f3501d168d02ee10d35dfc"),
+    ("SUPPLEMENT", Path("/tmp/rc6_root_supplemental_named_findings_generate_v3_opaque_candidate_v2.py"),
+     "76ece1725ca2696bbffba6bb5ebba7b7d6d8edd722d5b6f3ab42ac6afeafc696"),
+)
+ROOT = "docs/audits/rc6-private-publication-controlled-focal-e24bc025"
+CUSTODY = ROOT + "/CUSTODY.json"
+CAPSULE = ROOT + "/CAPSULE.json"
+EXPECTED = {
+    CUSTODY: (138302, "b58784b9c9a3a376503bb8bb64908b65bb0ebea1f9689fe97e76d796e27ac317"),
+    CAPSULE: (16321, "264219c767170153017ba3a94bd6905534ec0fa26a95dcb03268c8ce8414c41d"),
+}
+SCOPE = "ACTUAL_COMMITTED_CAPSULE_HELPER_COMPATIBILITY_AND_OPAQUE_BYTE_CUSTODY_ONLY_NOT_NATIVE_EXECUTION_OR_FINAL_D"
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def helper_pins():
+    result = {}
+    for label, path, expected in HELPERS:
+        raw = path.read_bytes()
+        if digest(raw) != expected:
+            raise AssertionError("helper source differs from exact reviewed pin: " + label)
+        result[label] = {"path": str(path), "sha256": expected, "bytes": len(raw)}
+    return result
+
+
+def git_snapshot(repo):
+    def git(*args):
+        return subprocess.check_output(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(repo), *args],
+                                       stderr=subprocess.PIPE)
+    return {"head": git("rev-parse", "HEAD").decode().strip(),
+            "tracked_status": git("status", "--porcelain=v1", "--untracked-files=no").decode().splitlines()}
+
+
+def run(repo, revision):
+    before = helper_pins()  # Must precede every helper exec_module.
+    source_before = git_snapshot(repo)
+    results = []
+    captured_source = None
+    try:
+        for label, path, _ in HELPERS:
+            spec = importlib.util.spec_from_file_location("documentary_actual_opaque_" + label, path)
+            helper = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(helper)
+            source = helper.Source(repo, revision) if label == "REGISTER" else helper.GitSource(repo, revision)
+            try:
+                for control, (length, expected) in EXPECTED.items():
+                    raw = source.read(control)
+                    if len(raw) != length or digest(raw) != expected:
+                        raise AssertionError("actual preserved control differs: " + control)
+                custody = source.json(CUSTODY)
+                capsule = source.json(CAPSULE)
+                if label == "REGISTER":
+                    # Real stage method, bypassing unrelated whole-generator
+                    # constructor inputs. No register/D is generated here.
+                    builder = object.__new__(helper.Builder)
+                    builder.s, builder.values, builder.issues = source, {}, []
+                    builder.executions = collections.defaultdict(list)
+                    raw = source.read(CAPSULE)
+                    entry = {"path": CAPSULE, "sha256": digest(raw), "bytes": len(raw),
+                             "current_publication_binding": source.binding(CAPSULE)}
+                    builder.metadata("ACTUAL_DOCUMENTARY_DIAGNOSTIC", entry, raw)
+                    assert entry["original_raw_json_metadata"] == capsule
+                    members = entry["declared_raw_dossier_members"]
+                    stage = "OWN_SOURCE_BUILDER_METADATA_TO_EXACT_CAPSULE_ADAPTER"
+                else:
+                    members = helper.declared_raw_dossier_members(source, CAPSULE, capsule)
+                    stage = "OWN_GITSOURCE_EXACT_CAPSULE_ADAPTER"
+                originals = [m for m in members if "archival_path_mapping" in m]
+                controls = [m for m in members if "archival_path_mapping" not in m]
+                assert len(originals) == custody["members_count"] == 91
+                assert len(members) == 93 and len(controls) == 2
+                assert len({m["publication_binding"]["path"] for m in members}) == 93
+                archives = []
+                for member in originals:
+                    mapping = member["archival_path_mapping"]
+                    archive = mapping.get("opaque_source_archive_metadata")
+                    if archive is not None:
+                        assert archive["state"] == "SOURCE_ARCHIVE_BYTES_VERIFIED_ONLY"
+                        assert archive["tar_entries_parsed_or_extracted"] is False
+                        assert archive["archived_source_executed"] is False
+                        assert archive["product_or_runtime_acceptance"] is False
+                        archives.append(archive)
+                assert len(archives) == 4
+                assert {a["source_archive_authority"]["protocol_epoch"] for a in archives} == set("ABCD")
+                assert all(a["raw_encoding_metadata"]["uncompressed_bytes"] == 79964160 for a in archives)
+                assert {a["raw_encoding_metadata"]["expanded_limit_bytes"] for a in archives} == {512 * 1024 * 1024}
+                captured_source = {"sha": source.sha, "tree": source.tree}
+                results.append({"helper": label, "source_adapter": type(source).__name__, "stage": stage,
+                    "published_capsule_source": captured_source, "control_bindings": controls,
+                    "original_member_count": 91, "controls_not_original_raw": 2,
+                    "opaque_source_archives": archives,
+                    "original_encoded_bytes_total": sum(m["raw_encoding_metadata"]["compressed_bytes"] for m in originals),
+                    "original_expanded_bytes_total": sum(m["raw_encoding_metadata"]["uncompressed_bytes"] for m in originals),
+                    "source_receipt_epoch_verdicts_and_counts_verbatim": capsule.get("epochs"),
+                    "incidents_verbatim": capsule.get("incident"),
+                    "status": "SOURCE_BYTE_CUSTODY_COMPATIBLE_ONLY"})
+            finally:
+                if hasattr(source, "close"):
+                    source.close()
+    finally:
+        after = helper_pins()
+        source_after = git_snapshot(repo)
+        if before != after or source_before != source_after:
+            raise AssertionError("helper/Git snapshot changed during documentary compatibility diagnostic")
+    return {"schema": "rc6.actual-publication-capsule-opaque-compatibility.v1", "scope": SCOPE,
+            "requested_source_sha": revision, "source_snapshot": captured_source,
+            "helper_sources_before": before, "helper_sources_after": after,
+            "git_snapshot_before": source_before, "git_snapshot_after": source_after,
+            "results": results, "status": "SOURCE_BYTE_CUSTODY_COMPATIBLE_ONLY",
+            "counting_boundary": "The same 91 original members and four source archives are checked by two adapters; do not sum into182 originals/eight archives or test executions.",
+            "product_imports_or_native_executed": 0, "gov_executed": False, "final_register_generated": False,
+            "source_tar_entries_parsed_or_extracted": False, "external_origins_or_data_opened": False,
+            "historical_data_custody": "NOT_VERIFIED_NO_DATA_READ_IN_THIS_DIAGNOSTIC"}
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--source", required=True)
+    args = parser.parse_args()
+    print(json.dumps(run(args.repo.resolve(strict=True), args.source), sort_keys=True))

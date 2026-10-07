@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.037" timestamp="2026-10-05T05:42:36.468621+00:00" hostname="9905252a2cbf"><testcase classname="tests.test_rc6_convergence_provenance" name="test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution" time="0.832"><failure message="StopIteration">candidate = (PosixPath('/tmp/pytest-of-agent/pytest-222/test_mode_only_change_to_uncha0/repo'), PosixPath('/tmp/pytest-of-agent/py...0/actual-input-fixture.xml'), PosixPath('/tmp/pytest-of-agent/pytest-222/test_mode_only_change_to_uncha0/report.json'))
+
+    def test_mode_only_change_to_unchanged_original_source_requires_a_guarded_evolution(candidate):
+        root = candidate[0]
+        manifest = json.loads((root / provenance.INPUT_ROOT / provenance.MANIFEST).read_text())
+        final = provenance.tree(root, "HEAD")
+        originals = [provenance.tree(root, manifest["product"]["sha"])]
+        changed = set()
+        for source in manifest["sources"]:
+            current = provenance.tree(root, source["head_sha"])
+            baseline = provenance.tree(root, source["base_sha"])
+            originals.append(current)
+            changed.update(path for path in set(current) | set(baseline) if current.get(path) != baseline.get(path))
+&gt;       filename = next(path for path, value in sorted(final.items()) if value["git_mode"] == "100644"
+                        and path not in changed and all(tree.get(path) == value for tree in originals))
+E       StopIteration
+
+tests/test_rc6_convergence_provenance.py:267: StopIteration</failure></testcase></testsuite></testsuites>

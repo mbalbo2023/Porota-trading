@@ -1,0 +1,2055 @@
+{
+  "as_of": "2026-10-05T05:35:23.102293+00:00",
+  "canonical_viewport_checks": 294,
+  "findings": [],
+  "generation_id": "79bba4b003ab4252a4313cdf41f494d9",
+  "interaction_checks": [
+    "manual focus",
+    "scroll",
+    "details",
+    "filters",
+    "deep link",
+    "dirty inputs",
+    "interaction during outstanding read",
+    "auto refresh pause",
+    "menu Escape",
+    "cohort pagination and exact selection"
+  ],
+  "legacy_checks": 22,
+  "native_contract_checks": [
+    "FUT ACTIVE visible",
+    "FUT native supervision intent visible",
+    "same-entry exit lab nonempty",
+    "entry experiment nonempty",
+    "OFF policy separate from OPEN evidence",
+    "unique element IDs",
+    "same four-role sealed generation",
+    "explicit projected verification scope"
+  ],
+  "native_generation_roles": [
+    "checkpoint",
+    "projection",
+    "report",
+    "status"
+  ],
+  "native_generation_schema": "rc6.shadow-evidence-generation.v2",
+  "native_generation_verification": "WIRE_AND_PROJECTION_SEMANTICS",
+  "network": "all HTTP intercepted; native offline PAPER/SHADOW writers; provider_requests=0",
+  "renders": [
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=43.08",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=35.20",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=28.69",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=29.43",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=32.81",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=27.27",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=25.55",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=27.77",
+      "width": 1440
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=24.00",
+      "width": 1440
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=25.89",
+      "width": 1440
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=39.52",
+      "width": 1440
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=27.66",
+      "width": 1440
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=37.47",
+      "width": 1440
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=34.25",
+      "width": 1440
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=46.34",
+      "width": 1440
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=41.39",
+      "width": 1440
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=67.15",
+      "width": 1440
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=31.38",
+      "width": 1440
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=30.35",
+      "width": 1440
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=48.97",
+      "width": 1440
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=25.81",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=32.17",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=47.90",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=42.42",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=41.32",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=52.12",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=40.81",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=50.41",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=35.93",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=39.02",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=40.84",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=46.31",
+      "width": 1440
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=27.30",
+      "width": 1440
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=28.34",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=26.02",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=25.68",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=25.37",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=26.02",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=25.34",
+      "width": 1440
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=24.45",
+      "width": 1440
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=27.25",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=45.69",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=27.84",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=27.54",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=25.20",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=30.15",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=29.24",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=41.67",
+      "width": 1440
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=41.55",
+      "width": 1440
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=50.44",
+      "width": 1440
+    },
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=64.21",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=66.46",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=40.91",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=60.69",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=60.79",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=41.09",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=45.41",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=59.97",
+      "width": 1280
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=45.34",
+      "width": 1280
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=42.65",
+      "width": 1280
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=56.92",
+      "width": 1280
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=42.46",
+      "width": 1280
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=39.75",
+      "width": 1280
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=52.51",
+      "width": 1280
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=39.92",
+      "width": 1280
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=43.59",
+      "width": 1280
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=55.55",
+      "width": 1280
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=44.25",
+      "width": 1280
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=52.88",
+      "width": 1280
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=74.08",
+      "width": 1280
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=61.25",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=43.58",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=42.59",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=42.88",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=50.76",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=41.56",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=41.23",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=74.80",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=50.88",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=62.68",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=65.23",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=54.36",
+      "width": 1280
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=41.96",
+      "width": 1280
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=41.96",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=64.25",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=44.24",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=41.15",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=67.63",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=42.91",
+      "width": 1280
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=40.26",
+      "width": 1280
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=51.09",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=43.28",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=42.20",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=26.14",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=26.98",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=30.21",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=24.89",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=25.45",
+      "width": 1280
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=28.97",
+      "width": 1280
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=28.05",
+      "width": 1280
+    },
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=46.38",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=30.56",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=29.78",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=28.55",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=27.98",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=36.48",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=32.05",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=39.37",
+      "width": 1024
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=45.74",
+      "width": 1024
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=35.07",
+      "width": 1024
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=30.54",
+      "width": 1024
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=28.01",
+      "width": 1024
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=28.13",
+      "width": 1024
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=26.59",
+      "width": 1024
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=28.53",
+      "width": 1024
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=26.98",
+      "width": 1024
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=33.06",
+      "width": 1024
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=30.09",
+      "width": 1024
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=27.33",
+      "width": 1024
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=30.74",
+      "width": 1024
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=26.90",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=29.97",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=73.04",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=33.90",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=28.65",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=27.69",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=28.64",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=28.83",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=27.34",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=29.85",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=29.63",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=24.94",
+      "width": 1024
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=24.79",
+      "width": 1024
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=25.11",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=24.88",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=25.26",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=23.66",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=28.06",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=49.80",
+      "width": 1024
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=24.83",
+      "width": 1024
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=25.31",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=25.41",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=24.90",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=25.83",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=26.47",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=29.84",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=26.64",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=36.37",
+      "width": 1024
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=28.68",
+      "width": 1024
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=29.99",
+      "width": 1024
+    },
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=33.72",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=30.49",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=29.86",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=81.97",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=33.58",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=28.75",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=26.62",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=30.21",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=29.74",
+      "width": 800
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=28.91",
+      "width": 800
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=28.07",
+      "width": 800
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=29.59",
+      "width": 800
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=32.73",
+      "width": 800
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=29.10",
+      "width": 800
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=43.86",
+      "width": 800
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=42.59",
+      "width": 800
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=49.84",
+      "width": 800
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=55.36",
+      "width": 800
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=66.19",
+      "width": 800
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=53.34",
+      "width": 800
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=45.05",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=45.41",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=41.05",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=60.87",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=28.68",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=26.06",
+      "width": 800
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=33.20",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=28.49",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=26.97",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=30.88",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=29.04",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=41.99",
+      "width": 800
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=44.21",
+      "width": 800
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=43.21",
+      "width": 800
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=36.42",
+      "width": 800
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=41.70",
+      "width": 800
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=41.95",
+      "width": 800
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=41.15",
+      "width": 800
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=43.89",
+      "width": 800
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=37.79",
+      "width": 800
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=56.29",
+      "width": 800
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=46.05",
+      "width": 800
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=44.29",
+      "width": 800
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=27.46",
+      "width": 800
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=25.35",
+      "width": 800
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=40.41",
+      "width": 800
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=29.49",
+      "width": 800
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=37.29",
+      "width": 800
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=43.11",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=38.55",
+      "width": 800
+    },
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=48.88",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=41.01",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=73.34",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=46.64",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=43.78",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=38.24",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=43.23",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=39.50",
+      "width": 600
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=37.96",
+      "width": 600
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=55.04",
+      "width": 600
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=40.23",
+      "width": 600
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=32.33",
+      "width": 600
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=27.01",
+      "width": 600
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=23.94",
+      "width": 600
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=27.09",
+      "width": 600
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=28.38",
+      "width": 600
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=26.43",
+      "width": 600
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=36.05",
+      "width": 600
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=30.05",
+      "width": 600
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=32.64",
+      "width": 600
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=30.25",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=28.22",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=30.25",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=34.49",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=29.67",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=29.37",
+      "width": 600
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=28.09",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=44.82",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=50.66",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=35.56",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=45.92",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=26.16",
+      "width": 600
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=28.54",
+      "width": 600
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=53.16",
+      "width": 600
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=34.42",
+      "width": 600
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=29.98",
+      "width": 600
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=27.75",
+      "width": 600
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=29.74",
+      "width": 600
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=36.02",
+      "width": 600
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=77.00",
+      "width": 600
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=25.73",
+      "width": 600
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=31.47",
+      "width": 600
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=66.15",
+      "width": 600
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=35.20",
+      "width": 600
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=41.92",
+      "width": 600
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=44.36",
+      "width": 600
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=24.97",
+      "width": 600
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=68.94",
+      "width": 600
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=25.82",
+      "width": 600
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=50.41",
+      "width": 600
+    },
+    {
+      "path": "/",
+      "queries": 41,
+      "server_timing": "projection;dur=41.25",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=52.21",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/oportunidades",
+      "queries": 2,
+      "server_timing": "projection;dur=30.80",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/decisiones",
+      "queries": 10,
+      "server_timing": "projection;dur=48.32",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=44.86",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/cierres",
+      "queries": 6,
+      "server_timing": "projection;dur=30.88",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=30.46",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/workers",
+      "queries": 11,
+      "server_timing": "projection;dur=25.99",
+      "width": 360
+    },
+    {
+      "path": "/en-vivo/fuentes",
+      "queries": 5,
+      "server_timing": "projection;dur=22.82",
+      "width": 360
+    },
+    {
+      "path": "/trading",
+      "queries": 2,
+      "server_timing": "projection;dur=73.53",
+      "width": 360
+    },
+    {
+      "path": "/trading/equity-spot",
+      "queries": 6,
+      "server_timing": "projection;dur=27.43",
+      "width": 360
+    },
+    {
+      "path": "/trading/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=35.64",
+      "width": 360
+    },
+    {
+      "path": "/trading/renta-fija",
+      "queries": 6,
+      "server_timing": "projection;dur=23.68",
+      "width": 360
+    },
+    {
+      "path": "/trading/derivados",
+      "queries": 6,
+      "server_timing": "projection;dur=33.02",
+      "width": 360
+    },
+    {
+      "path": "/trading/tesoreria",
+      "queries": 6,
+      "server_timing": "projection;dur=25.53",
+      "width": 360
+    },
+    {
+      "path": "/universo",
+      "queries": 9,
+      "server_timing": "projection;dur=30.70",
+      "width": 360
+    },
+    {
+      "path": "/universo/discovery",
+      "queries": 2,
+      "server_timing": "projection;dur=28.32",
+      "width": 360
+    },
+    {
+      "path": "/universo/tradeability",
+      "queries": 2,
+      "server_timing": "projection;dur=41.46",
+      "width": 360
+    },
+    {
+      "path": "/universo/coverage",
+      "queries": 2,
+      "server_timing": "projection;dur=26.54",
+      "width": 360
+    },
+    {
+      "path": "/universo/excluidos",
+      "queries": 2,
+      "server_timing": "projection;dur=41.35",
+      "width": 360
+    },
+    {
+      "path": "/universo/familias",
+      "queries": 2,
+      "server_timing": "projection;dur=27.06",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=29.37",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos/ficha",
+      "queries": 6,
+      "server_timing": "projection;dur=31.39",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos/contrato",
+      "queries": 6,
+      "server_timing": "projection;dur=35.28",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos/mercado",
+      "queries": 6,
+      "server_timing": "projection;dur=29.89",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos/evidencia",
+      "queries": 6,
+      "server_timing": "projection;dur=37.44",
+      "width": 360
+    },
+    {
+      "path": "/riesgo",
+      "queries": 7,
+      "server_timing": "projection;dur=28.18",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/exposicion",
+      "queries": 25,
+      "server_timing": "projection;dur=34.29",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/limites",
+      "queries": 5,
+      "server_timing": "projection;dur=32.57",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/posiciones",
+      "queries": 25,
+      "server_timing": "projection;dur=39.11",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/liquidez",
+      "queries": 25,
+      "server_timing": "projection;dur=38.69",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/pnl",
+      "queries": 6,
+      "server_timing": "projection;dur=27.35",
+      "width": 360
+    },
+    {
+      "path": "/riesgo/event-risk",
+      "queries": 2,
+      "server_timing": "projection;dur=41.56",
+      "width": 360
+    },
+    {
+      "path": "/analitica",
+      "queries": 6,
+      "server_timing": "projection;dur=36.27",
+      "width": 360
+    },
+    {
+      "path": "/analitica/senales",
+      "queries": 2,
+      "server_timing": "projection;dur=23.59",
+      "width": 360
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 6,
+      "server_timing": "projection;dur=24.60",
+      "width": 360
+    },
+    {
+      "path": "/analitica/historico",
+      "queries": 3,
+      "server_timing": "projection;dur=39.19",
+      "width": 360
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=26.82",
+      "width": 360
+    },
+    {
+      "path": "/analitica/cierre-diario",
+      "queries": 11,
+      "server_timing": "projection;dur=23.05",
+      "width": 360
+    },
+    {
+      "path": "/analitica/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=33.77",
+      "width": 360
+    },
+    {
+      "path": "/sistema",
+      "queries": 11,
+      "server_timing": "projection;dur=33.45",
+      "width": 360
+    },
+    {
+      "path": "/sistema/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=24.45",
+      "width": 360
+    },
+    {
+      "path": "/sistema/workers",
+      "queries": 13,
+      "server_timing": "projection;dur=45.46",
+      "width": 360
+    },
+    {
+      "path": "/sistema/integraciones",
+      "queries": 5,
+      "server_timing": "projection;dur=34.20",
+      "width": 360
+    },
+    {
+      "path": "/sistema/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=34.85",
+      "width": 360
+    },
+    {
+      "path": "/sistema/evidencia",
+      "queries": 2,
+      "server_timing": "projection;dur=43.33",
+      "width": 360
+    },
+    {
+      "path": "/sistema/backups",
+      "queries": 2,
+      "server_timing": "projection;dur=56.76",
+      "width": 360
+    },
+    {
+      "path": "/sistema/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=28.39",
+      "width": 360
+    },
+    {
+      "path": "/sistema/configuracion",
+      "queries": 2,
+      "server_timing": "projection;dur=32.91",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=35.84",
+      "width": 360
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=27.10",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=26.15",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=25.13",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=39.66",
+      "width": 800
+    },
+    {
+      "path": "/instrumentos",
+      "queries": 6,
+      "server_timing": "projection;dur=27.31",
+      "width": 800
+    },
+    {
+      "path": "/inicio",
+      "queries": 41,
+      "server_timing": "projection;dur=26.42",
+      "width": 800
+    },
+    {
+      "path": "/vivo",
+      "queries": 47,
+      "server_timing": "projection;dur=30.83",
+      "width": 800
+    },
+    {
+      "path": "/universo-operativo",
+      "queries": 9,
+      "server_timing": "projection;dur=30.47",
+      "width": 800
+    },
+    {
+      "path": "/scalping",
+      "queries": 6,
+      "server_timing": "projection;dur=26.21",
+      "width": 800
+    },
+    {
+      "path": "/motor-trading",
+      "queries": 2,
+      "server_timing": "projection;dur=37.72",
+      "width": 800
+    },
+    {
+      "path": "/validacion",
+      "queries": 2,
+      "server_timing": "projection;dur=44.62",
+      "width": 800
+    },
+    {
+      "path": "/historicos",
+      "queries": 3,
+      "server_timing": "projection;dur=35.95",
+      "width": 800
+    },
+    {
+      "path": "/analisis",
+      "queries": 6,
+      "server_timing": "projection;dur=38.52",
+      "width": 800
+    },
+    {
+      "path": "/aprendizaje",
+      "queries": 2,
+      "server_timing": "projection;dur=28.49",
+      "width": 800
+    },
+    {
+      "path": "/reportes",
+      "queries": 5,
+      "server_timing": "projection;dur=34.17",
+      "width": 800
+    },
+    {
+      "path": "/postcierre",
+      "queries": 11,
+      "server_timing": "projection;dur=38.63",
+      "width": 800
+    },
+    {
+      "path": "/salud",
+      "queries": 5,
+      "server_timing": "projection;dur=59.35",
+      "width": 800
+    },
+    {
+      "path": "/sre",
+      "queries": 5,
+      "server_timing": "projection;dur=44.70",
+      "width": 800
+    },
+    {
+      "path": "/infra",
+      "queries": 11,
+      "server_timing": "projection;dur=31.30",
+      "width": 800
+    },
+    {
+      "path": "/scheduler",
+      "queries": 2,
+      "server_timing": "projection;dur=36.37",
+      "width": 800
+    },
+    {
+      "path": "/dashboard/logs",
+      "queries": 2,
+      "server_timing": "projection;dur=33.04",
+      "width": 800
+    },
+    {
+      "path": "/config",
+      "queries": 2,
+      "server_timing": "projection;dur=30.28",
+      "width": 800
+    },
+    {
+      "path": "/testing",
+      "queries": 2,
+      "server_timing": "projection;dur=28.05",
+      "width": 800
+    },
+    {
+      "path": "/observacion",
+      "queries": 2,
+      "server_timing": "projection;dur=33.47",
+      "width": 800
+    },
+    {
+      "path": "/telegram",
+      "queries": 13,
+      "server_timing": "projection;dur=24.29",
+      "width": 800
+    },
+    {
+      "path": "/informacion-financiera",
+      "queries": 6,
+      "server_timing": "projection;dur=29.04",
+      "width": 800
+    },
+    {
+      "path": "/ai-decisions",
+      "queries": 10,
+      "server_timing": "projection;dur=25.35",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 45,
+      "server_timing": "projection;dur=27.54",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 45,
+      "server_timing": "projection;dur=28.86",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo",
+      "queries": 45,
+      "server_timing": "projection;dur=22.91",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/posiciones",
+      "queries": 8,
+      "server_timing": "projection;dur=49.76",
+      "width": 800
+    },
+    {
+      "path": "/analitica/salidas",
+      "queries": 2,
+      "server_timing": "projection;dur=44.58",
+      "width": 800
+    },
+    {
+      "path": "/analitica/experimentos",
+      "queries": 2,
+      "server_timing": "projection;dur=29.32",
+      "width": 800
+    },
+    {
+      "path": "/en-vivo/capacidad",
+      "queries": 2,
+      "server_timing": "projection;dur=34.35",
+      "width": 800
+    }
+  ],
+  "schema": "rc6.trader-terminal-browser-gate.v1",
+  "source_cut": "2026-10-05T16:00:00+00:00",
+  "status": "GREEN",
+  "widths": [
+    1440,
+    1280,
+    1024,
+    800,
+    600,
+    360
+  ]
+}

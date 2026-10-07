@@ -1,0 +1,10 @@
+{
+  "actual_main_pid_reaped": true,
+  "historical_residuals_closed_by_final_kernel_barrier": true,
+  "historical_timeout_late_reap_or_residual_RED_never_reset": true,
+  "owned_PGID_absent_after_reap": true,
+  "owned_children_exhaustion_verified": true,
+  "post_main_actual_ECHILD": true,
+  "postread_allowed": true,
+  "remaining_owned_children": []
+}

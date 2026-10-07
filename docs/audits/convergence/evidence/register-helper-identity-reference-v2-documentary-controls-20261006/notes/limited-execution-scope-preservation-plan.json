@@ -1,0 +1,54 @@
+{
+  "schema": "rc6.identity-reference-helper-documentary-preservation-plan.v1",
+  "classification": "SMALL_GIT_MEMBER_COMPATIBILITY_AND_LITERAL_EXTERNAL_REFERENCE_ONLY_NOT_EXTERNAL_BYTE_PROOF_NATIVE_PRODUCT_OR_FINAL_D",
+  "root_reported_dispatch": {
+    "session_id": 75878,
+    "cli_exit_code": 0,
+    "stdout_stderr_captured_from_launch": true,
+    "boundary": "Reported Root dispatch result; captured exact RAW receipts remain their own documentary scope"
+  },
+  "executed_helpers": {
+    "register": "f5fc8a253f318eb86bbfd21b3e1dbd12e326b12b68d8ddda37ec4ac1e1903d8c",
+    "supplement": "cc4207797345e195792cde09bafb42f318a7dfa4f057bee2c677f4cb3efcea65"
+  },
+  "controlled_scope": {
+    "driver_sha256": "1c690072a1a3bd2bf4363b72a1e45111bbf5dd89050200f43debf2af9835100a",
+    "stdout_sha256": "c65ccf97208366ad7ba3c97b44290e182f25fff400aff531a4697bcf0a65d98b",
+    "stdout_bytes": 10452,
+    "stderr_bytes": 0,
+    "unique_helper_control_invocations": 33,
+    "preserved": 5,
+    "rejected": 28,
+    "scope": "OWN15_CONTROLS_EACH_OF_TWO_GIT_ADAPTERS_AND_THREE_REAL_REGISTER_STAGE_CONTROLS_NOT_MARKET_SCENARIOS",
+    "external_io_guard": "REAL_OPEN_OS_OPEN_STAT_LSTAT_AND_SOURCE_READ_TRAPS_ON_CONTROLLED_HINT_PATHS_WITH_RESTORATION_IN_FINALLY",
+    "authority_corruption_scope": "SMALL_AUTHORITY_ORIGINAL_AND_STORED_HASHES_REBOUND_SO_COMMIT_SHA_STAT_BOOL_JOIN_FAILURES_ARE_NOT_MASKED"
+  },
+  "actual_small_capsule_scope": {
+    "driver_sha256": "5582ae3b98f0b740be13938d7e7b493de8576c48e542bfecb7bd22c75c11dc75",
+    "stdout_sha256": "e407b057095c20559b5f0383277bc7388b27febf22d96860735876916d553c38",
+    "stdout_bytes": 180535,
+    "stderr_bytes": 0,
+    "publication_source_sha": "6e4a1dad7d4bcad3878b55c3264545274c40b92b",
+    "publication_source_tree": "9cb4960dd9b4b7085a5e34d40ff7baec08c9956e",
+    "observed_repo_head_before_and_after": "efa69894870ef6c05b63713666a904bbe88b6103",
+    "observed_tracked_status_before_and_after": [],
+    "same_originals_checked_by_each_adapter": 29,
+    "derived_control_members_separate": 2,
+    "same_unique_git_paths_read_by_each_adapter_including_capsule": 32,
+    "custody_sha256": "6de9fc170ee3980e646639ec3cfdeff7216f923ff2185c1d927592cb84dce08c",
+    "capsule_sha256": "651a4acd643edb1e210d19c197f406d1016dc83b222800c0552c31fb60444fa7",
+    "external_tar_state": "NOT_BYTE_VERIFIED_BY_DOCUMENTARY_HELPER",
+    "external_reference_policy": "REFERENCE_ONLY_TRUE_COPIED_INTO_GIT_FALSE_NO_EXTERNAL_BODY_OPEN_DIGEST_EXTRACT_OR_ENTRY_PARSE",
+    "archive_preserver_claim": "ORIGINAL_BOOLEAN_AND_ELEVEN_STAT_DECLARATION_REMAIN_LITERAL_CAPTURE_TIME_CLAIM_NOT_FRESH_DOCUMENTARY_BYTE_PROOF",
+    "archived_478_native_result": "PRESERVED_ORIGINAL_SCOPE_NOT_NEW_EXECUTION_OR_REQUALIFICATION",
+    "historical_data_custody": "NOT_VERIFIED_NO_DATA_READ"
+  },
+  "same29_two_adapters_not58_originals": true,
+  "old64_168_70_91_and_478_not_added_as_independent_scenarios": true,
+  "previous_capsules_helpers_and_raw_receipts_unchanged": true,
+  "product_imports_or_native_or_gov_executions_added": 0,
+  "external_source_archive_body_verified_by_this_helper": false,
+  "final_register_generated": false,
+  "source_S_document_D_final_C": "PENDING_STABLE_PRODUCT_SOURCE_SEPARATE_FROM_THIS_DOCUMENTARY_EPOCH",
+  "copy_time_custody": "PENDING_ROOT_PRESERVER_EXACT_BYTE_MODE_AND_ELEVEN_STAT_CAPTURE_NOT_EXECUTION_TIME_ATTESTATION"
+}

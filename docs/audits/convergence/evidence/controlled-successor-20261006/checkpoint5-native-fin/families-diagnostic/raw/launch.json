@@ -1,0 +1,53 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "cleanup_management_seconds": 5,
+  "command": [
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/venv311/bin/python",
+    "-I",
+    "-B",
+    "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/families_read_profile_v2.py",
+    "--child"
+  ],
+  "cwd": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-families-read-profile-plan-2e48-l40j2xr9/source",
+  "extra_sql_fixture_or_count_or_explain": false,
+  "fixture_counts_from_existing_native_receipt_only": {
+    "catalog": 12000,
+    "observations": 60000,
+    "open_positions": 5
+  },
+  "full_BIG_Gov_Horizon_browser_or_runtime_executed": false,
+  "gate_qualified": false,
+  "harness_sha256": "445064f67616d93463361d8dbc573261d9f6ac961db1178452930c480347f1c4",
+  "harness_stat": {
+    "st_atime_ns": 1791309455605399043,
+    "st_blocks": 80,
+    "st_ctime_ns": 1791309342443613637,
+    "st_dev": 27,
+    "st_gid": 1000,
+    "st_ino": 1581424,
+    "st_mode": 33152,
+    "st_mtime_ns": 1791309342443613637,
+    "st_nlink": 1,
+    "st_size": 38253,
+    "st_uid": 1000
+  },
+  "maximum_evidence_bytes": 134217728,
+  "maximum_rss_bytes": 2147483648,
+  "native_read_invocations_authorized": 1,
+  "no_function_cursor_list_graph_or_gc_override": true,
+  "original_closed_db_source_sha256": "ed2243464807d6c202f292b504a84b3ecdb035aef3a7ea6ca847b6dcf6878e36",
+  "original_read_budget_seconds": 0.5,
+  "outer_native_watchdog_seconds": 90,
+  "overhead_not_subtracted_to_qualify_gate": true,
+  "parent_postreads_only_after_actual_reap_ECHILD_PGID_exhaustion": true,
+  "profiler": "PYTHON_NATIVE_CALL_RETURN_AND_C_CALL_OBSERVER_NO_LINE_TRACER",
+  "profiler_overhead_included_in_original_deadline_can_cause_RED": true,
+  "real_orders_sent": 0,
+  "schema": "rc6.single-families-read-diagnostic.launch.v1",
+  "source_index_sha256": "44a45bf3c8c5ae570c858ef857dc735966be8bc316e14f0b181144cb0b5bd756",
+  "source_overlay_count": 0,
+  "source_sha": "2e48f6f005f38f68b9dd9a75677fb67e52f23a18",
+  "source_sqlite_open_allowed": false,
+  "source_tree": "e4cb00d2846ddf873a18530697d5fbaa029ced33",
+  "status": "RED"
+}

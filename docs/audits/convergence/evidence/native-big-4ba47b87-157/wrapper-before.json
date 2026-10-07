@@ -1,0 +1,679 @@
+{
+  "acceptance_complete": false,
+  "artifact_validated": false,
+  "code_custody_scope": "ALL_GIT_FILE_BYTES_MODES_AND_BLOB_IDS",
+  "command": [
+    "/workspace/venv_rc6_frozen311/bin/python",
+    "-B",
+    "-u",
+    "/workspace/rc6-whole-source-20261005-count4ba/scripts/rc6_issue465_stress.py",
+    "--root",
+    "/workspace/rc6-canonical-4ba47b87-big",
+    "--out",
+    "/tmp/rc6-canonical-4ba47b87-big-raw/native-big-result.json",
+    "--catalog-count",
+    "12000",
+    "--observations-per-identity",
+    "5",
+    "--slow-disk",
+    "--canonical-runtime"
+  ],
+  "cwd": "/workspace/rc6-whole-source-20261005-count4ba",
+  "data_mode": "0700",
+  "diagnostic_only": false,
+  "distribution_count": 157,
+  "distributions": [
+    {
+      "name": "aiohappyeyeballs",
+      "version": "2.7.1"
+    },
+    {
+      "name": "aiohttp",
+      "version": "3.14.3"
+    },
+    {
+      "name": "aiosignal",
+      "version": "1.4.0"
+    },
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0"
+    },
+    {
+      "name": "anthropic",
+      "version": "1.8.0"
+    },
+    {
+      "name": "anyio",
+      "version": "4.15.1"
+    },
+    {
+      "name": "apscheduler",
+      "version": "3.11.3"
+    },
+    {
+      "name": "asgiref",
+      "version": "3.12.1"
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0"
+    },
+    {
+      "name": "backoff",
+      "version": "2.2.1"
+    },
+    {
+      "name": "bcrypt",
+      "version": "5.0.0"
+    },
+    {
+      "name": "beautifulsoup4",
+      "version": "4.15.0"
+    },
+    {
+      "name": "build",
+      "version": "1.6.1"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22"
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.1"
+    },
+    {
+      "name": "chroma-hnswlib",
+      "version": "0.7.6"
+    },
+    {
+      "name": "chromadb",
+      "version": "0.5.23"
+    },
+    {
+      "name": "click",
+      "version": "8.5.0"
+    },
+    {
+      "name": "cloudpickle",
+      "version": "3.1.2"
+    },
+    {
+      "name": "coverage",
+      "version": "7.16.1"
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.1"
+    },
+    {
+      "name": "curl-cffi",
+      "version": "0.16.3"
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0"
+    },
+    {
+      "name": "docstring-parser",
+      "version": "0.18.0"
+    },
+    {
+      "name": "durationpy",
+      "version": "0.11"
+    },
+    {
+      "name": "fastapi",
+      "version": "0.141.1"
+    },
+    {
+      "name": "feedparser",
+      "version": "6.0.14"
+    },
+    {
+      "name": "feedparser-sgmllib",
+      "version": "2.1.0"
+    },
+    {
+      "name": "filelock",
+      "version": "4.0.3"
+    },
+    {
+      "name": "flake8",
+      "version": "7.4.1"
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19"
+    },
+    {
+      "name": "frozenlist",
+      "version": "1.8.0"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.9.0"
+    },
+    {
+      "name": "google-auth",
+      "version": "2.58.1"
+    },
+    {
+      "name": "google-genai",
+      "version": "2.25.0"
+    },
+    {
+      "name": "googleapis-common-protos",
+      "version": "1.75.4"
+    },
+    {
+      "name": "grpcio",
+      "version": "1.84.0"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.6.0"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9"
+    },
+    {
+      "name": "httpcore2",
+      "version": "2.13.1"
+    },
+    {
+      "name": "httptools",
+      "version": "0.8.0"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1"
+    },
+    {
+      "name": "httpx2",
+      "version": "2.13.1"
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "0.36.2"
+    },
+    {
+      "name": "hypothesis",
+      "version": "6.168.1"
+    },
+    {
+      "name": "idna",
+      "version": "3.20"
+    },
+    {
+      "name": "importlib-resources",
+      "version": "7.1.0"
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.0"
+    },
+    {
+      "name": "jiter",
+      "version": "0.17.0"
+    },
+    {
+      "name": "joblib",
+      "version": "1.6.0"
+    },
+    {
+      "name": "jsonpatch",
+      "version": "1.33"
+    },
+    {
+      "name": "jsonpointer",
+      "version": "3.1.1"
+    },
+    {
+      "name": "kubernetes",
+      "version": "36.0.3"
+    },
+    {
+      "name": "langchain-core",
+      "version": "1.6.5"
+    },
+    {
+      "name": "langchain-protocol",
+      "version": "0.0.19"
+    },
+    {
+      "name": "langgraph",
+      "version": "1.2.11"
+    },
+    {
+      "name": "langgraph-checkpoint",
+      "version": "4.2.0"
+    },
+    {
+      "name": "langgraph-prebuilt",
+      "version": "1.1.0"
+    },
+    {
+      "name": "langgraph-sdk",
+      "version": "0.4.5"
+    },
+    {
+      "name": "langsmith",
+      "version": "0.14.0"
+    },
+    {
+      "name": "lxml",
+      "version": "6.1.3"
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.2.0"
+    },
+    {
+      "name": "mccabe",
+      "version": "0.7.0"
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2"
+    },
+    {
+      "name": "mmh3",
+      "version": "5.3.0"
+    },
+    {
+      "name": "msgpack",
+      "version": "1.0.2"
+    },
+    {
+      "name": "multidict",
+      "version": "6.9.1"
+    },
+    {
+      "name": "multitasking",
+      "version": "0.0.13"
+    },
+    {
+      "name": "narwhals",
+      "version": "2.26.0"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6"
+    },
+    {
+      "name": "oauthlib",
+      "version": "3.3.1"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.30.0"
+    },
+    {
+      "name": "opentelemetry-api",
+      "version": "1.44.0"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "version": "1.44.0"
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-grpc",
+      "version": "1.44.0"
+    },
+    {
+      "name": "opentelemetry-instrumentation",
+      "version": "0.65b0"
+    },
+    {
+      "name": "opentelemetry-instrumentation-asgi",
+      "version": "0.65b0"
+    },
+    {
+      "name": "opentelemetry-instrumentation-fastapi",
+      "version": "0.65b0"
+    },
+    {
+      "name": "opentelemetry-proto",
+      "version": "1.44.0"
+    },
+    {
+      "name": "opentelemetry-sdk",
+      "version": "1.44.0"
+    },
+    {
+      "name": "opentelemetry-semantic-conventions",
+      "version": "0.65b0"
+    },
+    {
+      "name": "opentelemetry-util-http",
+      "version": "0.65b0"
+    },
+    {
+      "name": "orjson",
+      "version": "3.12.0"
+    },
+    {
+      "name": "ormsgpack",
+      "version": "1.12.2"
+    },
+    {
+      "name": "overrides",
+      "version": "7.7.0"
+    },
+    {
+      "name": "packaging",
+      "version": "26.3"
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3"
+    },
+    {
+      "name": "peewee",
+      "version": "4.5.1"
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0"
+    },
+    {
+      "name": "pip",
+      "version": "25.2"
+    },
+    {
+      "name": "platformdirs",
+      "version": "4.11.12"
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0"
+    },
+    {
+      "name": "posthog",
+      "version": "7.60.0"
+    },
+    {
+      "name": "ppi-client",
+      "version": "1.3.0"
+    },
+    {
+      "name": "propcache",
+      "version": "0.5.4"
+    },
+    {
+      "name": "protobuf",
+      "version": "7.36.2"
+    },
+    {
+      "name": "pyasn1",
+      "version": "0.6.4"
+    },
+    {
+      "name": "pyasn1-modules",
+      "version": "0.4.2"
+    },
+    {
+      "name": "pycodestyle",
+      "version": "2.15.0"
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.5"
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.46.5"
+    },
+    {
+      "name": "pyflakes",
+      "version": "4.0.0"
+    },
+    {
+      "name": "pygments",
+      "version": "2.21.0"
+    },
+    {
+      "name": "pypika",
+      "version": "0.51.1"
+    },
+    {
+      "name": "pyproject-hooks",
+      "version": "1.3.3"
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1"
+    },
+    {
+      "name": "pytest-cov",
+      "version": "7.1.0"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.3"
+    },
+    {
+      "name": "python-multipart",
+      "version": "0.0.32"
+    },
+    {
+      "name": "pytz",
+      "version": "2026.4"
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3"
+    },
+    {
+      "name": "reportlab",
+      "version": "4.5.1"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2"
+    },
+    {
+      "name": "requests-oauthlib",
+      "version": "2.0.0"
+    },
+    {
+      "name": "requests-toolbelt",
+      "version": "1.0.0"
+    },
+    {
+      "name": "responses",
+      "version": "0.26.3"
+    },
+    {
+      "name": "rich",
+      "version": "15.0.0"
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.9.1"
+    },
+    {
+      "name": "scipy",
+      "version": "1.17.1"
+    },
+    {
+      "name": "setuptools",
+      "version": "80.9.0"
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4"
+    },
+    {
+      "name": "signalrcoreppi",
+      "version": "0.9.2"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0"
+    },
+    {
+      "name": "sniffio",
+      "version": "1.3.1"
+    },
+    {
+      "name": "sortedcontainers",
+      "version": "2.4.0"
+    },
+    {
+      "name": "soupsieve",
+      "version": "2.10"
+    },
+    {
+      "name": "starlette",
+      "version": "1.7.0"
+    },
+    {
+      "name": "ta",
+      "version": "0.11.0"
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4"
+    },
+    {
+      "name": "threadpoolctl",
+      "version": "3.7.0"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.20.3"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1"
+    },
+    {
+      "name": "truststore",
+      "version": "0.10.4"
+    },
+    {
+      "name": "typer",
+      "version": "0.27.2"
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4"
+    },
+    {
+      "name": "tzdata",
+      "version": "2026.4"
+    },
+    {
+      "name": "tzlocal",
+      "version": "5.4.4"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0"
+    },
+    {
+      "name": "uuid-utils",
+      "version": "0.17.1"
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.53.0"
+    },
+    {
+      "name": "uvloop",
+      "version": "0.22.1"
+    },
+    {
+      "name": "vcrpy",
+      "version": "8.3.0"
+    },
+    {
+      "name": "watchfiles",
+      "version": "1.3.0"
+    },
+    {
+      "name": "websocket-client",
+      "version": "1.0.0"
+    },
+    {
+      "name": "websockets",
+      "version": "16.1.1"
+    },
+    {
+      "name": "wheel",
+      "version": "0.45.1"
+    },
+    {
+      "name": "wrapt",
+      "version": "2.4.1"
+    },
+    {
+      "name": "xxhash",
+      "version": "4.0.1"
+    },
+    {
+      "name": "yarl",
+      "version": "1.25.1"
+    },
+    {
+      "name": "yfinance",
+      "version": "1.7.0"
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0"
+    }
+  ],
+  "entry_preflight_passed": true,
+  "entry_preflight_sha256": "480171165c8e8a8edab932cae96193a132a133068182e2ad1fc4e1daa28d4ab4",
+  "environment_controls": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONHOME": null,
+    "PYTHONPATH": ""
+  },
+  "gid": 1000,
+  "interpreter": "/workspace/venv_rc6_frozen311/bin/python",
+  "overlay_count": 0,
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "python": "3.11.16",
+  "runtime_validated": false,
+  "schema": "rc6.native-big-whole-source-trial-wrapper.v2",
+  "scope": "SOURCE_ONLY_UNINSTRUMENTED_CANONICAL_BIG_NATIVE157_NOT_GOV_ARTIFACT_RUNTIME_VALIDATION",
+  "source_files": 1845,
+  "source_index_sha256": "cbb6c60f4a841f545f8fbeaabf0a13e5fe2b3b9b663deb15d3415e438e3833f9",
+  "source_sha": "4ba47b87b592c75601ad6f4b9526caf7d48b3b01",
+  "source_tree": "aa8e41311ea6589762157c29134171a0fe90e03f",
+  "sqlite": "3.53.1",
+  "tar_sha256": "64bedbaaa62d9b20e40682ae3a13c7e44e047b932712ca90051aaea610e4407b",
+  "uid": 1000,
+  "umask": "077"
+}

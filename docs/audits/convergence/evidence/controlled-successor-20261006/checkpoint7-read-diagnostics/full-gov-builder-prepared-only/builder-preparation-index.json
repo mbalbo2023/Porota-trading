@@ -1,0 +1,41 @@
+{
+  "Gov_or_pytest_executed": false,
+  "Source_edits": 0,
+  "builder": {
+    "bytes": 21454,
+    "lines": 326,
+    "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/build_governed_sources.py",
+    "run_count": 0,
+    "sha256": "03d08c3f362b12da70defa8f1e2388373d41e20a4ffc08e46f48fb9691667738",
+    "syntax_compile_only": true
+  },
+  "clones_created": 0,
+  "files": [
+    {
+      "bytes": 1632,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-binding.template.json",
+      "sha256": "129bbde282ea10ff313c2b36eed8ec2b4062f411ab696be6115569b4949b10f1"
+    },
+    {
+      "bytes": 743,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/GitHub-preparation-authority.template.json",
+      "sha256": "3b52ebbe17a72640829de2f158661acf7fd425d2d48f643af5846c536e63e19d"
+    },
+    {
+      "bytes": 5252,
+      "path": "/workspace/scratch/rc6-full-gov-builder-preparation-bgtsq4cc/builder-preparation-plan.json",
+      "sha256": "743d094996d864d37ea3bb89e8aad080fe18051d7774debb431c99ed08b174df"
+    }
+  ],
+  "original19_AUTHENTICATED_UNCHANGED_BODY": {
+    "literal_objects": 19,
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/original-required-19-objects.json",
+    "sha256": "492a3c0de260501776ee235ea5472da373d6c5881a4dfafca05518297fc16579"
+  },
+  "schema": "rc6.fullGov.builder-preparation-index.v1",
+  "stage": "PREPARED_NOT_AUTHORIZED_NO_EXECUTION",
+  "wrapper_UNCHANGED": {
+    "path": "/workspace/scratch/rc6-full-gov-outer-preparation-2uy3dhqw/governed_outer.py",
+    "sha256": "7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4"
+  }
+}

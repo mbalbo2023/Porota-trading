@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/workspace/scratch/porota_rc6_governed_v3.py", line 711, in <module>
+    raise SystemExit(phase_child(options) if options.phase else main(options))
+                                                                ^^^^^^^^^^^^^
+  File "/workspace/scratch/porota_rc6_governed_v3.py", line 631, in main
+    phase_after = source_pin(root, args.source_sha, args.source_tree)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/scratch/porota_rc6_governed_v3.py", line 215, in source_pin
+    require(set(physical_after['files']) == set(records)
+  File "/workspace/scratch/porota_rc6_governed_v3.py", line 38, in require
+    raise ValueError(reason)
+ValueError: PHYSICAL_SOURCE_EXTRA_MISSING_IGNORED_OR_EMPTY_DIRECTORY_FORBIDDEN

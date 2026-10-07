@@ -1,0 +1,360 @@
+{
+  "canonical_runtime_requested": true,
+  "catalog_baseline": 1200,
+  "catalog_count": 12000,
+  "catalog_multiplier": 10.0,
+  "completion_required": true,
+  "cpu_latency_claim": "DESCRIPTIVE_OFFLINE_ONLY",
+  "cycle_deadline_seconds": 90,
+  "database": "/workspace/rc6-native-big-f8895434-157/data/paper_v17/observer_v17.db",
+  "diagnostic_only": true,
+  "diagnostic_stack_file": "/tmp/rc6-v3-big-f8895434-157-raw/child-stacks.log",
+  "evidence_root": "/workspace/rc6-native-big-f8895434-157/data/paper_v17/artifacts/observer_v17.db/dynamic-shadow",
+  "factual_exits": {
+    "closed": 5,
+    "cpu_seconds": 0.12222264999999988,
+    "elapsed_seconds": 0.16817351499776123,
+    "finished_at_monotonic": 51425.351915705,
+    "io": {
+      "cancelled_write_bytes": 0,
+      "input_blocks": 0,
+      "output_blocks": 984,
+      "rchar": 2638451,
+      "read_bytes": 0,
+      "syscr": 691,
+      "syscw": 218,
+      "wchar": 449080,
+      "write_bytes": 503808
+    },
+    "real_orders_sent": 0,
+    "sell_fills": 5,
+    "stale_current_fresh_book": true,
+    "started_at_monotonic": 51425.183460061
+  },
+  "observation_baseline_per_identity": 1,
+  "observation_multiplier": 5,
+  "observations_materialized": 60000,
+  "provider_requests": 0,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "resource_gates": {
+    "actual_evidence_bytes": 516295,
+    "actual_rss_bytes": 579264512,
+    "actual_slow_fsync_exit_isolation": false,
+    "child_cleanup_completed": true,
+    "complete_committed_cycle": false,
+    "evidence_within_quota": true,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_rss_bytes": 2147483648,
+    "rss_within_two_gib": true,
+    "source_database_unchanged": true
+  },
+  "runtime_touched": false,
+  "schema": "rc6.issue465.synthetic-stress.v2",
+  "shadow": {
+    "child_cleanup_completed": true,
+    "cpu_seconds": 16.31967415,
+    "cycle_completion": false,
+    "cycle_handled": true,
+    "cycle_started_at_monotonic": 51407.869976743,
+    "elapsed_seconds": 16.330859005000093,
+    "error_class": "SnapshotError",
+    "error_context": {
+      "frames": [
+        {
+          "function": "_shadow_child",
+          "line": 300,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "tick",
+          "line": 368,
+          "module": "rc6_shadow_runtime.worker"
+        },
+        {
+          "function": "measured",
+          "line": 193,
+          "module": "__mp_main__"
+        },
+        {
+          "function": "evaluate_runtime_lab",
+          "line": 665,
+          "module": "rc6_shadow_runtime.lab"
+        },
+        {
+          "function": "_read",
+          "line": 109,
+          "module": "rc6_shadow_runtime.lab"
+        },
+        {
+          "function": "__enter__",
+          "line": 137,
+          "module": "contextlib"
+        },
+        {
+          "function": "source_connection",
+          "line": 28,
+          "module": "rc6_shadow_runtime.source_reads"
+        },
+        {
+          "function": "__enter__",
+          "line": 137,
+          "module": "contextlib"
+        },
+        {
+          "function": "readonly_copy",
+          "line": 130,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_read",
+          "line": 64,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        },
+        {
+          "function": "_check",
+          "line": 24,
+          "module": "rc6_audit_evidence.sqlite_snapshot"
+        }
+      ],
+      "sqlite_errorcode": null,
+      "sqlite_errorname": null
+    },
+    "evidence_bytes": 516295,
+    "evidence_files": 2,
+    "fsync": {
+      "blocked_seconds": 0.0,
+      "fsync_completed": false,
+      "fsync_entered": false,
+      "scope": "ACTUAL_STAGED_GENERATION_MEMBER_FSYNC"
+    },
+    "full_pipeline_exercised": false,
+    "handler_resources": {
+      "checkpoint_restore": {
+        "calls": 1,
+        "cpu_seconds": 0.0011598099999999834,
+        "elapsed_seconds": 0.0016427360023953952,
+        "peak_rss_bytes": 92651520
+      },
+      "families": {
+        "calls": 1,
+        "cpu_seconds": 2.7671207890000016,
+        "elapsed_seconds": 2.76718796199566
+      },
+      "lab": {
+        "calls": 1,
+        "cpu_seconds": 0.26208294799999976,
+        "elapsed_seconds": 0.26180671399924904
+      },
+      "native_orchestrator": {
+        "calls": 2,
+        "cpu_seconds": 9.978709123,
+        "elapsed_seconds": 9.981272108001576,
+        "peak_rss_bytes": 496914432
+      },
+      "native_stage_enrichment": {
+        "calls": 1,
+        "cpu_seconds": 0.5979058340000005,
+        "elapsed_seconds": 0.5976970269985031,
+        "peak_rss_bytes": 496914432
+      }
+    },
+    "io": {
+      "cancelled_write_bytes": 162271232,
+      "input_blocks": 0,
+      "output_blocks": 318032,
+      "rchar": 348807071,
+      "read_bytes": 0,
+      "syscr": 12278,
+      "syscw": 441,
+      "wchar": 162568776,
+      "write_bytes": 162832384
+    },
+    "peak_rss_bytes": 579264512,
+    "phases": [
+      "BOUNDED_READ"
+    ],
+    "probe_event_receipts": [
+      {
+        "child_cpu_seconds": 0.643732819,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51408.736606046,
+        "event": "ENTER",
+        "handler_name": "checkpoint_restore",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51408.738244057
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 0.6482860719988821,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 51408.738654922
+      },
+      {
+        "child_cpu_seconds": 1.300998657,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51409.393913639,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51409.399506014
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 5.0116554199994425,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 51413.102429353
+      },
+      {
+        "child_cpu_seconds": 6.417967334,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51414.516336867,
+        "event": "ENTER",
+        "handler_name": "native_orchestrator",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51414.523157708
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 12.700026359998446,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 51420.791721872
+      },
+      {
+        "child_cpu_seconds": 12.689352919,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51420.790299389,
+        "event": "ENTER",
+        "handler_name": "native_stage_enrichment",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51420.794055561
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 13.29810338000243,
+        "entered_at_monotonic": null,
+        "event": "PROGRESS",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "native_orchestrator",
+          "native_stage_enrichment"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 51421.394310261
+      },
+      {
+        "child_cpu_seconds": 13.287682311,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51421.388432186,
+        "event": "ENTER",
+        "handler_name": "families",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51421.394394411
+      },
+      {
+        "child_cpu_seconds": 16.05488841,
+        "child_elapsed_seconds": null,
+        "entered_at_monotonic": 51424.155713688,
+        "event": "ENTER",
+        "handler_name": "lab",
+        "handler_names": [],
+        "phases": [],
+        "received_at_monotonic": 51424.163651484
+      },
+      {
+        "child_cpu_seconds": null,
+        "child_elapsed_seconds": 16.330859005000093,
+        "entered_at_monotonic": null,
+        "event": "FINAL",
+        "handler_name": null,
+        "handler_names": [
+          "checkpoint_restore",
+          "families",
+          "lab",
+          "native_orchestrator",
+          "native_stage_enrichment"
+        ],
+        "phases": [
+          "BOUNDED_READ"
+        ],
+        "received_at_monotonic": 51424.428702041
+      }
+    ],
+    "provider_requests": 0,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "reason": "SnapshotError",
+    "status": "SHADOW_FAIL_CLOSED"
+  },
+  "slow_disk_injected": false,
+  "slow_disk_requested": true,
+  "slow_fsync_exit_isolation_proven": false,
+  "source_custody_after": {
+    "": {
+      "sha256": "1aacd0e74323f97cdbab88d641e9fbca5244a8c4fceccd5d95c1253e919a0c6f",
+      "st_atime_ns": 1791212008218319809,
+      "st_ctime_ns": 1791212008190320190,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 661844,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791212008190320190,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_before": {
+    "": {
+      "sha256": "1aacd0e74323f97cdbab88d641e9fbca5244a8c4fceccd5d95c1253e919a0c6f",
+      "st_atime_ns": 1791212008218319809,
+      "st_ctime_ns": 1791212008190320190,
+      "st_dev": 27,
+      "st_gid": 1000,
+      "st_ino": 661844,
+      "st_mode": 33152,
+      "st_mtime_ns": 1791212008190320190,
+      "st_nlink": 1,
+      "st_size": 23162880,
+      "st_uid": 1000
+    }
+  },
+  "source_custody_scope": "MAIN_WAL_SHM_JOURNAL_BYTES_AND_ALL_CUSTODY_STATS_NOATIME",
+  "source_database_unchanged": true,
+  "source_sha256": "1aacd0e74323f97cdbab88d641e9fbca5244a8c4fceccd5d95c1253e919a0c6f",
+  "synthetic": true
+}

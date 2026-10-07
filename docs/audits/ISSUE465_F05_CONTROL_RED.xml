@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="0.160" timestamp="2026-10-04T15:09:38.478028+00:00" hostname="a699c54851e2"><testcase classname="tests.test_issue465_source_retention_policy" name="test_duplicate_archive_ack_keys_cannot_override_non_durable_export" time="0.004"><failure message="Failed: DID NOT RAISE RetentionPressure">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_archive_ack_key0')
+
+    def test_duplicate_archive_ack_keys_cannot_override_non_durable_export(tmp_path):
+        old, current = generation(tmp_path), generation(tmp_path, number=2)
+        ack = acknowledgement(old)
+        ack.write_text(ack.read_text().replace('"durable": true', '"durable": false, "durable": true'))
+        pointer(current)
+&gt;       with pytest.raises(RetentionPressure, match="HARD_FILES"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:139: Failed</failure></testcase><testcase classname="tests.test_issue465_source_retention_policy" name="test_duplicate_current_keys_fail_closed_before_rotation" time="0.004"><failure message="Failed: DID NOT RAISE RetentionPressure">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_current_keys_fa0')
+
+    def test_duplicate_current_keys_fail_closed_before_rotation(tmp_path):
+        path = generation(tmp_path)
+        acknowledgement(path)
+        pointer(path)
+        current = tmp_path / "CURRENT.json"
+        current.write_text(current.read_text().replace('"sequence": 1', '"sequence": 1, "sequence": 1'))
+&gt;       with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:150: Failed</failure></testcase><testcase classname="tests.test_issue465_source_retention_policy" name="test_duplicate_pin_registry_keys_cannot_release_an_audited_generation" time="0.002"><failure message="Failed: DID NOT RAISE RetentionPressure">tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-59/test_duplicate_pin_registry_ke0')
+
+    def test_duplicate_pin_registry_keys_cannot_release_an_audited_generation(tmp_path):
+        old, current = generation(tmp_path), generation(tmp_path, number=2)
+        acknowledgement(old)
+        pointer(current)
+        generation_id = old.name.removeprefix("gen-")
+        (tmp_path / "retention-pins.json").write_text('{"schema":"RC6_SHADOW_EVIDENCE_PINS_V1",'
+            '"generation_ids":["' + generation_id + '"],"generation_ids":[]}')
+&gt;       with pytest.raises(RetentionPressure, match="PIN_OR_CURRENT_INVALID"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RetentionPressure
+
+tests/test_issue465_source_retention_policy.py:162: Failed</failure></testcase></testsuite></testsuites>

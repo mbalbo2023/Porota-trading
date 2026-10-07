@@ -1,0 +1,143 @@
+--- pair_owned_launch_v2.py
++++ pair_owned_launch_v3.py
+@@ -149,7 +149,7 @@
+ 
+ 
+ def sealed_files():
+-    plan_wire,_=read_owned(EPOCH/'plan.json')
++    plan_wire,_=read_owned(EPOCH/'plan.v3.json')
+     plan=json.loads(plan_wire)
+     for name,expected in plan['artifacts'].items():
+         wire,attrs=read_owned(EPOCH/name)
+@@ -216,6 +216,53 @@
+     if cls is tuple:return ['tuple',[typed(v) for v in value]]
+     if cls is dict:return ['dict',[[typed(k),typed(v)] for k,v in value.items()]]
+     raise ValueError('UNSUPPORTED_NONLOSSLESS_NATIVE_VALUE_TYPE')
++
++
++def finalization_control_checks(control, variant, child_pid):
++    """Physical lifecycle control only; missing fields never imply GREEN."""
++    try:
++        report=control['original_finalization_report']
++        steps=report['protocol_steps']
++        initial=report['initial']
++        return {
++            'CONTROL_only_actual_variant_PID_Source_binding':type(control) is dict
++                and control['CONTROL_ONLY'] is True and control['DIAGNOSTIC_ONLY'] is True
++                and control['gate_qualified'] is False and control['variant']==variant
++                and type(control['child_pid']) is int and control['child_pid']==child_pid
++                and control['source_sha']==SHA and control['source_tree']==TREE
++                and control['original_manager_sha256']==MANAGER_SHA,
++            'original_report_GREEN':type(report) is dict and report['status']=='GREEN',
++            'original_bound_exact5':type(report['management_bound_seconds']) in (int,float)
++                and report['management_bound_seconds']==5,
++            'actual_wall_bounded5':type(report['wall_seconds']) in (int,float)
++                and 0<=report['wall_seconds']<=5,
++            'finalization_thread_finished':report['finalization_thread_finished'] is True,
++            'native_kernel_ECHILD_before_phase_return':report['kernel_echild_before_phase_return'] is True,
++            'signal_guard_installed_and_witnessed':report['signal_guard_installed_and_witnessed'] is True,
++            'no_reported_forced_termination':report['forced_termination'] is False,
++            'no_forced_termination_attempt':report['forced_termination_attempted'] is False,
++            'no_signal_veto':report['signal_vetoed'] is False,
++            'no_termination_signal_attempts':type(report['termination_signal_attempts']) is list
++                and report['termination_signal_attempts']==[],
++            'no_original_finalization_error':type(report['errors']) is list and report['errors']==[],
++            'no_unexpected_kernel_child':type(report['unexpected_kernel_children']) is list
++                and report['unexpected_kernel_children']==[],
++            'all_six_original_protocol_steps_completed':type(steps) is list
++                and [row['stage'] for row in steps]==[
++                    'nonnegative_stdlib_finalizers','join_owned_children','stop_owned_forkserver',
++                    'remaining_stdlib_finalizers','stop_owned_resource_tracker','verify_kernel_echild']
++                and all(row['completed'] is True and type(row['wall_seconds']) in (int,float)
++                        and 0<=row['wall_seconds']<=5 for row in steps),
++            'fresh_original_infrastructure_not_inherited':type(initial) is dict
++                and set(initial)=={'resource_tracker_pid','resource_tracker_fd',
++                                  'forkserver_pid','forkserver_alive_fd'}
++                and all(value is None for value in initial.values())
++                and report['inherited_tracker_preserved'] is False,
++            'signal_observation_scope_original_literal':report['forced_termination_observation_scope']==
++                'PYTHON_OS_KILL_AND_OS_KILLPG_DURING_THIS_FINALIZATION_ONLY; NOT_NATIVE_BINARY_OR_TRANSITIVE_ATTESTATION',
++        }
++    except (KeyError,TypeError,AttributeError,ValueError):
++        return {'complete_original_control_schema_available':False}
+ 
+ 
+ def child(variant):
+@@ -245,7 +292,14 @@
+     identities_after=helper_identities();native_rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
+     # Genuine owned-child/tracker closure precedes producer postread evidence.
+     finalization=gov.finalize_child_infrastructure(infrastructure,limit=5)
+-    require(finalization['status']=='GREEN','OWNED_CHILD_FINALIZATION_RED')
++    # CONTROL is durable immediately upon return, even when the original
++    # lifecycle report is RED/UNKNOWN. No producer postread precedes it.
++    finalization_control={'CONTROL_ONLY':True,'DIAGNOSTIC_ONLY':True,'gate_qualified':False,
++        'variant':variant,'child_pid':os.getpid(),'source_sha':SHA,'source_tree':TREE,
++        'original_manager_sha256':MANAGER_SHA,'original_finalization_report':finalization}
++    publish(output/'child-finalization-control.json',finalization_control)
++    require(all(finalization_control_checks(finalization_control,variant,os.getpid()).values()),
++            'OWNED_CHILD_FINALIZATION_CONTROL_RED_NO_PRODUCER_POSTREAD')
+     typed_wire=None;identity_facts=None;counts=None
+     if result is not None:
+         try:
+@@ -320,7 +374,7 @@
+     bound=binding();source_before=source_snapshot(bound);data_before=data_custody()
+     require(data_before==plan['input_data_all11_and_hash'],'ORIGINAL_CLOSED_DATA_PIN_REQUIRED')
+     publish(RAW/'parent.source-before.json',source_before);publish(RAW/'parent.data-before.json',data_before)
+-    summaries={};typed_wires={};barriers={};errors=[];atimes=[]
++    summaries={};typed_wires={};barriers={};native_finalization_barriers={};errors=[];atimes=[]
+     for variant in ('ROW_control','TUPLE_component'):
+         output=RAW/variant
+         env={'PATH':os.defpath,'LC_ALL':'C.UTF-8','LANG':'C.UTF-8','TZ':'UTC',
+@@ -346,7 +400,30 @@
+         if not closed:
+             errors.append({'stage':variant,'reason':'KERNEL_NOT_CLOSED_NO_SOURCE_DATA_PAYLOAD_POSTREAD'})
+             break # no second child or postread follows UNKNOWN/residual/timeout
+-        # ONLY after full FIN; never poll Source, DATA, logs or child payload.
++        # After outer kernel FIN, ONLY the bounded lifecycle CONTROL is read.
++        # Source/DATA/log/results/typed producer payload remain unread until
++        # every original native-finalization predicate is revalidated.
++        finalization_checks={};control_meta=None
++        try:
++            control_wire,control_attrs=read_owned(output/'child-finalization-control.json')
++            control=json.loads(control_wire)
++            finalization_checks=finalization_control_checks(control,variant,kernel['pid'])
++            control_meta={'sha256':hashlib.sha256(control_wire).hexdigest(),
++                          'bytes':len(control_wire),'stat11':control_attrs}
++            require(all(finalization_checks.values()),'NATIVE_FINALIZATION_CONTROL_RED')
++            native_finalization_barriers[variant]=True
++        except BaseException as error:
++            native_finalization_barriers[variant]=False
++            errors.append(safe_error(error,variant+'_native_finalization_CONTROL_readback'))
++        publish(output/'native-finalization-readback-control.json',{'CONTROL_ONLY':True,
++            'native_finalization_postread_allowed':native_finalization_barriers[variant],
++            'actual_main_pid':kernel['pid'],'revalidated_original_predicates':finalization_checks,
++            'original_CONTROL_capture':control_meta,
++            'Source_DATA_log_result_typed_readback_attempts_before_native_control':0,
++            'missing_RED_UNKNOWN_control_never_allows_second_variant_or_payload':True})
++        if not native_finalization_barriers[variant]:
++            break # no Source/DATA/log/result read or second variant after native RED
++        # Both outer FIN and complete native lifecycle CONTROL are now closed.
+         after=source_snapshot(bound);data_after=data_custody()
+         atimes.append({'variant':variant,'changes':gov.compare_source(source_before,after)})
+         require(data_before==data_after,'ORIGINAL_SOURCE_DATABASE_ALL11_CHANGED')
+@@ -378,7 +455,8 @@
+             'mutations_or_canonical_resource_savings_proven':False}
+         if not comparison['lossless_full_ordered_typed_bytes_equal']:
+             errors.append({'stage':'lossless_compare','reason':'TYPED_NATIVE_OUTPUT_DIFFERENCE'})
+-    all_closed=len(barriers)==2 and all(barriers.values())
++    all_closed=(len(barriers)==len(native_finalization_barriers)==2
++                and all(barriers.values()) and all(native_finalization_barriers.values()))
+     evidence_bytes=None
+     if all_closed:
+         evidence_bytes=sum(p.lstat().st_size for p in RAW.rglob('*') if p.is_file())
+@@ -386,7 +464,9 @@
+     publish(RAW/'pair-final.json',{'schema':'rc6.row-tuple.exact-isolated-component-diagnostic.v1',
+         'status':'DIAGNOSTIC_RED','DIAGNOSTIC_ONLY':True,'ALIEN':True,'gate_qualified':False,
+         'source_sha':SHA,'source_tree':TREE,'original_database_sha256':DATABASE_SHA,
+-        'full_kernel_postread_barriers':barriers,'original_kernel_manager_unchanged':True,
++        'full_kernel_postread_barriers':barriers,
++        'native_finalization_control_postread_barriers':native_finalization_barriers,
++        'original_kernel_manager_unchanged':True,
+         'per_variant_observed_closed_results':summaries,'lossless_comparison':comparison,
+         'Source10_atime_disclosure':atimes,'observed_raw_evidence_bytes':evidence_bytes,
+         'maximum_evidence_bytes':EVIDENCE_LIMIT,'maximum_rss_bytes':RSS_LIMIT,'errors':errors,

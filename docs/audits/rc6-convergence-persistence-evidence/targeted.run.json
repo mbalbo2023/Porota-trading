@@ -1,0 +1,59 @@
+{
+  "broker_or_provider_calls_authorized": false,
+  "command": [
+    "/workspace/venv_rc6/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "--tb=short",
+    "tests/test_iol_shadow_collector_rc6.py",
+    "tests/test_iol_shadow_decision_input_rc6.py",
+    "tests/test_iol_shadow_observation_rc6.py",
+    "tests/test_iol_shadow_validation_view_rc6.py",
+    "tests/test_issue465_generations.py",
+    "tests/test_issue465_source_retention_audit.py",
+    "tests/test_issue465_source_retention_policy.py",
+    "tests/test_rc6_convergence_persistence.py",
+    "tests/test_rc6_dynamic_sources.py",
+    "tests/test_rc6_iol_shadow_runtime.py",
+    "tests/test_rc6_iol_shadow_validation_wiring.py",
+    "tests/test_rc6_ppi_iol_reconciliation_rc6.py",
+    "tests/test_rc6_shadow_runtime_wiring.py",
+    "tests/test_rc6_source_consolidation.py",
+    "-k",
+    "not default_full_tick and not two_thousand",
+    "--junitxml=/workspace/porota_rc6_worktrees/persistence/docs/audits/rc6-convergence-persistence-evidence/targeted.junit.xml"
+  ],
+  "environment": {
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "umask": "022"
+  },
+  "exit_code": 0,
+  "external_archive_authentication_certified": false,
+  "finished_at": "2026-10-05T02:31:19.189394+00:00",
+  "junit": "targeted.junit.xml",
+  "junit_sha256": "f3cc463f278382e4ac8c2aaa50de660d2bce4e39208f39b91e9fc017477f1e4a",
+  "ppi_watch": "UNTOUCHED",
+  "production_capacity_certified": false,
+  "python_version": "3.11.16",
+  "run_id": "RC6-PERSISTENCE-TARGETED-b82666db",
+  "schema": "rc6.persistence-offline-test-run.v1",
+  "scope": "PAPER_SHADOW_SYNTHETIC_OFFLINE",
+  "source_sha": "b82666db11093806bb27badab65f498bb11d7a89",
+  "source_tracked_clean_before_and_after": true,
+  "source_tree_sha": "775ba49f7dbd091ed3deccc499e9b0e953103df1",
+  "started_at": "2026-10-05T02:30:58.628909+00:00",
+  "suites": [
+    {
+      "errors": "0",
+      "failures": "0",
+      "hostname": "9905252a2cbf",
+      "name": "pytest",
+      "skipped": "0",
+      "tests": "312",
+      "time": "19.813",
+      "timestamp": "2026-10-05T02:30:59.042605+00:00"
+    }
+  ]
+}

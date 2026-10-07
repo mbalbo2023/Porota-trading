@@ -1,0 +1,94 @@
+{
+  "DIAGNOSTIC_ONLY": true,
+  "Gov_closed": false,
+  "PPI_Watch": "UNTOUCHED",
+  "actual_import_windows": [
+    {
+      "alias_or_ALIEN_DENIED_not_waived": true,
+      "file": "parent.import-final.json",
+      "status": "BLOCKED_ALIEN_OR_UNPINNED",
+      "transient_closure_verified": false
+    },
+    {
+      "alias_or_ALIEN_DENIED_not_waived": true,
+      "file": "child.import-final.json",
+      "status": "BLOCKED_ALIEN_OR_UNPINNED",
+      "transient_closure_verified": false
+    }
+  ],
+  "artifact_validated": false,
+  "audit_scope": "DECLARED_PYTHON_WINDOWS; NO_KERNEL_BINARY_TRANSITIVE_NETWORK_ATTESTATION",
+  "canonical_BIG_qualified": false,
+  "code10stable_bytes_modes_rawgit_preserved": true,
+  "data_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/data",
+  "errors": [],
+  "families_500ms_qualified": false,
+  "final_candidate_eligible": false,
+  "foreign_kernel_worker_or_main_aliases_remain_RED_when_observed": true,
+  "gate_qualified": false,
+  "kernel_protocol_and_original_resource_bounds_pass": false,
+  "native_role_aliases_not_reconstructed": true,
+  "observed_code_atime_changes": [],
+  "parent_inet_audit_observations": {
+    "inet_socket_attempts": [],
+    "inet_socket_constructor_requests": [
+      {
+        "capability_policy": "NATIVE_IPV6_CREATION_DENIED_EAFNOSUPPORT; SUPPLIED_DESCRIPTORS_NOT_ATTESTED",
+        "event": "socket.__new__",
+        "family": 10,
+        "observation_scope": "PYTHON_CONSTRUCTOR_FAMILY_REQUEST_NOT_INDIVIDUAL_KERNEL_RESULT"
+      }
+    ],
+    "subprocess_executable_counts": {
+      "git": 12,
+      "python": 1
+    }
+  },
+  "postread_kernel_barrier_closed": true,
+  "profile_available_after_reap": true,
+  "profiler_overhead_not_acceptance": true,
+  "pstats_files": [
+    {
+      "filename": "ctor-01-funnel_checkpoint.pstats",
+      "sha256": "86cb8c79b546290aee133f945f564a7a882c2ce138ecd11cfdc919f6e9c5614a",
+      "stat": {
+        "st_atime_ns": 1791301605025902774,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791301605028818717,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1088709,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791301605028818717,
+        "st_nlink": 1,
+        "st_size": 10242,
+        "st_uid": 1000
+      }
+    },
+    {
+      "filename": "ctor-02-report.pstats",
+      "sha256": "8c09fc86da3c0b12590b4e2bd3181ea3f252e40bb9264c1b0a4f1ab2ea2361de",
+      "stat": {
+        "st_atime_ns": 1791301661989635009,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791301661993887767,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1088711,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791301661993887767,
+        "st_nlink": 1,
+        "st_size": 11568,
+        "st_uid": 1000
+      }
+    }
+  ],
+  "raw_root": "/workspace/scratch/rc6-readonly-3091e93-ofT80Pum/rc6-pre-profile-86615-4n2hv723/raw",
+  "real_orders_sent": 0,
+  "runtime_validated": false,
+  "schema": "rc6.controlled-native-pre-cprofile-diagnostic.v1",
+  "source_data_all11_preserved": true,
+  "source_sha": "86615bd8c669209e8d391d114016d923fe084dc0",
+  "source_tree": "ad192bb7f707b082e680a699e1f00f9efabc755f",
+  "status": "RED"
+}

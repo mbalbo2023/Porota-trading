@@ -1,0 +1,162 @@
+{
+  "control_inputs": {
+    "frozen157-policy.json.source": {
+      "bytes": 103636,
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462",
+      "stat": {
+        "st_atime_ns": 1791317850118961304,
+        "st_blocks": 208,
+        "st_ctime_ns": 1791317850122497078,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093908,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850122497078,
+        "st_nlink": 1,
+        "st_size": 103636,
+        "st_uid": 1000
+      }
+    },
+    "input-bindings.json": {
+      "bytes": 4322,
+      "sha256": "bfe58c16f266f7025800b3c13bd988ec0ca0b86ddc3118f126c5ba838c1db870",
+      "stat": {
+        "st_atime_ns": 1791317850139560958,
+        "st_blocks": 16,
+        "st_ctime_ns": 1791317850140660506,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093910,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850140660506,
+        "st_nlink": 1,
+        "st_size": 4322,
+        "st_uid": 1000
+      }
+    },
+    "new-governed-runner.py.source": {
+      "bytes": 63436,
+      "sha256": "a2b6d0f942ac4e2e30a6f62bed61184b9a3cd2aa2c3ba3d501225d9057d5be47",
+      "stat": {
+        "st_atime_ns": 1791317850133208977,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850139560958,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093909,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850139560958,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "old-governed-runner.py.source": {
+      "bytes": 63436,
+      "sha256": "316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67",
+      "stat": {
+        "st_atime_ns": 1791317850109209082,
+        "st_blocks": 128,
+        "st_ctime_ns": 1791317850113329056,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093904,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850113329056,
+        "st_nlink": 1,
+        "st_size": 63436,
+        "st_uid": 1000
+      }
+    },
+    "owned-native-child-manager.py.source": {
+      "bytes": 18113,
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "stat": {
+        "st_atime_ns": 1791317850113329056,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791317850118961304,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093907,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317850118961304,
+        "st_nlink": 1,
+        "st_size": 18113,
+        "st_uid": 1000
+      }
+    },
+    "phase_component.py": {
+      "bytes": 19459,
+      "sha256": "0b0cb04e3a98e85a180919cce38f51118da66b38a3a2da03d5813af49facc582",
+      "stat": {
+        "st_atime_ns": 1791318164111788361,
+        "st_blocks": 40,
+        "st_ctime_ns": 1791318164731785549,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093914,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318164731785549,
+        "st_nlink": 1,
+        "st_size": 19459,
+        "st_uid": 1000
+      }
+    },
+    "run_controls.py": {
+      "bytes": 12203,
+      "sha256": "88d240fcf53fbea60f3fa335bd575fbdf9786014814a6bc66a74796c60899c42",
+      "stat": {
+        "st_atime_ns": 1791318119259991503,
+        "st_blocks": 24,
+        "st_ctime_ns": 1791318119259991503,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093915,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791318119259991503,
+        "st_nlink": 1,
+        "st_size": 12203,
+        "st_uid": 1000
+      }
+    },
+    "test_live_component.py.source": {
+      "bytes": 2071,
+      "sha256": "9ca5ff10f0fc9a6d0267b66af7544da825da85a7e441d6cadd30bfe850063112",
+      "stat": {
+        "st_atime_ns": 1791317980656627520,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791317980656627520,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093912,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317980656627520,
+        "st_nlink": 1,
+        "st_size": 2071,
+        "st_uid": 1000
+      }
+    },
+    "test_positive_component.py.source": {
+      "bytes": 157,
+      "sha256": "93467ba6ac0a177cf57373abd1f70e13b51e0df26bc6f8412744fcdb18a4c635",
+      "stat": {
+        "st_atime_ns": 1791317981136625378,
+        "st_blocks": 8,
+        "st_ctime_ns": 1791317981136625378,
+        "st_dev": 27,
+        "st_gid": 1000,
+        "st_ino": 1093913,
+        "st_mode": 33152,
+        "st_mtime_ns": 1791317981136625378,
+        "st_nlink": 1,
+        "st_size": 157,
+        "st_uid": 1000
+      }
+    }
+  },
+  "gates_or_controls_launched": 0,
+  "real_orders_sent": 0,
+  "schema": "rc6.phase-child-natural-components-final-input-bindings.v1",
+  "source_edits": 0,
+  "static_compile_only_no_import_or_execution": true
+}

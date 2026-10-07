@@ -1,0 +1,201 @@
+"""Real kernel component controls; never Gov/BIG/artifact/runtime acceptance."""
+from __future__ import annotations
+import argparse
+import errno
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+import time
+from types import SimpleNamespace
+
+
+def fresh(path, value):
+    data = (json.dumps(value, sort_keys=True, indent=2)+'\n').encode()
+    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(data)
+
+
+def group_absent(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+def separate_followup(phase):
+    # Observer-only same-parent natural drain, never an extension or rewrite
+    # of the phase's ORIGINAL cleanup5 / immutable UNKNOWN or RED result.
+    begin = time.monotonic()
+    observations = []
+    echild = False
+    while time.monotonic()-begin < 20:
+        try:
+            pid, status, usage = os.wait4(-1, os.WNOHANG)
+        except ChildProcessError as error:
+            assert error.errno == errno.ECHILD
+            observations.append({'outcome': 'ECHILD', 'errno': error.errno})
+            echild = True
+            break
+        if pid:
+            observations.append({'outcome': 'PID_REAPED', 'pid': pid,
+                                 'exitcode': os.waitstatus_to_exitcode(status)})
+            continue
+        observations.append({'outcome': 'ACTIVE_OWN_CHILD_WITHOUT_PID', 'pid': 0})
+        time.sleep(.01)
+    absent = group_absent(phase['pid'])
+    report = {'schema': 'rc6.control.separate-natural-fin-observer.v1',
+              'management_seconds': 20, 'wall_seconds': time.monotonic()-begin,
+              'same_actual_parent_pid': os.getpid(), 'kernel_echild': echild,
+              'phase_pgid_absent_after_followup': absent, 'observations': observations,
+              'signals_sent': [], 'original_phase_receipt_reclassified': False,
+              'original_cleanup_seconds': phase['owned_cleanup_management_bound_seconds']}
+    assert echild and absent
+    return report
+
+
+def closed(report):
+    return (report['actual_child_reaped'] is True
+            and report['wait4_reaped_pid'] == report['pid']
+            and report['kernel_pre_popen_echild_verified'] is True
+            and report['owned_children_exhaustion_verified'] is True
+            and report['kernel_wait4_zero_observed_irreversible_red'] is False
+            and report['late_observed_main_reap_irreversible_red'] is False
+            and report['actual_launch_to_pid_reap_wall_seconds'] <= 5400
+            and report['phase_acceptance_deadline_seconds'] == 5400
+            and report['owned_cleanup_management_bound_seconds'] == 5
+            and report['process_group_absent_at_main_reap'] is True
+            and report['process_group_absent_after_reap'] is True
+            and report['subreaper_restore_attempted_on_all_activated_paths'] is True
+            and report['remaining_owned_children'] == []
+            and report['residual_descendants_observed'] == []
+            and report['supervisor_errors'] == []
+            and report['owned_group_signal_observations'] == [])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--runner-source', type=Path, required=True)
+    parser.add_argument('--variant', choices=('old', 'new'), required=True)
+    parser.add_argument('--producer', type=Path, required=True)
+    parser.add_argument('--repo-root', type=Path, required=True)
+    parser.add_argument('--source-sha', required=True)
+    parser.add_argument('--source-tree', required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--case', choices=('ready100Red','simpleExit0','liveDetached6','mainUnknown'), required=True)
+    args = parser.parse_args()
+    expected = {'old':'b86a04368c92607eeb3eb6fc4b04393312de69a1d5a80ed7e2564025a41ec404',
+                'new':'316e22fc9711c2e8bea0f2af7615cdb1cd84fb55f2b0c611c38372d50d59ba67'}
+    assert hashlib.sha256(args.runner_source.read_bytes()).hexdigest() == expected[args.variant]
+    assert hashlib.sha256(args.producer.read_bytes()).hexdigest() == '797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43'
+    assert not args.output.exists() and not args.output.is_relative_to(args.repo_root)
+    args.output.mkdir(mode=0o700)
+    environment = {'PATH':os.defpath,'PYTHONDONTWRITEBYTECODE':'1','PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1',
+                   'LC_ALL':'C.UTF-8','LANG':'C.UTF-8','TZ':'UTC'}
+    os.environ.clear()
+    os.environ.update(environment)
+    sys.path.insert(0,str(args.repo_root))
+    loader = importlib.machinery.SourceFileLoader('rc6_explicit_gov_kernel_component',str(args.runner_source))
+    spec = importlib.util.spec_from_loader(loader.name,loader)
+    runner = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = runner
+    loader.exec_module(runner)
+    producer_case = {'ready100Red':'ready100','simpleExit0':'simpleExit',
+                     'liveDetached6':'liveDetached6','mainUnknown':'liveDetached6'}[args.case]
+    producer_exit = 1 if args.case == 'ready100Red' else 0
+    producer_receipt = args.output/'producer-control.json'
+    command = [sys.executable,'-I','-B',str(args.producer),'--case',producer_case,
+               '--receipt',str(producer_receipt),'--exit-code',str(producer_exit)]
+    if args.case == 'ready100Red':
+        command.append('--separate-session')
+    phase = None
+    spy = {'source_pin_calls_before_phase':0,'source_pin_attempts_after_unknown_fin':0,
+           'physical_source_postreads_after_unknown_fin':0,'phase_returned':False}
+    main_error = None
+    if args.case == 'mainUnknown':
+        original_phase, original_pin = runner.subprocess_phase, runner.source_pin
+        def real_control_phase(unused_command, root, output, env, limit):
+            nonlocal phase
+            assert limit == 5400 and phase is None
+            phase = original_phase(command,root,output,env,limit)
+            spy['phase_returned'] = True
+            return phase
+        def source_read_spy(*arguments, **keywords):
+            if spy['phase_returned']:
+                spy['source_pin_attempts_after_unknown_fin'] += 1
+                raise RuntimeError('TEST_OBSERVER_VETO_SOURCE_POSTREAD_BEFORE_PHYSICAL_READ')
+            spy['source_pin_calls_before_phase'] += 1
+            return original_pin(*arguments, **keywords)
+        runner.subprocess_phase, runner.source_pin = real_control_phase, source_read_spy
+        try:
+            runner.main(SimpleNamespace(repo_root=str(args.repo_root),output_root=str(args.output/'governed-main'),
+                        source_sha=args.source_sha,source_tree=args.source_tree,timeout_seconds=5400))
+        except BaseException as error:
+            main_error = {'class':type(error).__name__,'literal_reason':str(error).partition(':')[0]}
+        assert phase is not None
+    else:
+        phase = runner.subprocess_phase(command,args.repo_root,args.output/'native.log',environment,5400)
+    # Persist the actual control-only kernel record before the observer drain.
+    fresh(args.output/'original-phase-kernel.json',phase)
+    followup = separate_followup(phase)
+    fresh(args.output/'separate-followup-fin.json',followup)
+    # Payload read is allowed here only after actual SAME-PARENT ECHILD/PGID.
+    producer = json.loads(producer_receipt.read_bytes())
+    assert producer['producer_exit_code'] == producer_exit
+    assert phase['returncode'] == producer_exit and phase['actual_child_reaped'] is True
+    assert phase['phase_acceptance_deadline_seconds'] == 5400 and phase['owned_cleanup_management_bound_seconds'] == 5
+    if args.case == 'ready100Red':
+        assert producer['all100_verified_zombie_before_producer_exit'] is True and producer['separate_session'] is True
+        assert len(producer['children']) == len(producer['waitid_wnowait_witnesses']) == 100
+        assert {row['pid'] for row in producer['children']} == {row['pid'] for row in phase['adopted_descendants_reaped']}
+        assert len(phase['adopted_descendants_reaped']) == 100 and all(row['exitcode']==0 for row in phase['adopted_descendants_reaped'])
+        assert phase['kernel_wait4_zero_observed_irreversible_red'] is False
+        assert phase['owned_group_signal_observations'] == []
+        if args.variant == 'old':
+            assert phase['owned_children_exhaustion_verified'] is False
+            assert any(row['reason']=='OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND' for row in phase['supervisor_errors'])
+            assert phase['termination_reap_restore_cleanup_seconds'] >= 5
+        else:
+            assert closed(phase) and phase['termination_reap_restore_cleanup_seconds'] < 5
+    elif args.case == 'simpleExit0':
+        assert closed(phase) and phase['adopted_descendants_reaped'] == []
+    else:
+        assert phase['kernel_wait4_zero_observed_irreversible_red'] is True
+        assert phase['owned_children_exhaustion_verified'] is False
+        assert phase['process_group_absent_at_main_reap'] is True
+        assert phase['owned_group_signal_observations'] == []
+        assert phase['termination_reap_restore_cleanup_seconds'] >= 5
+        assert any(row['reason']=='OWN_CHILD_EXHAUSTION_NOT_PROVED_WITHIN_BOUND' for row in phase['supervisor_errors'])
+        if args.case == 'mainUnknown':
+            assert spy['source_pin_calls_before_phase'] == 2
+            assert spy['physical_source_postreads_after_unknown_fin'] == 0
+            assert spy['source_pin_attempts_after_unknown_fin'] == (1 if args.variant=='old' else 0)
+            assert main_error is not None
+            assert main_error['literal_reason'] == ('TEST_OBSERVER_VETO_SOURCE_POSTREAD_BEFORE_PHYSICAL_READ'
+                if args.variant=='old' else 'ACTUAL_GOVERNED_PHASE_OWNED_CHILD_CUSTODY_NOT_CLOSED')
+            assert not (args.output/'governed-main/collection.parent-source-after.index.json').exists()
+    receipt = {'schema':'rc6.gov.real-kernel-component-control.v1',
+               'classification':'CONTROL_VERIFIED_NOT_FULL_GOV_BIG_IMAGE_RUNTIME_QUALIFICATION',
+               'case':args.case,'variant':args.variant,'runner_sha256':expected[args.variant],
+               'producer_sha256':'797447a2d44f48813639a0d22be91aebdbdb4fb630415144422c4d55775aba43',
+               'python':sys.version,'original_kernel_phase':phase,'separate_followup':followup,
+               'producer_control':producer,'source_read_spy':spy,'main_error':main_error,
+               'phase_fin_closed_before_followup':closed(phase),
+               'phase_execution_green':closed(phase) and phase['returncode']==0,
+               'source_or_data_payload_read_during_unknown_fin':False,
+               'original_unknown_or_red_reclassified':False,'real_orders_sent':0,
+               'artifact_image_runtime_claim':False}
+    fresh(args.output/'control-result.json',receipt)
+    print(json.dumps({'case':args.case,'variant':args.variant,'status':'CONTROL_VERIFIED',
+                      'original_phase_execution_green':receipt['phase_execution_green'],
+                      'original_phase_fin_closed':receipt['phase_fin_closed_before_followup'],
+                      'output':str(args.output)},sort_keys=True))
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,10 @@
+{
+  "local_index_pack": "pack\t51c34a1595e18d00d16664361329c5738c6457e2",
+  "objects": 1398,
+  "original_heads_and_bases": 25,
+  "pack_sha256": "53ae2c3d103305978ee188a3c25b730852edc2a12a8bf3123269de4b1b935a55",
+  "packed_bytes": 4628743,
+  "root_ref_mutation": false,
+  "root_shallow_mutation": false,
+  "scope": "READ_ONLY_RECOVER_EXACT_ORIGINAL_GIT_OBJECTS_FROM_GITHUB"
+}

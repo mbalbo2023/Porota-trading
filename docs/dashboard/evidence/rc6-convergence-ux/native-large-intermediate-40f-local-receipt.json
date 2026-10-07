@@ -1,0 +1,88 @@
+{
+  "acceptance_complete": false,
+  "archive_sha256": "39dce2d41064af4440494d87f3c5a5e3f06d6d760de290ae4202d20eedb88ee3",
+  "browser": {
+    "canonical_checks_at_completed_viewport": 49,
+    "chromium_launched": true,
+    "cut_discarded": true,
+    "elapsed_seconds": 1.1816010100010317,
+    "failed_path": "/trading/equity-spot",
+    "failed_width": 1280,
+    "full_viewports_completed": [
+      1440
+    ],
+    "html_bytes": 18403,
+    "legacy_and_interaction_checks_completed": 0,
+    "queries": 6,
+    "status": "RED",
+    "total_canonical_checks_available_in_raw_receipt": null
+  },
+  "candidate_tree_sha": "f6f3fc1343a9aa2b02fcfd38b20550eb4677355d",
+  "custody": "LOCAL_DURABLE_CUSTODY_NOT_EXTERNAL_AUTHENTICATION",
+  "exact_cherry_picks": [
+    "40f34f6e22db168c8206c8f8f189e78f60db7270",
+    "ab1bfa8964f47d71fd253c44fb827e257d69d68c"
+  ],
+  "final_root_freeze_claim": false,
+  "generation_pointer": {
+    "digest": "1560041b1daa861314cf3beef68e56e1102d1e8391419a3867e7bb95f346c1ef",
+    "generation_id": "8fca0b4616da43f1b96a475f2efaad3c",
+    "manifest_sha256": "7d922004c9d4e03341c9fe96f942eb6755e1c4101004cc2e5bb5d367fb855043",
+    "schema": "rc6.shadow-evidence-generation.v2",
+    "sequence": 2
+  },
+  "integration_scope": "INTERMEDIATE_ISOLATED_ROOT_BASE_PLUS_EXACT_OWNER_COMMITS",
+  "native_inputs": {
+    "catalog_full_identities": 12000,
+    "funnel_groups": 24000,
+    "observation_read_truncated": true,
+    "observations_materialized": 60000,
+    "observations_returned": 20000,
+    "planner_rows": 24000,
+    "report_logical_bytes": 292783805
+  },
+  "overlays": [],
+  "ppi_watch_touched": false,
+  "provider_requests": 0,
+  "raw_evidence_sha256": {
+    "native-large-browser-red-af71ff9e.json": "171ca32d8114cf030f6f535b4fedc7dac8927076fc9e94b8242b30f34a026ec4",
+    "native-large-browser-source-af71ff9e.json": "b2a6f89506f9467cbca64f480d2965d19de084e44efce1d0a3823762d197ff55",
+    "native-large-post-custody-af71ff9e.json": "64e086ad78ee90009be639461070d39cb44adc01daa60060f8c904d118795822",
+    "native-large-reader-af71ff9e.json": "3a0f324ef8e63210aeaa6d14dab368becd9260463e31696ca0a4f1868c42ab60",
+    "native-large-reader-source-af71ff9e.json": "d3678b53b837ca91b385aa1149d0efb57d23200a05a7b0cdedaa52e1a62e9a14",
+    "native-large-source-index-af71ff9e.json": "61ea5ea7e3115976886ff0a13c7ef358cafe7b3f3e0bebdcd4dcb9656ed899e9"
+  },
+  "reader": {
+    "complete_index_population_checked": true,
+    "full_page_traversal_claimed": false,
+    "maximum_elapsed_seconds": 0.8116441439997288,
+    "maximum_projection_bytes": 249011,
+    "requests_measured": 12,
+    "status": "GREEN"
+  },
+  "receipts": [
+    "native-large-source-index-af71ff9e.json",
+    "native-large-reader-af71ff9e.json",
+    "native-large-reader-source-af71ff9e.json",
+    "native-large-browser-red-af71ff9e.json",
+    "native-large-browser-source-af71ff9e.json",
+    "native-large-post-custody-af71ff9e.json"
+  ],
+  "requirements_remaining": [
+    "Correct the remaining render cost under Chromium without raising1s or skipping fresh verification.",
+    "Run complete large reader and49\u00d76/22-alias/browser interactions on a new exact source pin.",
+    "Root final freeze/artifact/import/mount validation remains separate from this intermediate checkout."
+  ],
+  "root_base_sha": "3d1f45aa296869eefe55ef79900889333395a9bd",
+  "root_branch_modified": false,
+  "runtime_touched": false,
+  "schema": "rc6.dashboard-native-large-intermediate-40f-receipt.v1",
+  "source_and_custody_members_unchanged": 15,
+  "source_cut": "2026-10-05T13:35:00+00:00",
+  "source_files": 1380,
+  "source_sha": "af71ff9eefc4fbb301b4260c9b2a1d181293e6f7",
+  "source_sqlite_opens": 0,
+  "status": "READER_GREEN_BROWSER_RED_DURING_SECOND_VIEWPORT",
+  "tracked_source_hashes_unchanged": true,
+  "verification_level": "WIRE_AND_PROJECTION_SEMANTICS"
+}
