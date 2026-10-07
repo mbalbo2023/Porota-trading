@@ -60,8 +60,8 @@ jobs:
           set -Eeuo pipefail
           test -f .github/workflows/porota-predeploy-v2.yml
           test -f ops/policy/test-policy.yaml
-          rg -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
-          rg -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
+          grep -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
+          grep -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
           echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
           echo 'SUPPLEMENTARY_TEST_RESULT_CLAIM=SELECTED_GATE_ONLY'
           echo 'DEPLOY_OWNER=NOT_ACQUIRED'
