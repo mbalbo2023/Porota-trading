@@ -1,0 +1,127 @@
+name: RC6 host capacity read-only 2026-10-07
+
+# Dedicated observational branch. This workflow does not publish or deploy a candidate.
+on:
+  push:
+    branches: [audit/rc6-host-capacity-20261007]
+    paths: [.github/workflows/rc6-host-capacity-readonly-20261007.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-host-capacity-readonly-20261007
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/audit/rc6-host-capacity-20261007'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Read bounded host capacity without changing runtime
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$DO_HOST" && test -n "$DO_USER"
+          SSH_DIR="$RUNNER_TEMP/rc6-capacity-ssh"
+          install -m 700 -d "$SSH_DIR"
+          trap 'rm -f "$SSH_DIR/key" "$SSH_DIR/known_hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$SSH_DIR/known_hosts"
+          chmod 600 "$SSH_DIR/key" "$SSH_DIR/known_hosts"
+          timeout 90 ssh -i "$SSH_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$SSH_DIR/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" 'PYTHONDONTWRITEBYTECODE=1 python3 -' \
+            > "$RUNNER_TEMP/rc6-host-capacity.json" <<'PY_REMOTE'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          def optional_text(path):
+              try:
+                  return Path(path).read_text(encoding="ascii").strip()
+              except FileNotFoundError:
+                  return None
+
+          memory = {}
+          for line in Path("/proc/meminfo").read_text(encoding="ascii").splitlines():
+              field, _, rest = line.partition(":")
+              if field in {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"}:
+                  number, unit = rest.split()
+                  if unit != "kB":
+                      raise ValueError("UNEXPECTED_MEMINFO_UNIT")
+                  memory[field + "_bytes"] = int(number) * 1024
+          if set(memory) != {name + "_bytes" for name in
+                            ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree")}:
+              raise ValueError("INCOMPLETE_HOST_MEMORY_SAMPLE")
+
+          disk = os.statvfs("/")
+          command = ["sudo", "-n", "docker", "stats", "--no-stream", "--format", "{{json .}}"]
+          rows = subprocess.run(command, check=True, capture_output=True, text=True, timeout=45)
+          containers = []
+          for line in rows.stdout.splitlines():
+              row = json.loads(line)
+              containers.append({name: row[name] for name in ("Name", "MemUsage", "CPUPerc")})
+          if not containers or len(containers) > 64:
+              raise ValueError("RUNNING_CONTAINER_SAMPLE_MISSING_OR_UNBOUNDED")
+
+          result = {
+              "schema": "rc6.host-capacity-readonly.v1",
+              "observed_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "scope": "ONE_READ_ONLY_HOST_SNAPSHOT_NOT_DEPLOY_APPROVAL",
+              "cpu_logical_count": os.cpu_count(),
+              "cpu_affinity_count": len(os.sched_getaffinity(0)),
+              "load_average_1_5_15": os.getloadavg(),
+              "cgroup_cpu_max": optional_text("/sys/fs/cgroup/cpu.max"),
+              "cgroup_memory_max": optional_text("/sys/fs/cgroup/memory.max"),
+              "cgroup_memory_current": optional_text("/sys/fs/cgroup/memory.current"),
+              "memory": memory,
+              "disk_root": {
+                  "total_bytes": disk.f_blocks * disk.f_frsize,
+                  "available_bytes": disk.f_bavail * disk.f_frsize,
+                  "free_inodes": disk.f_favail,
+                  "total_inodes": disk.f_files,
+              },
+              "running_containers": containers,
+              "candidate_measured_on_host": False,
+              "deploy_approved": False,
+          }
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          PY_REMOTE
+          python3 - "$RUNNER_TEMP/rc6-host-capacity.json" <<'PY_VERIFY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert result["schema"] == "rc6.host-capacity-readonly.v1"
+          assert result["candidate_measured_on_host"] is False
+          assert result["deploy_approved"] is False
+          assert result["memory"]["MemTotal_bytes"] > 0
+          print("RC6_HOST_CAPACITY_READ_ONLY=RECORDED")
+          print("CPU_AFFINITY_COUNT=" + str(result["cpu_affinity_count"]))
+          print("MEM_TOTAL_BYTES=" + str(result["memory"]["MemTotal_bytes"]))
+          print("MEM_AVAILABLE_BYTES=" + str(result["memory"]["MemAvailable_bytes"]))
+          print("ROOT_AVAILABLE_BYTES=" + str(result["disk_root"]["available_bytes"]))
+          print("RUNNING_CONTAINERS=" + str(len(result["running_containers"])))
+          print("DEPLOY_APPROVAL=NO")
+          PY_VERIFY
+
+      - name: Preserve bounded capacity snapshot
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc6-host-capacity-readonly-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: ${{ runner.temp }}/rc6-host-capacity.json
