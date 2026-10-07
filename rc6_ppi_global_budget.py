@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from copy import deepcopy
 from math import ceil, isfinite
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -45,6 +46,176 @@ EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSIT
 # SQLite timeout bounded only lock waiting. Capture, SQL and cleanup share this
 # conservative total bound; an inherited earlier absolute deadline wins.
 LEDGER_SNAPSHOT_SECONDS = .15
+
+
+# Observation only: bounded in-process transaction edges, never admission authority.
+# The private lexical-path SHA never leaves this module and is not an inode claim.
+_WRITER_DIAGNOSTIC_PATH_TYPE = type(Path())
+_WRITER_DIAGNOSTIC_HEALTHY = True
+_WRITER_DIAGNOSTIC_ROLES = (
+    "BOOTSTRAP", "ACQUIRE", "START", "FINISH", "REPORT_ERROR",
+    "COALESCED_ENVELOPE", "COALESCED_ADMISSION", "COALESCED_EXIT_SERVED",
+    "EXIT_DEGRADED", "OBSERVE_EXIT_ROUND", "MONITOR_EXIT_DEADLINE", "COMPLETE_BOOK",
+    "UNIT_REAL_EXCLUSIVE", "UNIT_REGISTRY_METADATA_ONLY")
+
+
+class _BudgetWriterDiagnostics:
+    """64 slots overall; no waits, paths, database reads, or provider activity."""
+    def __init__(self):
+        self.slots = [None] * 64
+        self.cursor = 0
+        self.healthy = True
+        self.lock = threading.Lock()
+
+    def _acquire(self):
+        if not self.lock.acquire(blocking=False):
+            self.healthy = False
+            return False
+        return True
+
+    def _release(self):
+        self.lock.release()
+
+    def enter(self, link, role):
+        if (type(link) is not bytes or len(link) != 32
+                or type(role) is not str or role not in _WRITER_DIAGNOSTIC_ROLES):
+            self.healthy = False
+            return None
+        if not self._acquire():
+            return None
+        try:
+            for offset in range(64):
+                slot = (self.cursor + offset) % 64
+                prior = self.slots[slot]
+                if prior is None or prior["context_finished_at_monotonic"] is not None:
+                    record = {"_link": link, "_slot": slot, "_token": object(), "role": role,
+                        "pid": os.getpid(), "native_tid": threading.get_native_id(),
+                        "entered_at_monotonic": time.monotonic(),
+                        "begin_write_returned_at_monotonic": None,
+                        "unit_exclusive_returned_at_monotonic": None,
+                        "explicit_commit_entered_at_monotonic": None,
+                        "explicit_commit_returned_at_monotonic": None,
+                        "body_exited_at_monotonic": None, "body_raised": None,
+                        "context_finished_at_monotonic": None,
+                        "context_exit": "PENDING_ORIGINAL_COMBINED_CONTEXT"}
+                    self.slots[slot] = record
+                    self.cursor = (slot + 1) % 64
+                    # Retain only an identity handle, not an evicted history record.
+                    return slot, record["_token"]
+            # Do not evict an active transaction to manufacture complete coverage.
+            self.healthy = False
+            return None
+        finally:
+            self._release()
+
+    def edge(self, token, edge, raised=None):
+        if token is None:
+            self.healthy = False
+            return
+        if not self._acquire():
+            return
+        try:
+            if type(token) is not tuple or len(token) != 2:
+                self.healthy = False
+                return
+            slot, identity = token
+            if type(slot) is not int or not 0 <= slot < 64:
+                self.healthy = False
+                return
+            record = self.slots[slot]
+            if (record is None or record["_token"] is not identity
+                    or record["pid"] != os.getpid()
+                    or record["native_tid"] != threading.get_native_id()):
+                self.healthy = False
+                return
+            at = time.monotonic()
+            if edge == "BEGIN_WRITE_RETURN":
+                # This is the whole original _begin_write return, including
+                # quota/maintenance, not the isolated SQL BEGIN duration.
+                record["begin_write_returned_at_monotonic"] = at
+            elif edge == "UNIT_EXCLUSIVE_RETURN":
+                record["unit_exclusive_returned_at_monotonic"] = at
+            elif edge == "EXPLICIT_COMMIT_ENTER":
+                record["explicit_commit_entered_at_monotonic"] = at
+            elif edge == "EXPLICIT_COMMIT_RETURN":
+                record["explicit_commit_returned_at_monotonic"] = at
+            elif edge == "BODY_EXIT":
+                record["body_exited_at_monotonic"] = at
+                record["body_raised"] = raised is True
+            elif edge == "CONTEXT_EXIT":
+                record["context_finished_at_monotonic"] = at
+                record["context_exit"] = ("COMMIT_AND_CLOSE_FINALLY_UNKNOWN" if raised is True
+                    else "ORIGINAL_CONTEXT_EXIT_RETURN")
+            else:
+                self.healthy = False
+        finally:
+            self._release()
+
+    def snapshot(self, link):
+        records = []
+        if type(link) is not bytes or len(link) != 32:
+            self.healthy = False
+        elif self._acquire():
+            try:
+                pid = os.getpid()
+                for record in self.slots:
+                    if (record is not None and record["_link"] == link and record["pid"] == pid):
+                        records.append({key: value for key, value in record.items()
+                            if key not in ("_link", "_slot", "_token")})
+            finally:
+                self._release()
+        return {"schema": "rc6.ppi-budget-native-writer-edges.v1",
+            "health": "OBSERVED" if self.healthy and _WRITER_DIAGNOSTIC_HEALTHY else "UNKNOWN",
+            "maximum_slots": 64, "transaction_records": records,
+            "business_authority": False,
+            "scope": "IN_PROCESS_EXACT_LEXICAL_PATH_ONLY; UNINSTRUMENTED_OR_EXTERNAL_OWNERS_UNKNOWN",
+            "history": "RETAINED_64_SLOTS_ONLY; COMPLETED_RECORDS_MAY_BE_EVICTED",
+            "timing": "BEGIN_WRITE_RETURN_INCLUDES_MAINTENANCE; BODY_TO_CONTEXT_EXIT_INCLUDES_COMMIT_OR_ROLLBACK_AND_CLOSE"}
+
+
+_WRITER_DIAGNOSTICS = _BudgetWriterDiagnostics()
+
+
+def _writer_diag_link(path):
+    global _WRITER_DIAGNOSTIC_HEALTHY
+    try:
+        if type(path) is not _WRITER_DIAGNOSTIC_PATH_TYPE:
+            _WRITER_DIAGNOSTIC_HEALTHY = False
+            return None
+        # Path is the original constructor's already absolute native Path.
+        # fsencode preserves filesystem surrogates without resolve/stat/read.
+        return hashlib.sha256(os.fsencode(path)).digest()
+    except BaseException:
+        _WRITER_DIAGNOSTIC_HEALTHY = False
+        return None
+
+
+def _writer_diag_enter(link, role):
+    global _WRITER_DIAGNOSTIC_HEALTHY
+    try:
+        return _WRITER_DIAGNOSTICS.enter(link, role)
+    except BaseException:
+        _WRITER_DIAGNOSTIC_HEALTHY = False
+        return None
+
+
+def _writer_diag_edge(token, edge, *, raised=None):
+    global _WRITER_DIAGNOSTIC_HEALTHY
+    try:
+        _WRITER_DIAGNOSTICS.edge(token, edge, raised)
+    except BaseException:
+        _WRITER_DIAGNOSTIC_HEALTHY = False
+
+
+def _writer_diag_snapshot(link):
+    global _WRITER_DIAGNOSTIC_HEALTHY
+    try:
+        return _WRITER_DIAGNOSTICS.snapshot(link)
+    except BaseException:
+        _WRITER_DIAGNOSTIC_HEALTHY = False
+        return {"schema": "rc6.ppi-budget-native-writer-edges.v1", "health": "UNKNOWN",
+                "maximum_slots": 64, "transaction_records": [], "business_authority": False,
+                "scope": "DIAGNOSTIC_SNAPSHOT_FAILED; NO_LOCK_OWNER_INFERENCE"}
 
 
 @contextmanager
@@ -441,6 +612,7 @@ class GlobalPPIBudget:
     """
     def __init__(self, path, policy, *, clock=None, protected=()):
         self.path = Path(path).absolute()
+        self._writer_diagnostic_link = _writer_diag_link(self.path)
         self.policy = validate_policy(policy)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.deadline_alarm_unavailable = False
@@ -475,44 +647,60 @@ class GlobalPPIBudget:
             if not self.path.exists():
                 db = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR | os.O_NOFOLLOW, 0o600)
                 os.close(db)
-            with closing(self._connect(timeout=.05)) as c, c:
-                # All initialized validation shares one read snapshot. Even a
-                # setter to the existing mode can race a worker's commit lock;
-                # foreign/WAL state must never be converted by a restart.
-                c.execute("BEGIN")
-                if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
-                    raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
-                tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                expected_tables = {"budget_state", "budget_requests", "budget_totals"}
-                if tables - expected_tables:
-                    raise ValueError("PPI_BUDGET_SEPARATE_DATABASE_REQUIRED")
-                old_schema = self._get(c, "schema") if "budget_state" in tables else None
-                if old_schema is not None and (old_schema != SCHEMA or tables != expected_tables):
-                    raise ValueError("PPI_BUDGET_SCHEMA_MISMATCH")
-                # Restart validates an existing bootstrap without racing an
-                # active worker with redundant DDL or a schema write. Only an
-                # unfinished first bootstrap may create the fixed tables.
-                if old_schema is None:
-                    c.rollback()
-                    if c.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
-                        raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
-                    self._begin_write(c)
-                    # Native executescript would commit the transaction before
-                    # DDL. Keep the fixed schema and marker atomic, while IF
-                    # NOT EXISTS preserves a known interrupted bootstrap.
-                    for statement in (
-                        "CREATE TABLE IF NOT EXISTS budget_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-                        """CREATE TABLE IF NOT EXISTS budget_requests(
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'BOOTSTRAP')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect(timeout=.05)) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        # All initialized validation shares one read snapshot. Even a
+                        # setter to the existing mode can race a worker's commit lock;
+                        # foreign/WAL state must never be converted by a restart.
+                        c.execute("BEGIN")
+                        if c.execute("PRAGMA journal_mode").fetchone()[0] != "delete":
+                            raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+                        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                        expected_tables = {"budget_state", "budget_requests", "budget_totals"}
+                        if tables - expected_tables:
+                            raise ValueError("PPI_BUDGET_SEPARATE_DATABASE_REQUIRED")
+                        old_schema = self._get(c, "schema") if "budget_state" in tables else None
+                        if old_schema is not None and (old_schema != SCHEMA or tables != expected_tables):
+                            raise ValueError("PPI_BUDGET_SCHEMA_MISMATCH")
+                        # Restart validates an existing bootstrap without racing an
+                        # active worker with redundant DDL or a schema write. Only an
+                        # unfinished first bootstrap may create the fixed tables.
+                        if old_schema is None:
+                            c.rollback()
+                            if c.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
+                                raise ValueError("PPI_BUDGET_JOURNAL_MODE_INVALID")
+                            self._begin_write(c)
+                            _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                            # Native executescript would commit the transaction before
+                            # DDL. Keep the fixed schema and marker atomic, while IF
+                            # NOT EXISTS preserves a known interrupted bootstrap.
+                            for statement in (
+                                "CREATE TABLE IF NOT EXISTS budget_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+                                """CREATE TABLE IF NOT EXISTS budget_requests(
                       lease TEXT PRIMARY KEY, at REAL NOT NULL, endpoint TEXT NOT NULL,
                       consumer TEXT NOT NULL, priority TEXT NOT NULL, used INTEGER NOT NULL)""",
-                        """CREATE TABLE IF NOT EXISTS budget_totals(
+                                """CREATE TABLE IF NOT EXISTS budget_totals(
                       endpoint TEXT NOT NULL, consumer TEXT NOT NULL, priority TEXT NOT NULL,
                       requested INTEGER NOT NULL, allowed INTEGER NOT NULL,
                       used INTEGER NOT NULL, dropped INTEGER NOT NULL,
                       PRIMARY KEY(endpoint,consumer,priority))""",
-                    ):
-                        c.execute(statement)
-                    self._put(c, "schema", SCHEMA)
+                            ):
+                                c.execute(statement)
+                            self._put(c, "schema", SCHEMA)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
             if self.path.stat().st_mode & 0o777 != 0o600:
                 os.chmod(self.path, 0o600)
 
@@ -889,90 +1077,122 @@ class GlobalPPIBudget:
         # URL, broker payload, credentials, account data or arbitrary messages.
         consumer = consumer if consumer in CONSUMERS else "UNSCOPED"
         try:
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                self._total(c, endpoint, consumer, priority, requested=1)
-                reason = None
-                pressure = self._get(c, "critical_exit_pressure", {})
-                if priority != "EXIT_CRITICAL" and (self._round_guard_active() or any(
-                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
-                    reason = "PPI_EXIT_DEADLINE_LOWER_SUSPENDED"
-                if now >= stamp(self.policy["expires_at"]).timestamp():
-                    reason = "PPI_CAPACITY_EXPIRED_BACKPRESSURE"
-                circuit = self._get(c, "circuits", {})
-                for key in ("global", endpoint):
-                    if circuit.get(key, {}).get("until", 0) > now:
-                        reason = "PPI_GLOBAL_CIRCUIT_OPEN" if key == "global" else "PPI_ENDPOINT_CIRCUIT_OPEN"
-                        break
-                lease = self._get(c, "inflight")
-                wire_busy = self._wire_busy()
-                if wire_busy or (lease and lease["until"] > now):
-                    reason = reason or "PPI_SERIAL_BACKPRESSURE"
-                elif lease:
-                    self._put(c, "inflight", None)
-                    self._put(c, "abandoned_lease_observed", True)
-                # Rolling windows prevent a boundary burst. A new policy may
-                # widen the window; retain up to one hour of bounded receipts.
-                if c.execute("SELECT COUNT(*) FROM budget_requests").fetchone()[0] >= RECEIPT_LIMIT:
-                    reason = reason or "PPI_BUDGET_ROW_LIMIT"
-                rows = list(c.execute("SELECT * FROM budget_requests"))
-                envelopes = self._envelopes(c, now, record=True)
-                constrained, donor = self._admission(endpoint, priority, rows, envelopes, now)
-                reason = reason or constrained
-                reason = reason or self._receipt_admission(c, priority, rows, envelopes, now)
-                if reason:
-                    self._total(c, endpoint, consumer, priority, dropped=1)
-                    self._window_total(c, now, endpoint, consumer, priority, requested=1, dropped=1, reason=reason)
-                    self._put(c, "last_backpressure", {"reason": reason, "at": now, "endpoint": endpoint})
-                    return {"allowed": False, "reason": reason, "lease": None}
-                token = uuid.uuid4().hex
-                c.execute("INSERT INTO budget_requests VALUES(?,?,?,?,?,0)", (token, now, endpoint, consumer, priority))
-                self._put(c, "inflight", {"lease": token, "until": now + self.policy["lease_seconds"],
-                    "lease_seconds": self.policy["lease_seconds"]})
-                self._put(c, "policy_fingerprint", digest(self.policy))
-                self._put(c, "last_policy", self.policy)
-                self._total(c, endpoint, consumer, priority, allowed=1)
-                self._window_total(c, now, endpoint, consumer, priority, requested=1, admitted=1, borrowed_in=int(donor is not None))
-                if donor is not None and donor[0] != "COMMON":
-                    # Attribution is explicitly to the reserve owner rather
-                    # than inventing a donor HTTP consumer.
-                    self._window_total(c, now, donor[1], "UNSCOPED", donor[0], borrowed_out=1)
-                return {"allowed": True, "lease": token, "reason": "PPI_BUDGET_ALLOWED"}
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'ACQUIRE')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect()) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        self._total(c, endpoint, consumer, priority, requested=1)
+                        reason = None
+                        pressure = self._get(c, "critical_exit_pressure", {})
+                        if priority != "EXIT_CRITICAL" and (self._round_guard_active() or any(
+                                p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
+                            reason = "PPI_EXIT_DEADLINE_LOWER_SUSPENDED"
+                        if now >= stamp(self.policy["expires_at"]).timestamp():
+                            reason = "PPI_CAPACITY_EXPIRED_BACKPRESSURE"
+                        circuit = self._get(c, "circuits", {})
+                        for key in ("global", endpoint):
+                            if circuit.get(key, {}).get("until", 0) > now:
+                                reason = "PPI_GLOBAL_CIRCUIT_OPEN" if key == "global" else "PPI_ENDPOINT_CIRCUIT_OPEN"
+                                break
+                        lease = self._get(c, "inflight")
+                        wire_busy = self._wire_busy()
+                        if wire_busy or (lease and lease["until"] > now):
+                            reason = reason or "PPI_SERIAL_BACKPRESSURE"
+                        elif lease:
+                            self._put(c, "inflight", None)
+                            self._put(c, "abandoned_lease_observed", True)
+                        # Rolling windows prevent a boundary burst. A new policy may
+                        # widen the window; retain up to one hour of bounded receipts.
+                        if c.execute("SELECT COUNT(*) FROM budget_requests").fetchone()[0] >= RECEIPT_LIMIT:
+                            reason = reason or "PPI_BUDGET_ROW_LIMIT"
+                        rows = list(c.execute("SELECT * FROM budget_requests"))
+                        envelopes = self._envelopes(c, now, record=True)
+                        constrained, donor = self._admission(endpoint, priority, rows, envelopes, now)
+                        reason = reason or constrained
+                        reason = reason or self._receipt_admission(c, priority, rows, envelopes, now)
+                        if reason:
+                            self._total(c, endpoint, consumer, priority, dropped=1)
+                            self._window_total(c, now, endpoint, consumer, priority, requested=1, dropped=1, reason=reason)
+                            self._put(c, "last_backpressure", {"reason": reason, "at": now, "endpoint": endpoint})
+                            return {"allowed": False, "reason": reason, "lease": None}
+                        token = uuid.uuid4().hex
+                        c.execute("INSERT INTO budget_requests VALUES(?,?,?,?,?,0)", (token, now, endpoint, consumer, priority))
+                        self._put(c, "inflight", {"lease": token, "until": now + self.policy["lease_seconds"],
+                            "lease_seconds": self.policy["lease_seconds"]})
+                        self._put(c, "policy_fingerprint", digest(self.policy))
+                        self._put(c, "last_policy", self.policy)
+                        self._total(c, endpoint, consumer, priority, allowed=1)
+                        self._window_total(c, now, endpoint, consumer, priority, requested=1, admitted=1, borrowed_in=int(donor is not None))
+                        if donor is not None and donor[0] != "COMMON":
+                            # Attribution is explicitly to the reserve owner rather
+                            # than inventing a donor HTTP consumer.
+                            self._window_total(c, now, donor[1], "UNSCOPED", donor[0], borrowed_out=1)
+                        return {"allowed": True, "lease": token, "reason": "PPI_BUDGET_ALLOWED"}
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
         except (OSError, ValueError, sqlite3.Error) as error:
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
     def start(self, lease):
         try:
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
-                active = self._get(c, "inflight")
-                if not row or not active or active["lease"] != lease or active["until"] <= now or row["used"]:
-                    raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
-                if now >= stamp(self.policy["expires_at"]).timestamp():
-                    raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
-                pressure = self._get(c, "critical_exit_pressure", {})
-                if row["priority"] != "EXIT_CRITICAL" and (self._round_guard_active() or any(
-                        p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
-                    raise BudgetBackpressure("PPI_EXIT_DEADLINE_LOWER_SUSPENDED")
-                circuits = self._get(c, "circuits", {})
-                if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", row["endpoint"])):
-                    raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
-                receipts = list(c.execute("SELECT * FROM budget_requests WHERE lease!=?", (lease,)))
-                envelopes = self._envelopes(c, now, record=True)
-                reason, _ = self._admission(row["endpoint"], row["priority"], receipts, envelopes, now)
-                reason = reason or self._receipt_admission(c, row["priority"], receipts, envelopes, now)
-                if reason:
-                    raise BudgetBackpressure(reason)
-                # Admission can be paused. Both rolling wire debt and crashed
-                # sender coverage must originate at actual start, atomically.
-                active["until"] = max(active["until"], now + max(active.get("lease_seconds", 0), self.policy["lease_seconds"]))
-                self._put(c, "inflight", active)
-                c.execute("UPDATE budget_requests SET used=1,at=? WHERE lease=?", (now, lease))
-                self._total(c, row["endpoint"], row["consumer"], row["priority"], used=1)
-                self._window_total(c, now, row["endpoint"], row["consumer"], row["priority"], used=1)
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'START')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect()) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
+                        active = self._get(c, "inflight")
+                        if not row or not active or active["lease"] != lease or active["until"] <= now or row["used"]:
+                            raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
+                        if now >= stamp(self.policy["expires_at"]).timestamp():
+                            raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                        pressure = self._get(c, "critical_exit_pressure", {})
+                        if row["priority"] != "EXIT_CRITICAL" and (self._round_guard_active() or any(
+                                p.get("status") == "DEGRADED" or p.get("until", 0) > now for p in pressure.values())):
+                            raise BudgetBackpressure("PPI_EXIT_DEADLINE_LOWER_SUSPENDED")
+                        circuits = self._get(c, "circuits", {})
+                        if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", row["endpoint"])):
+                            raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
+                        receipts = list(c.execute("SELECT * FROM budget_requests WHERE lease!=?", (lease,)))
+                        envelopes = self._envelopes(c, now, record=True)
+                        reason, _ = self._admission(row["endpoint"], row["priority"], receipts, envelopes, now)
+                        reason = reason or self._receipt_admission(c, row["priority"], receipts, envelopes, now)
+                        if reason:
+                            raise BudgetBackpressure(reason)
+                        # Admission can be paused. Both rolling wire debt and crashed
+                        # sender coverage must originate at actual start, atomically.
+                        active["until"] = max(active["until"], now + max(active.get("lease_seconds", 0), self.policy["lease_seconds"]))
+                        self._put(c, "inflight", active)
+                        c.execute("UPDATE budget_requests SET used=1,at=? WHERE lease=?", (now, lease))
+                        self._total(c, row["endpoint"], row["consumer"], row["priority"], used=1)
+                        self._window_total(c, now, row["endpoint"], row["consumer"], row["priority"], used=1)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
         except (OSError, ValueError, sqlite3.Error) as error:
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
@@ -1002,28 +1222,60 @@ class GlobalPPIBudget:
 
     def finish(self, lease, *, status_code=None, error_code=None):
         try:
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
-                if not row:
-                    raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
-                self._outcome(c, row["endpoint"], now, error_code or (f"PPI_HTTP_{status_code}" if status_code and status_code >= 400 else None))
-                if not row["used"]:
-                    # Only confirmed pre-wire rejection can release a claim.
-                    # An uncertain finish rolls back and retains both the
-                    # conservative inflight lease and any emitted wire debt.
-                    c.execute("DELETE FROM budget_requests WHERE lease=?", (lease,))
-                active = self._get(c, "inflight")
-                if active and active["lease"] == lease:
-                    self._put(c, "inflight", None)
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'FINISH')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect()) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        row = c.execute("SELECT * FROM budget_requests WHERE lease=?", (lease,)).fetchone()
+                        if not row:
+                            raise BudgetBackpressure("PPI_BUDGET_LEASE_INVALID")
+                        self._outcome(c, row["endpoint"], now, error_code or (f"PPI_HTTP_{status_code}" if status_code and status_code >= 400 else None))
+                        if not row["used"]:
+                            # Only confirmed pre-wire rejection can release a claim.
+                            # An uncertain finish rolls back and retains both the
+                            # conservative inflight lease and any emitted wire debt.
+                            c.execute("DELETE FROM budget_requests WHERE lease=?", (lease,))
+                        active = self._get(c, "inflight")
+                        if active and active["lease"] == lease:
+                            self._put(c, "inflight", None)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
         except (OSError, ValueError, sqlite3.Error) as error:
             raise BudgetBackpressure("PPI_BUDGET_STATE_UNAVAILABLE") from error
 
     def report_error(self, endpoint, code):
-        with closing(self._connect()) as c, c:
-            self._begin_write(c)
-            self._outcome(c, endpoint, self._clock(c), code)
+        _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'REPORT_ERROR')
+        _writer_diag_context_raised = False
+        try:
+            with closing(self._connect()) as c, c:
+                _writer_diag_body_raised = False
+                try:
+                    self._begin_write(c)
+                    _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                    self._outcome(c, endpoint, self._clock(c), code)
+                except BaseException:
+                    _writer_diag_body_raised = True
+                    raise
+                finally:
+                    _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+        except BaseException:
+            _writer_diag_context_raised = True
+            raise
+        finally:
+            _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
 
     @staticmethod
     def _safe_book(payload, now, age):
@@ -1110,6 +1362,10 @@ class GlobalPPIBudget:
                     code = None
                 diagnostic = {"schema": "rc6.ppi-budget-committed-read-error.v1",
                     "phase": read_phase, "sqlite_errorcode": code,
+                    "read_entered_at_monotonic": entered_at,
+                    "snapshot_boundary_at_monotonic": snapshot_at,
+                    "error_observed_at_monotonic": failed_at,
+                    "writer_diagnostics": _writer_diag_snapshot(self._writer_diagnostic_link),
                     "declared_connect_timeout_ms": 50,
                     "total_to_error_seconds": failed_at - entered_at,
                     "connect_seconds": None if connected_at is None else connected_at - entered_at,
@@ -1153,57 +1409,91 @@ class GlobalPPIBudget:
             # The valid authority was observed even when its ensuing read
             # meets a breaker or occupied flight. Commit the promise before
             # those terminal rejections can roll back the cache transaction.
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                if now >= stamp(self.policy["expires_at"]).timestamp():
-                    raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
-                self._envelopes(c, now, record=True)
-            while True:
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'COALESCED_ENVELOPE')
+            _writer_diag_context_raised = False
+            try:
                 with closing(self._connect()) as c, c:
-                    self._begin_write(c)
-                    now = self._clock(c)
-                    if now >= stamp(self.policy["expires_at"]).timestamp():
-                        raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
-                    circuits = self._get(c, "circuits", {})
-                    if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
-                        raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
-                    # A fresh cache hit still observes current opened demand.
-                    # Publish its EXIT promise before another process can use
-                    # the remaining wire floor for newly opened identities.
-                    self._envelopes(c, now, record=True)
-                    cache = self._get(c, "critical_books", {})
-                    flights = self._get(c, "critical_book_flights", {})
-                    cache = {k: v for k, v in cache.items() if 0 <= now - v["received_at"] <= age and v["authority"] == authority}
-                    cached = cache.get(key)
-                    if cached and self._safe_book(cached["book"], now, age) is not None:
-                        elapsed = time.monotonic() - started
-                        if critical and elapsed >= self.policy["critical_book_seconds"]:
-                            # Commit the observed authority before recording
-                            # degradation in its own transaction. Raising
-                            # inside this transaction would erase the alarm.
-                            c.commit()
-                            self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", elapsed)
-                            raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
-                        self._window_total(c, now, "book", consumer, priority, coalesced=1)
-                        if critical:
-                            self._exit_served(c, key, now, elapsed)
-                        return deepcopy(cached["book"])
-                    cache.pop(key, None)
-                    flights = {k: v for k, v in flights.items() if v["until"] > now}
-                    active = flights.get(key)
-                    if active is None:
-                        if len(flights) >= BOOK_CACHE_LIMIT:
-                            raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_CAPACITY")
-                        flights[key] = {"lease": token, "until": now + self.policy["lease_seconds"],
-                            "owner_priority": priority, "started_at": now}
-                        self._put(c, "critical_books", cache)
-                        self._put(c, "critical_book_flights", flights)
-                        if critical:
-                            self._exit_waiting(c, key, now, active)
-                        break
-                    if critical:
-                        self._exit_waiting(c, key, now, active)
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        if now >= stamp(self.policy["expires_at"]).timestamp():
+                            raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                        self._envelopes(c, now, record=True)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
+            while True:
+                _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'COALESCED_ADMISSION')
+                _writer_diag_context_raised = False
+                try:
+                    with closing(self._connect()) as c, c:
+                        _writer_diag_body_raised = False
+                        try:
+                            self._begin_write(c)
+                            _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                            now = self._clock(c)
+                            if now >= stamp(self.policy["expires_at"]).timestamp():
+                                raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                            circuits = self._get(c, "circuits", {})
+                            if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
+                                raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
+                            # A fresh cache hit still observes current opened demand.
+                            # Publish its EXIT promise before another process can use
+                            # the remaining wire floor for newly opened identities.
+                            self._envelopes(c, now, record=True)
+                            cache = self._get(c, "critical_books", {})
+                            flights = self._get(c, "critical_book_flights", {})
+                            cache = {k: v for k, v in cache.items() if 0 <= now - v["received_at"] <= age and v["authority"] == authority}
+                            cached = cache.get(key)
+                            if cached and self._safe_book(cached["book"], now, age) is not None:
+                                elapsed = time.monotonic() - started
+                                if critical and elapsed >= self.policy["critical_book_seconds"]:
+                                    # Commit the observed authority before recording
+                                    # degradation in its own transaction. Raising
+                                    # inside this transaction would erase the alarm.
+                                    _writer_diag_edge(_writer_diag_token, "EXPLICIT_COMMIT_ENTER")
+                                    c.commit()
+                                    _writer_diag_edge(_writer_diag_token, "EXPLICIT_COMMIT_RETURN")
+                                    self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", elapsed)
+                                    raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
+                                self._window_total(c, now, "book", consumer, priority, coalesced=1)
+                                if critical:
+                                    self._exit_served(c, key, now, elapsed)
+                                return deepcopy(cached["book"])
+                            cache.pop(key, None)
+                            flights = {k: v for k, v in flights.items() if v["until"] > now}
+                            active = flights.get(key)
+                            if active is None:
+                                if len(flights) >= BOOK_CACHE_LIMIT:
+                                    raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_CAPACITY")
+                                flights[key] = {"lease": token, "until": now + self.policy["lease_seconds"],
+                                    "owner_priority": priority, "started_at": now}
+                                self._put(c, "critical_books", cache)
+                                self._put(c, "critical_book_flights", flights)
+                                if critical:
+                                    self._exit_waiting(c, key, now, active)
+                                break
+                            if critical:
+                                self._exit_waiting(c, key, now, active)
+                        except BaseException:
+                            _writer_diag_body_raised = True
+                            raise
+                        finally:
+                            _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+                except BaseException:
+                    _writer_diag_context_raised = True
+                    raise
+                finally:
+                    _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
                 # The authority and waiting EXIT pressure above are committed.
                 # Rewriting them every poll needlessly competes with the owner
                 # and round observer. Poll only this same live flight; cache
@@ -1247,11 +1537,27 @@ class GlobalPPIBudget:
                 if elapsed >= self.policy["critical_book_seconds"]:
                     self._exit_degraded(key, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", elapsed)
                     raise BudgetBackpressure("PPI_BOOK_EXIT_DEADLINE_EXCEEDED")
-                with closing(self._connect()) as c, c:
-                    self._begin_write(c)
-                    now = self._clock(c)
-                    if self._safe_book(result, now, age) is not None:
-                        self._exit_served(c, key, now, elapsed)
+                _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'COALESCED_EXIT_SERVED')
+                _writer_diag_context_raised = False
+                try:
+                    with closing(self._connect()) as c, c:
+                        _writer_diag_body_raised = False
+                        try:
+                            self._begin_write(c)
+                            _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                            now = self._clock(c)
+                            if self._safe_book(result, now, age) is not None:
+                                self._exit_served(c, key, now, elapsed)
+                        except BaseException:
+                            _writer_diag_body_raised = True
+                            raise
+                        finally:
+                            _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+                except BaseException:
+                    _writer_diag_context_raised = True
+                    raise
+                finally:
+                    _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
             return result
         except (OSError, ValueError, sqlite3.Error) as error:
             if error is fetch_failure:
@@ -1285,10 +1591,26 @@ class GlobalPPIBudget:
         self._put(c, "critical_exit_service", service)
 
     def _exit_degraded(self, key, reason, elapsed):
-        with closing(self._connect()) as c, c:
-            self._begin_write(c)
-            now = self._clock(c)
-            self._mark_exit_degraded(c, key, now, reason, elapsed)
+        _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'EXIT_DEGRADED')
+        _writer_diag_context_raised = False
+        try:
+            with closing(self._connect()) as c, c:
+                _writer_diag_body_raised = False
+                try:
+                    self._begin_write(c)
+                    _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                    now = self._clock(c)
+                    self._mark_exit_degraded(c, key, now, reason, elapsed)
+                except BaseException:
+                    _writer_diag_body_raised = True
+                    raise
+                finally:
+                    _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+        except BaseException:
+            _writer_diag_context_raised = True
+            raise
+        finally:
+            _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
 
     def _mark_exit_degraded(self, c, key, now, reason, elapsed):
         self._exit_waiting(c, key, now, None)
@@ -1367,44 +1689,60 @@ class GlobalPPIBudget:
                 frozen = _frozen_admission_summary(frozen_admission_scope)
             except (ValueError, TypeError, InvalidOperation):
                 return unavailable | {"reason": "PPI_EXIT_ROUND_MEASUREMENT_INVALID"}
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                if frozen is not None and stamp(frozen["captured_at"]).timestamp() > now:
-                    raise ValueError("PPI_EXIT_ROUND_MEASUREMENT_INVALID")
-                service = self._get(c, "critical_exit_service", {})
-                covered = {key for key, record in service.items() if record.get("status") == "SERVED"
-                    and 0 <= now - record.get("last_served_at", 0) <= deadline_seconds}
-                pressure = self._get(c, "critical_exit_pressure", {})
-                ongoing = required_identity_digests is not None and any(
-                    key in required_identity_digests and (value.get("status") == "DEGRADED" or value.get("until", 0) > now)
-                    for key, value in pressure.items())
-                reason = ("PPI_EXIT_ROUND_DEADLINE_EXCEEDED" if elapsed_seconds > deadline_seconds else
-                    "PPI_EXIT_ROUND_READ_FAILURES" if failures else
-                    "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED" if required_identity_digests is None
-                        or not required_identity_digests <= covered else
-                    "PPI_EXIT_ROUND_CRITICAL_IN_PROGRESS" if ongoing else None)
-                if reason:
-                    self._mark_exit_degraded(c, EXIT_ROUND_PRESSURE_KEY, now, reason, elapsed_seconds)
-                else:
-                    # Retire ghosts only with the entire verified current
-                    # scope covered. Never release HTTP ownership or receipts.
-                    pressure = {key: value for key, value in pressure.items()
-                        if key != EXIT_ROUND_PRESSURE_KEY and key in required_identity_digests}
-                    self._put(c, "critical_exit_pressure", pressure)
-                round_state = {"status": "DEGRADED" if reason else "COMPLETE", "recorded_at": now,
-                    "elapsed_seconds": elapsed_seconds, "deadline_seconds": deadline_seconds,
-                    "failures": failures, "required_identities_count": len(required_identity_digests)
-                        if required_identity_digests is not None else frozen["identity_count"] if frozen else None,
-                    "fresh_required_count": len(required_identity_digests) if required_identity_digests is not None else None,
-                    "required_scope_verified_current": required_identity_digests is not None,
-                    "required_scope_basis": "CURRENT_VERIFIED_PAPER_LEDGER" if required_identity_digests is not None
-                        else "FROZEN_AT_FIRST_ADMISSION" if frozen else "UNVERIFIED",
-                    "frozen_admission_scope": frozen,
-                    "covered_identities_count": len(covered & required_identity_digests)
-                        if required_identity_digests is not None else 0,
-                    "reason": reason}
-                self._put(c, "critical_exit_round", round_state)
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'OBSERVE_EXIT_ROUND')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect()) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        if frozen is not None and stamp(frozen["captured_at"]).timestamp() > now:
+                            raise ValueError("PPI_EXIT_ROUND_MEASUREMENT_INVALID")
+                        service = self._get(c, "critical_exit_service", {})
+                        covered = {key for key, record in service.items() if record.get("status") == "SERVED"
+                            and 0 <= now - record.get("last_served_at", 0) <= deadline_seconds}
+                        pressure = self._get(c, "critical_exit_pressure", {})
+                        ongoing = required_identity_digests is not None and any(
+                            key in required_identity_digests and (value.get("status") == "DEGRADED" or value.get("until", 0) > now)
+                            for key, value in pressure.items())
+                        reason = ("PPI_EXIT_ROUND_DEADLINE_EXCEEDED" if elapsed_seconds > deadline_seconds else
+                            "PPI_EXIT_ROUND_READ_FAILURES" if failures else
+                            "PPI_EXIT_ROUND_INCOMPLETE_OR_UNVERIFIED" if required_identity_digests is None
+                                or not required_identity_digests <= covered else
+                            "PPI_EXIT_ROUND_CRITICAL_IN_PROGRESS" if ongoing else None)
+                        if reason:
+                            self._mark_exit_degraded(c, EXIT_ROUND_PRESSURE_KEY, now, reason, elapsed_seconds)
+                        else:
+                            # Retire ghosts only with the entire verified current
+                            # scope covered. Never release HTTP ownership or receipts.
+                            pressure = {key: value for key, value in pressure.items()
+                                if key != EXIT_ROUND_PRESSURE_KEY and key in required_identity_digests}
+                            self._put(c, "critical_exit_pressure", pressure)
+                        round_state = {"status": "DEGRADED" if reason else "COMPLETE", "recorded_at": now,
+                            "elapsed_seconds": elapsed_seconds, "deadline_seconds": deadline_seconds,
+                            "failures": failures, "required_identities_count": len(required_identity_digests)
+                                if required_identity_digests is not None else frozen["identity_count"] if frozen else None,
+                            "fresh_required_count": len(required_identity_digests) if required_identity_digests is not None else None,
+                            "required_scope_verified_current": required_identity_digests is not None,
+                            "required_scope_basis": "CURRENT_VERIFIED_PAPER_LEDGER" if required_identity_digests is not None
+                                else "FROZEN_AT_FIRST_ADMISSION" if frozen else "UNVERIFIED",
+                            "frozen_admission_scope": frozen,
+                            "covered_identities_count": len(covered & required_identity_digests)
+                                if required_identity_digests is not None else 0,
+                            "reason": reason}
+                        self._put(c, "critical_exit_round", round_state)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
             if not reason:
                 self._round_guard(False)
             suspended = bool(reason) or any(p.get("status") == "DEGRADED" or p.get("until", 0) > now
@@ -1429,38 +1767,70 @@ class GlobalPPIBudget:
         try:
             if time.monotonic() < deadline:
                 return
-            with closing(self._connect()) as c, c:
-                self._begin_write(c)
-                now = self._clock(c)
-                flight = self._get(c, "critical_book_flights", {}).get(key)
-                # A timer racing successful completion must not resurrect a
-                # pressure record for a flight that no longer owns the token.
-                if flight and flight["lease"] == token:
-                    self._mark_exit_degraded(c, key, now, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
+            _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'MONITOR_EXIT_DEADLINE')
+            _writer_diag_context_raised = False
+            try:
+                with closing(self._connect()) as c, c:
+                    _writer_diag_body_raised = False
+                    try:
+                        self._begin_write(c)
+                        _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                        now = self._clock(c)
+                        flight = self._get(c, "critical_book_flights", {}).get(key)
+                        # A timer racing successful completion must not resurrect a
+                        # pressure record for a flight that no longer owns the token.
+                        if flight and flight["lease"] == token:
+                            self._mark_exit_degraded(c, key, now, "PPI_BOOK_EXIT_DEADLINE_EXCEEDED", time.monotonic() - started)
+                    except BaseException:
+                        _writer_diag_body_raised = True
+                        raise
+                    finally:
+                        _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+            except BaseException:
+                _writer_diag_context_raised = True
+                raise
+            finally:
+                _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
         except (OSError, ValueError, sqlite3.Error, BudgetBackpressure):
             # IO uncertainty does not release the wire lock/lease or permit a
             # duplicate request. Expose failure to the current worker health.
             self.deadline_alarm_unavailable = True
 
     def _complete_book(self, key, token, authority, age, payload):
-        with closing(self._connect()) as c, c:
-            self._begin_write(c)
-            now = self._clock(c)
-            flights = self._get(c, "critical_book_flights", {})
-            flight = flights.get(key)
-            if not flight or flight["lease"] != token or flight["until"] <= now:
-                raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_LEASE_INVALID")
-            self._envelopes(c, now, record=True)
-            flights.pop(key)
-            self._put(c, "critical_book_flights", flights)
-            cache = self._get(c, "critical_books", {})
-            cache.pop(key, None)
-            safe = self._safe_book(payload, now, age)
-            if safe is not None:
-                cache[key] = {"authority": authority, "received_at": now, "book": safe}
-                while len(cache) > BOOK_CACHE_LIMIT:
-                    del cache[min(cache, key=lambda k: cache[k]["received_at"])]
-            self._put(c, "critical_books", cache)
+        _writer_diag_token = _writer_diag_enter(self._writer_diagnostic_link, 'COMPLETE_BOOK')
+        _writer_diag_context_raised = False
+        try:
+            with closing(self._connect()) as c, c:
+                _writer_diag_body_raised = False
+                try:
+                    self._begin_write(c)
+                    _writer_diag_edge(_writer_diag_token, "BEGIN_WRITE_RETURN")
+                    now = self._clock(c)
+                    flights = self._get(c, "critical_book_flights", {})
+                    flight = flights.get(key)
+                    if not flight or flight["lease"] != token or flight["until"] <= now:
+                        raise BudgetBackpressure("PPI_BOOK_SINGLE_FLIGHT_LEASE_INVALID")
+                    self._envelopes(c, now, record=True)
+                    flights.pop(key)
+                    self._put(c, "critical_book_flights", flights)
+                    cache = self._get(c, "critical_books", {})
+                    cache.pop(key, None)
+                    safe = self._safe_book(payload, now, age)
+                    if safe is not None:
+                        cache[key] = {"authority": authority, "received_at": now, "book": safe}
+                        while len(cache) > BOOK_CACHE_LIMIT:
+                            del cache[min(cache, key=lambda k: cache[k]["received_at"])]
+                    self._put(c, "critical_books", cache)
+                except BaseException:
+                    _writer_diag_body_raised = True
+                    raise
+                finally:
+                    _writer_diag_edge(_writer_diag_token, "BODY_EXIT", raised=_writer_diag_body_raised)
+        except BaseException:
+            _writer_diag_context_raised = True
+            raise
+        finally:
+            _writer_diag_edge(_writer_diag_token, "CONTEXT_EXIT", raised=_writer_diag_context_raised)
 
     def _window_scopes(self, c, now, seconds):
         scopes = {}

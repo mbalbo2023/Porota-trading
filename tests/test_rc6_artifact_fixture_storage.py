@@ -104,3 +104,48 @@ def test_native_alternates_replacement_cannot_remove_clone_own_head_objects(tmp_
     assert git(own, "show", "HEAD:app.py") == _ISSUE465_FIXTURE_INPUTS["app.py"].decode().strip()
     assert _issue465_native_identity(seed["root"]) == seed["identity"]
     assert _issue465_snapshot(seed["root"]) == seed["snapshot"]
+
+
+
+def test_real_reverse_index_is_rejected_by_unchanged_pair_guard_with_bounded_own_names(tmp_path, monkeypatch):
+    """Adversarial native .rev, not evidence about the earlier unavailable names."""
+    import json
+    from pathlib import Path
+    import pytest
+    from tests import test_issue465_provenance as fixture_module
+
+    seed = _issue465_build_seed(tmp_path / "seed")
+    repo = tmp_path / "clone-with-native-reverse-index"
+    real_check_output = subprocess.check_output
+    produced = []
+
+    def native_clone_then_real_reverse_index(argv, *args, **kwargs):
+        output = real_check_output(argv, *args, **kwargs)
+        if isinstance(argv, list) and len(argv) > 2 and argv[0] == "git" and "clone" in argv:
+            assert Path(argv[-1]) == repo
+            members = sorted((repo / ".git/objects/pack").iterdir())
+            assert len(members) == 2 and {path.suffix for path in members} == {".pack", ".idx"}
+            pack = next(path for path in members if path.suffix == ".pack")
+            reverse = pack.with_suffix(".rev")
+            assert not os.path.lexists(reverse)
+            # Actual native index-pack output. No replacement returncode, object
+            # counts, snapshot, kernel, or guard result is supplied by this seam.
+            real_check_output(["git", "-C", str(repo), "-c", "pack.writeReverseIndex=true",
+                               "index-pack", "--rev-index", str(pack)])
+            info = reverse.lstat()
+            assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid()
+            produced.append(reverse.name)
+        return output
+
+    monkeypatch.setattr(fixture_module.subprocess, "check_output", native_clone_then_real_reverse_index)
+    with pytest.raises(RuntimeError, match="ISSUE465_SYNTHETIC_FIXTURE_OWN_PACK_PAIR") as failure:
+        _issue465_clone_seed(repo, seed)
+    assert len(produced) == 1
+    reason = str(failure.value)
+    detail = json.loads(reason.split("OWN_PACK_PAIR ", 1)[1])
+    assert detail["scope"] == "VALIDATED_OWN_REGULAR_GIT_PACK_ENTRIES"
+    assert detail["member_count"] == 3 and detail["members_truncated"] is False
+    assert {row["name"] for row in detail["first_8_members"]} == {
+        produced[0], produced[0].replace(".rev", ".idx"), produced[0].replace(".rev", ".pack")}
+    assert len(reason.encode()) < 4096 and str(tmp_path) not in reason
+    assert _issue465_snapshot(seed["root"]) == seed["snapshot"]

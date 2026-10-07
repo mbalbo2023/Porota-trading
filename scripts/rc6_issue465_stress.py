@@ -24,6 +24,7 @@ import sqlite3
 import stat
 import sys
 import time
+import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -242,10 +243,227 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             import_observer.deactivate()
 
 
-def _make_storage_phase_observer(queue, ordinal, cpu, errors):
+def _record_storage_observation_error(errors, ordinal, phase, edge, error, shared=None):
+    """A reporting failure has no power to clear the pre-recorded veto."""
+    if shared is not None:
+        shared["healthy"] = False  # Preinitialized key; precedes classification/allocation.
+    try:
+        error_type = type(error)
+        name = "UNCLASSIFIED_OBSERVER_ERROR"
+        # Custom metaclass descriptors and __getattribute__ are never called.
+        if type(error_type) is type:
+            candidate = error_type.__name__
+            if (type(candidate) is str and len(candidate) <= 128 and candidate.isascii()
+                    and all(character.isalnum() or character == "_" for character in candidate)):
+                name = candidate
+        errors.append({"constructor_ordinal": ordinal, "phase": phase,
+                       "edge": edge, "error_class": name})
+    except BaseException:
+        if shared is not None:
+            shared["reporting_healthy"] = False
+
+
+def _capture_owner_stack(owner_ident):
+    """Only bounded code labels from the actual owner; never locals or files."""
+    snapshot = sys._current_frames()
+    frame = snapshot.get(owner_ident)
+    del snapshot
+    if frame is None:
+        raise RuntimeError("CAPTURE_OWNER_FRAME_ABSENT")
+    frames = []
+    try:
+        while frame is not None and len(frames) < 32:
+            code = frame.f_code
+            filename = code.co_filename
+            relative = "<outside-indexed-source>"
+            for prefix, label in ((str(ROOT), "source"), (sys.prefix, "python-env"),
+                                  (sys.base_prefix, "base-python")):
+                prefix = prefix.rstrip(os.sep) + os.sep
+                if filename.startswith(prefix):
+                    member = filename[len(prefix):]
+                    if (len(member) <= 384 and member.isascii()
+                            and all(part not in {"", ".", ".."} for part in member.split(os.sep))
+                            and not any(ord(character) < 32 or ord(character) == 127 for character in member)):
+                        relative = label + ":" + member
+                    break
+            if filename.startswith("<frozen ") and filename.endswith(">"):
+                relative = "<frozen>"
+            module = dict.get(frame.f_globals, "__name__")
+            function = code.co_name
+            if (type(module) is not str or len(module) > 128 or not module.isascii()
+                    or not all(character.isalnum() or character in "._" for character in module)):
+                module = "<noncanonical-module>"
+            if (len(function) > 128 or not function.isascii()
+                    or not all(character.isalnum() or character in "_<>" for character in function)):
+                function = "<noncanonical-function>"
+            if relative == "<outside-indexed-source>":
+                module, function = "<outside-indexed-source>", "<outside-indexed-source>"
+            frames.append({"module": module, "relative_path": relative,
+                           "function": function, "line": frame.f_lineno})
+            frame = frame.f_back
+        return frames, frame is not None
+    finally:
+        del frame
+
+
+class _CaptureStackSampler:
+    """One owned non-daemon thread, active only within this CAPTURE edge pair."""
+    def __init__(self, queue, ordinal, cpu, errors, shared):
+        self.queue, self.ordinal, self.cpu, self.errors, self.shared = queue, ordinal, cpu, errors, shared
+        self.owner_ident, self.owner_tid = threading.get_ident(), threading.get_native_id()
+        self.stop, self.activated, self.finished = threading.Event(), threading.Event(), threading.Event()
+        self.ident = self.tid = None
+        self.samples = 0
+        self.run_succeeded, self.faulted, self.finished_witness_returned = False, False, False
+        self.control = None
+        self.thread = threading.Thread(target=self._run,
+            name="rc6-capture-stack-" + str(ordinal), daemon=False)
+
+    def _error(self, edge, error):
+        self.faulted = True
+        self.shared["healthy"] = False
+        _record_storage_observation_error(self.errors, self.ordinal, "CAPTURE", edge, error, self.shared)
+
+    def _emit(self, event, field, value):
+        self.queue.put({"_probe_event": event, "handler_name": "storage_prepare",
+            "constructor_ordinal": self.ordinal, "storage_phase": "CAPTURE",
+            "entered_at_monotonic": time.monotonic(), "child_cpu_seconds": time.process_time()-self.cpu,
+            field: value})
+
+    def start(self):
+        if self.shared.get("active") is not None:
+            raise RuntimeError("CAPTURE_SAMPLER_PRIOR_CLOSURE_UNKNOWN")
+        self.shared["active"] = self
+        self.thread.start()
+
+    def _run(self):
+        normal_exit = False
+        try:
+            self.ident, self.tid = threading.get_ident(), threading.get_native_id()
+            self.activated.set()
+            self._emit("STORAGE_CAPTURE_SAMPLER", "capture_sampler_control", {
+                "schema": "rc6.issue465.capture-sampler-activation.v1", "status": "ACTIVATED",
+                "pid": os.getpid(), "owner_python_ident": self.owner_ident, "owner_native_tid": self.owner_tid,
+                "sampler_python_ident": self.ident, "sampler_native_tid": self.tid,
+                "interval_seconds": 1.0, "maximum_samples_per_child": 128, "maximum_frames_per_sample": 32,
+                "business_GREEN_inferred": False})
+            while self.shared.get("sample_count", 0) < 128 and not self.stop.wait(1.0):
+                sampled_at = time.monotonic()
+                frames, truncated = _capture_owner_stack(self.owner_ident)
+                self.shared["sample_count"] = self.shared.get("sample_count", 0) + 1
+                self.samples += 1
+                self._emit("STORAGE_CAPTURE_SAMPLE", "capture_stack_sample", {
+                    "schema": "rc6.issue465.capture-owner-stack.v1", "pid": os.getpid(),
+                    "sample_number_in_child": self.shared["sample_count"], "sampled_at_monotonic": sampled_at,
+                    "owner_python_ident": self.owner_ident, "owner_native_tid": self.owner_tid,
+                    "sampler_python_ident": self.ident, "sampler_native_tid": self.tid,
+                    "frames": frames, "truncated_at_frame_limit": truncated,
+                    "scope": "CAPTURE_OWNER_CODE_LABELS_ONLY; NO_LOCALS_OR_SOURCE_READS; NOT_CPU_PERCENTAGES"})
+            normal_exit = True
+        except BaseException as error:
+            self.faulted = True
+            self.shared["healthy"] = False
+            self._error("SAMPLER_THREAD", error)
+        finally:
+            try:
+                self.finished.set()
+                self.finished_witness_returned = True
+            except BaseException as error:
+                self.faulted = True
+                self.shared["healthy"] = False
+                self._error("SAMPLER_FINISHED_WITNESS", error)
+        # A real normal terminal path, separate from finally and physical FIN.
+        # No catch/reporting/finally path can manufacture this witness.
+        self.run_succeeded = bool(normal_exit and not self.faulted and self.finished_witness_returned)
+        return self.run_succeeded
+
+    def close(self):
+        # One shared 0.5 s observational stop/join/readback bound. All of it is
+        # charged to the original 90 s cycle; producer/finalizer budgets stay 5 s.
+        # UNKNOWN is sticky and this method never retries or reclassifies it.
+        if self.control is not None:
+            return self.control
+        started = time.monotonic()
+        deadline = started + 0.5
+        joined, tid_absent = False, False
+        self.stop.set()
+        try:
+            self.thread.join(max(0.0, deadline-time.monotonic()))
+            joined = True
+            if type(self.tid) is int:
+                while not self.thread.is_alive():
+                    try:
+                        os.stat("/proc/self/task/" + str(self.tid), follow_symlinks=False)
+                    except FileNotFoundError:
+                        tid_absent = True
+                        break
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(min(0.001, max(0.0, deadline-time.monotonic())))
+        except Exception as error:
+            self._error("SAMPLER_CLOSE", error)
+        alive = self.thread.is_alive()
+        closed_at = time.monotonic()
+        physical_closed = bool(self.activated.is_set() and joined and not alive and self.finished.is_set()
+            and self.tid == self.thread.native_id and self.ident == self.thread.ident and tid_absent
+            and closed_at <= deadline)
+        if not physical_closed:
+            self.faulted = True
+            self.shared["healthy"] = False
+            self._error("SAMPLER_CLOSURE_UNKNOWN", RuntimeError("CAPTURE_SAMPLER_CLOSURE_UNKNOWN"))
+        observational_health = bool(self.run_succeeded and not self.faulted
+            and self.finished_witness_returned and self.shared["healthy"] is True
+            and self.shared["reporting_healthy"] is True and not self.errors)
+        if not observational_health:
+            self.shared["healthy"] = False
+        self.control = {"schema": "rc6.issue465.capture-sampler-fin.v1",
+            "status": "CLOSED" if physical_closed and observational_health else "RED",
+            "pid": os.getpid(), "owner_python_ident": self.owner_ident, "owner_native_tid": self.owner_tid,
+            "sampler_python_ident": self.ident, "sampler_native_tid": self.tid,
+            "activated": self.activated.is_set(), "stop_requested": self.stop.is_set(),
+            "join_attempted": True, "join_returned": joined, "python_thread_alive_after_join": alive,
+            "sampler_finally_finished": self.finished.is_set(), "sampler_native_tid_absent": tid_absent,
+            "sampler_daemon_false": self.thread.daemon is False,
+            "physical_thread_closed": physical_closed, "observational_health": observational_health,
+            "sampler_normal_terminal_success": self.run_succeeded, "sampler_faulted": self.faulted,
+            "finished_witness_set_returned": self.finished_witness_returned,
+            "shared_observational_health": self.shared["healthy"],
+            "reporting_healthy": self.shared["reporting_healthy"],
+            "closure_started_at_monotonic": started, "closure_deadline_monotonic": deadline,
+            "closure_closed_at_monotonic": closed_at,
+            "closure_elapsed_seconds": closed_at-started, "closure_bound_seconds": 0.5,
+            "samples_in_constructor": self.samples, "samples_in_child": self.shared.get("sample_count", 0),
+            "sample_limit_reached": self.shared.get("sample_count", 0) >= 128,
+            "business_GREEN_inferred": False, "scope": "ACTUAL_CAPTURE_SAMPLER_THREAD_ONLY; NOT_PROCESS_OR_BUSINESS_FIN"}
+        if physical_closed and self.shared.get("active") is self:
+            self.shared["active"] = None
+        self.shared["last_control"] = self.control
+        try:
+            self._emit("STORAGE_CAPTURE_SAMPLER", "capture_sampler_control", self.control.copy())
+        except Exception as error:
+            self._error("SAMPLER_FIN_EMISSION", error)
+            self.control.update(status="RED", observational_health=False,
+                sampler_faulted=True, shared_observational_health=False,
+                reporting_healthy=self.shared["reporting_healthy"])
+        return self.control
+
+
+def _make_storage_phase_observer(queue, ordinal, cpu, errors, capture_sampling=None):
     """Bounded numeric observations; errors have no admission authority."""
     phase_starts = {}
+    if capture_sampling is not None:
+        capture_sampling.setdefault("healthy", True)
+        capture_sampling.setdefault("reporting_healthy", True)
+    sampler = None
+    def close_capture_sampler():
+        if sampler is not None:
+            try:
+                return sampler.close()
+            except Exception as error:
+                _record_storage_observation_error(errors, ordinal, "CAPTURE", "SAMPLER_CLOSE",
+                                                  error, capture_sampling)
     def phase_observer(phase, edge):
+        nonlocal sampler
         # Numeric phase boundaries only; no source/payload reads.
         # The original ninety-second clock includes this work.
         try:
@@ -261,27 +479,35 @@ def _make_storage_phase_observer(queue, ordinal, cpu, errors):
                 start_wall, start_cpu = phase_starts.pop(phase)
                 span = {"phase_elapsed_seconds": at-start_wall,
                         "phase_cpu_seconds": phase_cpu-start_cpu}
+            if phase == "CAPTURE" and edge == "RETURN":
+                close_capture_sampler()
             queue.put({"_probe_event": "STORAGE_PHASE", "handler_name": "storage_prepare",
                 "constructor_ordinal": ordinal, "storage_phase": phase, "storage_edge": edge,
                 "entered_at_monotonic": at, "child_cpu_seconds": phase_cpu-cpu, **span})
+            if capture_sampling is not None and phase == "CAPTURE" and edge == "ENTER":
+                sampler = _CaptureStackSampler(queue, ordinal, cpu, errors, capture_sampling)
+                sampler.start()
         except Exception as error:
             # This observational failure cannot replace a business
             # exception. It remains a veto in the native result.
-            errors.append({"constructor_ordinal": ordinal,
-                "phase": phase, "edge": edge, "error_class": type(error).__name__})
+            _record_storage_observation_error(errors, ordinal, phase, edge, error, capture_sampling)
+    phase_observer.close = close_capture_sampler
     return phase_observer
 
 
 @contextmanager
-def _storage_constructor_observation(queue, ordinal, cpu, errors):
+def _storage_constructor_observation(queue, ordinal, cpu, errors, *, capture_sampling=None):
     """Observe only this real constructor and restore any enclosing context."""
     from rc6_shadow_runtime import packed_storage
-    callback = _make_storage_phase_observer(queue, ordinal, cpu, errors)
+    callback = _make_storage_phase_observer(queue, ordinal, cpu, errors, capture_sampling)
     token = packed_storage._STORAGE_PHASE_OBSERVER.set(callback)
     try:
         yield
     finally:
-        packed_storage._STORAGE_PHASE_OBSERVER.reset(token)
+        try:
+            callback.close()
+        finally:
+            packed_storage._STORAGE_PHASE_OBSERVER.reset(token)
 
 
 def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
@@ -367,6 +593,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
     phases = []
     handlers = {}
     storage_observation_errors = []
+    storage_capture_sampling = {"sample_count": 0, "healthy": True, "reporting_healthy": True}
     for module_name, function_name in (
             ("families", "family_reports"), ("lab", "evaluate_runtime_lab"),
             ("entry_signals", "evaluate_runtime_entry_signals"), ("funnel", "evaluate_runtime_funnel")):
@@ -413,7 +640,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             observation = (_storage_constructor_observation(queue, metrics["calls"], cpu,
-                storage_observation_errors) if _name == "storage_prepare" else nullcontext())
+                storage_observation_errors, capture_sampling=storage_capture_sampling)
+                if _name == "storage_prepare" else nullcontext())
             try:
                 with observation:
                     value = _original(*args, **kwargs)
@@ -569,7 +797,10 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             result["import_provenance"] = {"status":"UNVERIFIED_FINAL_BOUNDARY", "native_pid":os.getpid(),
                 "parent_pid":os.getppid(), "transient_closure_verified":False,
                 "error_class":type(error).__name__, "reason":str(error)}
-    if storage_observation_errors:
+    sampling_healthy = (storage_capture_sampling["healthy"] is True
+                        and storage_capture_sampling["reporting_healthy"] is True)
+    result["storage_capture_sampler_healthy"] = sampling_healthy
+    if storage_observation_errors or not sampling_healthy:
         # Retain every original error/reason and make probe failure fail closed.
         result.update(status="SHADOW_FAIL_CLOSED", cycle_completion=False,
             storage_phase_observation_errors=storage_observation_errors)
@@ -667,8 +898,9 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
 
 def _require_stress_resource_gates(result, binding):
     """Keep the six original gates and add only the observation-error veto."""
-    result["resource_gates"]["storage_phase_observation_healthy"] = not result["shadow"].get(
-        "storage_phase_observation_errors")
+    result["resource_gates"]["storage_phase_observation_healthy"] = (
+        not result["shadow"].get("storage_phase_observation_errors")
+        and result["shadow"].get("storage_capture_sampler_healthy", True) is True)
     result["business_resource_complete"] = all(result["resource_gates"][key] for key in
                ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
                 "complete_committed_cycle", "actual_slow_fsync_exit_isolation", "storage_phase_observation_healthy"))
@@ -731,10 +963,11 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             "child_elapsed_seconds": message.get("elapsed_seconds"),
             "phases": list(message.get("phases", [])),
             "handler_names": sorted(message.get("handler_resources", {}))})
-        if event == "STORAGE_PHASE":
+        if event in {"STORAGE_PHASE", "STORAGE_CAPTURE_SAMPLE", "STORAGE_CAPTURE_SAMPLER"}:
             progress_receipts[-1].update({key: message[key] for key in (
                 "constructor_ordinal", "storage_phase", "storage_edge",
-                "phase_elapsed_seconds", "phase_cpu_seconds") if key in message})
+                "phase_elapsed_seconds", "phase_cpu_seconds",
+                "capture_stack_sample", "capture_sampler_control") if key in message})
         if event == "IMPORT_PROVENANCE":
             child_import_before = message.get("import_provenance")
         elif event == "FINAL":

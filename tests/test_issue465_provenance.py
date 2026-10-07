@@ -232,7 +232,7 @@ def _issue465_build_seed(seed):
     for rel, content in _ISSUE465_FIXTURE_INPUTS.items():
         write(seed, rel, content)
     (seed / "scripts/run").chmod(0o755)
-    git(seed, "init", "-q")
+    git(seed, "init", "--template=", "-q")
     git(seed, "config", "user.email", "fixture@example.invalid")
     git(seed, "config", "user.name", "Offline Provenance Test")
     git(seed, "add", ".")
@@ -249,13 +249,33 @@ def _issue465_build_seed(seed):
     return {"root": seed, "identity": identity, "snapshot": snapshot}
 
 
+def _issue465_pack_pair_reason(packs):
+    """Bounded names from already validated own regular pack members only."""
+    known_suffixes = {".pack", ".idx", ".rev", ".keep", ".bitmap", ".promisor", ".mtimes"}
+    members = []
+    for relative in sorted(packs)[:8]:
+        basename = Path(relative).name
+        stem, suffix = Path(basename).stem, Path(basename).suffix
+        known_name = (stem.startswith("pack-") and len(stem) == 45 and
+                      all(char in "0123456789abcdef" for char in stem[5:]) and suffix in known_suffixes)
+        # Unknown names get their digest, never path/URL/token contents. Native
+        # Git's pack-<40hex>.* basenames are literal and safe to expose.
+        members.append({"name": basename if known_name else "UNRECOGNIZED_NAME_REDACTED",
+                        "basename_sha256": hashlib.sha256(os.fsencode(basename)).hexdigest(),
+                        "basename_bytes": len(os.fsencode(basename))})
+    detail = {"scope": "VALIDATED_OWN_REGULAR_GIT_PACK_ENTRIES", "member_count": len(packs),
+              "first_8_members": members, "members_truncated": len(packs) > 8}
+    return "OWN_PACK_PAIR " + json.dumps(detail, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+
+
 def _issue465_clone_seed(repo, seed_record):
     """Fresh independent native transport; never --shared or an artifact overlay."""
     seed = seed_record["root"]
     _issue465_require(not os.path.lexists(repo), "CANDIDATE_MUST_BE_NEW")
     _issue465_require(_issue465_snapshot(seed) == seed_record["snapshot"], "READONLY_SEED_CUSTODY_BEFORE")
     subprocess.check_output(["git", "-c", "transfer.unpackLimit=0", "-c", "fetch.unpackLimit=0",
-                             "-c", "gc.auto=0", "-c", "maintenance.auto=0", "clone", "--quiet",
+                             "-c", "gc.auto=0", "-c", "maintenance.auto=0",
+                             "-c", "pack.writeReverseIndex=false", "clone", "--template=", "--quiet",
                              "--no-local", "--no-hardlinks", str(seed), str(repo)])
     # These refs/config were introduced only by this fresh clone. The original
     # git-init fixture has no origin or remote refs.
@@ -276,7 +296,7 @@ def _issue465_clone_seed(repo, seed_record):
                       counts.get("packs") == "1" and counts.get("garbage") == "0", "OWN_NATIVE_PACK")
     packs = [rel for rel, item in snapshot.items() if rel.startswith(".git/objects/pack/") and item["kind"] == "file"]
     _issue465_require(len(packs) == 2 and {Path(rel).suffix for rel in packs} == {".pack", ".idx"} and
-                      Path(packs[0]).stem == Path(packs[1]).stem, "OWN_PACK_PAIR")
+                      Path(packs[0]).stem == Path(packs[1]).stem, _issue465_pack_pair_reason(packs))
     seed_inodes = {(row["stat10"][0], row["stat10"][1]) for row in seed_record["snapshot"].values()}
     _issue465_require(not any((row["stat10"][0], row["stat10"][1]) in seed_inodes for row in snapshot.values()), "NO_SEED_SHARED_INODE")
     _issue465_require(_issue465_snapshot(seed) == seed_record["snapshot"], "READONLY_SEED_CUSTODY_AFTER")

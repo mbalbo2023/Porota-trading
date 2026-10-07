@@ -1075,3 +1075,103 @@ def test_committed_read_diagnostic_note_failure_cannot_replace_original_sqlite_e
     assert preserved.value.sqlite_errorcode == sqlite3.SQLITE_BUSY
     assert preserved.value.__notes__ == "ADVERSARIAL_NONLIST_NOTES"
     assert str(preserved.value) == "database is locked"
+
+
+
+def test_committed_read_real_exclusive_writer_diagnostic_links_peer_instances_without_authority(native_ledger, monkeypatch):
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    reader = runtime._current(priority="EXIT_CRITICAL")
+    assert reader is not None
+    peer = budgets.GlobalPPIBudget(reader.path, reader.policy, clock=clock.now, protected=reader.protected)
+    assert peer is not reader and peer._writer_diagnostic_link == reader._writer_diagnostic_link
+    registry = budgets._BudgetWriterDiagnostics()
+    monkeypatch.setattr(budgets, "_WRITER_DIAGNOSTICS", registry)
+    monkeypatch.setattr(budgets, "_WRITER_DIAGNOSTIC_HEALTHY", True)
+    ready, release = threading.Event(), threading.Event()
+    before = source_custody_snapshot(store.path)
+    def actual_exclusive_writer():
+        # This explicit unit-only role is not falsely labeled a production
+        # _begin_write: the exclusive SQL here really runs in this own thread.
+        token = budgets._writer_diag_enter(peer._writer_diagnostic_link, "UNIT_REAL_EXCLUSIVE")
+        context_raised = False
+        try:
+            with closing(peer._connect()) as writer, writer:
+                body_raised = False
+                try:
+                    assert writer.execute("PRAGMA busy_timeout").fetchone()[0] == 50
+                    writer.execute("BEGIN EXCLUSIVE")
+                    budgets._writer_diag_edge(token, "UNIT_EXCLUSIVE_RETURN")
+                    ready.set()
+                    assert release.wait(2)
+                except BaseException:
+                    body_raised = True
+                    raise
+                finally:
+                    budgets._writer_diag_edge(token, "BODY_EXIT", raised=body_raised)
+        except BaseException:
+            context_raised = True
+            raise
+        finally:
+            budgets._writer_diag_edge(token, "CONTEXT_EXIT", raised=context_raised)
+        return threading.get_native_id()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        writer = pool.submit(actual_exclusive_writer)
+        try:
+            assert ready.wait(2)
+            with pytest.raises(sqlite3.OperationalError) as denied:
+                reader._book_flight_pending("0" * 64, "unit-private-flight", "1" * 64, 5,
+                    critical=True, last_observed_clock=budgets.stamp(clock.now()).timestamp())
+        finally:
+            release.set()
+        actual_tid = writer.result(2)
+    assert denied.value.sqlite_errorcode == sqlite3.SQLITE_BUSY
+    prefix = "PPI_BUDGET_COMMITTED_READ_DIAGNOSTIC "
+    notes = [note for note in denied.value.__notes__ if note.startswith(prefix)]
+    assert len(notes) == 1
+    observed = json.loads(notes[0][len(prefix):])
+    assert observed["phase"] == "SNAPSHOT_BOUNDARY" and observed["declared_connect_timeout_ms"] == 50
+    native = observed["writer_diagnostics"]
+    assert native["health"] == "OBSERVED" and native["business_authority"] is False
+    assert native["maximum_slots"] == 64
+    records = [record for record in native["transaction_records"] if record["role"] == "UNIT_REAL_EXCLUSIVE"]
+    assert len(records) == 1
+    record = records[0]
+    assert record["pid"] == os.getpid() and record["native_tid"] == actual_tid
+    assert record["entered_at_monotonic"] <= record["unit_exclusive_returned_at_monotonic"]
+    assert record["unit_exclusive_returned_at_monotonic"] <= observed["read_entered_at_monotonic"]
+    assert observed["snapshot_boundary_at_monotonic"] <= observed["error_observed_at_monotonic"]
+    assert record["body_exited_at_monotonic"] is None and record["context_finished_at_monotonic"] is None
+    assert record["context_exit"] == "PENDING_ORIGINAL_COMBINED_CONTEXT"
+    closed = budgets._writer_diag_snapshot(reader._writer_diagnostic_link)["transaction_records"][0]
+    assert closed["body_raised"] is False and closed["context_exit"] == "ORIGINAL_CONTEXT_EXIT_RETURN"
+    assert closed["body_exited_at_monotonic"] <= closed["context_finished_at_monotonic"]
+    assert str(reader.path) not in notes[0] and str(store.path) not in notes[0]
+    assert reader._writer_diagnostic_link.hex() not in notes[0]
+    assert "unit-private-flight" not in notes[0] and "SELECT" not in notes[0]
+    assert source_custody_snapshot(store.path) == before
+
+
+@pytest.mark.parametrize("failure", ["capacity", "nonblocking_lock"])
+def test_writer_diagnostic_unknown_is_sticky_with_real_bounded_slots_or_lock(failure, monkeypatch):
+    # Registry coverage unit control only; these tokens do not claim SQL locks.
+    registry = budgets._BudgetWriterDiagnostics()
+    monkeypatch.setattr(budgets, "_WRITER_DIAGNOSTICS", registry)
+    monkeypatch.setattr(budgets, "_WRITER_DIAGNOSTIC_HEALTHY", True)
+    link = b"x" * 32
+    if failure == "capacity":
+        tokens = [budgets._writer_diag_enter(link, "UNIT_REGISTRY_METADATA_ONLY") for unused in range(64)]
+        assert all(token is not None for token in tokens)
+        assert budgets._writer_diag_enter(link, "UNIT_REGISTRY_METADATA_ONLY") is None
+        budgets._writer_diag_edge(tokens[0], "CONTEXT_EXIT", raised=False)
+    else:
+        registry.lock.acquire()
+        try:
+            assert budgets._writer_diag_enter(link, "UNIT_REGISTRY_METADATA_ONLY") is None
+            assert budgets._writer_diag_snapshot(link)["health"] == "UNKNOWN"
+        finally:
+            registry.lock.release()
+    observed = budgets._writer_diag_snapshot(link)
+    assert observed["health"] == "UNKNOWN" and observed["business_authority"] is False
+    assert len(observed["transaction_records"]) <= 64 and len(registry.slots) == 64
+    assert link.hex() not in json.dumps(observed)

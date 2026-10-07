@@ -142,7 +142,7 @@ def prepare_explicit_receipt_parser_seed(root):
         "git_mode": "100644", "blob": "cf4ba5888390bf0f34285286cef359f9f4191498"}
     assert len(required) == 210 and required <= set(final)
 
-    native_git(REPO, "init", "--quiet", str(root))  # Fresh, physically empty worktree.
+    native_git(REPO, "init", "--template=", "--quiet", str(root))  # Fresh, physically empty worktree.
     native_git(root, "config", "user.name", "Offline provenance fixture")
     native_git(root, "config", "user.email", "fixture@example.invalid")
     native_git(root, "remote", "add", "origin", str(REPO))
@@ -330,7 +330,7 @@ def fixture_base(tmp_path_factory):
 @pytest.fixture
 def candidate(fixture_base, tmp_path):
     root = tmp_path / "repo"
-    native_git(fixture_base, "clone", "--quiet", "--shared", "--no-hardlinks", str(fixture_base), str(root))
+    native_git(fixture_base, "clone", "--template=", "--quiet", "--shared", "--no-hardlinks", str(fixture_base), str(root))
     native_git(root, "config", "user.name", "Offline provenance fixture")
     native_git(root, "config", "user.email", "fixture@example.invalid")
     xml = tmp_path / "actual-input-fixture.xml"; junit(xml)

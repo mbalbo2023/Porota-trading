@@ -414,3 +414,269 @@ def test_storage_phase_real_closed_queue_error_vetoes_resource_result_for_both_a
     assert receipt["business_resource_complete"] is False
     assert receipt["shadow"]["storage_phase_observation_errors"] is errors
     assert receipt["import_proof_complete"] is False
+
+
+class _CaptureStackUnitCollector(_StoragePhaseUnitCollector):
+    """Real thread observations, UNIT_ONLY; no process/kernel/material GREEN."""
+    def __init__(self, *, block_sample=False):
+        import threading
+        super().__init__()
+        self.sample_seen, self.unblock = threading.Event(), threading.Event()
+        self.block_sample = block_sample
+
+    def put(self, message):
+        super().put(message)
+        if message.get("_probe_event") == "STORAGE_CAPTURE_SAMPLE":
+            self.sample_seen.set()
+            if self.block_sample:
+                assert self.unblock.wait(5), "UNIT_CAPTURE_WRITER_NOT_RELEASED"
+
+
+def _assert_real_capture_sampler_closed(control):
+    import os
+    assert control["schema"] == "rc6.issue465.capture-sampler-fin.v1"
+    assert control["status"] == "CLOSED" and control["observational_health"] is True
+    assert control["activated"] and control["stop_requested"] and control["join_attempted"]
+    assert control["join_returned"] and not control["python_thread_alive_after_join"]
+    assert control["sampler_finally_finished"] and control["sampler_native_tid_absent"]
+    assert control["sampler_daemon_false"] and control["physical_thread_closed"]
+    assert control["closure_bound_seconds"] == 0.5 and control["closure_elapsed_seconds"] <= 0.5
+    assert control["business_GREEN_inferred"] is False
+    with pytest.raises(FileNotFoundError):
+        os.stat("/proc/self/task/" + str(control["sampler_native_tid"]), follow_symlinks=False)
+
+
+def test_capture_sampler_records_real_owner_stack_and_closes_before_scope_exit():
+    import os
+    import threading
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    sink, errors, sampling = _CaptureStackUnitCollector(), [], {"sample_count": 0}
+    owner_ident, owner_tid = threading.get_ident(), threading.get_native_id()
+    callbacks = []
+    class Scalar:
+        def __str__(self):
+            callbacks.append("original_default_str")
+            assert sink.sample_seen.wait(3), "UNIT_OWNER_SAMPLE_NOT_OBSERVED"
+            return "unit_scalar_value_is_not_stack_metadata"
+    scalar = Scalar()
+    body = {"unknown_scalar": scalar, "rows": [{"identity": "UNIT_ALIAS"}] * 2}
+    with _storage_constructor_observation(sink, 1, time.process_time(), errors,
+                                          capture_sampling=sampling):
+        prepared = packed.PreparedPackedStorage(body, **LIMITS)
+    assert errors == [] and packed._STORAGE_PHASE_OBSERVER.get() is None
+    assert callbacks == ["original_default_str"]
+    assert body["unknown_scalar"] is scalar and body["rows"][0] is body["rows"][1]
+    samples = [row["capture_stack_sample"] for row in sink.messages
+               if row.get("_probe_event") == "STORAGE_CAPTURE_SAMPLE"]
+    assert 1 <= len(samples) <= 128 and sampling["sample_count"] == len(samples)
+    for sample in samples:
+        assert sample["pid"] == os.getpid()
+        assert sample["owner_python_ident"] == owner_ident and sample["owner_native_tid"] == owner_tid
+        assert sample["sampler_python_ident"] != owner_ident and sample["sampler_native_tid"] != owner_tid
+        assert 1 <= len(sample["frames"]) <= 32
+        assert all(set(frame) == {"module", "relative_path", "function", "line"}
+                   for frame in sample["frames"])
+        assert any(frame["function"] == "__str__" and frame["relative_path"].startswith("source:tests/")
+                   for frame in sample["frames"])
+        assert any(frame["module"] == "rc6_shadow_runtime.packed_storage" for frame in sample["frames"])
+        assert "unit_scalar_value_is_not_stack_metadata" not in json.dumps(sample)
+    _assert_real_capture_sampler_closed(sampling["last_control"])
+    assert sampling["active"] is None
+    phases = [(row["storage_phase"], row["storage_edge"]) for row in sink.messages
+              if row.get("_probe_event") == "STORAGE_PHASE"]
+    assert phases == [(phase, edge) for phase in ("SHAPE", "COUNT", "CAPTURE") for edge in ("ENTER", "RETURN")]
+    before_messages = list(sink.messages)
+    wire, _ = prepared.encode(body)
+    assert sink.messages == before_messages
+    assert serialization.decode_storage(wire, **LIMITS) == {
+        "unknown_scalar": "unit_scalar_value_is_not_stack_metadata", "rows": body["rows"]}
+
+
+def test_capture_sampler_scope_finally_keeps_original_capture_exception_and_closes_thread():
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    sink, errors, sampling = _CaptureStackUnitCollector(), [], {"sample_count": 0}
+    class CaptureError(ValueError):
+        pass
+    original_error = CaptureError("ORIGINAL_CAPTURE_UNIT_ERROR")
+    class Scalar:
+        def __str__(self):
+            assert sink.sample_seen.wait(3), "UNIT_OWNER_SAMPLE_NOT_OBSERVED"
+            raise original_error
+    enclosing = lambda *_: None
+    token = packed._STORAGE_PHASE_OBSERVER.set(enclosing)
+    try:
+        with pytest.raises(CaptureError) as observed:
+            with _storage_constructor_observation(sink, 1, time.process_time(), errors,
+                                                  capture_sampling=sampling):
+                packed.PreparedPackedStorage({"callback": Scalar()}, **LIMITS)
+        assert packed._STORAGE_PHASE_OBSERVER.get() is enclosing
+    finally:
+        packed._STORAGE_PHASE_OBSERVER.reset(token)
+    assert observed.value is original_error and errors == []
+    names, frame = [], observed.value.__traceback__
+    while frame is not None:
+        names.append((frame.tb_frame.f_globals.get("__name__"), frame.tb_frame.f_code.co_name))
+        frame = frame.tb_next
+    assert ("rc6_shadow_runtime.packed_storage", "_append") in names
+    phases = [(row["storage_phase"], row["storage_edge"]) for row in sink.messages
+              if row.get("_probe_event") == "STORAGE_PHASE"]
+    assert phases[-1] == ("CAPTURE", "ENTER") and ("CAPTURE", "RETURN") not in phases
+    _assert_real_capture_sampler_closed(sampling["last_control"])
+    assert sampling["active"] is None
+
+
+@pytest.mark.parametrize("allow_fail_closed", [False, True])
+def test_capture_sampler_real_closed_queue_failure_keeps_universal_veto(allow_fail_closed):
+    import multiprocessing as mp
+    from scripts.rc6_issue465_stress import (
+        StressResourceLimit, _make_storage_phase_observer, _require_stress_resource_gates)
+    queue = mp.get_context("spawn").Queue()
+    sampling, errors = {"sample_count": 0}, []
+    observer = _make_storage_phase_observer(queue, 1, time.process_time(), errors, sampling)
+    sampler = None
+    try:
+        observer("CAPTURE", "ENTER")
+        sampler = sampling["active"]
+        assert sampler.activated.wait(3)
+        queue.close()  # Genuine stdlib ValueError on the sampler's next put.
+        assert sampler.finished.wait(3)
+        observer("CAPTURE", "RETURN")
+    finally:
+        if sampler is not None:
+            observer.close()
+        queue.close()
+        queue.join_thread()
+    assert errors and any(row["edge"] == "SAMPLER_THREAD" and row["error_class"] == "ValueError" for row in errors)
+    control = sampling["last_control"]
+    assert control["physical_thread_closed"] and control["sampler_native_tid_absent"]
+    assert control["status"] == "RED" and control["observational_health"] is False
+    # This isolates only the real Source predicate; booleans below are unit
+    # inputs and never attest database, process, image, runtime or BIG closure.
+    receipt = {"schema": "rc6.unit-capture-sampler-veto.NOT_GATE_ACCEPTANCE",
+        "completion_required": not allow_fail_closed,
+        "shadow": {"cycle_completion": True, "storage_phase_observation_errors": errors},
+        "resource_gates": {"source_database_unchanged": True, "evidence_within_quota": True,
+            "rss_within_two_gib": True, "child_cleanup_completed": True,
+            "complete_committed_cycle": allow_fail_closed or True,
+            "actual_slow_fsync_exit_isolation": True}}
+    with pytest.raises(StressResourceLimit) as failed:
+        _require_stress_resource_gates(receipt, None)
+    assert failed.value.evidence is receipt
+    assert receipt["resource_gates"]["storage_phase_observation_healthy"] is False
+    assert receipt["business_resource_complete"] is False and receipt["import_proof_complete"] is False
+
+
+def test_capture_sampler_blocked_writer_is_real_unknown_then_naturally_drained_without_reclassification():
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    sink, errors, sampling = _CaptureStackUnitCollector(block_sample=True), [], {"sample_count": 0}
+    class Scalar:
+        def __str__(self):
+            assert sink.sample_seen.wait(3), "UNIT_OWNER_SAMPLE_NOT_OBSERVED"
+            return "UNIT_BLOCKED_WRITER"
+    sampler = None
+    try:
+        with _storage_constructor_observation(sink, 1, time.process_time(), errors,
+                                              capture_sampling=sampling):
+            packed.PreparedPackedStorage({"callback": Scalar()}, **LIMITS)
+            sampler = sampling["active"]
+        control = sampling["last_control"]
+        assert control["status"] == "RED" and control["physical_thread_closed"] is False
+        assert control["stop_requested"] and control["join_returned"]
+        assert control["python_thread_alive_after_join"] is True
+        assert control["sampler_finally_finished"] is False and control["sampler_native_tid_absent"] is False
+        assert any(row["edge"] == "SAMPLER_CLOSURE_UNKNOWN" for row in errors)
+        saved = dict(control)
+        assert sampler.close() is control and control == saved  # No second bound/reclassification.
+    finally:
+        sink.unblock.set()
+        if sampler is None:
+            sampler = sampling.get("active")
+        if sampler is not None:
+            sampler.stop.set()
+            sampler.thread.join(3)  # Unit observer followup only; original close remains 0.5 s RED.
+            assert not sampler.thread.is_alive() and sampler.finished.is_set()
+    assert sampling["last_control"] == saved and errors
+    assert packed._STORAGE_PHASE_OBSERVER.get() is None
+
+
+def test_capture_sampler_real_deep_owner_stack_has_exact_frame_bound():
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    sink, errors, sampling = _CaptureStackUnitCollector(), [], {"sample_count": 0}
+    def deep_owner(depth):
+        if depth:
+            return deep_owner(depth-1)
+        assert sink.sample_seen.wait(3), "UNIT_OWNER_SAMPLE_NOT_OBSERVED"
+        return "UNIT_DEPTH"
+    class Scalar:
+        def __str__(self):
+            return deep_owner(48)
+    with _storage_constructor_observation(sink, 1, time.process_time(), errors,
+                                          capture_sampling=sampling):
+        packed.PreparedPackedStorage({"callback": Scalar()}, **LIMITS)
+    samples = [row["capture_stack_sample"] for row in sink.messages
+               if row.get("_probe_event") == "STORAGE_CAPTURE_SAMPLE"]
+    assert samples and errors == []
+    assert all(len(sample["frames"]) == 32 and sample["truncated_at_frame_limit"] for sample in samples)
+    assert any(frame["function"] == "deep_owner" for sample in samples for frame in sample["frames"])
+    _assert_real_capture_sampler_closed(sampling["last_control"])
+
+
+@pytest.mark.parametrize("allow_fail_closed", [False, True])
+def test_capture_sampler_fault_is_irreversible_when_real_error_reporting_fails(allow_fail_closed):
+    import os
+    from scripts.rc6_issue465_stress import (
+        StressResourceLimit, _make_storage_phase_observer, _require_stress_resource_gates)
+    descriptor_calls = []
+    class RaisingMetadata(type):
+        @property
+        def __name__(cls):
+            descriptor_calls.append("FORBIDDEN_ERROR_METADATA_CALLBACK")
+            raise RuntimeError("UNIT_ERROR_CLASS_DESCRIPTOR_FAILURE")
+    class SamplerError(RuntimeError, metaclass=RaisingMetadata):
+        pass
+    failure = SamplerError("UNIT_SAMPLE_PUT_FAILURE")
+    class RejectErrorRecords(list):
+        def append(self, value):
+            raise RuntimeError("UNIT_ERROR_RECORDER_APPEND_FAILURE")
+    class FaultingSampleWriter(_CaptureStackUnitCollector):
+        def put(self, message):
+            if message.get("_probe_event") == "STORAGE_CAPTURE_SAMPLE":
+                self.sample_seen.set()
+                raise failure  # Real thread exception, not a kernel/result mock.
+            super().put(message)
+    sink, errors, sampling = FaultingSampleWriter(), RejectErrorRecords(), {"sample_count": 0}
+    observer = _make_storage_phase_observer(sink, 1, time.process_time(), errors, sampling)
+    sampler = None
+    try:
+        observer("CAPTURE", "ENTER")
+        sampler = sampling["active"]
+        assert sampler.finished.wait(3)
+        observer("CAPTURE", "RETURN")
+    finally:
+        observer.close()
+        if sampler is not None:
+            sampler.stop.set()
+            sampler.thread.join(3)
+    assert sampler is not None and not sampler.thread.is_alive()
+    assert descriptor_calls == [] and errors == []  # A real failed recorder remains empty.
+    assert sampling["healthy"] is False and sampling["reporting_healthy"] is False
+    control = sampling["last_control"]
+    assert control["physical_thread_closed"] and control["sampler_native_tid_absent"]
+    with pytest.raises(FileNotFoundError):
+        os.stat("/proc/self/task/" + str(control["sampler_native_tid"]), follow_symlinks=False)
+    assert control["status"] == "RED" and control["observational_health"] is False
+    assert control["sampler_normal_terminal_success"] is False and control["sampler_faulted"] is True
+    assert control["finished_witness_set_returned"] is True and control["reporting_healthy"] is False
+    receipt = {"schema": "rc6.unit-capture-reporting-fault.NOT_GATE_ACCEPTANCE",
+        "completion_required": not allow_fail_closed,
+        "shadow": {"cycle_completion": True, "storage_phase_observation_errors": errors,
+                   "storage_capture_sampler_healthy": sampling["healthy"] is True},
+        "resource_gates": {"source_database_unchanged": True, "evidence_within_quota": True,
+            "rss_within_two_gib": True, "child_cleanup_completed": True,
+            "complete_committed_cycle": allow_fail_closed or True,
+            "actual_slow_fsync_exit_isolation": True}}
+    with pytest.raises(StressResourceLimit) as failed:
+        _require_stress_resource_gates(receipt, None)
+    assert failed.value.evidence is receipt
+    assert receipt["resource_gates"]["storage_phase_observation_healthy"] is False
+    assert receipt["business_resource_complete"] is False and receipt["import_proof_complete"] is False
