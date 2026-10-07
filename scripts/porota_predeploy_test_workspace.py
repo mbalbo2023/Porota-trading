@@ -243,17 +243,114 @@ def load_workspace(scope, repo, context, environ):
     return control, claim
 
 
-def measure_retained_workspace(scope, repo, context, environ):
+def publish_retained_limit_diagnostic(control, claim, partial, custody, manager):
+    """Publish only bounded partial metadata after this same parent's real FIN."""
+    started = time.monotonic()
+    kernel = custody.get("kernel")
+    cleanup.require(custody.get("owned_fin_closed") is True
+                    and custody.get("supervisor_pid") == os.getpid()
+                    and custody.get("context") == claim["context"]
+                    and custody.get("owner_uuid") == claim["owner_uuid"]
+                    and type(kernel) is dict and kernel.get("supervisor_pid") == os.getpid()
+                    and kernel.get("supervisor_native_tid") == threading.get_native_id()
+                    and manager["managed_custody_closed"](kernel)
+                    and kernel.get("owned_cleanup_management_bound_seconds") == 5,
+                    "RETAINED_LIMIT_DIAGNOSTIC_REQUIRES_ACTUAL_SAME_PARENT_FIN")
+    current = manager["pre_capture_kernel_state"]()
+    cleanup.require(current["kernel_echild_verified"] is True
+                    and current["subreaper_state_before"] == current["subreaper_state_after"]
+                    == custody["initial_actual_own_kernel"]["subreaper_state_after"]
+                    == custody["final_actual_own_kernel"]["subreaper_state_after"],
+                    "RETAINED_LIMIT_DIAGNOSTIC_KERNEL_NOT_RESTORED")
+    phase = custody["phase"]
+    filename = phase_controls(phase)["retained"].removesuffix(".json") + "-limit.json"
+    with cleanup.directory(Path(claim["fixture_root"]), readable=True) as descriptor:
+        before = bound_directory(descriptor, control, mode=0o700)
+        cleanup.require(root_identity(before) == claim["fixture_root_identity"],
+                        "RETAINED_LIMIT_DIAGNOSTIC_ROOT_REBOUND")
+        usage = os.fstatvfs(descriptor)
+        free_bytes = usage.f_bavail * usage.f_frsize
+        floors = (usage.f_files > 0 and free_bytes >= cleanup.MIN_FREE_BYTES
+                  and usage.f_favail * 100 >= usage.f_files * cleanup.MIN_FREE_INODE_PERCENT)
+        after = attributes(os.fstat(descriptor))
+        cleanup.require(attributes(before) == after,
+                        "RETAINED_LIMIT_DIAGNOSTIC_ROOT_CHANGED")
+    row = {"schema": "rc6.predeploy-retained-limit-diagnostic.v1",
+           "classification": "INCOMPLETE_RETAINED_MEASUREMENT_RED",
+           "context": claim["context"], "owner_uuid": claim["owner_uuid"],
+           "owner_uid": claim["owner_uid"], "fixture_root": claim["fixture_root"],
+           "fixture_root_identity": claim["fixture_root_identity"],
+           "fixture_root_mount_id": claim["fixture_root_mount_id"],
+           "supervisor_pid": os.getpid(), "pytest_pid": kernel["pid"], "phase": phase,
+           "owned_fin_closed": True, "fresh_actual_own_kernel": current,
+           "kernel_sha256": hashlib.sha256(json.dumps(kernel, sort_keys=True,
+                                       separators=(",", ":")).encode()).hexdigest(),
+           "original_manager_source": custody["original_manager_source"],
+           "original_cleanup_maximum_seconds": 5, "MAX_FILES": cleanup.MAX_FILES,
+           "partial_measurement": partial, "root_before_all11": attributes(before),
+           "root_after_all11": after,
+           "fresh_filesystem": {"free_bytes": free_bytes, "free_inodes": usage.f_favail,
+                                "total_inodes": usage.f_files,
+                                "minimum_free_bytes": cleanup.MIN_FREE_BYTES,
+                                "minimum_free_inode_percent": cleanup.MIN_FREE_INODE_PERCENT,
+                                "original_floors_pass": floors},
+           "measurement_complete": False, "aggregate_rootcount_claimed": False,
+           "quota_failure_preserved": "RETAINED_TEST_NAMESPACE_LIMIT",
+           "retention_policy": claim["retention_policy"], "fixture_root_removed": False,
+           "payload_files_read": 0, "link_targets_followed": False,
+           "GLOBAL_CLEANUP_GREEN": False, "full_Gov_certificate": False,
+           "real_orders_sent": 0}
+    raw = (json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    cleanup.require(len(raw) <= 256 * 1024, "RETAINED_LIMIT_DIAGNOSTIC_CONTROL_SIZE")
+    cleanup.require(time.monotonic() - started <= 5,
+                    "RETAINED_LIMIT_DIAGNOSTIC_PREPUBLICATION_BOUND")
+    private = Path(control["private_root"])
+    with cleanup.directory(private) as descriptor:
+        bound_directory(descriptor, control, mode=0o700)
+    path = private / filename
+    # Original atomic create-only publication: O_EXCL temporary, link without
+    # overwrite, own temporary unlink. Existing controls are never replaced.
+    cleanup.publish(path, row, compact=True)
+    custody["retention_limit_diagnostic"] = {
+        "path": str(path), "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
+        "classification": row["classification"], "measurement_complete": False,
+        "diagnostic_publication_wall_seconds": time.monotonic() - started,
+        "native_cleanup_budget_extended": False}
+    cleanup.require(time.monotonic() - started <= 5,
+                    "RETAINED_LIMIT_DIAGNOSTIC_PUBLICATION_LATE")
+
+
+def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
     """Caller must be the parent that has just proved its owned pytest FIN."""
     control, claim = load_workspace(scope, repo, context, environ)
     fixture = Path(claim["fixture_root"])
     seen, allocated, logical, entries, aliases = set(), 0, 0, 0, []
     counts = {"symlinks": 0, "hardlinked_regular_entries": 0, "special_entries": 0,
               "regular_entries": 0, "directory_entries": 0}
+    completed_subtrees, first_completed_subtrees = 0, []
+
+    def notify_limit(guard, relative, direct_child_count, counter):
+        if on_limit is not None:
+            # Aggregate counters are never reset. Dirent names at the failing
+            # preflight are unvalidated; they are not an exact root inventory.
+            on_limit({"guard": guard, "current_relative_path": relative,
+                      "entries_counter_at_stop": entries, "quota_check_value": counter,
+                      "validated_completed_entry_counts": dict(counts),
+                      "unique_physical_inodes_visited": len(seen),
+                      "allocated_bytes_visited_unique_inodes": allocated,
+                      "logical_bytes_visited_unique_inodes": logical,
+                      "direct_child_dirent_count_unvalidated": direct_child_count,
+                      "completed_subtrees": completed_subtrees,
+                      "first_64_completed_subtrees": list(first_completed_subtrees),
+                      "first_64_adversarial_members_visited": list(aliases),
+                      "metadata_scope": "VISITED_PARTIAL_ONLY_NO_ROOTCOUNT_OR_TAIL_INVENTORY",
+                      "payload_files_read": 0, "measurement_complete": False})
 
     def record(value, relative):
         nonlocal allocated, logical, entries
         entries += 1
+        if entries > cleanup.MAX_FILES:
+            notify_limit("record_entries", relative, None, entries)
         cleanup.require(entries <= cleanup.MAX_FILES, "RETAINED_TEST_NAMESPACE_LIMIT")
         key = (value.st_dev, value.st_ino)
         if key not in seen:
@@ -279,8 +376,11 @@ def measure_retained_workspace(scope, repo, context, environ):
                             "target_followed": False, "removed": False})
 
     def visit(parent, relative):
+        nonlocal completed_subtrees
         before = attributes(os.fstat(parent))
         names = sorted(os.listdir(parent))
+        if entries + len(names) > cleanup.MAX_FILES:
+            notify_limit("directory_preflight", relative, len(names), entries + len(names))
         cleanup.require(entries + len(names) <= cleanup.MAX_FILES, "RETAINED_TEST_NAMESPACE_LIMIT")
         for name in names:
             child = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -303,6 +403,9 @@ def measure_retained_workspace(scope, repo, context, environ):
             cleanup.require(attributes(os.stat(name, dir_fd=parent, follow_symlinks=False))
                             == attributes(child), "RETAINED_TEST_MEMBER_CHANGED")
         cleanup.require(attributes(os.fstat(parent)) == before, "RETAINED_TEST_DIRECTORY_CHANGED")
+        completed_subtrees += 1
+        if len(first_completed_subtrees) < 64:
+            first_completed_subtrees.append(relative)
 
     with cleanup.directory(fixture, readable=True) as descriptor:
         value = bound_directory(descriptor, control, mode=0o700)
@@ -750,7 +853,16 @@ def execute_pytest_owned(scope, repo, context, environ, command, *, timeout_seco
             custody.update(owned_fin_closed=True, final_actual_own_kernel=after,
                            phase_green=manager["managed_phase_green"](kernel),
                            management_acceptance=recorded_management_accepted(kernel, timeout_seconds))
-            retained = measure_retained_workspace(scope, repo, context, environ)
+            def limit_diagnostic(partial):
+                try:
+                    publish_retained_limit_diagnostic(control, load_workspace(scope, repo, context, environ)[1],
+                                                      partial, custody, manager)
+                except Exception as error:
+                    custody.setdefault("retention_limit_diagnostic_errors", []).append(
+                        str(error) if isinstance(error, cleanup.CleanupRejected) else type(error).__name__)
+                    # The original quota require is still the exception cause.
+
+            retained = measure_retained_workspace(scope, repo, context, environ, on_limit=limit_diagnostic)
             retained.update(measured_by_same_owned_fin_supervisor_pid=os.getpid(),
                             actual_pytest_pid=kernel["pid"], owned_fin_closed=True,
                             pytest_phase_green=custody["phase_green"])

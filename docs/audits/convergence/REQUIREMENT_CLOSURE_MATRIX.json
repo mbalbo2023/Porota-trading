@@ -6727,7 +6727,7 @@
       ]
     },
     "docs/audits/convergence/REQUIREMENT_CLOSURE_MATRIX.json": {
-      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization. Controlled recovery20261007: durable preparation/source-diff/immutable-driver-derivation and exact early-failure receipts for the single fix-forward PR476. Code/AST/syntax observations are not native gate success. Preserve original inputs, requirements/scenarios, previous mappings, honest material-pending labels and actual negative history. Source evolution is explained without relaxing provenance or claiming artifact/runtime.",
+      "reason": "Preserve immutable handoff inputs and their exact native source/test links; new reconciliation records are code/test evidence, not merge, deploy, market or runtime authorization. Controlled recovery20261007: durable preparation/source-diff/immutable-driver-derivation and exact early-failure receipts for the single fix-forward PR476. Code/AST/syntax observations are not native gate success. Preserve original inputs, requirements/scenarios, previous mappings, honest material-pending labels and actual negative history. Source evolution is explained without relaxing provenance or claiming artifact/runtime. Controlled recovery20261007: append only actual runtime/journal/custody/registered PR admission/focal scope paths and new checkpoint. Preserve55 requirements/scenarios/statuses and all old mapping prefixes; material pending labels stay RED/pending.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -36985,7 +36985,7 @@
       ]
     },
     "rc6_dynamic_universe/runtime.py": {
-      "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission.",
+      "reason": "Keep complete catalog discovery and bounded HOT/WARM scheduling; capacity recommendations remain SHADOW, factual controller and critical all-family EXIT demand govern admission. Controlled recovery20261007 native5a OPEN POST_YIELD: cursor-only tuple/description hydration and immutable per-row timestamp reuse; preserve nineSQL/default0.5/source doublehash/custody/limits/output. Six prepared equivalence controls; exact new-source native resource gate pending.",
       "requirement_ids": [
         "AUD-468-04",
         "U04",
@@ -37061,7 +37061,7 @@
       ]
     },
     "rc6_ppi_global_budget.py": {
-      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence. Controlled successor20261006: Observe only an already committed pending exact-identity flight with read-only bounded SQLite snapshots; cache service, new flight authority, policy and demand admission still re-enter the original authoritative write. Preserve original 50ms fail-closed lock wait, cadence and provider single-flight. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write.",
+      "reason": "The owning source contract and native caller guard listed in each linked requirement reconcile this evolved path; equality or file presence alone is not preservation evidence. Controlled successor20261006: Observe only an already committed pending exact-identity flight with read-only bounded SQLite snapshots; cache service, new flight authority, policy and demand admission still re-enter the original authoritative write. Preserve original 50ms fail-closed lock wait, cadence and provider single-flight. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write. Controlled recovery20261007 native5a IMMEDIATE journal custody: one lstat confirmation only for owned same-device regular exact-journal zero-link snapshot; ENOENT absent, every existing replacement still regular singlelink. Keep original lock0.05/flight/deadline/all path guards; actual rejected nlink was not measured.",
       "requirement_ids": [
         "AUD-468-04",
         "U01",
@@ -37537,7 +37537,7 @@
       ]
     },
     "scripts/porota_predeploy_test_workspace.py": {
-      "reason": "Fresh exclusively owned native CI workspace and original-manager launch/FIN custodian. Preserve the original alias/special-node cleanup guard, original production5400s bound and physical kernel witnesses; remove only a just-created native venv lib64 alias with exact identity proof. Separate collection/execution and sticky unknown-closure blocking prevent producer-racing payload reads. Retained external pytest namespaces are measured without cleanup or global-green claims. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification. Controlled successor checkpoint6: require original phase_child finalization before Source reads; compact only future ownedFIN losslessly within unchanged262144 cap. Preserve default publisher bytes, all atomic guards, original5/5400/INET/PAPER/kernel irreversibility. Component proofs remain scoped; exact new Source tests/gates pending.",
+      "reason": "Fresh exclusively owned native CI workspace and original-manager launch/FIN custodian. Preserve the original alias/special-node cleanup guard, original production5400s bound and physical kernel witnesses; remove only a just-created native venv lib64 alias with exact identity proof. Separate collection/execution and sticky unknown-closure blocking prevent producer-racing payload reads. Retained external pytest namespaces are measured without cleanup or global-green claims. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification. Controlled successor checkpoint6: require original phase_child finalization before Source reads; compact only future ownedFIN losslessly within unchanged262144 cap. Preserve default publisher bytes, all atomic guards, original5/5400/INET/PAPER/kernel irreversibility. Component proofs remain scoped; exact new Source tests/gates pending. Controlled recovery20261007 native5a retained quota RED: publish bounded visited-partial metadata only after same-parent genuine FIN/ECHILD/restoration; original aggregate100000/literal requires/5/5400 untouched. Preserve quota RED, no payload/removal/tail inventory/PASS. Diagnostic is not resource remediation.",
       "requirement_ids": [
         "U11",
         "U14",
@@ -38318,7 +38318,7 @@
       ]
     },
     "tests/test_rc6_budget_source_custody.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Reproduce an unrelated native reserved writer held beyond50ms while a committed EXIT follower waits; prove no repeated write competition and one fake wire/debt. An exclusive unreadable snapshot still fails closed without cache service or duplicate wire. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor20261006: Reproduce an unrelated native reserved writer held beyond50ms while a committed EXIT follower waits; prove no repeated write competition and one fake wire/debt. An exclusive unreadable snapshot still fails closed without cache service or duplicate wire. Controlled successor checkpoint2: Acquire the real read snapshot before sampling clock and preserve the local read-observed rollback floor without granting read-only authority; permanent native writer/clock controls preserve the original service write. Controlled recovery20261007: preserve complete original test bytes and append17 physical journal disappearance/unsafe replacement/nonjournal/protected/error controls, declared scheduling seams. No original RED oracle patched; new native result pending.",
       "requirement_ids": [
         "U04",
         "U05",
@@ -38858,7 +38858,7 @@
       ]
     },
     "tests/test_rc6_predeploy_scoped_cleanup.py": {
-      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor checkpoint4: Add real fresh-venv construction, native collection/execution, timeout, failed-collection, sticky unknown-FIN and retained symlink/hardlink/special-node controls. Copy exact currently installed locked fixture bytes into normal new site-packages, including pytest-owned py.py with RECORD/digest/origin checks; this is explicitly not original-wheel attestation. Preserve the actual59PASS/3FAIL preflight epoch and its proved omitted-member cause. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification.",
+      "reason": "Adapt or add the native regression fixture/guard for the linked stronger contract; preserve original guarantees and disclose incompatible assertion replacements in the owning mapping. Final governed JUnit resolves outcome. Controlled successor checkpoint4: Add real fresh-venv construction, native collection/execution, timeout, failed-collection, sticky unknown-FIN and retained symlink/hardlink/special-node controls. Copy exact currently installed locked fixture bytes into normal new site-packages, including pytest-owned py.py with RECORD/digest/origin checks; this is explicitly not original-wheel attestation. Preserve the actual59PASS/3FAIL preflight epoch and its proved omitted-member cause. Controlled successor checkpoint5: remove only the unconditional sleep after a positive owned wait4, preserving original5s bound, ECHILD/PGID/subreaper/zero/timeout/error irreversibility and every resource/INET/PAPER guard. Move unchanged Gov phase/custody checks before Sourcepost. Real100Z, failedpytest, live-detached and Source-read-veto controls pass in both interpreters; these are local component proofs, not fullGov or sourceSHA qualification. Controlled recovery20261007: preserve original test bytes and append3 fresh actual supervisor/pytest/native FIN controls for explicit FD dirent fault without100kfiles, create-only collision and original positive small retained receipt. No mocked kernel or new native window; exact-source execution pending.",
       "requirement_ids": [
         "U11",
         "U25",
@@ -39047,7 +39047,7 @@
       ]
     },
     "scripts/rc6_material_carrier.py": {
-      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence.",
+      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence. Controlled recovery20261007: readmit exact immutable automatic PR authority and fresh owner before preparation/native/phases; preserve original native managers, FIN/INET/PAPER/Source/resources. Include only literal original stress typed JSON evidence after genuine FIN.",
       "requirement_ids": [
         "U11",
         "U14",
@@ -39077,7 +39077,7 @@
       ]
     },
     "scripts/rc6_material_focal.py": {
-      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence.",
+      "reason": "Controlled recovery20261007: exact-source supplementary material gate adapter derived from preserved original helpers. Fresh physical owned namespaces, original budgets/INET/PAPER/Source/157/process guards, actual native and parent FIN before lossless RAW; no artifact/image/runtime/deploy approval. Preparation only at source publication; require exact-SHA Actions evidence. Controlled recovery20261007: preserve six original focal modules/119 cohort and add whole runtime hydration, budget custody and scoped-cleanup modules for changed causes. Selected-cohort evidence only, never whole-Gov certificate.",
       "requirement_ids": [
         "U11",
         "U14",
@@ -39097,7 +39097,7 @@
       ]
     },
     ".github/workflows/rc6-unified-candidate-tests.yml": {
-      "reason": "Controlled recovery20261007: reuse registered workflow360900338 for typed exact-SHA/tree supplementary focal/Gov/BIG-browser/Horizon evidence. Preserve canonical Predeploy V2 automatic discovery as sole artifact pipeline, original budgets and guards, per-gate cancelfalse mutex, genuine nativeFIN payload veto and explicit owner launch. Actual focal37556142343 showed rg absent; use equivalent grep fixed-string mandatory policy checks, without weakening their predicates.",
+      "reason": "Controlled recovery20261007: reuse registered workflow360900338 for typed exact-SHA/tree supplementary focal/Gov/BIG-browser/Horizon evidence. Preserve canonical Predeploy V2 automatic discovery as sole artifact pipeline, original budgets and guards, per-gate cancelfalse mutex, genuine nativeFIN payload veto and explicit owner launch. Actual focal37556142343 showed rg absent; use equivalent grep fixed-string mandatory policy checks, without weakening their predicates. Controlled recovery20261007: registered PR476-only read-only exact-head trigger; immutable prepush authority plus fresh owner/dedup required, focal311/312 precedes admitted fresh-runner fullGov311/312/BIG-browser/Horizon. Canonical Predeploy remains sole artifact pipeline; no dispatch duplication/cancel/deploy.",
       "requirement_ids": [
         "U11",
         "U14",
@@ -39208,6 +39208,36 @@
     },
     "docs/audits/convergence/evidence/controlled-recovery-20261007/checkpoint-early-runner-provenance-fix.json": {
       "reason": "Controlled recovery20261007: durable preparation/source-diff/immutable-driver-derivation and exact early-failure receipts for the single fix-forward PR476. Code/AST/syntax observations are not native gate success. Preserve original inputs, requirements/scenarios, previous mappings, honest material-pending labels and actual negative history. Source evolution is explained without relaxing provenance or claiming artifact/runtime.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "tests/test_rc6_runtime_row_decode.py": {
+      "reason": "Controlled recovery20261007: six independent actual SQLite/locked legacy oracle/SQL trace/output type/catalog alias/freshness short-circuit controls for same default0.5 runtime read. Prepared only; actual governed outcomes required.",
+      "requirement_ids": [
+        "U04",
+        "U05",
+        "U13",
+        "U14",
+        "U24"
+      ]
+    },
+    "scripts/rc6_material_pr_admission.py": {
+      "reason": "Controlled recovery20261007: fail-closed read-only Actions admission for exact draftPR476/repo1338680554/headSHA/tree/workflow provenance, immutable prepush scope, paginated updated owner comments/sticky foreign veto, fresh20-minute lease, authenticated stopped-owner rawstate/receipt reconciliation and duplicate-run veto. No secret output/live/INET relaxation. New unit extras remain pending; native proof required.",
+      "requirement_ids": [
+        "U11",
+        "U14",
+        "U25",
+        "U28",
+        "U29"
+      ]
+    },
+    "notes/rc6-evidence/recovery-20261007T0246Z-runtime-journal-custody/checkpoint.json": {
+      "reason": "Controlled recovery20261007: append-only actual5a canonical negative run/artifact/JUnit/typed hashes, two failures plus retained quota custody veto, minimal fix rationale and unchanged original guards/budgets. Containing Git commit/prepush receipts bind next exact SHA/tree; no unexecuted PASS/artifact/runtime claims.",
       "requirement_ids": [
         "U11",
         "U14",

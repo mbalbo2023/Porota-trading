@@ -983,3 +983,155 @@ def test_real_owned_pytest_failed_ready100_has_fin_and_never_becomes_green(tmp_p
     cases = list(ET.fromstring(junit_raw).iter('testcase'))
     assert len(cases) == 1 and len(cases[0].findall('failure')) == 1
     assert not cases[0].findall('error') and not cases[0].findall('skipped')
+
+
+RETAINED_LIMIT_SUPERVISOR_SOURCE = r"""
+import json, os, runpy, sys
+from pathlib import Path
+config = json.loads(sys.argv[1])
+repo = Path(config['repo'])
+helper = runpy.run_path(str(repo / 'scripts/porota_predeploy_test_workspace.py'))
+cleanup = helper['cleanup']
+fixture = helper['workspace_path'](config['control'])
+fixture_identity = (fixture.lstat().st_dev, fixture.lstat().st_ino)
+private = Path(config['private'])
+original_listdir = os.listdir
+injected = False
+
+def fixture_fd_dirent_fault(descriptor):
+    global injected
+    names = original_listdir(descriptor)
+    if isinstance(descriptor, int) and not injected:
+        value = os.fstat(descriptor)
+        if (value.st_dev, value.st_ino) == fixture_identity:
+            injected = True
+            # Explicit fault seam: these are unvalidated injected dirents,
+            # not a claim that 100001 physical fixture members exist.
+            fake = ['injected-unvalidated-dirent-' + str(index)
+                    for index in range(cleanup.MAX_FILES + 1)]
+            cleanup.publish(private / 'retained-limit-fault-control.json', {
+                'scope': 'EXPLICIT_FIXTURE_FD_DIRENT_FAULT_NOT_PRODUCT_ROOTCOUNT',
+                'actual_fixture_fd_identity': list(fixture_identity),
+                'actual_immediate_names_before_injection': len(names),
+                'injected_dirent_count': len(fake),
+                'returned_unvalidated_dirent_count': len(names) + len(fake),
+                'MAX_FILES_unchanged': cleanup.MAX_FILES,
+                'kernel_or_FIN_mocked': False, 'physical_files_created_for_fake_dirents': 0})
+            return names + fake
+    return names
+
+if config['fault']:
+    os.listdir = fixture_fd_dirent_fault
+try:
+    code = helper['execute_pytest_owned'](
+        Path(config['scope']), repo, config['context'], os.environ,
+        config['command'], timeout_seconds=60, phase='execution')
+finally:
+    os.listdir = original_listdir
+raise SystemExit(code)
+"""
+
+
+def execute_retained_limit_diagnostic_fixture(owned, *, fault):
+    import subprocess
+    import sys
+
+    path = owned['runner'] / 'retained-limit-real-supervisor.py'
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, 'w') as stream:
+        stream.write(RETAINED_LIMIT_SUPERVISOR_SOURCE)
+    config = {key: str(owned[key]) for key in ('repo', 'private', 'scope')}
+    config.update(control=owned['control'], context=owned['context'],
+                  command=owned['command'], fault=fault)
+    process = subprocess.Popen([sys.executable, '-B', str(path), json.dumps(config)],
+                               cwd=owned['repo'], env=owned['env'], stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    stdout, _ = process.communicate(timeout=90)
+    cleanup.publish(owned['private'] / 'retained-limit-supervisor-outer-control.json',
+                    {'scope': 'REAL_FRESH_HELPER_SUPERVISOR_ONLY_NOT_GOV_FIN',
+                     'pid': process.pid, 'returncode': process.returncode, 'stdout': stdout})
+    return process.returncode, process.pid
+
+
+@pytest.mark.parametrize('collision', [False, True])
+def test_retained_limit_real_fin_keeps_quota_red_and_create_only_partial_control(tmp_path, collision):
+    owned = native_owned_pytest_fixture(tmp_path, "def test_tiny_actual_fixture(tmp_path):\n    value = tmp_path / 'payload'\n    value.write_bytes(b'actual small retained fixture')\n    assert value.read_bytes() == b'actual small retained fixture'\n")
+    limit_path = owned['private'] / (test_workspace.RETAINED.removesuffix('.json') + '-limit.json')
+    sentinel = {'scope': 'OWN_PREEXISTING_CONTROL_MUST_NOT_BE_REPLACED', 'marker': 'exclusive'}
+    if collision:
+        cleanup.publish(limit_path, sentinel)
+        original_bytes, original_stat = cleanup.read_file(limit_path, mode=0o600)
+    rc, supervisor = execute_retained_limit_diagnostic_fixture(owned, fault=True)
+    assert rc == 1
+    fin = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    kernel = fin['kernel']
+    assert fin['supervisor_pid'] == supervisor == kernel['supervisor_pid']
+    assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
+    assert kernel['pid'] == kernel['wait4_reaped_pid'] and kernel['actual_child_reaped'] is True
+    assert kernel['returncode'] == 0 and kernel['owned_children_exhaustion_verified'] is True
+    assert kernel['process_group_absent_at_main_reap'] is kernel['process_group_absent_after_reap'] is True
+    assert kernel['subreaper_restoration_readback_verified'] is True
+    assert kernel['owned_cleanup_management_bound_seconds'] == 5
+    assert kernel['termination_reap_restore_cleanup_seconds'] <= 5
+    assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
+    assert kernel['late_observed_main_reap_irreversible_red'] is False
+    assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
+    assert fin['post_fin_errors'] == ['RETAINED_TEST_NAMESPACE_LIMIT']
+    assert 'retention_receipt' not in fin and 'retained_capacity_status' not in fin
+    fault = json.loads(cleanup.read_file(owned['private'] / 'retained-limit-fault-control.json', mode=0o600)[0])
+    assert fault['MAX_FILES_unchanged'] == cleanup.MAX_FILES == 100_000
+    assert fault['kernel_or_FIN_mocked'] is False
+    assert fault['physical_files_created_for_fake_dirents'] == 0
+    assert fault['injected_dirent_count'] == cleanup.MAX_FILES + 1
+    if collision:
+        now_bytes, now_stat = cleanup.read_file(limit_path, mode=0o600)
+        assert now_bytes == original_bytes and cleanup.identity(now_stat) == cleanup.identity(original_stat)
+        assert fin['retention_limit_diagnostic_errors'] == ['FileExistsError']
+        assert 'retention_limit_diagnostic' not in fin
+    else:
+        raw, info = cleanup.read_file(limit_path, maximum=256 * 1024, mode=0o600)
+        partial = json.loads(raw)
+        assert info.st_nlink == 1 and info.st_uid == os.geteuid()
+        assert partial['classification'] == 'INCOMPLETE_RETAINED_MEASUREMENT_RED'
+        assert partial['measurement_complete'] is partial['aggregate_rootcount_claimed'] is False
+        assert partial['full_Gov_certificate'] is partial['GLOBAL_CLEANUP_GREEN'] is False
+        assert partial['owned_fin_closed'] is True and partial['supervisor_pid'] == supervisor
+        assert partial['payload_files_read'] == partial['real_orders_sent'] == 0
+        assert partial['fixture_root_removed'] is partial['link_targets_followed'] is False
+        assert partial['root_before_all11'] == partial['root_after_all11']
+        observed = partial['partial_measurement']
+        assert observed['guard'] == 'directory_preflight' and observed['current_relative_path'] == '.'
+        assert observed['entries_counter_at_stop'] == 1
+        assert sum(observed['validated_completed_entry_counts'].values()) == 1
+        assert observed['direct_child_dirent_count_unvalidated'] == fault['returned_unvalidated_dirent_count']
+        assert observed['completed_subtrees'] == 0 and observed['first_64_completed_subtrees'] == []
+        assert observed['measurement_complete'] is False and observed['payload_files_read'] == 0
+        assert partial['fresh_filesystem']['minimum_free_bytes'] == cleanup.MIN_FREE_BYTES
+        assert partial['fresh_filesystem']['minimum_free_inode_percent'] == cleanup.MIN_FREE_INODE_PERCENT
+        assert fin['retention_limit_diagnostic']['sha256'] == hashlib.sha256(raw).hexdigest()
+        assert fin['retention_limit_diagnostic']['native_cleanup_budget_extended'] is False
+    # Actual FIN permits negative diagnostic reads but never erases quota RED.
+    rechecked = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                           expected_management_seconds=60)
+    assert rechecked['safe_postread'] is True and rechecked['classification'] == 'FIN_REAL_CLOSED'
+    assert rechecked['phase_results']['execution']['producer_post_fin_errors'] == ['RETAINED_TEST_NAMESPACE_LIMIT']
+    assert owned['control']['owner_uuid'] == fin['owner_uuid']
+    assert test_workspace.workspace_path(owned['control']).is_dir()
+
+
+def test_retained_small_real_native_fin_has_complete_original_receipt_without_limit_sidecar(tmp_path):
+    owned = native_owned_pytest_fixture(tmp_path, 'def test_tiny():\n    assert 3 + 4 == 7\n')
+    rc, supervisor = execute_retained_limit_diagnostic_fixture(owned, fault=False)
+    assert rc == 0
+    fin = json.loads(cleanup.read_file(owned['private'] / test_workspace.FIN, mode=0o600)[0])
+    assert fin['supervisor_pid'] == supervisor == fin['kernel']['supervisor_pid']
+    assert fin['owned_fin_closed'] is fin['phase_green'] is fin['management_acceptance'] is True
+    assert fin['post_fin_errors'] == [] and fin['retained_capacity_status'] == 'GREEN'
+    assert 'retention_limit_diagnostic' not in fin and 'retention_limit_diagnostic_errors' not in fin
+    limit_path = owned['private'] / (test_workspace.RETAINED.removesuffix('.json') + '-limit.json')
+    assert not os.path.lexists(limit_path)
+    retained = json.loads(cleanup.read_file(owned['private'] / test_workspace.RETAINED, mode=0o600)[0])
+    assert retained['owned_fin_closed'] is True and retained['pytest_phase_green'] is True
+    assert retained['measured_by_same_owned_fin_supervisor_pid'] == supervisor
+    assert retained['namespace_entries_including_root'] < cleanup.MAX_FILES
+    assert retained['resources_removed'] == retained['payload_files_read'] == 0

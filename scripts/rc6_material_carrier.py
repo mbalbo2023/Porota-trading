@@ -168,6 +168,15 @@ class OwnedRunner:
         self.unknown=False;self.closed_logs.append(log)
         return {'returncode':kernel['returncode'],'kernel':kernel,'log_path':str(log)}
 
+
+def readmit_automatic_pr(a,run,stage):
+    if not a.require_pr_admission:return
+    module_pin(a.repo_root,'scripts/rc6_material_pr_admission.py',a.source_sha)
+    controller=runpy.run_path(str(a.repo_root/'scripts/rc6_material_pr_admission.py'))
+    row=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
+        launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
+    save(run.control/('automatic-pr-'+stage+'.json'),row)
+
 def installed_env(a,run,root):
     interpreters={}
     for epoch,base in (('311',a.python311),('312',a.python312)):
@@ -304,6 +313,7 @@ def focal(a,run,root,prepared,interpreters):
         before=g['source_pin'](source,a.source_sha,a.source_tree);save_raw(output/'parent-source-before.json',g['canonical'](before))
         phases={}
         for phase in ('collection','execution'):
+            readmit_automatic_pr(a,run,'focal'+epoch+'-'+phase+'-prelaunch')
             command=[interpreters[epoch],'-I','-B',str(source/'scripts/rc6_material_focal.py'),'--repo-root',str(source),
                 '--source-sha',a.source_sha,'--source-tree',a.source_tree,'--output-root',str(output),'--phase',phase]
             row=run(command,cwd=source,label='focal'+epoch+'-'+phase,limit=5400)
@@ -428,6 +438,13 @@ def stage_raw(a,run,root,prepared,report):
         parent=Path(item['parent']);epoch=item['epoch']
         groups.extend([('preparation'+epoch,parent/'preparation'),('focal'+epoch,parent/'focal'),
             ('Gov'+epoch,parent/'native-gov'),('GovOuter'+epoch,parent/'outer-control')])
+        # Original stress tests preserve typed RED receipts in this literal
+        # RUNNER_TEMP child. Select only its regular evidence files after the
+        # caller's original native/parent FIN; never traverse pytest fixtures.
+        for label,producer in (('focal',parent/'focal'),('Gov',parent/'native-gov')):
+            for phase in ('collection','execution'):
+                groups.append((label+epoch+'-'+phase+'-issue465',
+                    producer/(phase+'-private')/'porota-predeploy-evidence'/'issue465-stress'))
     material=root/'material'
     groups.extend([('pin',material/'pin'),('BIG',material/'raw-slow'),('browser',material/'browser-raw'),
         ('horizon',material/'native-raw'),('horizon-control',root/'horizon-control')])
@@ -440,9 +457,11 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',type=Path,required=True);p.add_argument('--source-sha',required=True)
     p.add_argument('--source-tree',required=True);p.add_argument('--launch-receipt-url',required=True)
     p.add_argument('--owner-session',required=True)
+    p.add_argument('--require-pr-admission',action='store_true')
     p.add_argument('--python311',required=True);p.add_argument('--python312',required=True)
     p.add_argument('--gate',choices=('focal','full-gov311','full-gov312','BIG-browser','Horizon'),required=True)
     a=p.parse_args();os.umask(0o022);boot=bootstrap();a.repo_root=safe_path(a.repo_root)
+    need(os.environ.get('GITHUB_EVENT_NAME')!='pull_request' or a.require_pr_admission,'AUTOMATIC_PR_FRESH_ADMISSION_REQUIRED')
     need(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'CANONICAL_ACTIONS_REPOSITORY_REQUIRED')
     need(re.fullmatch('[0-9a-f]{40}',a.source_sha) and re.fullmatch('[0-9a-f]{40}',a.source_tree),'EXACT_LITERAL_SOURCE_SHA_TREE_REQUIRED')
@@ -465,11 +484,13 @@ def main():
     manager=runpy.run_path(str(a.repo_root/manager_pin['path']));manager['pre_capture_kernel_state']()
     run=OwnedRunner(manager,controls);code=1
     try:
+        readmit_automatic_pr(a,run,'before-preparation')
         auth=authority(a);interpreters=installed_env(a,run,root);fetch_originals(a,run,root)
         derived,prepared,auth_path,auth_sha=prepare_gov(a,run,root,interpreters,auth,manager_pin,native_pin)
         save(controls/'prepared.json',{'source_sha':a.source_sha,'source_tree':a.source_tree,'gate':a.gate,
             'epochs':[{k:v for k,v in x.items() if k in ('epoch','parent','source_root','blocked_binding_sha256')} for x in prepared],
             'original19_verified':True,'PRODUCT157_preflight_verified':True,'Gov_executed':False})
+        readmit_automatic_pr(a,run,'after-preparation-before-native')
         if a.gate=='focal':code,report=focal(a,run,root,prepared,interpreters)
         elif a.gate.startswith('full-gov'):code,report=run_gov(a,run,root,prepared,derived,auth_path,auth_sha)
         elif a.gate=='BIG-browser':code,report=big_browser(a,run,root,prepared,interpreters)

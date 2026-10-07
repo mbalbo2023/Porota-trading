@@ -848,3 +848,166 @@ def test_historical_metadata_schema_never_authorizes_an_unknown_current_scope(tm
     assert snapshot["status"] == ("DEGRADED" if valid else "UNVERIFIED")
     assert budget.metrics()["exit_service"]["lower_suspended"]
     assert not budget.acquire("current", consumer="SCANNER", priority="DISCOVERY")["allowed"]
+
+
+@contextmanager
+def _real_unlinked_budget_journal(tmp_path):
+    """A real SQLite inode witness; the lookup scheduling seam is explicit."""
+    import stat
+    database = (tmp_path / "global.sqlite").absolute()
+    journal = Path(str(database) + "-journal")
+    descriptor = None
+    with closing(sqlite3.connect(database, timeout=.05)) as connection:
+        try:
+            assert connection.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+            connection.execute("CREATE TABLE owned_state(value INTEGER NOT NULL)")
+            connection.execute("INSERT INTO owned_state VALUES(1)")
+            connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("UPDATE owned_state SET value=2")
+            descriptor = os.open(journal, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+            before = os.fstat(descriptor)
+            assert stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+            assert before.st_uid == os.geteuid()
+            connection.rollback()
+            unlinked = os.fstat(descriptor)
+            assert (unlinked.st_dev, unlinked.st_ino) == (before.st_dev, before.st_ino)
+            assert stat.S_ISREG(unlinked.st_mode) and unlinked.st_nlink == 0
+            with pytest.raises(FileNotFoundError):
+                journal.lstat()
+            budget = budgets.GlobalPPIBudget.__new__(budgets.GlobalPPIBudget)
+            budget.path = database
+            budget.protected = set()
+            yield budget, journal, unlinked
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+
+def _one_observed_journal_lookup(monkeypatch, path, snapshot):
+    """Deliver actual FD metadata once, then perform the real name lookup."""
+    original = Path.lstat
+    observations = []
+    def observed(candidate, *args, **kwargs):
+        if candidate == path:
+            observations.append(True)
+            if len(observations) == 1:
+                return snapshot
+        return original(candidate, *args, **kwargs)
+    monkeypatch.setattr(Path, "lstat", observed)
+    return observations
+
+
+def test_budget_confirms_real_owned_journal_unlink_without_accepting_zero_link_file(tmp_path, monkeypatch):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        observations = _one_observed_journal_lookup(monkeypatch, journal, unlinked)
+        assert budget._check_one(journal) is None
+        assert len(observations) == 2  # Exactly one bounded confirmation, no polling.
+
+
+@pytest.mark.parametrize("alias", ("symlink", "hardlink"))
+def test_budget_never_reinterprets_observed_unsafe_journal_as_safe_disappearance(tmp_path, monkeypatch, alias):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, _):
+        target = tmp_path / "foreign-inode"
+        target.write_bytes(b"foreign")
+        if alias == "symlink":
+            journal.symlink_to(target)
+        else:
+            os.link(target, journal)
+        unsafe = journal.lstat()
+        journal.unlink()
+        observations = _one_observed_journal_lookup(monkeypatch, journal, unsafe)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(journal)
+        assert len(observations) == 1
+        assert target.read_bytes() == b"foreign"
+
+
+@pytest.mark.parametrize("alias", ("symlink", "hardlink"))
+def test_budget_unlinked_journal_replacement_keeps_original_alias_rejection(tmp_path, monkeypatch, alias):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        target = tmp_path / "foreign-replacement"
+        target.write_bytes(b"foreign")
+        if alias == "symlink":
+            journal.symlink_to(target)
+        else:
+            os.link(target, journal)
+        observations = _one_observed_journal_lookup(monkeypatch, journal, unlinked)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(journal)
+        assert len(observations) == 2
+        assert target.read_bytes() == b"foreign"
+
+
+def test_budget_counts_replacement_journal_metadata_instead_of_discarded_inode(tmp_path, monkeypatch):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        journal.write_bytes(b"new-owned-journal")
+        replacement = journal.lstat()
+        observations = _one_observed_journal_lookup(monkeypatch, journal, unlinked)
+        assert budget._check_one(journal) == replacement
+        assert len(observations) == 2
+
+
+@pytest.mark.parametrize("suffix", ("", "-wal", "-shm", ".bootstrap.lock", ".exit-round.lock", ".exit-round-degraded"))
+def test_budget_zero_link_nonjournal_snapshot_always_remains_denied(tmp_path, monkeypatch, suffix):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        path = Path(str(budget.path) + suffix)
+        observations = _one_observed_journal_lookup(monkeypatch, path, unlinked)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(path)
+        assert len(observations) == 1
+
+
+def test_budget_missing_protected_journal_is_denied_before_unlink_confirmation(tmp_path, monkeypatch):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        budget.protected = {journal.resolve()}
+        observations = _one_observed_journal_lookup(monkeypatch, journal, unlinked)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(journal)
+        assert observations == []
+
+
+def test_budget_second_zero_link_observation_never_starts_unbounded_rechecks(tmp_path, monkeypatch):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        original = Path.lstat
+        observations = []
+        def observed(path, *args, **kwargs):
+            if path == journal:
+                observations.append(True)
+                return unlinked
+            return original(path, *args, **kwargs)
+        monkeypatch.setattr(Path, "lstat", observed)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(journal)
+        assert len(observations) == 2
+
+
+def test_budget_confirmation_os_error_remains_fail_closed(tmp_path, monkeypatch):
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        original = Path.lstat
+        observations = []
+        def observed(path, *args, **kwargs):
+            if path == journal:
+                observations.append(True)
+                if len(observations) == 1:
+                    return unlinked
+                raise PermissionError("CONTROL_CONFIRMATION_DENIED")
+            return original(path, *args, **kwargs)
+        monkeypatch.setattr(Path, "lstat", observed)
+        with pytest.raises(PermissionError, match="CONTROL_CONFIRMATION_DENIED"):
+            budget._check_one(journal)
+        assert len(observations) == 2
+
+
+@pytest.mark.parametrize("field", ("st_uid", "st_dev"))
+def test_budget_zero_link_journal_foreign_ownership_or_device_never_grants_absence(tmp_path, monkeypatch, field):
+    from types import SimpleNamespace
+    with _real_unlinked_budget_journal(tmp_path) as (budget, journal, unlinked):
+        # Deliberate negative metadata injection, not a physical ownership claim.
+        fields = {name: getattr(unlinked, name) for name in ("st_mode", "st_nlink", "st_uid", "st_dev")}
+        fields[field] += 1
+        foreign = SimpleNamespace(**fields)
+        observations = _one_observed_journal_lookup(monkeypatch, journal, foreign)
+        with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
+            budget._check_one(journal)
+        assert len(observations) == 1

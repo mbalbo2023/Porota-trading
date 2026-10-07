@@ -526,6 +526,25 @@ class GlobalPPIBudget:
             # metadata read avoids exists/stat races; other OS errors remain
             # failures, and a missing protected path was rejected above.
             return None
+        if (metadata.st_nlink == 0
+                and path == Path(str(self.path) + "-journal")
+                and stat.S_ISREG(metadata.st_mode)):
+            # A name lookup can retain SQLite's own inode while commit
+            # unlinks its DELETE journal. Zero links is never a valid file:
+            # confirm an owned, same-device journal, then relookup once.
+            parent_metadata = self.path.parent.lstat()
+            owner = os.geteuid()
+            if (not stat.S_ISDIR(parent_metadata.st_mode)
+                    or parent_metadata.st_uid != owner
+                    or metadata.st_uid != owner
+                    or metadata.st_dev != parent_metadata.st_dev):
+                raise ValueError("PPI_BUDGET_PATH_ALIAS")
+            if path.resolve() in self.protected:
+                raise ValueError("PPI_BUDGET_PATH_ALIAS")
+            try:
+                metadata = path.lstat()
+            except FileNotFoundError:
+                return None
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
             raise ValueError("PPI_BUDGET_PATH_ALIAS")
         return metadata

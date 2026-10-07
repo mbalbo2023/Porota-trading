@@ -1,0 +1,380 @@
+"""Read-only admission for the registered supplementary RC6 PR carrier.
+
+Launch authority is immutable and exact-Source; live ownership is re-read. This
+controller never dispatches, edits a ref, acquires deploy ownership or runs gates.
+"""
+import argparse
+import base64
+from datetime import datetime,timedelta,timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import urllib.parse
+import urllib.request
+
+REPO='mbalbo2023/Porota-trading'
+REPO_ID=1338680554
+WORKSTREAM='WS-RC6-CONVERGENCE-468-469-470-20261005'
+BRANCH='recovery/rc6-material-fix-forward-3091e93-20261006'
+BASE='deploy/rc6-pr69-isolated-20260915'
+PR=476
+GATES=('focal','full-gov311','full-gov312','BIG-browser','Horizon')
+OPS='docs/automation/rc6-night-20261005/state.json'
+OPS_REF='ops/rc6-night-supervisor-20261005'
+CAP=1024*1024
+CONTROL_CAP=256*1024
+FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','RELEASED',
+    'SOURCE_LEASE_EXPIRES_UTC','SOURCE_SHA','SOURCE_TREE','MODE','real_orders_sent',
+    'RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION','GATES_AUTHORIZED','CAUSE_EVIDENCE_URL',
+    'RECONCILED_OPS_STATE_BLOB','RECONCILED_OPS_WRITE_OWNER','RECONCILIATION_RECEIPT_471',
+    'RECONCILIATION_RECEIPT_473','RECONCILIATION_USER_STOP_CONFIRMED',
+    'RECONCILIATION_RECEIPT_471_SHA256','RECONCILIATION_RECEIPT_473_SHA256',
+    'RECONCILED_OPS_STATE_SHA256','CANONICAL_GOV311_CUSTODY_RECEIPT_URL',
+    'SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'}
+COMMENT_PAGES=50
+RUN_PAGES=10
+RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
+RECOVERY_BODY_SHA256='388680bae2aa2739532b7b62a85e767361de3f38aae8149a676fe65695fa8b05'
+RECOVERY_ANCHORS={471:(6027924708,'2026-10-07T00:13:37Z'),473:(6027924879,'2026-10-07T00:13:38Z')}
+RECONCILED_BLOB='d52b4090f53c1897b735a903581b44e107e57020'
+RECONCILED_RAW_SHA256='746551deb6f856c4000a1aea89d0e24cb371b4dc1c193e2c4b4f3f2d8842d0b7'
+RECONCILED_OLD_OWNER='CODEX_SUCCESSOR_RC6_20261006_1246UTC'
+USER_STOP_LITERAL='Martín autorizó esta recuperación/fix-forward y confirmó directamente en esta conversación que la sesión que tomó ownership como supervisor también quedó detenida.'
+STAT11=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+
+def require(ok,reason):
+    if not ok:raise ValueError(reason)
+def wire(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+def document(raw):
+    def pairs(items):
+        out={}
+        for key,value in items:require(key not in out,'ADMISSION_DUPLICATE_JSON_KEY');out[key]=value
+        return out
+    return json.loads(raw,object_pairs_hook=pairs,parse_constant=lambda _:require(False,'ADMISSION_NONFINITE_JSON'))
+def stamp(value):
+    require(isinstance(value,str) and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z',value),'EXACT_UTC_ADMISSION_STAMP_REQUIRED')
+    return datetime.fromisoformat(value.replace('Z','+00:00'))
+def fields(body):
+    result={}
+    for line in body.splitlines():
+        item=re.fullmatch(r'([A-Z][A-Z0-9_]*|real_orders_sent)=([^\r\n]*)',line)
+        if item and item[1] in FIELD_KEYS:
+            require(item[1] not in result,'ADMISSION_DUPLICATE_RECEIPT_FIELD')
+            result[item[1]]=item[2]
+    return result
+
+def api(path):
+    token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    require(bool(token),'ACTIONS_READONLY_TOKEN_REQUIRED')
+    print(json.dumps({'scope':'READ_ONLY_GITHUB_SOURCE_OWNER_CONTROL',
+        'resource':path.partition('?')[0],'method':'GET','payload_reads':0}),flush=True)
+    request=urllib.request.Request('https://api.github.com/repos/'+REPO+path,
+        headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'})
+    with urllib.request.urlopen(request,timeout=30) as response:raw=response.read(CAP+1)
+    require(len(raw)<=CAP,'ADMISSION_API_RESPONSE_BOUND')
+    return document(raw)
+def comment(url,issue):
+    match=re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/'+str(issue)+r'#issuecomment-([0-9]+)',url or '')
+    require(match is not None,'EXACT_OWNER_RECEIPT_URL_REQUIRED')
+    row=api('/issues/comments/'+match[1])
+    require(row['html_url']==url and row['issue_url'].endswith('/issues/'+str(issue))
+        and row['user']['login']=='mbalbo2023','AUTHENTIC_REPOSITORY_OWNER_RECEIPT_REQUIRED')
+    return row
+
+def recovery_anchors(owner):
+    require(owner==RECOVERY_OWNER,'EXACT_CONTROLLED_RECOVERY_SESSION_REQUIRED')
+    result={}
+    for issue,(identifier,created) in RECOVERY_ANCHORS.items():
+        url='https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+str(identifier)
+        row=comment(url,issue);f=fields(row['body'])
+        require(row['id']==identifier and row['created_at']==row['updated_at']==created
+            and hashlib.sha256(row['body'].encode()).hexdigest()==RECOVERY_BODY_SHA256
+            and f.get('WORKSTREAM_ID')==WORKSTREAM and f.get('SESSION')==owner
+            and f.get('WRITE_OWNER')==owner and f.get('INTEGRATION_OWNER')==owner
+            and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+            and RECONCILED_OLD_OWNER in row['body'] and 'state blob'+RECONCILED_BLOB in row['body']
+            and USER_STOP_LITERAL in row['body'],'AUTHENTIC_LITERAL_CONTROLLED_RECOVERY_ANCHOR_REQUIRED')
+        result[issue]=row
+    return result
+
+def effective_stamp(row):
+    created=stamp(row['created_at']);updated=stamp(row['updated_at'])
+    require(created<=updated,'COMMENT_CREATED_UPDATED_CUSTODY_INVALID')
+    return updated
+
+def recent(issue,anchor,now):
+    # GitHub issue-comments `since` selects last-updated timestamps. A comment
+    # created before the controlled anchor but edited afterwards is included.
+    # No moving two-hour window and no silently truncated page are permitted.
+    cutoff=stamp(anchor['created_at'])
+    since=(cutoff-timedelta(seconds=1)).isoformat().replace('+00:00','Z')
+    rows=[]
+    ids=set()
+    for page in range(1,COMMENT_PAGES+1):
+        batch=api('/issues/'+str(issue)+'/comments?'+urllib.parse.urlencode({'since':since,'per_page':100,'page':page}))
+        require(isinstance(batch,list) and len(batch)<=100,'ACTUAL_COMMENT_ARRAY_REQUIRED')
+        for row in batch:
+            require(row['id'] not in ids and row['issue_url'].endswith('/issues/'+str(issue)),
+                'COMMENT_PAGINATION_DUPLICATED_OR_REBOUND')
+            ids.add(row['id']);updated=effective_stamp(row)
+            require(updated<=now,'OWNERSHIP_COMMENT_FUTURE_TIMESTAMP')
+            if updated>=cutoff:rows.append(row)
+        if len(batch)<100:break
+    else:raise ValueError('OWNERSHIP_PAGINATION_INCOMPLETE_FAIL_CLOSED')
+    require(anchor['id'] in ids,'ACTUAL_CONTROLLED_ANCHOR_MISSING_FROM_UPDATED_TIMELINE')
+    return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))
+
+def actual_event():
+    require(os.environ.get('GITHUB_EVENT_NAME')=='pull_request','AUTOMATIC_ADMISSION_REQUIRES_PULL_REQUEST_EVENT')
+    literal=os.environ['GITHUB_EVENT_PATH'];path=Path(literal)
+    require(path.is_absolute() and literal==os.path.abspath(literal),'CANONICAL_ABSOLUTE_EVENT_PATH_REQUIRED')
+    # Hold every directory component with NOFOLLOW. Read the file relative to
+    # its held parent, then compare FD and literal-path all11 before/after.
+    directory=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    held=[directory];parents=[]
+    try:
+        for component in path.parts[1:-1]:
+            next_fd=os.open(component,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=directory)
+            info=os.fstat(next_fd);require(stat.S_ISDIR(info.st_mode),'EVENT_ANCESTOR_DIRECTORY_REQUIRED')
+            parents.append((directory,component,next_fd,{key:getattr(info,key) for key in ('st_dev','st_ino','st_uid','st_gid','st_mode')}))
+            held.append(next_fd);directory=next_fd
+        path_before=os.stat(path.name,dir_fd=directory,follow_symlinks=False)
+        fd=os.open(path.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NOATIME|os.O_CLOEXEC,dir_fd=directory)
+        try:
+            info=os.fstat(fd);before={key:getattr(info,key) for key in STAT11}
+            require(stat.S_ISREG(info.st_mode) and info.st_uid==os.geteuid() and info.st_nlink==1
+                and 0<info.st_size<=CAP and before=={key:getattr(path_before,key) for key in STAT11},
+                'ACTUAL_OWNED_PR_EVENT_FILE_REQUIRED')
+            chunks=[];size=0
+            while part:=os.read(fd,min(65536,CAP+1-size)):
+                chunks.append(part);size+=len(part);require(size<=CAP,'PR_EVENT_CAPTURE_BOUND')
+            raw=b''.join(chunks);after={key:getattr(os.fstat(fd),key) for key in STAT11}
+            path_after={key:getattr(os.stat(path.name,dir_fd=directory,follow_symlinks=False),key) for key in STAT11}
+            literal_after={key:getattr(path.lstat(),key) for key in STAT11}
+            require(len(raw)==info.st_size and before==after==path_after==literal_after,
+                'PR_EVENT_FD_AND_PATH_ALL11_CHANGED')
+            for parent_fd,component,child_fd,identity in parents:
+                require(identity=={key:getattr(os.fstat(child_fd),key) for key in identity}
+                    =={key:getattr(os.stat(component,dir_fd=parent_fd,follow_symlinks=False),key) for key in identity},
+                    'PR_EVENT_ANCESTOR_REBOUND')
+            custody={'path':str(path),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),
+                'before_all11':before,'after_fd_all11':after,'after_path_all11':literal_after,
+                'every_ancestor_opened_NOFOLLOW':True,'capture_flags':['O_NOFOLLOW','O_NOATIME','O_CLOEXEC'],
+                'payload_producer_started':False}
+        finally:os.close(fd)
+    finally:
+        for descriptor in reversed(held):os.close(descriptor)
+    event=document(raw);pr=event['pull_request']
+    require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
+        and event['number']==PR and pr['number']==PR and pr['state']=='open' and pr['draft'] is True
+        and pr['user']['login']=='mbalbo2023' and pr['head']['repo']['id']==REPO_ID
+        and pr['head']['repo']['owner']['login']=='mbalbo2023' and pr['head']['ref']==BRANCH
+        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE,
+        'SOLE_OWNED_DRAFT_RECOVERY_PR_EVENT_REQUIRED')
+    return event,custody
+
+def fresh_source(sha,tree):
+    require(re.fullmatch('[0-9a-f]{40}',sha or ''),'EXACT_HEAD_SOURCE_SHA_REQUIRED')
+    repo=api('');ref=api('/git/ref/heads/'+BRANCH);commit=api('/git/commits/'+sha);pr=api('/pulls/'+str(PR))
+    require(repo['id']==REPO_ID and ref['object']['sha']==sha and commit['sha']==sha
+        and pr['number']==PR and pr['state']=='open' and pr['draft'] is True
+        and pr['user']['login']=='mbalbo2023' and pr['head']['sha']==sha and pr['head']['ref']==BRANCH
+        and pr['head']['repo']['id']==REPO_ID and pr['head']['repo']['owner']['login']=='mbalbo2023'
+        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE,'FRESH_EXACT_SOURCE_AUTHORITY_REBOUND')
+    actual=commit['tree']['sha'];require(re.fullmatch('[0-9a-f]{40}',actual),'ACTUAL_TREE_SHA_REQUIRED')
+    if tree:require(tree==actual,'EXACT_TREE_AUTHORITY_REBOUND')
+    return actual
+
+def launch_fields(row,sha,tree,session=None):
+    require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
+        and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
+    f=fields(row['body']);owner=f.get('SESSION_SUCCESSOR')
+    gates=f.get('GATES_AUTHORIZED','').split(',')
+    without311=[gate for gate in GATES if gate!='full-gov311']
+    require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==WORKSTREAM
+        and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
+        and owner==RECOVERY_OWNER
+        and (session is None or session==owner) and f.get('WRITE_OWNER')==owner
+        and f.get('INTEGRATION_OWNER')==owner
+        and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+        and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0'
+        and gates in (list(GATES),without311),'EXACT_IMMUTABLE_AUTOMATIC_LAUNCH_RECEIPT_REQUIRED')
+    require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',f.get('CAUSE_EVIDENCE_URL','')),
+        'EVIDENCED_NEW_SOURCE_REPAIR_REQUIRED_BEFORE_MATERIAL_RETRY')
+    require(BRANCH in row['body'],'LAUNCH_RECEIPT_SOLE_SUCCESSOR_BRANCH_REQUIRED')
+    comment(f['CAUSE_EVIDENCE_URL'],int(f['CAUSE_EVIDENCE_URL'].split('/issues/',1)[1].split('#',1)[0]))
+    if 'full-gov311' not in gates:
+        proof_url=f.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL')
+        require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',proof_url or ''),
+            'OMITTED_GOV311_REQUIRES_EXACT_CANONICAL_CUSTODY_RECEIPT_POINTER')
+        proof=comment(proof_url,int(proof_url.split('/issues/',1)[1].split('#',1)[0]));proof_fields=fields(proof['body'])
+        require(proof_fields.get('SOURCE_SHA')==sha and proof_fields.get('SOURCE_TREE')==tree,
+            'OMITTED_GOV311_CUSTODY_RECEIPT_SOURCE_REBOUND')
+        # This authentic pointer controls scope only. It is never a PASS or
+        # artifact validation: the supervisor must review the actual native
+        # collection/JUnit/FIN and immutable artifact bytes/digest it cites.
+    else:
+        proof_url=f.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL')
+        require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',proof_url or ''),
+            'SUPPLEMENTARY_GOV311_REQUIRES_EVIDENCED_MISSING_EXACT_CUSTODY')
+        comment(proof_url,int(proof_url.split('/issues/',1)[1].split('#',1)[0]))
+    return f
+
+def dedup_admission(sha,gate):
+    current=int(os.environ['GITHUB_RUN_ID']);seen=[];ids=set()
+    for page in range(1,RUN_PAGES+1):
+        runs=api('/actions/workflows/rc6-unified-candidate-tests.yml/runs?'+urllib.parse.urlencode(
+            {'head_sha':sha,'per_page':100,'page':page}))
+        batch=runs.get('workflow_runs')
+        require(isinstance(batch,list) and len(batch)<=100 and isinstance(runs.get('total_count'),int)
+            and runs['total_count']<RUN_PAGES*100,'WORKFLOW_RUN_PAGINATION_INCOMPLETE_FAIL_CLOSED')
+        for run in batch:
+            require(run['id'] not in ids and run['head_sha']==sha,'WORKFLOW_RUN_PAGINATION_DUPLICATED_OR_REBOUND')
+            ids.add(run['id'])
+            if run['id']==current:continue
+            if run['event']=='pull_request' or run.get('display_title')=='RC6 material '+gate+' @ '+sha:
+                seen.append({'id':run['id'],'event':run['event'],'status':run['status'],'conclusion':run['conclusion']})
+        if len(batch)<100:break
+    else:raise ValueError('WORKFLOW_RUN_PAGINATION_INCOMPLETE_FAIL_CLOSED')
+    require(not seen,'PR_OR_GATE_ALREADY_ATTEMPTED_FOR_EXACT_SOURCE_REQUIRES_NEW_EVIDENCED_SHA')
+    return {'prior_same_Source_PR_or_same_gate_runs':seen,'examined_run_ids':sorted(ids),
+        'pagination_complete':True,'no_prior_run_reclassified_as_PASS':True}
+
+def latest_writer(rows,issue,sha,tree,owner,now):
+    records=[]
+    for row in rows:
+        f=fields(row.get('body',''))
+        if any(key in f for key in ('WRITE_OWNER','INTEGRATION_OWNER','DEPLOY_OWNER','SOURCE_LEASE_EXPIRES_UTC','RELEASED')):
+            require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
+                'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
+            for key in ('WRITE_OWNER','INTEGRATION_OWNER'):
+                require(key not in f or f[key] in (owner,'RELEASED','NOT_ACQUIRED','NONE','null'),
+                    'ANY_FOREIGN_WRITER_OR_INTEGRATION_OWNER_AFTER_CONTROLLED_ANCHOR')
+            require('DEPLOY_OWNER' not in f or f['DEPLOY_OWNER'] in ('NOT_ACQUIRED','RELEASED','NONE','null'),
+                'ANY_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
+            records.append((row,f))
+    require(records,'FRESH_OWNER_RECORDS_REQUIRED_BOTH_ISSUES')
+    integrations=[(row,f) for row,f in records if 'INTEGRATION_OWNER' in f]
+    require(integrations and integrations[-1][1]['INTEGRATION_OWNER']==owner,
+        'LATEST_INTEGRATION_OWNER_NOT_CONTROLLED_RECOVERY')
+    row,f=records[-1]
+    require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue))
+        and f.get('WRITE_OWNER')==owner and f.get('SESSION_SUCCESSOR',f.get('SESSION'))==owner
+        and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+        and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
+        and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0',
+        'LATEST_WRITER_OR_DEPLOY_OWNER_CONFLICT')
+    expires=stamp(f.get('SOURCE_LEASE_EXPIRES_UTC'))
+    require(stamp(row['created_at'])<=effective_stamp(row)<=now<expires
+        and timedelta(0)<expires-stamp(row['created_at'])<=timedelta(minutes=20),
+        'LATEST_WRITER_LEASE_EXPIRED_OR_UNBOUNDED')
+    return {'comment_id':row['id'],'url':row['html_url'],'author':'mbalbo2023','fields':f,
+        'body_sha256':hashlib.sha256(row['body'].encode()).hexdigest(),'lease_expires_utc':expires.isoformat().replace('+00:00','Z'),
+        'latest_integration_owner_comment_id':integrations[-1][0]['id'],
+        'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
+        'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
+
+def ops_admission(auth,owner,now,anchors):
+    response=api('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
+    require(response['type']=='file' and response['path']==OPS and response['encoding']=='base64','ACTUAL_OPS_STATE_FILE_REQUIRED')
+    raw=base64.b64decode(response['content'],validate=False)
+    require(len(raw)<=CONTROL_CAP and hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==response['sha'],
+        'EXACT_BOUNDED_OPS_STATE_GIT_BLOB_REQUIRED')
+    state=document(raw);require(state['repository_id']==REPO_ID and state['repository']==REPO
+        and state['deploy_owner'] is None
+        and state['real_orders_sent']==0,'NO_DEPLOY_OWNER_ACTUAL_OPS_REQUIRED')
+    lease=state['lease']
+    if lease is not None:
+        require(isinstance(lease,dict) and stamp(lease['expires_at'])<=now,'FOREIGN_OR_UNKNOWN_SUPERVISOR_LEASE_ACTIVE')
+    writer=state['write_owner']
+    require(writer is None or isinstance(writer,dict),'ACTUAL_OPS_WRITER_OBJECT_REQUIRED')
+    if writer is not None and writer.get('session')!=owner and writer.get('released') is not True:
+        require(auth.get('RECONCILED_OPS_STATE_BLOB')==response['sha']==RECONCILED_BLOB
+            and auth.get('RECONCILED_OPS_STATE_SHA256')==hashlib.sha256(raw).hexdigest()==RECONCILED_RAW_SHA256
+            and auth.get('RECONCILED_OPS_WRITE_OWNER')==writer.get('session')==RECONCILED_OLD_OWNER
+            and auth.get('RECONCILIATION_USER_STOP_CONFIRMED')=='true',
+            'FOREIGN_OPS_WRITER_REQUIRES_EXACT_RAW_AUTHENTIC_RECONCILIATION')
+        proofs=[]
+        for issue in (471,473):
+            row=anchors[issue];body_digest=hashlib.sha256(row['body'].encode()).hexdigest()
+            require(auth.get('RECONCILIATION_RECEIPT_'+str(issue))==row['html_url']
+                and auth.get('RECONCILIATION_RECEIPT_'+str(issue)+'_SHA256')==body_digest==RECOVERY_BODY_SHA256
+                and USER_STOP_LITERAL in row['body'] and 'state blob'+response['sha'] in row['body']
+                and writer['session'] in row['body'],'EXACT_AUTHENTIC_USER_STOP_AND_STALE_STATE_RECEIPTS_REQUIRED')
+            proofs.append({'issue':issue,'comment_id':row['id'],'url':row['html_url'],'body_sha256':body_digest,
+                'unchanged_created_updated':row['created_at'],'user_stop_confirmation_literal_verified':True})
+    else:proofs=[]
+    return {'blob':response['sha'],'sha256':hashlib.sha256(raw).hexdigest(),'lease':lease,
+        'write_owner':writer,'deploy_owner':None,'exact_reconciliation_receipts':proofs,'ops_modified':False,
+        'supervisor_released_claimed':False,'lease_expiration_treated_as_release':False}
+
+def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None):
+    require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
+        and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
+    require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
+    event,event_custody=actual_event();require(event['pull_request']['head']['sha']==source_sha,'EVENT_HEAD_SHA_REBOUND')
+    now=now or datetime.now(timezone.utc);tree=fresh_source(source_sha,source_tree)
+    anchors=recovery_anchors(RECOVERY_OWNER)
+    timelines={issue:recent(issue,anchors[issue],now) for issue in (471,473)}
+    if launch_receipt_url:launch=comment(launch_receipt_url,471);auth=launch_fields(launch,source_sha,tree,owner_session)
+    else:
+        matching=[]
+        for row in timelines[471]:
+            f=fields(row.get('body',''))
+            if f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('SOURCE_SHA')==source_sha:
+                auth=launch_fields(row,source_sha,tree,owner_session);matching.append((row,auth))
+        require(len(matching)==1,'ONE_EXACT_PREPUSH_LAUNCH_AUTHORITY_REQUIRED')
+        launch,auth=matching[0]
+    # Event delivery follows push: authorization must already exist.
+    require(stamp(launch['created_at'])<=stamp(event['pull_request']['updated_at']),
+        'DURABLE_LAUNCH_AUTHORIZATION_MUST_PRECEDE_PR_SOURCE_UPDATE')
+    gates=auth['GATES_AUTHORIZED'].split(',')
+    require(gate in gates,'GATE_NOT_AUTHORIZED_IN_IMMUTABLE_PREPUSH_SCOPE')
+    owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
+    ops=ops_admission(auth,owner,now,anchors)
+    dedup=dedup_admission(source_sha,gate)
+    return {'schema':'rc6.material-automatic-pr-admission.v2','status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':source_sha,
+        'source_tree':tree,'gate':gate,'owner_session':owner,'launch_receipt_url':launch['html_url'],
+        'launch_receipt_created_at':launch['created_at'],'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'fresh_ownership':owners,'ops':ops,'dedup':dedup,'event_custody':event_custody,
+        'gates_authorized':gates,'material_gates':[item for item in gates if item!='focal'],
+        'Gov311_scope_pointer':auth.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL') or auth.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'),
+        'omitted_Gov311_PASS_or_artifact_claimed':False,'source_truth':'CANONICAL_GITHUB_HEAD_COMMIT_TREE_PR',
+        'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_WORKFLOW_SHA'),
+        'GITHUB_SHA_is_candidate_SHA_claimed':False,'read_utc':now.isoformat().replace('+00:00','Z'),
+        'same_read_lease_valid_for_whole_long_gate_claimed':False,'real_orders_sent':0,
+        'DEPLOY_OWNER':'NOT_ACQUIRED','canonical_artifact_pipeline':'PREDEPLOY_V2_ONLY','final_candidate_eligible':False}
+
+def publish_new(root,row):
+    root=Path(os.path.abspath(root));require(not any(p.is_symlink() for p in (root,*root.parents))
+        and not os.path.lexists(root),'FRESH_ADMISSION_CONTROL_NAMESPACE_REQUIRED')
+    root.mkdir(mode=0o700);raw=wire(row);require(len(raw)<=CONTROL_CAP,'ADMISSION_CONTROL_LIMIT')
+    fd=os.open(root/'admission.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'wb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
+    return root/'admission.json'
+
+def main():
+    parser=argparse.ArgumentParser();parser.add_argument('--source-sha',required=True);parser.add_argument('--source-tree')
+    parser.add_argument('--launch-receipt-url');parser.add_argument('--owner-session');parser.add_argument('--gate',choices=GATES,required=True)
+    parser.add_argument('--control-root',type=Path,required=True);args=parser.parse_args()
+    try:
+        row=admit(source_sha=args.source_sha,source_tree=args.source_tree,launch_receipt_url=args.launch_receipt_url,
+            owner_session=args.owner_session,gate=args.gate);path=publish_new(args.control_root,row)
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+                for key in ('source_sha','source_tree','owner_session','launch_receipt_url'):stream.write(key+'='+row[key]+'\n')
+                stream.write('material_gates_json='+json.dumps(row['material_gates'],separators=(',',':'))+'\n')
+                stream.write('admission_path='+str(path)+'\ncontrol_root='+str(path.parent)+'\n')
+        print(json.dumps({'status':row['status'],'source_sha':row['source_sha'],'gate':row['gate'],'real_orders_sent':0}),flush=True)
+        return 0
+    except BaseException as error:
+        literal=str(error).partition(':')[0];reason=literal if re.fullmatch('[A-Z][A-Z0-9_]{0,191}',literal) else 'NON_LITERAL_ADMISSION_FAILURE'
+        row={'status':'RED','reason':reason,'class':type(error).__name__,'gate':args.gate,'native_started':False,'payload_reads':0,'real_orders_sent':0}
+        if not os.path.lexists(args.control_root):publish_new(args.control_root,row)
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('control_root='+str(args.control_root)+'\n')
+        print(json.dumps(row,sort_keys=True),flush=True);return 1
+if __name__=='__main__':raise SystemExit(main())

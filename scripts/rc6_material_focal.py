@@ -11,7 +11,10 @@ FILES=('tests/test_rc6_controlled_governed_runner.py',
        'tests/test_deploy_v2_frozen_artifact_contract.py',
        'tests/test_issue465_stress.py',
        'tests/test_rc6_stress_native_cli_lifecycle.py',
-       'tests/test_rc6_native_archive_horizon_wrapper.py')
+       'tests/test_rc6_native_archive_horizon_wrapper.py',
+       'tests/test_rc6_runtime_row_decode.py',
+       'tests/test_rc6_budget_source_custody.py',
+       'tests/test_rc6_predeploy_scoped_cleanup.py')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',required=True);p.add_argument('--source-sha',required=True)
