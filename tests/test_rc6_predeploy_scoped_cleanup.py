@@ -757,7 +757,8 @@ def native_owned_pytest_fixture(tmp_path, body):
     # The actual CLI enters with 077; its reviewed scoped main must create
     # the new native 755 venv using 022, without changing the caller/host.
     created = subprocess.run(['bash', '-c', 'umask 077; exec "$@"', 'controlled-create', sys.executable,
-                              '-B', str(repo / 'scripts/porota_predeploy_test_workspace.py'), 'create', '--scope', str(scope)],
+                              '-B', str(repo / 'scripts/porota_predeploy_test_workspace.py'), 'create', '--scope', str(scope),
+                              '--selected-pytest-fixture-without-pip'],
                              cwd=repo, env=env, check=True, capture_output=True, text=True, timeout=30)
     assert 'CREATED' in created.stdout
     assert (private / 'venv').stat().st_mode & 0o777 == 0o755
@@ -1270,3 +1271,85 @@ def test_retained_observer_small_positive_keeps_original_receipt_and_no_limit_ca
     for phase in ('collection', 'execution'):
         name = test_workspace.phase_controls(phase)['retained'].removesuffix('.json') + '-limit.json'
         assert not os.path.lexists(owned['root'] / name)
+
+
+def test_selected_pytest_component_fixture_has_complete_normal_dependencies_and_real_phase_fin(tmp_path):
+    import subprocess
+
+    owned = native_owned_pytest_fixture(tmp_path, 'def test_selected_actual_payload():\n    assert 5 + 6 == 11\n')
+    claim = json.loads(cleanup.read_file(owned['private'] / test_workspace.CLAIM, mode=0o600)[0])
+    native = claim['venv']
+    assert native['with_pip'] is False
+    assert native['construction_role'] == 'EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_WITHOUT_PIP'
+    assert native['whole_Gov_artifact_runtime_or_material_authority_granted'] is False
+    authority = native['selected_fixture_authority']
+    assert authority['context'] == owned['context']
+    assert authority['owner_uuid'] == owned['control']['owner_uuid']
+    assert authority['source_sha'] == owned['context']['candidate_sha']
+    assert authority['source_tree'] == owned['context']['candidate_tree']
+    assert set(authority['complete_component_input_records']) == {
+        'scripts/porota_predeploy_cleanup.py', 'scripts/porota_predeploy_test_workspace.py',
+        test_workspace.DRIVER, 'test_native_owned.py'}
+    assert authority['whole_Gov_artifact_runtime_or_material_authority_granted'] is False
+    assert owned['copied']['classification'] == 'COPIED_LOCKED_CURRENT_INSTALLED_BYTES_NOT_WHEEL_BYTE_ATTESTATION'
+    assert owned['copied']['source_product_environment_modified'] is False
+    assert owned['copied']['additional_pth_or_sys_path_overlay'] is owned['copied']['pyc_copied'] is False
+    assert owned['copied']['pytest_owned_compatibility_member']['source_record_matches_copied_bytes'] is True
+    expected = sorted(owned['copied']['expected_distributions'].items())
+    check = ('import importlib.util,importlib.metadata as m,json,sys;'
+             'assert sys.prefix!=sys.base_prefix;'
+             'assert importlib.util.find_spec("pip") is None;'
+             'assert importlib.util.find_spec("setuptools") is None;'
+             'observed=sorted((d.metadata["Name"].lower(),d.version) for d in m.distributions());'
+             'assert observed==' + repr(expected) + ';'
+             'print(json.dumps({"prefix":sys.prefix,"distributions":observed}))')
+    observed = json.loads(subprocess.check_output([str(owned['private'] / 'venv/bin/python'), '-I', '-B', '-c', check],
+                                                  cwd=owned['repo'], env=owned['env'], text=True, timeout=10))
+    assert observed['prefix'] == str(owned['private'] / 'venv')
+    assert observed['distributions'] == [list(row) for row in expected]
+    invalid_claim = dict(claim, venv=dict(native, construction_role='UNKNOWN_NATIVE_ROLE'))
+    with pytest.raises(cleanup.CleanupRejected, match='TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID'):
+        test_workspace.validate_workspace_venv_role(invalid_claim, owned['control'])
+    original_full_scope = ['python', '-m', 'pytest', '-q', '.', '--basetemp=' + claim['pytest_basetemp']]
+    with pytest.raises(cleanup.CleanupRejected, match='SELECTED_FIXTURE_CANNOT_AUTHORIZE_WHOLE_GOV_COMMAND'):
+        test_workspace.execute_pytest_owned(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                           original_full_scope, timeout_seconds=60, phase='execution')
+    for phase in ('collection', 'execution'):
+        assert all(not os.path.lexists(owned['private'] / value)
+                   for key, value in test_workspace.phase_controls(phase).items()
+                   if key in {'launch', 'fin', 'progress', 'log'})
+    for phase in ('collection', 'execution'):
+        rc, supervisor = execute_native_pytest_cli(owned, phase=phase)
+        assert rc == 0
+        control = json.loads(cleanup.read_file(owned['private'] / test_workspace.phase_controls(phase)['fin'], mode=0o600)[0])
+        kernel = control['kernel']
+        assert control['phase'] == phase
+        assert control['native_venv_construction'] == native
+        assert control['supervisor_pid'] == supervisor == kernel['supervisor_pid']
+        assert control['owned_fin_closed'] is control['phase_green'] is control['management_acceptance'] is True
+        assert control['post_fin_errors'] == []
+        assert control['management_seconds'] == kernel['launcher_management_deadline_seconds'] == 60
+        assert kernel['pid'] == kernel['wait4_reaped_pid'] and kernel['actual_child_reaped'] is True
+        assert kernel['owned_children_exhaustion_verified'] is True and kernel['remaining_owned_children'] == []
+        assert kernel['process_group_absent_at_main_reap'] is kernel['process_group_absent_after_reap'] is True
+        assert kernel['subreaper_restoration_readback_verified'] is True
+        assert kernel['owned_cleanup_management_bound_seconds'] == 5
+        assert kernel['termination_reap_restore_cleanup_seconds'] <= 5
+        assert kernel['kernel_wait4_zero_observed_irreversible_red'] is False
+        assert kernel['late_observed_main_reap_irreversible_red'] is False
+        assert kernel['owned_group_signal_observations'] == kernel['supervisor_errors'] == []
+    result = test_workspace.safe_postread(owned['scope'], owned['repo'], owned['context'], owned['env'],
+                                        expected_management_seconds=60)
+    assert result['safe_postread'] is True and result['classification'] == 'FIN_REAL_CLOSED'
+    assert result['source_junit_data_log_payloads_read'] == 0 and result['cleanup_performed'] is False
+
+
+def test_selected_pytest_component_profile_refuses_production_authority_before_any_venv_creation(owned):
+    env = dict(workspace_environment(owned),
+               GITHUB_WORKFLOW_REF=cleanup.REPOSITORY + '/' + cleanup.WORKFLOW + '@refs/heads/product')
+    with pytest.raises(cleanup.CleanupRejected, match='SELECTED_FIXTURE_CONTROLLED_AUTHORITY_REQUIRED'):
+        test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                        selected_pytest_fixture=True)
+    assert not os.path.lexists(owned['root'] / 'venv')
+    assert not os.path.lexists(test_workspace.workspace_path(owned['control']))
+    assert not os.path.lexists(owned['root'] / test_workspace.CLAIM)

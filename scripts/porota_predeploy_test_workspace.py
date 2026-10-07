@@ -139,11 +139,133 @@ def seal_fresh_lib64_link(descriptor, control, construction_identity):
         os.close(alias_fd)
 
 
-def construct_private_venv(control):
+def selected_pytest_fixture_authority(control, scope, repo, context, environ):
+    """Authenticate this complete four-input component fixture, never whole Gov."""
+    cleanup.require(bind_owner(scope, repo, context, environ) == control,
+                    "SELECTED_FIXTURE_OWNER_BINDING_CHANGED")
+    cleanup.require(context.get("repository") == cleanup.REPOSITORY
+                    and context.get("workflow_path") == cleanup.WORKFLOW
+                    and context.get("event") == "pull_request"
+                    and context.get("run_id") == "471" and context.get("run_attempt") == "2"
+                    and environ.get("GITHUB_WORKFLOW_REF")
+                    == cleanup.REPOSITORY + "/" + cleanup.WORKFLOW + "@controlled-test",
+                    "SELECTED_FIXTURE_CONTROLLED_AUTHORITY_REQUIRED")
+    cleanup.require(not any(environ.get(name) for name in (
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_SHALLOW_FILE", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS")),
+        "SELECTED_FIXTURE_EXTERNAL_GIT_BINDING_REFUSED")
+    repo = Path(repo).absolute()
+    expected = {"scripts/porota_predeploy_cleanup.py", "scripts/porota_predeploy_test_workspace.py",
+                DRIVER, "test_native_owned.py"}
+    for path, names in ((repo, {".git", "scripts", "test_native_owned.py"}),
+                        (repo / "scripts", {Path(name).name for name in expected if name.startswith("scripts/")})):
+        with cleanup.directory(path) as descriptor:
+            bound_directory(descriptor, control, mode=0o755)
+            cleanup.require(set(os.listdir(descriptor)) == names,
+                            "SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED")
+    with cleanup.directory(repo / ".git") as descriptor:
+        value = os.fstat(descriptor)
+        cleanup.private_stat(value, regular=False)
+        cleanup.require(value.st_uid == control["owner_uid"]
+                        and value.st_dev == control["root_identity"][0]
+                        and cleanup.mount_id(descriptor) == control["root_mount_id"],
+                        "SELECTED_FIXTURE_OWN_NATIVE_GIT_REQUIRED")
+    cleanup.require(not os.path.lexists(repo / ".git/objects/info/alternates"),
+                    "SELECTED_FIXTURE_GIT_ALTERNATES_REFUSED")
+    git_environment = dict(environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+
+    def git_value(*args):
+        result = subprocess.run(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(repo), *args],
+                                env=git_environment, check=False, capture_output=True, timeout=30)
+        cleanup.require(result.returncode == 0 and len(result.stdout) <= 256 * 1024,
+                        "SELECTED_FIXTURE_NATIVE_GIT_PROOF_FAILED")
+        return result.stdout
+
+    cleanup.require(git_value("rev-parse", "HEAD").decode("ascii").strip() == context["candidate_sha"]
+                    and git_value("rev-parse", "HEAD^{tree}").decode("ascii").strip() == context["candidate_tree"]
+                    and git_value("rev-parse", "--git-common-dir").decode("ascii").strip() == ".git"
+                    and git_value("status", "--porcelain", "--untracked-files=no") == b"",
+                    "SELECTED_FIXTURE_REAL_CLEAN_HEAD_REQUIRED")
+    records = {}
+    for raw in git_value("ls-tree", "-rz", "--full-tree", "HEAD").split(b"\0"):
+        if not raw:
+            continue
+        descriptor, raw_name = raw.split(b"\t", 1)
+        mode, kind, blob = descriptor.decode("ascii").split()
+        name = raw_name.decode("utf-8")
+        cleanup.require(name in expected and name not in records and mode == "100644" and kind == "blob",
+                        "SELECTED_FIXTURE_TRACKED_COMPONENT_INPUT_INVALID")
+        before = os.lstat(repo / name)
+        payload, observed = cleanup.read_file(repo / name)
+        cleanup.require(attributes(before) == attributes(observed) == attributes(os.lstat(repo / name))
+                        and observed.st_uid == control["owner_uid"] and observed.st_nlink == 1
+                        and stat.S_IMODE(observed.st_mode) == 0o644
+                        and hashlib.sha1(b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload).hexdigest() == blob,
+                        "SELECTED_FIXTURE_GIT_BYTES_OR_CUSTODY_MISMATCH")
+        records[name] = {"mode": mode, "blob": blob, "bytes": len(payload),
+                         "sha256": hashlib.sha256(payload).hexdigest(), "all11": attributes(observed)}
+    cleanup.require(set(records) == expected and records[DRIVER]["sha256"] == ORIGINAL_DRIVER_SHA256,
+                    "SELECTED_FIXTURE_COMPLETE_NATIVE_MANAGER_INPUT_REQUIRED")
+    return {"schema": "rc6.selected-pytest-component-fixture-authority.v1",
+            "assertion_scope": "EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_ONLY",
+            "context": dict(context), "owner_uuid": control["owner_uuid"], "owner_uid": control["owner_uid"],
+            "source_sha": context["candidate_sha"], "source_tree": context["candidate_tree"],
+            "complete_component_input_records": records,
+            "whole_Gov_artifact_runtime_or_material_authority_granted": False, "real_orders_sent": 0}
+
+
+def validate_workspace_venv_role(claim, control):
+    """Control metadata only: safe-postread UNKNOWN must never open Source."""
+    native = claim.get("venv")
+    cleanup.require(type(native) is dict and type(native.get("with_pip")) is bool
+                    and native.get("whole_Gov_artifact_runtime_or_material_authority_granted") is False,
+                    "TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID")
+    if native["with_pip"]:
+        cleanup.require(native.get("construction_role") == "CANONICAL_NATIVE_WITH_BUNDLED_PIP"
+                        and native.get("selected_fixture_authority") is None,
+                        "TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID")
+        return
+    authority = native.get("selected_fixture_authority")
+    records = authority.get("complete_component_input_records") if type(authority) is dict else None
+    cleanup.require(native.get("construction_role") == "EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_WITHOUT_PIP"
+                    and type(authority) is dict and authority.get("schema") == "rc6.selected-pytest-component-fixture-authority.v1"
+                    and authority.get("assertion_scope") == "EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_ONLY"
+                    and authority.get("context") == claim["context"]
+                    and authority.get("owner_uuid") == control["owner_uuid"]
+                    and authority.get("owner_uid") == control["owner_uid"]
+                    and authority.get("source_sha") == claim["context"]["candidate_sha"]
+                    and authority.get("source_tree") == claim["context"]["candidate_tree"]
+                    and type(records) is dict and set(records) == {
+                        "scripts/porota_predeploy_cleanup.py", "scripts/porota_predeploy_test_workspace.py",
+                        DRIVER, "test_native_owned.py"}
+                    and records.get(DRIVER, {}).get("sha256") == ORIGINAL_DRIVER_SHA256
+                    and authority.get("whole_Gov_artifact_runtime_or_material_authority_granted") is False
+                    and authority.get("real_orders_sent") == 0,
+                    "TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID")
+
+
+def require_workspace_execution_role(claim, command, timeout_seconds, phase):
+    """An authenticated mini fixture cannot authorize the original full Gov argv."""
+    if claim["venv"]["with_pip"]:
+        return
+    expected = (["python", "-m", "pytest", "--collect-only", "-q", "test_native_owned.py", "-p", "no:cacheprovider"]
+                if phase == "collection" else
+                ["python", "-m", "pytest", "-q", "test_native_owned.py", "-p", "no:cacheprovider",
+                 "--basetemp=" + claim["pytest_basetemp"],
+                 "--junitxml=" + str(Path(claim["strict_private_root"]) / "native-owned-junit.xml")])
+    cleanup.require(timeout_seconds == 60 and command == expected,
+                    "SELECTED_FIXTURE_CANNOT_AUTHORIZE_WHOLE_GOV_COMMAND")
+
+
+def construct_private_venv(control, *, selected_fixture=None):
     """A preexisting venv is refused before EnvBuilder can modify anything."""
     cleanup.require(sys.platform == "linux" and platform.machine() == "x86_64"
                     and sys.version_info[:2] in ((3, 11), (3, 12)),
                     "REVIEWED_NATIVE_VENV_PLATFORM_REQUIRED")
+    cleanup.require(selected_fixture is None or (type(selected_fixture) is tuple and len(selected_fixture) == 4),
+                    "SELECTED_FIXTURE_AUTHENTICATED_ARGUMENTS_REQUIRED")
+    fixture_authority = (None if selected_fixture is None else
+                         selected_pytest_fixture_authority(control, *selected_fixture))
     private = Path(control["private_root"])
     with cleanup.directory(private) as parent:
         bound_directory(parent, control, mode=0o700)
@@ -153,7 +275,7 @@ def construct_private_venv(control):
         try:
             created = bound_directory(descriptor, control, mode=0o755)
             construction_identity = root_identity(created)
-            venv.EnvBuilder(symlinks=False, with_pip=True).create(private / "venv")
+            venv.EnvBuilder(symlinks=False, with_pip=fixture_authority is None).create(private / "venv")
             cleanup.require(root_identity(os.stat("venv", dir_fd=parent, follow_symlinks=False))
                             == construction_identity, "FRESH_VENV_DIRECTORY_REBOUND")
             removed = seal_fresh_lib64_link(descriptor, control, construction_identity)
@@ -164,7 +286,12 @@ def construct_private_venv(control):
                              clock=time.monotonic)
     return {"path": str(private / "venv"), "native_envbuilder_copies": True,
             "fresh_directory_identity": construction_identity, "native_lib64": removed,
-            "original_strict_inventory_accepted": True, "strict_entries": len(rows)}
+            "original_strict_inventory_accepted": True, "strict_entries": len(rows),
+            "with_pip": fixture_authority is None,
+            "construction_role": ("CANONICAL_NATIVE_WITH_BUNDLED_PIP" if fixture_authority is None else
+                                  "EXPLICIT_SELECTED_PYTEST_COMPONENT_FIXTURE_WITHOUT_PIP"),
+            "selected_fixture_authority": fixture_authority,
+            "whole_Gov_artifact_runtime_or_material_authority_granted": False}
 
 
 def workspace_path(control):
@@ -173,7 +300,8 @@ def workspace_path(control):
                                          + context["run_attempt"] + "-" + control["owner_uuid"])
 
 
-def create_workspace(scope, repo, context, environ):
+def create_workspace(scope, repo, context, environ, *, selected_pytest_fixture=False):
+    cleanup.require(type(selected_pytest_fixture) is bool, "SELECTED_FIXTURE_EXPLICIT_BOOL_REQUIRED")
     control = bind_owner(scope, repo, context, environ)
     private, fixture = Path(control["private_root"]), workspace_path(control)
     claim_path = private / CLAIM
@@ -181,7 +309,8 @@ def create_workspace(scope, repo, context, environ):
                     and not os.path.lexists(private / "venv"), "TEST_WORKSPACE_ALREADY_EXISTS")
     cleanup.require(fixture != private and not fixture.is_relative_to(private)
                     and not private.is_relative_to(fixture), "TEST_WORKSPACE_OVERLAPS_STRICT_ROOT")
-    native = construct_private_venv(control)
+    native = construct_private_venv(control, selected_fixture=(scope, repo, context, environ)
+                                    if selected_pytest_fixture else None)
     with cleanup.directory(Path(control["runner_temp"])) as parent:
         # The original RUNNER_TEMP may be 755; require its actual owner/mount,
         # without changing it or inventing a new parent-mode policy.
@@ -229,6 +358,7 @@ def load_workspace(scope, repo, context, environ):
                     and claim.get("retention_policy") == "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN"
                     and claim.get("fixture_root_removed") is False,
                     "TEST_WORKSPACE_CLAIM_MISMATCH")
+    validate_workspace_venv_role(claim, control)
     with cleanup.directory(fixture) as descriptor:
         value = bound_directory(descriptor, control, mode=0o700)
         cleanup.require(root_identity(value) == claim["fixture_root_identity"],
@@ -813,6 +943,7 @@ def execute_pytest_owned(scope, repo, context, environ, command, *, timeout_seco
                     "ORIGINAL_PYTEST_COMMAND_AND_MANAGEMENT_CAP_REQUIRED")
     cleanup.require(phase == "collection" or "--basetemp=" + claim["pytest_basetemp"] in command,
                     "BOUND_EXTERNAL_PYTEST_BASETEMP_REQUIRED")
+    require_workspace_execution_role(claim, command, timeout_seconds, phase)
     interpreter = shutil.which("python", path=environ.get("PATH"))
     expected = Path(control["private_root"]) / "venv/bin/python"
     cleanup.require(interpreter == str(expected), "ORIGINAL_PRIVATE_TEST_INTERPRETER_REQUIRED")
@@ -875,6 +1006,8 @@ def execute_pytest_owned(scope, repo, context, environ, command, *, timeout_seco
                "initial_actual_own_kernel": initial, "kernel": kernel,
                "owned_fin_closed": False, "phase_green": False, "post_fin_errors": [],
                "scope": "ACTUAL_PYTEST_MAIN_WAIT4_AND_ADOPTED_WAIT4; MAX_RSS_NOT_SUM; NO_TRANSITIVE_BINARY_NETWORK_ATTESTATION"}
+    if claim["venv"]["with_pip"] is False:
+        custody["native_venv_construction"] = claim["venv"]
     # FIN permits measurement, never converts a failed/late/signalled phase
     # into GREEN. In particular a post-main wait4-zero remains irreversible.
     try:
@@ -924,6 +1057,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("create", "supervise-pytest", "safe-postread", "require-owned-fin"))
     parser.add_argument("--scope", type=Path, required=True)
+    parser.add_argument("--selected-pytest-fixture-without-pip", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=5400)
     parser.add_argument("--phase", choices=("all", "collection", "execution"), default="all")
     args, command = parser.parse_known_args(argv)
@@ -931,9 +1065,12 @@ def main(argv=None):
     try:
         repo = Path.cwd()
         context = cleanup.execution_context(repo, os.environ)
+        cleanup.require(not args.selected_pytest_fixture_without_pip or args.command == "create",
+                        "SELECTED_FIXTURE_OPTION_REQUIRES_CREATE")
         if args.command == "create":
             cleanup.require(not command, "CREATE_WORKSPACE_UNEXPECTED_ARGUMENTS")
-            claim = create_workspace(args.scope, repo, context, os.environ)
+            claim = create_workspace(args.scope, repo, context, os.environ,
+                                     selected_pytest_fixture=args.selected_pytest_fixture_without_pip)
             # Only the GitHub-provided current step environment file is appended.
             with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as output:
                 output.write("POROTA_PREDEPLOY_PYTEST_BASETEMP=" + claim["pytest_basetemp"] + "\n")

@@ -486,10 +486,25 @@ def test_capture_sampler_records_real_owner_stack_and_closes_before_scope_exit()
               if row.get("_probe_event") == "STORAGE_PHASE"]
     assert phases == [(phase, edge) for phase in ("SHAPE", "COUNT", "CAPTURE") for edge in ("ENTER", "RETURN")]
     before_messages = list(sink.messages)
-    wire, _ = prepared.encode(body)
+    wire, logical_sha = prepared.encode(body)
     assert sink.messages == before_messages
-    assert serialization.decode_storage(wire, **LIMITS) == {
-        "unknown_scalar": "unit_scalar_value_is_not_stack_metadata", "rows": body["rows"]}
+    # Small output intentionally stays live: the frozen canonical proof does
+    # not coerce the original scalar or its aliases into decoded JSON objects.
+    expected_raw = (b'{"rows":[{"identity":"UNIT_ALIAS"},{"identity":"UNIT_ALIAS"}],'
+                    b'"unknown_scalar":"unit_scalar_value_is_not_stack_metadata"}')
+    assert len(expected_raw) < serialization.THRESHOLD
+    assert wire is body and serialization.is_storage(wire) is False
+    captured_raw = b"".join(packed._expanded(capture, expansion_limit=LIMITS["expansion_limit"])
+                            for capture in prepared._captures(body))
+    assert captured_raw == expected_raw
+    assert logical_sha == hashlib.sha256(expected_raw).hexdigest()
+    assert prepared.metrics(body) == (logical_sha, len(expected_raw))
+    decoded = serialization.decode_storage(wire, **LIMITS)
+    assert decoded is wire and decoded is body
+    assert decoded["unknown_scalar"] is scalar
+    assert decoded["rows"] is body["rows"] and decoded["rows"][0] is decoded["rows"][1]
+    assert callbacks == ["original_default_str"]
+    assert sink.messages == before_messages
 
 
 def test_capture_sampler_scope_finally_keeps_original_capture_exception_and_closes_thread():

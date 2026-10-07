@@ -19,6 +19,10 @@ import time
 import zlib
 
 
+_ROOT_VOLATILE_NATIVE_TYPE = ().__class__.__class__
+_ROOT_VOLATILE_NATIVE_STR = "".__class__
+
+
 SCHEMA = "rc6.lossless-json-storage.v2"
 CODEC = "GZIP_PACKED_TEMPLATE_CANONICAL_ASCII_JSON_V2"
 ARRAY_CODEC = "GZIP_BIG_ENDIAN_UINT32_V1"
@@ -164,6 +168,10 @@ def _array(record, *, maximum_count, width, durable_limit, deadline):
 
 
 def _root_volatile(name):
+    if _ROOT_VOLATILE_NATIVE_TYPE(name) is _ROOT_VOLATILE_NATIVE_STR:
+        return (name.endswith(("_at", "_seconds")) or name in
+            {"as_of", "last_as_of", "sequence", "generation_id", "cross_payload_hashes", "report_digest",
+             "checkpoint_digest", "evidence_retention", "logical_sha256", "storage_sha256", "sha256", "payload"})
     return (name.endswith("_at") or name.endswith("_seconds") or name in
         {"as_of", "last_as_of", "sequence", "generation_id", "cross_payload_hashes", "report_digest",
          "checkpoint_digest", "evidence_retention", "logical_sha256", "storage_sha256", "sha256", "payload"})
