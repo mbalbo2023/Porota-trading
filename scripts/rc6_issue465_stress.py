@@ -8,7 +8,7 @@ descriptive; conservative bounds and factual exit completion are the gates.
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -242,6 +242,48 @@ def _shadow_child(database, output, started, release, queue, slow_disk, maximum_
             import_observer.deactivate()
 
 
+def _make_storage_phase_observer(queue, ordinal, cpu, errors):
+    """Bounded numeric observations; errors have no admission authority."""
+    phase_starts = {}
+    def phase_observer(phase, edge):
+        # Numeric phase boundaries only; no source/payload reads.
+        # The original ninety-second clock includes this work.
+        try:
+            at, phase_cpu = time.monotonic(), time.process_time()
+            if phase not in {"SHAPE", "COUNT", "CAPTURE"} or edge not in {"ENTER", "RETURN"}:
+                raise ValueError("STORAGE_PHASE_OBSERVATION_CONTRACT")
+            span = {}
+            if edge == "ENTER":
+                if phase in phase_starts:
+                    raise ValueError("STORAGE_PHASE_DUPLICATE_ENTER")
+                phase_starts[phase] = (at, phase_cpu)
+            else:
+                start_wall, start_cpu = phase_starts.pop(phase)
+                span = {"phase_elapsed_seconds": at-start_wall,
+                        "phase_cpu_seconds": phase_cpu-start_cpu}
+            queue.put({"_probe_event": "STORAGE_PHASE", "handler_name": "storage_prepare",
+                "constructor_ordinal": ordinal, "storage_phase": phase, "storage_edge": edge,
+                "entered_at_monotonic": at, "child_cpu_seconds": phase_cpu-cpu, **span})
+        except Exception as error:
+            # This observational failure cannot replace a business
+            # exception. It remains a veto in the native result.
+            errors.append({"constructor_ordinal": ordinal,
+                "phase": phase, "edge": edge, "error_class": type(error).__name__})
+    return phase_observer
+
+
+@contextmanager
+def _storage_constructor_observation(queue, ordinal, cpu, errors):
+    """Observe only this real constructor and restore any enclosing context."""
+    from rc6_shadow_runtime import packed_storage
+    callback = _make_storage_phase_observer(queue, ordinal, cpu, errors)
+    token = packed_storage._STORAGE_PHASE_OBSERVER.set(callback)
+    try:
+        yield
+    finally:
+        packed_storage._STORAGE_PHASE_OBSERVER.reset(token)
+
+
 def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
                        canonical_runtime,diagnostic_stacks,import_observer,child_qualification):
     from rc6_shadow_runtime import persistence
@@ -324,6 +366,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
         faulthandler.dump_traceback_later(10, repeat=True, file=stack_stream)
     phases = []
     handlers = {}
+    storage_observation_errors = []
     for module_name, function_name in (
             ("families", "family_reports"), ("lab", "evaluate_runtime_lab"),
             ("entry_signals", "evaluate_runtime_entry_signals"), ("funnel", "evaluate_runtime_funnel")):
@@ -369,8 +412,11 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             metrics["calls"] += 1
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
+            observation = (_storage_constructor_observation(queue, metrics["calls"], cpu,
+                storage_observation_errors) if _name == "storage_prepare" else nullcontext())
             try:
-                value = _original(*args, **kwargs)
+                with observation:
+                    value = _original(*args, **kwargs)
                 if _name == "checkpoint_restore" and kwargs.get("checkpoint") and value:
                     state = value["checkpoint"]
                     assert all(key in state for key in ("lab", "entry_signals", "funnel"))
@@ -523,6 +569,11 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             result["import_provenance"] = {"status":"UNVERIFIED_FINAL_BOUNDARY", "native_pid":os.getpid(),
                 "parent_pid":os.getppid(), "transient_closure_verified":False,
                 "error_class":type(error).__name__, "reason":str(error)}
+    if storage_observation_errors:
+        # Retain every original error/reason and make probe failure fail closed.
+        result.update(status="SHADOW_FAIL_CLOSED", cycle_completion=False,
+            storage_phase_observation_errors=storage_observation_errors)
+        result.setdefault("reason", "STORAGE_PHASE_OBSERVATION_FAILED")
     result.update(phases=phases, cycle_handled=True,
                   full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
@@ -614,6 +665,18 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             parent_observer.deactivate()
 
 
+def _require_stress_resource_gates(result, binding):
+    """Keep the six original gates and add only the observation-error veto."""
+    result["resource_gates"]["storage_phase_observation_healthy"] = not result["shadow"].get(
+        "storage_phase_observation_errors")
+    result["business_resource_complete"] = all(result["resource_gates"][key] for key in
+               ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
+                "complete_committed_cycle", "actual_slow_fsync_exit_isolation", "storage_phase_observation_healthy"))
+    result["import_proof_complete"] = binding is not None and result["import_provenance"]["transient_closure_verified"] is True
+    if not result["business_resource_complete"]:
+        raise StressResourceLimit(result)
+
+
 def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, maximum_bytes,
                 allow_fail_closed, canonical_runtime, diagnostic_stacks, binding, parent_observer, parent_before,
                 native_postread_barrier=None):
@@ -668,6 +731,10 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             "child_elapsed_seconds": message.get("elapsed_seconds"),
             "phases": list(message.get("phases", [])),
             "handler_names": sorted(message.get("handler_resources", {}))})
+        if event == "STORAGE_PHASE":
+            progress_receipts[-1].update({key: message[key] for key in (
+                "constructor_ordinal", "storage_phase", "storage_edge",
+                "phase_elapsed_seconds", "phase_cpu_seconds") if key in message})
         if event == "IMPORT_PROVENANCE":
             child_import_before = message.get("import_provenance")
         elif event == "FINAL":
@@ -809,12 +876,7 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             "worker_pid_source_binding_verified":child_bound,"parent_boundary_before":parent_before,"parent_final":parent_final,
             "worker_boundary_before":child_import_before,"worker_final":child_final,"transient_closure_verified":verified,
             "scope":"OBSERVED_PARENT_AND_WORKER_WINDOWS; BOOTSTRAP_AND_POSTBOUNDARY_IPC_TEARDOWN_NOT_FULL_LIFETIME_CLOSURE"}
-    result["business_resource_complete"] = all(result["resource_gates"][key] for key in
-               ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
-                "complete_committed_cycle", "actual_slow_fsync_exit_isolation"))
-    result["import_proof_complete"] = binding is not None and result["import_provenance"]["transient_closure_verified"] is True
-    if not result["business_resource_complete"]:
-        raise StressResourceLimit(result)
+    _require_stress_resource_gates(result, binding)
     if binding is not None and not result["import_proof_complete"]:
         raise StressImportProofLimit(result)
     return result

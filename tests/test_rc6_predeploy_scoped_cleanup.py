@@ -1183,3 +1183,90 @@ def test_retained_small_real_native_fin_has_complete_original_receipt_without_li
     assert retained['measured_by_same_owned_fin_supervisor_pid'] == supervisor
     assert retained['namespace_entries_including_root'] < cleanup.MAX_FILES
     assert retained['resources_removed'] == retained['payload_files_read'] == 0
+
+
+
+def test_retained_observer_attributes_only_completed_direct_pytest_members_without_tail_reads(owned, monkeypatch):
+    """Real own metadata fixture; test-only cap, not a native Gov rootcount."""
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    fixture = Path(claim['fixture_root'])
+    base = fixture / 'pytest'; base.mkdir()
+    completed = base / 'a-completed'; completed.mkdir()
+    nested = completed / 'nested'; nested.mkdir()
+    (completed / 'payload-a').write_bytes(b'own completed fixture bytes')
+    (nested / 'payload-n').write_bytes(b'own nested fixture bytes')
+    target = owned['runner'] / 'observer-protected-outside'
+    target.write_bytes(b'protected outside target')
+    (completed / 'z-link').symlink_to(target)
+    partial = base / 'b-stopped'; partial.mkdir()
+    (partial / 'payload-b0').write_bytes(b'not traversed at the preflight')
+    (partial / 'payload-b1').write_bytes(b'not traversed at the preflight')
+    outside_before = test_workspace.attributes(target.lstat())
+    old_open = os.open
+
+    def own_metadata_only_open(path, flags, *args, **kwargs):
+        if os.fsdecode(path) in {'payload-a', 'payload-n', 'payload-b0', 'payload-b1', 'observer-protected-outside'}:
+            assert flags & os.O_PATH
+        return old_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(test_workspace.os, 'open', own_metadata_only_open)
+    monkeypatch.setattr(cleanup, 'MAX_FILES', 10)  # Original100000 untouched outside this native unit fixture.
+    observations = []
+    with pytest.raises(cleanup.CleanupRejected, match='RETAINED_TEST_NAMESPACE_LIMIT'):
+        test_workspace.measure_retained_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                                 on_limit=observations.append)
+    assert len(observations) == 1
+    row = observations[0]
+    assert row['guard'] == 'directory_preflight'
+    assert row['current_relative_path'] == 'pytest/b-stopped'
+    assert row['entries_counter_at_stop'] == 9 and row['quota_check_value'] == 11
+    assert row['direct_child_dirent_count_unvalidated'] == 2
+    completed_rows = row['largest_64_completed_direct_pytest_members']
+    assert len(completed_rows) == 1
+    actual = completed_rows[0]
+    assert actual['relative_path'] == 'pytest/a-completed' and actual['complete'] is True
+    assert actual['entries_counter_delta'] == actual['validated_kind_entries_delta'] == 5
+    assert actual['kind_counts_delta'] == {'directory_entries': 2, 'regular_entries': 2, 'symlinks': 1,
+                                         'hardlinked_regular_entries': 0, 'special_entries': 0}
+    physical = [completed.lstat(), nested.lstat(), (completed / 'payload-a').lstat(),
+                (nested / 'payload-n').lstat(), (completed / 'z-link').lstat()]
+    assert actual['globally_first_visited_unique_inodes_delta'] == 5
+    assert actual['globally_first_visited_allocated_bytes_delta'] == sum(st.st_blocks * 512 for st in physical)
+    assert actual['globally_first_visited_logical_bytes_delta'] == sum(st.st_size for st in physical)
+    assert actual['physical_attribution_scope'] == 'GLOBAL_FIRST_VISIT_DELTAS_NOT_ISOLATED_SUBTREE_ALLOCATION'
+    active = row['active_direct_pytest_member_partial']
+    assert active['relative_path'] == 'pytest/b-stopped' and active['complete'] is False
+    assert active['entries_counter_delta'] == active['validated_kind_entries_delta'] == 1
+    assert active['kind_counts_delta']['regular_entries'] == 0
+    assert active['measurement_scope'] == 'VISITED_VALIDATED_PARTIAL_ONLY'
+    assert row['payload_files_read'] == 0 and row['measurement_complete'] is False
+    assert test_workspace.attributes(target.lstat()) == outside_before
+    assert (completed / 'z-link').is_symlink()
+
+
+def test_retained_observer_small_positive_keeps_original_receipt_and_no_limit_callback(owned):
+    """Physical own fixture, no extra positive/FIN certificate or cleanup."""
+    env = workspace_environment(owned)
+    claim = test_workspace.create_workspace(owned['scope'], owned['repo'], CONTEXT, env)
+    fixture = Path(claim['fixture_root'])
+    base = fixture / 'pytest'; base.mkdir()
+    completed = base / 'small-completed'; completed.mkdir()
+    payload = completed / 'payload'; payload.write_bytes(b'retained bytes')
+    observed = []
+    result = test_workspace.measure_retained_workspace(owned['scope'], owned['repo'], CONTEXT, env,
+                                                     on_limit=observed.append)
+    assert observed == []
+    assert result['namespace_entries_including_root'] == 5
+    assert result['counts']['regular_entries'] == 2 and result['counts']['directory_entries'] == 3
+    assert result['payload_files_read'] == result['resources_removed'] == 0
+    assert result['fixture_root_removed'] is False
+    assert 'largest_64_completed_direct_pytest_members' not in result
+    assert 'active_direct_pytest_member_partial' not in result
+    physical = [fixture.lstat(), (fixture / test_workspace.MARKER).lstat(), base.lstat(), completed.lstat(), payload.lstat()]
+    assert result['unique_physical_inodes'] == 5
+    assert result['allocated_bytes_unique_physical_inodes'] == sum(st.st_blocks * 512 for st in physical)
+    assert result['original_capacity_policy'] == {'min_free_bytes': 2 * 1024**3, 'min_free_inode_percent': 10}
+    for phase in ('collection', 'execution'):
+        name = test_workspace.phase_controls(phase)['retained'].removesuffix('.json') + '-limit.json'
+        assert not os.path.lexists(owned['root'] / name)

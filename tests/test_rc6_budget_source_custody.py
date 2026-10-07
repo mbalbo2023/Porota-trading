@@ -1011,3 +1011,67 @@ def test_budget_zero_link_journal_foreign_ownership_or_device_never_grants_absen
         with pytest.raises(ValueError, match="PPI_BUDGET_PATH_ALIAS"):
             budget._check_one(journal)
         assert len(observations) == 1
+
+
+
+def test_committed_read_sqlite_busy_note_preserves_native_exclusive_error_and_fifty_ms_configuration(native_ledger):
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    budget = runtime._current(priority="EXIT_CRITICAL")
+    assert budget is not None
+    with closing(budget._connect()) as configured:
+        assert configured.execute("PRAGMA busy_timeout").fetchone()[0] == 50
+    before = source_custody_snapshot(store.path)
+    with closing(sqlite3.connect(budget.path, timeout=.05)) as writer:
+        writer.execute("BEGIN EXCLUSIVE")
+        try:
+            with pytest.raises(sqlite3.OperationalError) as denied:
+                budget._book_flight_pending("0" * 64, "owned-unreadable-flight", "1" * 64, 5,
+                    critical=True, last_observed_clock=budgets.stamp(clock.now()).timestamp())
+        finally:
+            writer.rollback()
+    assert denied.value.sqlite_errorcode == sqlite3.SQLITE_BUSY
+    assert str(denied.value) == "database is locked"
+    prefix = "PPI_BUDGET_COMMITTED_READ_DIAGNOSTIC "
+    notes = [note for note in denied.value.__notes__ if note.startswith(prefix)]
+    assert len(notes) == 1
+    observed = json.loads(notes[0][len(prefix):])
+    assert observed["schema"] == "rc6.ppi-budget-committed-read-error.v1"
+    assert observed["phase"] == "SNAPSHOT_BOUNDARY"
+    assert observed["sqlite_errorcode"] == sqlite3.SQLITE_BUSY
+    assert observed["declared_connect_timeout_ms"] == 50
+    assert observed["post_snapshot_to_error_seconds"] is None
+    assert 0 <= observed["connect_seconds"] <= observed["total_to_error_seconds"]
+    assert 0 <= observed["snapshot_seconds"] <= observed["total_to_error_seconds"]
+    assert str(store.path) not in notes[0] and str(budget.path) not in notes[0]
+    assert "SELECT" not in notes[0] and "owned-unreadable-flight" not in notes[0]
+    assert source_custody_snapshot(store.path) == before
+
+
+def test_committed_read_diagnostic_note_failure_cannot_replace_original_sqlite_exception(native_ledger, monkeypatch):
+    clock, store, controller = native_ledger
+    runtime = budgets.RuntimePPIBudget(store.path, controller, clock=clock.now)
+    budget = runtime._current(priority="EXIT_CRITICAL")
+    assert budget is not None
+    # Capture a genuine kernel/SQLite error; only its Python note metadata is
+    # adulterated afterward. The following call is an explicit error seam.
+    with closing(sqlite3.connect(budget.path, timeout=.05)) as writer:
+        writer.execute("BEGIN EXCLUSIVE")
+        try:
+            with pytest.raises(sqlite3.OperationalError) as denied:
+                budget._book_flight_pending("0" * 64, "owned-unreadable-flight", "1" * 64, 5,
+                    critical=True, last_observed_clock=budgets.stamp(clock.now()).timestamp())
+        finally:
+            writer.rollback()
+    original_error = denied.value
+    original_error.__notes__ = "ADVERSARIAL_NONLIST_NOTES"
+    def original_failure(connection, key, default=None):
+        raise original_error
+    monkeypatch.setattr(budget, "_get", original_failure)
+    with pytest.raises(sqlite3.OperationalError) as preserved:
+        budget._book_flight_pending("0" * 64, "owned-unreadable-flight", "1" * 64, 5,
+            critical=True, last_observed_clock=budgets.stamp(clock.now()).timestamp())
+    assert preserved.value is original_error
+    assert preserved.value.sqlite_errorcode == sqlite3.SQLITE_BUSY
+    assert preserved.value.__notes__ == "ADVERSARIAL_NONLIST_NOTES"
+    assert str(preserved.value) == "database is locked"

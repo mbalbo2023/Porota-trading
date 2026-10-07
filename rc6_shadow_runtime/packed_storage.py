@@ -48,6 +48,18 @@ _BINDING_SCALAR_ENTRIES = 4096
 _BINDING_SCALAR_BYTES = 1024 * 1024
 _BINDING_SCALAR_STRING = 256
 _BINDING_SCALAR_INTEGER_BITS = 4096
+# This private observer carries no verification/admission authority. It is
+# installed only around the existing stress producer's real constructor call.
+# All events sit outside recursive count/shape/token loops and carry no payload.
+_STORAGE_PHASE_OBSERVER = ContextVar("rc6_storage_phase_observer", default=None)
+
+
+def _observe_storage_phase(phase, edge):
+    observer = _STORAGE_PHASE_OBSERVER.get()
+    if observer is not None:
+        observer(phase, edge)
+
+
 _PUBLICATION_CONSTRUCTION = ContextVar("rc6_private_publication_construction", default=None)
 
 
@@ -307,7 +319,9 @@ class _CaptureBuilder:
         grant = _PUBLICATION_CONSTRUCTION.get()
         if type(grant) is _PublicationGrant:
             self._publication_scope = grant.claim(self, value, self.cache, sys._getframe(1))
+        _observe_storage_phase("COUNT", "ENTER")
         self._count(value)
+        _observe_storage_phase("COUNT", "RETURN")
         if self._publication_scope is not None and not self._publication_scope.eligible_role(self, value):
             self._publication_scope = None
 
@@ -483,11 +497,15 @@ class PreparedPackedStorage:
         from .serialization import _shape
         if not isinstance(value, dict):
             raise ValueError("SHADOW_STORAGE_ROOT_REQUIRED")
+        _observe_storage_phase("SHAPE", "ENTER")
         _shape(value, memo=shape_memo)
+        _observe_storage_phase("SHAPE", "RETURN")
         self.mutable = frozenset(mutable)
         self.durable_limit, self.expansion_limit = durable_limit, expansion_limit
         builder = _CaptureBuilder(value, cache=cache)
+        _observe_storage_phase("CAPTURE", "ENTER")
         self.sections = {key: builder.capture(member, key) for key, member in value.items() if key not in self.mutable}
+        _observe_storage_phase("CAPTURE", "RETURN")
         self.expanded = {}
 
     def _captures(self, value):

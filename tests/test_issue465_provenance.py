@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -37,30 +38,270 @@ def write(root: Path, rel: str, data: bytes) -> None:
     path.write_bytes(data)
 
 
-@pytest.fixture
-def candidate(tmp_path):
-    repo = tmp_path / "candidate"
-    repo.mkdir()
-    for rel, content in {
-        "Dockerfile": b"FROM scratch\nCOPY . /app\n",
-        ".dockerignore": b"docs/\n*.pdf\n__pycache__/\n*.py[cod]\n",
-        "app.py": b"import worker\nVALUE = 7\n",
-        "worker.py": b"VALUE = 10\n",
-        "ops/policy/paper.json": b'{"mode":"PAPER","real_orders_sent":0}\n',
-        "assets/new.runtime.asset": b"automatic enumeration: unknown suffix\n",
-        "scripts/run": b"#!/bin/sh\nexit 0\n",
-        "tests/test_fixture.py": b"def test_case(): pass\n",
-        ".github/workflows/build.yml": b"name: test\n",
-        "docs/audit.md": b"Documentation excluded by versioned Docker policy\n",
-        "README.md": b"Source includes documentation bytes\n",
-    }.items():
-        write(repo, rel, content)
-    (repo / "scripts/run").chmod(0o755)
-    git(repo, "init", "-q")
+# Explicit synthetic artifact-parser fixture; never the RC6 Source/runtime artifact.
+_ISSUE465_FIXTURE_INPUTS = {
+    "Dockerfile": b"FROM scratch\nCOPY . /app\n",
+    ".dockerignore": b"docs/\n*.pdf\n__pycache__/\n*.py[cod]\n",
+    "app.py": b"import worker\nVALUE = 7\n",
+    "worker.py": b"VALUE = 10\n",
+    "ops/policy/paper.json": b'{"mode":"PAPER","real_orders_sent":0}\n',
+    "assets/new.runtime.asset": b"automatic enumeration: unknown suffix\n",
+    "scripts/run": b"#!/bin/sh\nexit 0\n",
+    "tests/test_fixture.py": b"def test_case(): pass\n",
+    ".github/workflows/build.yml": b"name: test\n",
+    "docs/audit.md": b"Documentation excluded by versioned Docker policy\n",
+    "README.md": b"Source includes documentation bytes\n",
+}
+_ISSUE465_SEEDS = {}
+
+
+def _issue465_require(ok, reason):
+    if not ok:
+        raise RuntimeError("ISSUE465_SYNTHETIC_FIXTURE_" + reason)
+
+
+def _issue465_stat10(st):
+    # Git reads may change atime. No timestamps are reset or restored.
+    return (st.st_dev, st.st_ino, st.st_mode, st.st_nlink, st.st_uid,
+            st.st_gid, st.st_rdev, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _issue465_dirfd(path):
+    _issue465_require(path.is_absolute() and not {".", ".."}.intersection(path.parts), "ABSOLUTE_NO_ALIAS_ROOT")
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd); fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _issue465_mount_id(fd):
+    probe = os.open("/proc/self/fdinfo/" + str(fd), os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        body = os.read(probe, 4097)
+    finally:
+        os.close(probe)
+    fields = [line.split(b":", 1)[1].strip() for line in body.splitlines() if line.startswith(b"mnt_id:")]
+    _issue465_require(len(body) <= 4096 and len(fields) == 1 and fields[0].isdigit(), "MOUNT_CONTROL")
+    return int(fields[0])
+
+
+def _issue465_snapshot(root):
+    """Own metadata/bytes only; no aliases, hardlinks or foreign mounts."""
+    rootfd = _issue465_dirfd(root)
+    records = {}
+    try:
+        initial = os.fstat(rootfd)
+        uid = os.geteuid(); mount_id = _issue465_mount_id(rootfd)
+        _issue465_require(os.getuid() == uid and uid != 0 and initial.st_uid == uid, "OWN_UID")
+        def walk(fd, relative):
+            before = os.fstat(fd)
+            _issue465_require(before.st_dev == initial.st_dev and before.st_uid == uid and
+                              _issue465_mount_id(fd) == mount_id, "OWN_SAME_MOUNT")
+            records[relative] = {"kind": "directory", "stat10": _issue465_stat10(before)}
+            for name in sorted(os.listdir(fd)):
+                _issue465_require(name not in {".", ".."} and "/" not in name, "DIRENT")
+                rel = name if not relative else relative + "/" + name
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                _issue465_require(st.st_uid == uid and st.st_dev == initial.st_dev, "OWN_ENTRY")
+                if stat.S_ISDIR(st.st_mode):
+                    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                    try:
+                        _issue465_require(_issue465_stat10(os.fstat(child)) == _issue465_stat10(st), "DIRECTORY_REBOUND")
+                        walk(child, rel)
+                    finally:
+                        os.close(child)
+                else:
+                    _issue465_require(stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and st.st_size <= 1024 * 1024, "REGULAR_SINGLE_LINK")
+                    child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME, dir_fd=fd)
+                    try:
+                        _issue465_require(_issue465_stat10(os.fstat(child)) == _issue465_stat10(st) and
+                                          _issue465_mount_id(child) == mount_id, "FILE_REBOUND")
+                        data = bytearray()
+                        while True:
+                            block = os.read(child, 65536)
+                            if not block:
+                                break
+                            data.extend(block)
+                            _issue465_require(len(data) <= st.st_size, "FILE_GROWTH")
+                        _issue465_require(len(data) == st.st_size and _issue465_stat10(os.fstat(child)) == _issue465_stat10(st), "FILE_CUSTODY")
+                        records[rel] = {"kind": "file", "stat10": _issue465_stat10(st), "sha256": hashlib.sha256(data).hexdigest()}
+                    finally:
+                        os.close(child)
+            _issue465_require(_issue465_stat10(os.fstat(fd)) == _issue465_stat10(before), "DIRECTORY_CUSTODY")
+        walk(rootfd, "")
+        _issue465_require(_issue465_stat10(os.fstat(rootfd)) == _issue465_stat10(initial), "ROOT_CUSTODY")
+        return records
+    finally:
+        os.close(rootfd)
+
+
+def _issue465_git_object(kind, payload):
+    return hashlib.sha1(kind.encode() + b" " + str(len(payload)).encode() + b"\0" + payload).hexdigest()
+
+
+def _issue465_expected_git():
+    tree = {}
+    blobs = {}
+    for rel, content in _ISSUE465_FIXTURE_INPUTS.items():
+        node = tree
+        parts = rel.split("/")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        oid = _issue465_git_object("blob", content)
+        blobs[rel] = oid
+        node[parts[-1]] = (b"100755" if rel == "scripts/run" else b"100644", oid)
+    trees = {}
+    def encode(node, relative):
+        rows = []
+        for name in sorted(node, key=lambda item: item.encode() + (b"/" if isinstance(node[item], dict) else b"")):
+            entry = node[name]
+            if isinstance(entry, dict):
+                mode = b"40000"; oid = encode(entry, name if not relative else relative + "/" + name)
+            else:
+                mode, oid = entry
+            rows.append(mode + b" " + name.encode() + b"\0" + bytes.fromhex(oid))
+        payload = b"".join(rows)
+        oid = _issue465_git_object("tree", payload); trees[relative] = oid
+        return oid
+    root_tree = encode(tree, "")
+    return root_tree, blobs, trees
+
+
+def _issue465_native_identity(repo):
+    _issue465_require(git(repo, "rev-parse", "--show-object-format") == "sha1", "GIT_OBJECT_FORMAT")
+    _issue465_require(git(repo, "rev-parse", "--git-common-dir") == ".git" and
+                      git(repo, "rev-parse", "--git-path", "objects") == ".git/objects" and
+                      git(repo, "rev-parse", "--is-bare-repository") == "false", "OWN_GIT_LAYOUT")
+    tree, blobs, trees = _issue465_expected_git()
+    head = git(repo, "rev-parse", "HEAD")
+    _issue465_require(git(repo, "rev-parse", "HEAD^{tree}") == tree, "EXACT_ELEVEN_TREE")
+    commit = subprocess.check_output(["git", "--no-replace-objects", "-C", str(repo), "cat-file", "commit", head])
+    headers = commit.split(b"\n\n", 1)[0].splitlines()
+    _issue465_require(_issue465_git_object("commit", commit) == head and
+                      headers[0] == b"tree " + tree.encode() and
+                      not any(row.startswith(b"parent ") for row in headers), "AUTHENTIC_ORIGINAL_ROOT_COMMIT")
+    for label in (b"author", b"committer"):
+        _issue465_require(any(row.startswith(label + b" Offline Provenance Test <fixture@example.invalid> ") for row in headers), "ORIGINAL_COMMIT_IDENTITY")
+    expected = {(b"100755" if rel == "scripts/run" else b"100644") + b" blob " + oid.encode() + b"\t" + rel.encode() for rel, oid in blobs.items()}
+    actual = subprocess.check_output(["git", "--no-replace-objects", "-C", str(repo), "ls-tree", "-rz", "--full-tree", "HEAD"])
+    rows = actual.rstrip(b"\0").split(b"\0")
+    _issue465_require(len(rows) == 11 and set(rows) == expected, "EXACT_ELEVEN_TRACKED_RECORDS")
+    reachable = git(repo, "rev-list", "--objects", "HEAD").splitlines()
+    object_ids = {line.split(" ", 1)[0] for line in reachable}
+    _issue465_require(object_ids == {head, *blobs.values(), *trees.values()} and len(object_ids) == 21, "OWN_TWENTY_ONE_OBJECTS")
+    _issue465_require(not git(repo, "remote") and not git(repo, "for-each-ref", "refs/remotes") and
+                      git(repo, "config", "user.email") == "fixture@example.invalid" and
+                      git(repo, "config", "user.name") == "Offline Provenance Test", "ORIGINAL_LOCAL_GIT_PROFILE")
+    return {"head": head, "tree": tree, "object_ids": sorted(object_ids),
+            "blob_oids": blobs, "tree_oids": trees, "commit_sha256": hashlib.sha256(commit).hexdigest()}
+
+
+def _issue465_freeze_seed(seed):
+    records = _issue465_snapshot(seed)
+    for relative, record in sorted(records.items(), key=lambda item: item[0].count("/"), reverse=True):
+        if record["kind"] != "file":
+            continue
+        path = seed / relative
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME)
+        try:
+            _issue465_require(_issue465_stat10(os.fstat(fd)) == record["stat10"], "FREEZE_FILE_REBOUND")
+            os.fchmod(fd, 0o555 if record["stat10"][2] & 0o111 else 0o444)
+        finally:
+            os.close(fd)
+    for relative, record in sorted(records.items(), key=lambda item: (item[0].count("/"), len(item[0])), reverse=True):
+        if record["kind"] == "directory":
+            fd = _issue465_dirfd(seed / relative)
+            try:
+                _issue465_require(os.fstat(fd).st_ino == record["stat10"][1], "FREEZE_DIRECTORY_REBOUND")
+                os.fchmod(fd, 0o555)
+            finally:
+                os.close(fd)
+    return records
+
+
+def _issue465_build_seed(seed):
+    """Create a fresh eleven-input synthetic seed; no Source object pool."""
+    _issue465_require(not os.path.lexists(seed), "SEED_MUST_BE_NEW")
+    _issue465_require(not any(os.environ.get(key) for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES")), "NO_GIT_PATH_OVERRIDES")
+    seed.mkdir()
+    for rel, content in _ISSUE465_FIXTURE_INPUTS.items():
+        write(seed, rel, content)
+    (seed / "scripts/run").chmod(0o755)
+    git(seed, "init", "-q")
+    git(seed, "config", "user.email", "fixture@example.invalid")
+    git(seed, "config", "user.name", "Offline Provenance Test")
+    git(seed, "add", ".")
+    git(seed, "commit", "-qm", "offline fixture source")
+    identity = _issue465_native_identity(seed)
+    before_freeze = _issue465_freeze_seed(seed)
+    snapshot = _issue465_snapshot(seed)
+    stable_fields = (0, 1, 3, 4, 5, 6, 7, 8)
+    _issue465_require(snapshot.keys() == before_freeze.keys() and all(
+        snapshot[rel]["kind"] == row["kind"] and snapshot[rel].get("sha256") == row.get("sha256") and
+        all(snapshot[rel]["stat10"][index] == row["stat10"][index] for index in stable_fields)
+        for rel, row in before_freeze.items()), "FREEZE_CHANGED_BYTES_OR_IDENTITY")
+    _issue465_require(".git/objects/info/alternates" not in snapshot, "SEED_NO_ALTERNATES")
+    return {"root": seed, "identity": identity, "snapshot": snapshot}
+
+
+def _issue465_clone_seed(repo, seed_record):
+    """Fresh independent native transport; never --shared or an artifact overlay."""
+    seed = seed_record["root"]
+    _issue465_require(not os.path.lexists(repo), "CANDIDATE_MUST_BE_NEW")
+    _issue465_require(_issue465_snapshot(seed) == seed_record["snapshot"], "READONLY_SEED_CUSTODY_BEFORE")
+    subprocess.check_output(["git", "-c", "transfer.unpackLimit=0", "-c", "fetch.unpackLimit=0",
+                             "-c", "gc.auto=0", "-c", "maintenance.auto=0", "clone", "--quiet",
+                             "--no-local", "--no-hardlinks", str(seed), str(repo)])
+    # These refs/config were introduced only by this fresh clone. The original
+    # git-init fixture has no origin or remote refs.
+    git(repo, "remote", "remove", "origin")
     git(repo, "config", "user.email", "fixture@example.invalid")
     git(repo, "config", "user.name", "Offline Provenance Test")
-    git(repo, "add", ".")
-    git(repo, "commit", "-qm", "offline fixture source")
+    identity = _issue465_native_identity(repo)
+    _issue465_require(identity == seed_record["identity"], "EXACT_SEED_HISTORY")
+    snapshot = _issue465_snapshot(repo)
+    _issue465_require(".git/objects/info/alternates" not in snapshot, "CANDIDATE_NO_ALTERNATES")
+    for relative, content in _ISSUE465_FIXTURE_INPUTS.items():
+        record = snapshot[relative]
+        mode = 0o755 if relative == "scripts/run" else 0o644
+        _issue465_require(stat.S_IMODE(record["stat10"][2]) == mode and
+                          record["sha256"] == hashlib.sha256(content).hexdigest(), "ORIGINAL_CHECKOUT_BYTES_AND_MODES")
+    counts = dict(line.split(": ", 1) for line in git(repo, "count-objects", "-v").splitlines())
+    _issue465_require(counts.get("count") == "0" and counts.get("in-pack") == "21" and
+                      counts.get("packs") == "1" and counts.get("garbage") == "0", "OWN_NATIVE_PACK")
+    packs = [rel for rel, item in snapshot.items() if rel.startswith(".git/objects/pack/") and item["kind"] == "file"]
+    _issue465_require(len(packs) == 2 and {Path(rel).suffix for rel in packs} == {".pack", ".idx"} and
+                      Path(packs[0]).stem == Path(packs[1]).stem, "OWN_PACK_PAIR")
+    seed_inodes = {(row["stat10"][0], row["stat10"][1]) for row in seed_record["snapshot"].values()}
+    _issue465_require(not any((row["stat10"][0], row["stat10"][1]) in seed_inodes for row in snapshot.values()), "NO_SEED_SHARED_INODE")
+    _issue465_require(_issue465_snapshot(seed) == seed_record["snapshot"], "READONLY_SEED_CUSTODY_AFTER")
+    return {"assertion_scope": "EXPLICIT_SYNTHETIC_ONLY", "tracked_inputs": 11,
+            "identity": identity, "records": snapshot, "pack_paths": packs,
+            "complete_rc6_source_claimed": False, "runtime_or_artifact_qualification_claimed": False,
+            "aggregate_retained_quota_pass_claimed": False}
+
+
+def _issue465_candidate_repo(repo, tmp_path_factory):
+    key = id(tmp_path_factory)
+    cached = _ISSUE465_SEEDS.get(key)
+    if cached is None:
+        parent = tmp_path_factory.mktemp("issue465-readonly-synthetic-seed")
+        record = _issue465_build_seed(parent / "seed")
+        cached = (tmp_path_factory, record)
+        _ISSUE465_SEEDS[key] = cached
+    _issue465_require(cached[0] is tmp_path_factory, "FACTORY_IDENTITY")
+    _issue465_clone_seed(repo, cached[1])
+    return repo
+
+
+@pytest.fixture
+def candidate(tmp_path, tmp_path_factory):
+    repo = _issue465_candidate_repo(tmp_path / "candidate", tmp_path_factory)
     manifest = create_source_manifest(repo)
     source = tmp_path / "source.json"
     source.write_bytes(canonical_bytes(manifest))

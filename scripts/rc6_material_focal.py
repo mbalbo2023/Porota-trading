@@ -16,7 +16,13 @@ FILES=('tests/test_rc6_controlled_governed_runner.py',
        'tests/test_rc6_budget_source_custody.py',
        'tests/test_rc6_predeploy_scoped_cleanup.py',
        'tests/test_rc6_funnel_storage_codec.py',
-       'tests/test_rc6_convergence_provenance.py')
+       'tests/test_rc6_convergence_provenance.py',
+       'tests/test_rc6_packed_storage.py',
+       'tests/test_issue465_provenance.py',
+       'tests/test_rc6_convergence_sre_binding.py',
+       'tests/test_rc6_convergence_sre_published_evidence.py',
+       'tests/test_rc6_convergence_sre_modes.py',
+       'tests/test_rc6_artifact_fixture_storage.py')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',required=True);p.add_argument('--source-sha',required=True)

@@ -273,3 +273,144 @@ def test_native_publisher_legacy_storage_forward_transition_keeps_both_cuts_and_
         assert first_cut["export_contract"]["verified_payloads"][role]["storage_schema"] == serialization.SCHEMA
         assert cut["export_contract"]["verified_payloads"][role]["storage_schema"] == serialization.PACKED_SCHEMA
         assert projected["export_contract"]["verified_payloads"][role]["storage_schema"] == serialization.PACKED_SCHEMA
+
+
+class _StoragePhaseUnitCollector:
+    """Unit metadata sink; no kernel, artifact or runtime qualification."""
+    def __init__(self):
+        self.messages = []
+
+    def put(self, message):
+        self.messages.append(dict(message))
+
+
+def test_storage_phase_observation_keeps_wire_callbacks_aliases_and_input_immutable():
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    trace = []
+    class Scalar:
+        def __str__(self):
+            trace.append("same_original_default_str")
+            return "observación/~"
+    body = original()
+    body["callback"] = Scalar()
+    body["status"] = "OBSERVING"
+    before = deepcopy({key: value for key, value in body.items() if key != "callback"})
+    scalar = body["callback"]
+    assert packed._STORAGE_PHASE_OBSERVER.get() is None
+    prepared = packed.PreparedPackedStorage(body, mutable={"status"}, **LIMITS)
+    wire_none, digest_none = prepared.encode(body)
+    baseline_trace = list(trace)
+    trace.clear()
+    sink, errors = _StoragePhaseUnitCollector(), []
+    with _storage_constructor_observation(sink, 1, time.process_time(), errors):
+        observed = packed.PreparedPackedStorage(body, mutable={"status"}, **LIMITS)
+    assert packed._STORAGE_PHASE_OBSERVER.get() is None
+    wire_observed, digest_observed = observed.encode(body)
+    assert errors == [] and trace == baseline_trace
+    assert wire_observed == wire_none and digest_observed == digest_none
+    assert list(wire_observed) == list(wire_none)
+    assert {key: value for key, value in body.items() if key != "callback"} == before
+    assert body["callback"] is scalar and body["rows"][0] is body["rows"][1]
+    phases = [(row["storage_phase"], row["storage_edge"]) for row in sink.messages]
+    assert phases == [(phase, edge) for phase in ("SHAPE", "COUNT", "CAPTURE")
+                      for edge in ("ENTER", "RETURN")]
+    assert all(row["constructor_ordinal"] == 1 for row in sink.messages)
+    assert all(row["phase_elapsed_seconds"] >= 0 and row["phase_cpu_seconds"] >= 0
+               for row in sink.messages if row["storage_edge"] == "RETURN")
+    prior_messages = list(sink.messages)
+    observed.metrics(body)
+    observed.encode(body)
+    assert sink.messages == prior_messages  # COUNT outside measured ctor is inactive.
+
+
+def test_storage_phase_original_shape_error_keeps_enter_without_return_and_context_restored():
+    from scripts.rc6_issue465_stress import _storage_constructor_observation
+    body = {1: "original_invalid_nonstring_key"}
+    with pytest.raises(ValueError) as baseline:
+        packed.PreparedPackedStorage(body, **LIMITS)
+    sink, errors = _StoragePhaseUnitCollector(), []
+    enclosing = lambda *_: None
+    original_context = packed._STORAGE_PHASE_OBSERVER.set(enclosing)
+    try:
+        with pytest.raises(type(baseline.value)) as observed:
+            with _storage_constructor_observation(sink, 1, time.process_time(), errors):
+                packed.PreparedPackedStorage(body, **LIMITS)
+        assert packed._STORAGE_PHASE_OBSERVER.get() is enclosing
+    finally:
+        packed._STORAGE_PHASE_OBSERVER.reset(original_context)
+    assert packed._STORAGE_PHASE_OBSERVER.get() is None
+    assert str(observed.value) == str(baseline.value) and errors == []
+    def native_frames(error):
+        result, node = [], error.__traceback__
+        while node is not None:
+            if node.tb_frame.f_globals.get("__name__") in {
+                    "rc6_shadow_runtime.packed_storage", "rc6_shadow_runtime.serialization"}:
+                result.append((node.tb_frame.f_code.co_name, node.tb_frame.f_code.co_filename))
+            node = node.tb_next
+        return result
+    assert native_frames(observed.value) == native_frames(baseline.value)
+    assert [(row["storage_phase"], row["storage_edge"]) for row in sink.messages] == [("SHAPE", "ENTER")]
+    assert body == {1: "original_invalid_nonstring_key"}
+
+
+def test_storage_phase_edges_keep_real_publication_claim_caller_and_new_source_code_constant():
+    import sys
+    from rc6_shadow_runtime.publication_storage import prepare_publication_storage
+    claims, events = [], []
+    def observer(phase, edge):
+        events.append((phase, edge))
+        if phase == "COUNT" and edge == "ENTER":
+            builder_frame = sys._getframe(2)
+            assert builder_frame.f_code is packed._CaptureBuilder.__init__.__code__
+            assert builder_frame.f_back.f_code is packed._PREPARED_CONSTRUCTOR_CODE
+            claims.append(builder_frame.f_locals["self"]._publication_scope is not None)
+    common = original()["rows"]
+    values = {"report": {"rows": common}, "checkpoint": {"rows": common}, "status": {"status": "OBSERVING"}}
+    token = packed._STORAGE_PHASE_OBSERVER.set(observer)
+    try:
+        prepared, cache = prepare_publication_storage(values, mutable={"status"},
+            durable_limit=LIMITS["durable_limit"], expansion_limit=LIMITS["expansion_limit"])
+    finally:
+        packed._STORAGE_PHASE_OBSERVER.reset(token)
+    assert packed._STORAGE_PHASE_OBSERVER.get() is None
+    assert list(prepared) == ["report", "checkpoint", "status"] and claims == [True, True, True]
+    assert events == [(phase, edge) for _ in values for phase in ("SHAPE", "COUNT", "CAPTURE")
+                      for edge in ("ENTER", "RETURN")]
+    for role, value in values.items():
+        wire, _ = prepared[role].encode(value)
+        assert serialization.decode_storage(wire, **LIMITS) == value
+
+
+@pytest.mark.parametrize("allow_fail_closed", [False, True])
+def test_storage_phase_real_closed_queue_error_vetoes_resource_result_for_both_allow_flags(allow_fail_closed):
+    import multiprocessing as mp
+    from scripts.rc6_issue465_stress import (
+        StressResourceLimit, _storage_constructor_observation, _require_stress_resource_gates)
+    queue = mp.get_context("spawn").Queue()
+    queue.close()  # Real stdlib failure; no invented child/kernel/PASS receipt.
+    errors, body = [], {"rows": [{"identity": "UNIT_ONLY"}]}
+    try:
+        with _storage_constructor_observation(queue, 1, time.process_time(), errors):
+            prepared = packed.PreparedPackedStorage(body, **LIMITS)
+        assert packed._STORAGE_PHASE_OBSERVER.get() is None
+        wire, _ = prepared.encode(body)
+        assert serialization.decode_storage(wire, **LIMITS) == body
+    finally:
+        queue.join_thread()
+    assert len(errors) == 6 and all(row["error_class"] == "ValueError" for row in errors)
+    # Boolean inputs isolate a predicate unit control. They assert no database,
+    # process, artifact, image, runtime or material gate qualification.
+    receipt = {"schema": "rc6.unit-observation-veto.NOT_GATE_ACCEPTANCE",
+        "completion_required": not allow_fail_closed,
+        "shadow": {"cycle_completion": True, "storage_phase_observation_errors": errors},
+        "resource_gates": {"source_database_unchanged": True, "evidence_within_quota": True,
+            "rss_within_two_gib": True, "child_cleanup_completed": True,
+            "complete_committed_cycle": allow_fail_closed or True,
+            "actual_slow_fsync_exit_isolation": True}}
+    with pytest.raises(StressResourceLimit) as failed:
+        _require_stress_resource_gates(receipt, None)
+    assert failed.value.evidence is receipt
+    assert receipt["resource_gates"]["storage_phase_observation_healthy"] is False
+    assert receipt["business_resource_complete"] is False
+    assert receipt["shadow"]["storage_phase_observation_errors"] is errors
+    assert receipt["import_proof_complete"] is False

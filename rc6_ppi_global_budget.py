@@ -1057,34 +1057,73 @@ class GlobalPPIBudget:
         flight/cache/pressure returns to the existing authoritative write,
         which rechecks the clock, policy, circuits and retained envelopes.
         """
-        with closing(self._connect()) as c:
-            c.execute("PRAGMA query_only=ON")
-            c.execute("BEGIN")
-            # A deferred reader acquires its snapshot on the first SELECT.
-            # Sample time after that boundary: a finishing writer may advance
-            # the committed floor between BEGIN and the snapshot acquisition.
-            committed_clock = self._get(c, "last_clock", None)
-            now = stamp(self.clock()).timestamp()
-            if now < last_observed_clock or (committed_clock is not None and now < committed_clock):
-                raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
-            if now >= stamp(self.policy["expires_at"]).timestamp():
-                raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
-            circuits = self._get(c, "circuits", {})
-            if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
-                raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
-            cached = self._get(c, "critical_books", {}).get(key)
-            if (cached and cached["authority"] == authority
-                    and 0 <= now - cached["received_at"] <= age
-                    and self._safe_book(cached["book"], now, age) is not None):
-                return False, now
-            active = self._get(c, "critical_book_flights", {}).get(key)
-            if not active or active["lease"] != lease or active["until"] <= now:
-                return False, now
-            if critical:
-                pressure = self._get(c, "critical_exit_pressure", {}).get(key)
-                if not pressure or pressure.get("until", 0) <= now:
+        # Error-path timing never changes the native 50ms SQL bound or
+        # grants authority from an unreadable committed snapshot.
+        entered_at = time.monotonic()
+        connected_at = snapshot_at = snapshot_finished_at = None
+        read_phase = "CONNECT"
+        try:
+            with closing(self._connect()) as c:
+                connected_at = time.monotonic()
+                read_phase = "QUERY_ONLY_SETUP"
+                c.execute("PRAGMA query_only=ON")
+                read_phase = "DEFERRED_BEGIN"
+                c.execute("BEGIN")
+                # A deferred reader acquires its snapshot on the first SELECT.
+                # Sample time after that boundary: a finishing writer may advance
+                # the committed floor between BEGIN and the snapshot acquisition.
+                snapshot_at = time.monotonic()
+                read_phase = "SNAPSHOT_BOUNDARY"
+                committed_clock = self._get(c, "last_clock", None)
+                snapshot_finished_at = time.monotonic()
+                read_phase = "STATE_RECHECKS"
+                now = stamp(self.clock()).timestamp()
+                if now < last_observed_clock or (committed_clock is not None and now < committed_clock):
+                    raise BudgetBackpressure("PPI_BUDGET_CLOCK_ROLLBACK")
+                if now >= stamp(self.policy["expires_at"]).timestamp():
+                    raise BudgetBackpressure("PPI_CAPACITY_EXPIRED_BACKPRESSURE")
+                circuits = self._get(c, "circuits", {})
+                if any(circuits.get(k, {}).get("until", 0) > now for k in ("global", "book")):
+                    raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
+                cached = self._get(c, "critical_books", {}).get(key)
+                if (cached and cached["authority"] == authority
+                        and 0 <= now - cached["received_at"] <= age
+                        and self._safe_book(cached["book"], now, age) is not None):
                     return False, now
-            return True, now
+                active = self._get(c, "critical_book_flights", {}).get(key)
+                if not active or active["lease"] != lease or active["until"] <= now:
+                    return False, now
+                if critical:
+                    pressure = self._get(c, "critical_exit_pressure", {}).get(key)
+                    if not pressure or pressure.get("until", 0) <= now:
+                        return False, now
+                return True, now
+        except sqlite3.OperationalError as error:
+            # Preserve the original object, SQLite code and traceback. These
+            # scalar-only notes contain no path, SQL text, key or book data;
+            # unsupported note metadata cannot replace the actual failure.
+            try:
+                failed_at = time.monotonic()
+                attributes = BaseException.__dict__["__dict__"].__get__(error, BaseException)
+                code = attributes.get("sqlite_errorcode")
+                if type(code) is not int:
+                    code = None
+                diagnostic = {"schema": "rc6.ppi-budget-committed-read-error.v1",
+                    "phase": read_phase, "sqlite_errorcode": code,
+                    "declared_connect_timeout_ms": 50,
+                    "total_to_error_seconds": failed_at - entered_at,
+                    "connect_seconds": None if connected_at is None else connected_at - entered_at,
+                    "setup_seconds": None if snapshot_at is None else snapshot_at - connected_at,
+                    "snapshot_seconds": None if snapshot_at is None else
+                        (failed_at if snapshot_finished_at is None else snapshot_finished_at) - snapshot_at,
+                    "post_snapshot_to_error_seconds": None if snapshot_finished_at is None else
+                        failed_at - snapshot_finished_at,
+                    "timing_scope": "INCLUDES_CONTEXT_CLOSE_AND_OBSERVER_OVERHEAD; NOT_LOCK_OWNER_PROOF"}
+                BaseException.add_note(error, "PPI_BUDGET_COMMITTED_READ_DIAGNOSTIC "
+                    + json.dumps(diagnostic, sort_keys=True, allow_nan=False, separators=(",", ":")))
+            except BaseException:
+                pass
+            raise
 
     def coalesced_book(self, identity, fetch, *, consumer, priority):
         """Off-wire, exact-identity single-flight for critical opened books.

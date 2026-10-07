@@ -328,6 +328,20 @@ def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
     counts = {"symlinks": 0, "hardlinked_regular_entries": 0, "special_entries": 0,
               "regular_entries": 0, "directory_entries": 0}
     completed_subtrees, first_completed_subtrees = 0, []
+    completed_fixture_rows, active_fixture = [], None
+
+    def fixture_delta(start, *, complete):
+        relative, entry_start, allocated_start, logical_start, inode_start, kind_start = start
+        kinds = {key: counts[key] - kind_start[key] for key in counts}
+        return {"relative_path": relative, "complete": complete,
+                "entries_counter_delta": entries - entry_start,
+                "validated_kind_entries_delta": sum(kinds[key] for key in
+                    ("directory_entries", "regular_entries", "symlinks", "special_entries")),
+                "kind_counts_delta": kinds, "globally_first_visited_unique_inodes_delta": len(seen) - inode_start,
+                "globally_first_visited_allocated_bytes_delta": allocated - allocated_start,
+                "globally_first_visited_logical_bytes_delta": logical - logical_start,
+                "physical_attribution_scope": "GLOBAL_FIRST_VISIT_DELTAS_NOT_ISOLATED_SUBTREE_ALLOCATION",
+                "measurement_scope": "COMPLETED_DIRECT_PYTEST_MEMBER" if complete else "VISITED_VALIDATED_PARTIAL_ONLY"}
 
     def notify_limit(guard, relative, direct_child_count, counter):
         if on_limit is not None:
@@ -342,6 +356,9 @@ def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
                       "direct_child_dirent_count_unvalidated": direct_child_count,
                       "completed_subtrees": completed_subtrees,
                       "first_64_completed_subtrees": list(first_completed_subtrees),
+                       "largest_64_completed_direct_pytest_members": list(completed_fixture_rows),
+                       "active_direct_pytest_member_partial": (fixture_delta(active_fixture, complete=False)
+                                                              if active_fixture is not None else None),
                       "first_64_adversarial_members_visited": list(aliases),
                       "metadata_scope": "VISITED_PARTIAL_ONLY_NO_ROOTCOUNT_OR_TAIL_INVENTORY",
                       "payload_files_read": 0, "measurement_complete": False})
@@ -376,12 +393,13 @@ def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
                             "target_followed": False, "removed": False})
 
     def visit(parent, relative):
-        nonlocal completed_subtrees
+        nonlocal completed_subtrees, active_fixture
         before = attributes(os.fstat(parent))
         names = sorted(os.listdir(parent))
         if entries + len(names) > cleanup.MAX_FILES:
             notify_limit("directory_preflight", relative, len(names), entries + len(names))
         cleanup.require(entries + len(names) <= cleanup.MAX_FILES, "RETAINED_TEST_NAMESPACE_LIMIT")
+        fixture_level = relative == "pytest"
         for name in names:
             child = os.stat(name, dir_fd=parent, follow_symlinks=False)
             observed = cleanup.require_member_mount(parent, name, control["root_mount_id"])
@@ -390,6 +408,8 @@ def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
                             and child.st_uid == control["owner_uid"],
                             "RETAINED_TEST_MEMBER_FOREIGN_OR_CHANGED")
             path = name if relative == "." else relative + "/" + name
+            if fixture_level:
+                active_fixture = (path, entries, allocated, logical, len(seen), dict(counts))
             record(child, path)
             if stat.S_ISDIR(child.st_mode):
                 nested = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -402,6 +422,18 @@ def measure_retained_workspace(scope, repo, context, environ, *, on_limit=None):
                     os.close(nested)
             cleanup.require(attributes(os.stat(name, dir_fd=parent, follow_symlinks=False))
                             == attributes(child), "RETAINED_TEST_MEMBER_CHANGED")
+            if fixture_level:
+                # Only an already completed direct pytest member. The existing
+                # recursive walk/guards are unchanged; no tail or payload read.
+                row = fixture_delta(active_fixture, complete=True)
+                if len(completed_fixture_rows) < 64:
+                    completed_fixture_rows.append(row)
+                else:
+                    smallest = min(range(64), key=lambda index:
+                                   completed_fixture_rows[index]["validated_kind_entries_delta"])
+                    if row["validated_kind_entries_delta"] > completed_fixture_rows[smallest]["validated_kind_entries_delta"]:
+                        completed_fixture_rows[smallest] = row
+                active_fixture = None
         cleanup.require(attributes(os.fstat(parent)) == before, "RETAINED_TEST_DIRECTORY_CHANGED")
         completed_subtrees += 1
         if len(first_completed_subtrees) < 64:
