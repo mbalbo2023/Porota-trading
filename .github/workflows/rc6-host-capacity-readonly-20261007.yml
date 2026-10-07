@@ -20,7 +20,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Checkout exact diagnostic source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Read bounded host capacity without changing runtime
+        id: inventory
         shell: bash
         env:
           SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -117,11 +123,25 @@ jobs:
           print("DEPLOY_APPROVAL=NO")
           PY_VERIFY
 
+      - name: Screen host against exact candidate peak without approving deployment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_host_capacity_gate.py \
+            --host-snapshot "$RUNNER_TEMP/rc6-host-capacity.json" \
+            --candidate-source-sha af08c82ca211e74bb4e5c00d9010af21313814a9 \
+            --candidate-peak-rss-bytes 1830219776 \
+            --peak-evidence-url 'https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6038814749' \
+            --qualified-cpu-count 4 \
+            --output "$RUNNER_TEMP/rc6-host-capacity-screen.json"
+
       - name: Preserve bounded capacity snapshot
-        if: success()
+        if: always() && steps.inventory.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rc6-host-capacity-readonly-${{ github.run_id }}
           retention-days: 14
           if-no-files-found: error
-          path: ${{ runner.temp }}/rc6-host-capacity.json
+          path: |
+            ${{ runner.temp }}/rc6-host-capacity.json
+            ${{ runner.temp }}/rc6-host-capacity-screen.json
