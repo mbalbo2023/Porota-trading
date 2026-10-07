@@ -722,6 +722,179 @@ def copied_locked_pytest_fixture(venv):
             'source_product_environment_modified': False}
 
 
+def selected_native_create_stdout_signature(output):
+    """Fixed literals only; never emit arbitrary captured stdout or credentials."""
+    if type(output) is not str or len(output) > 4096:
+        return "REDACTED_OR_UNRECOGNIZED"
+    rows = output.splitlines()
+    prefix = "POROTA_PREDEPLOY_TEST_WORKSPACE=RED|"
+    if len(rows) != 1 or not rows[0].startswith(prefix):
+        return "REDACTED_OR_UNRECOGNIZED"
+    signature = rows[0][len(prefix):]
+    # Offline AST extraction of exact pinned cleanup/workspace reason literals.
+    # This finite set grants no new execution or artifact authority.
+    allowed = {
+        'BOUND_EXTERNAL_PYTEST_BASETEMP_REQUIRED',
+        'BUILD_PHASE_INVALID',
+        'CANDIDATE_CHECKOUT_MISMATCH',
+        'CANDIDATE_TAG_ALREADY_PRESENT',
+        'CANDIDATE_TAG_FOREIGN_OR_UNBOUND',
+        'CANDIDATE_TREE_MISMATCH',
+        'CLEANUP_DEADLINE_EXCEEDED',
+        'CLEANUP_RECEIPT_PATH_MISMATCH',
+        'CLEANUP_RECEIPT_REQUIRED',
+        'CONTAINER_OWNER_BINDING_INVALID',
+        'CONTAINER_OWNER_CONFIG_INVALID',
+        'CONTROL_CHANGED_BEFORE_WRITE',
+        'CONTROL_CHANGED_DURING_READ',
+        'CONTROL_DUPLICATE_KEY',
+        'CONTROL_FILE_MOUNT',
+        'CONTROL_MODE_INVALID',
+        'CONTROL_SIZE_LIMIT',
+        'CREATE_WORKSPACE_UNEXPECTED_ARGUMENTS',
+        'CalledProcessError',
+        'DOCKER_COMMAND_FAILED',
+        'DOCKER_INSPECTION_INVALID',
+        'DOCKER_INVENTORY_INVALID',
+        'DOCKER_OUTPUT_LIMIT',
+        'FRESH_NATIVE_LIB64_ALIAS_REMAINS',
+        'FRESH_NATIVE_LIB64_LINK_CHANGED_BEFORE_UNLINK',
+        'FRESH_NATIVE_LIB64_LINK_CUSTODY_INVALID',
+        'FRESH_NATIVE_LIB64_LINK_IDENTITY_CHANGED',
+        'FRESH_NATIVE_LIB64_UNEXPECTED_TARGET',
+        'FRESH_NATIVE_LIB_DIRECTORY_CHANGED',
+        'FRESH_NATIVE_LIB_DIRECTORY_CHANGED_AFTER_UNLINK',
+        'FRESH_VENV_CONSTRUCTION_IDENTITY_CHANGED',
+        'FRESH_VENV_DIRECTORY_REBOUND',
+        'FileExistsError',
+        'FileNotFoundError',
+        'IMAGE_CLAIM_INVALID',
+        'IMAGE_CLAIM_INVENTORY_MISMATCH',
+        'IsADirectoryError',
+        'KeyError',
+        'MEASUREMENT_FILESYSTEM_CHANGED',
+        'MOUNT_ID_INFORMATION_LIMIT',
+        'MOUNT_ID_UNAVAILABLE',
+        'MULTIPLE_OWN_IMAGES_RETAINED',
+        'NotADirectoryError',
+        'OBSERVED_IMAGE_ID_MISMATCH',
+        'ORIGINAL_OWNED_FIN_DRIVER_BYTES_MISMATCH',
+        'ORIGINAL_PRIVATE_TEST_INTERPRETER_REQUIRED',
+        'ORIGINAL_PYTEST_COMMAND_AND_MANAGEMENT_CAP_REQUIRED',
+        'OSError',
+        'OWNER_BUILD_STATE_INVALID',
+        'OWNER_CANDIDATE_INVALID',
+        'OWNER_CLI_ROOT_OR_UUID_MISMATCH',
+        'OWNER_CLI_SCOPE_MISMATCH',
+        'OWNER_CONTEXT_FIELDS',
+        'OWNER_EXECUTION_MISMATCH',
+        'OWNER_IDENTITY_INVALID',
+        'OWNER_IMAGE_CONFIG_INVALID',
+        'OWNER_IMAGE_ID_MISMATCH',
+        'OWNER_IMAGE_LABEL_MISMATCH',
+        'OWNER_IMAGE_STATE_INVALID',
+        'OWNER_PRIVATE_PATH_MISMATCH',
+        'OWNER_RUN_INVALID',
+        'OWNER_SCHEMA_INVALID',
+        'OWNER_WORKFLOW_MISMATCH',
+        'OWNER_WORKFLOW_REF_MISMATCH',
+        'OWN_CONTAINER_WITHOUT_BOUND_IMAGE',
+        'OWN_DOCKER_RESOURCES_REMAIN',
+        'PATH_NOT_CANONICAL_ABSOLUTE',
+        'POSTREAD_ORIGINAL_MANAGEMENT_BIND_REQUIRED',
+        'POSTREAD_UNEXPECTED_ARGUMENTS',
+        'POST_CLEANUP_CAPACITY_RED',
+        'PREVIOUS_UNKNOWN_OR_UNCLOSED_IRREVERSIBLE_RED',
+        'PRIVATE_DIRECTORY_CHANGED',
+        'PRIVATE_DIRECTORY_NOT_EMPTY',
+        'PRIVATE_NAMESPACE_ALIAS_OR_SPECIAL',
+        'PRIVATE_NAMESPACE_CHANGED',
+        'PRIVATE_NAMESPACE_CHANGED_BEFORE_DELETE',
+        'PRIVATE_NAMESPACE_FOREIGN_OWNER_OR_MOUNT',
+        'PRIVATE_NAMESPACE_LIMIT',
+        'PRIVATE_NAMESPACE_MOUNT',
+        'PRIVATE_RESOURCE_CHANGED',
+        'PRIVATE_ROOT_CHANGED_BEFORE_DELETE',
+        'PRIVATE_ROOT_CUSTODY_CHANGED',
+        'PRIVATE_ROOT_MARKER_CHANGED',
+        'PRIVATE_ROOT_MOUNT',
+        'PRIVATE_ROOT_NOT_EMPTY',
+        'PRIVATE_ROOT_OVERLAPS_SOURCE',
+        'PRIVATE_ROOT_REMAINS',
+        'PYTEST_COLLECTION_NOT_CLOSED_GREEN_EXECUTION_NOT_LAUNCHED',
+        'PYTEST_EXECUTION_ALREADY_ATTEMPTED_COLLECTION_NOT_LAUNCHED',
+        'PYTEST_FIN_CONTROL_CONTEXT_OR_OWNER_MISMATCH',
+        'PYTEST_FIN_KERNEL_READBACK_OR_PHASE_MISMATCH',
+        'PYTEST_FIN_WITHOUT_DURABLE_LAUNCH_INTENT',
+        'PYTEST_LAUNCH_INTENT_CHANGED',
+        'PYTEST_LAUNCH_INTENT_CUSTODY_INVALID',
+        'PYTEST_LAUNCH_INTENT_INVALID',
+        'PYTEST_LAUNCH_WITHOUT_CLOSED_FIN',
+        'PYTEST_OWNED_FIN_NOT_CLOSED_OR_REBOUND',
+        'PYTEST_PHASE_ALREADY_ATTEMPTED_OR_UNKNOWN',
+        'PYTEST_POSTREAD_CONTROL_RECEIPT_SIZE',
+        'PYTEST_POSTREAD_PRIMARY_CONTROL_REBOUND',
+        'PYTEST_POSTREAD_RECEIPT_REBOUND',
+        'PYTEST_PREVIOUS_AGGREGATE_UNKNOWN_NO_NEW_LAUNCH',
+        'PYTEST_PRODUCER_PHASE_REQUIRED',
+        'PYTEST_SUPERVISOR_SUBREAPER_NOT_RESTORED',
+        'PermissionError',
+        'RESOURCE_CUSTODY_INVALID',
+        'RESOURCE_HARDLINK',
+        'RETAINED_LIMIT_DIAGNOSTIC_CONTROL_SIZE',
+        'RETAINED_LIMIT_DIAGNOSTIC_KERNEL_NOT_RESTORED',
+        'RETAINED_LIMIT_DIAGNOSTIC_PREPUBLICATION_BOUND',
+        'RETAINED_LIMIT_DIAGNOSTIC_PUBLICATION_LATE',
+        'RETAINED_LIMIT_DIAGNOSTIC_REQUIRES_ACTUAL_SAME_PARENT_FIN',
+        'RETAINED_LIMIT_DIAGNOSTIC_ROOT_CHANGED',
+        'RETAINED_LIMIT_DIAGNOSTIC_ROOT_REBOUND',
+        'RETAINED_TEST_DIRECTORY_CHANGED',
+        'RETAINED_TEST_DIRECTORY_REBOUND',
+        'RETAINED_TEST_INODE_CAPACITY_UNKNOWN',
+        'RETAINED_TEST_MEMBER_CHANGED',
+        'RETAINED_TEST_MEMBER_FOREIGN_OR_CHANGED',
+        'RETAINED_TEST_NAMESPACE_LIMIT',
+        'REVIEWED_NATIVE_VENV_PLATFORM_REQUIRED',
+        'SELECTED_FIXTURE_AUTHENTICATED_ARGUMENTS_REQUIRED',
+        'SELECTED_FIXTURE_CANNOT_AUTHORIZE_WHOLE_GOV_COMMAND',
+        'SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED',
+        'SELECTED_FIXTURE_COMPLETE_NATIVE_MANAGER_INPUT_REQUIRED',
+        'SELECTED_FIXTURE_CONTROLLED_AUTHORITY_REQUIRED',
+        'SELECTED_FIXTURE_EXPLICIT_BOOL_REQUIRED',
+        'SELECTED_FIXTURE_EXTERNAL_GIT_BINDING_REFUSED',
+        'SELECTED_FIXTURE_GIT_ALTERNATES_REFUSED',
+        'SELECTED_FIXTURE_GIT_BYTES_OR_CUSTODY_MISMATCH',
+        'SELECTED_FIXTURE_NATIVE_GIT_PROOF_FAILED',
+        'SELECTED_FIXTURE_OPTION_REQUIRES_CREATE',
+        'SELECTED_FIXTURE_OWNER_BINDING_CHANGED',
+        'SELECTED_FIXTURE_OWN_NATIVE_GIT_REQUIRED',
+        'SELECTED_FIXTURE_REAL_CLEAN_HEAD_REQUIRED',
+        'SELECTED_FIXTURE_TRACKED_COMPONENT_INPUT_INVALID',
+        'SHARED_IMAGE_RETAINED',
+        'SOURCE_CLAIM_HASH_MISMATCH',
+        'SOURCE_CLAIM_INVALID',
+        'SOURCE_MANIFEST_ALREADY_PRESENT',
+        'SOURCE_MANIFEST_CHANGED_BEFORE_DELETE',
+        'SOURCE_MANIFEST_CUSTODY_CHANGED',
+        'SOURCE_MANIFEST_PATH_MISMATCH',
+        'SOURCE_MANIFEST_REMAINS',
+        'SubprocessError',
+        'TEST_WORKSPACE_ALREADY_EXISTS',
+        'TEST_WORKSPACE_CLAIM_MISMATCH',
+        'TEST_WORKSPACE_DIRECTORY_CUSTODY_INVALID',
+        'TEST_WORKSPACE_MARKER_CHANGED',
+        'TEST_WORKSPACE_NATIVE_VENV_ROLE_INVALID',
+        'TEST_WORKSPACE_OVERLAPS_STRICT_ROOT',
+        'TEST_WORKSPACE_PARENT_MOUNT_CHANGED',
+        'TEST_WORKSPACE_ROOT_REBOUND',
+        'TimeoutExpired',
+        'TypeError',
+        'UNCLAIMED_SOURCE_MANIFEST_RETAINED',
+        'UNEXPECTED_OWN_IMAGE_RETAINED',
+        'ValueError',
+    }
+    return signature if signature in allowed else "REDACTED_OR_UNRECOGNIZED"
+
 def native_owned_pytest_fixture(tmp_path, body):
     import subprocess
     import sys
@@ -756,10 +929,18 @@ def native_owned_pytest_fixture(tmp_path, body):
     env.pop('PYTHONPATH', None)
     # The actual CLI enters with 077; its reviewed scoped main must create
     # the new native 755 venv using 022, without changing the caller/host.
-    created = subprocess.run(['bash', '-c', 'umask 077; exec "$@"', 'controlled-create', sys.executable,
-                              '-B', str(repo / 'scripts/porota_predeploy_test_workspace.py'), 'create', '--scope', str(scope),
-                              '--selected-pytest-fixture-without-pip'],
-                             cwd=repo, env=env, check=True, capture_output=True, text=True, timeout=30)
+    try:
+        created = subprocess.run(['bash', '-c', 'umask 077; exec "$@"', 'controlled-create', sys.executable,
+                                  '-B', str(repo / 'scripts/porota_predeploy_test_workspace.py'), 'create', '--scope', str(scope),
+                                  '--selected-pytest-fixture-without-pip'],
+                                 cwd=repo, env=env, check=True, capture_output=True, text=True, timeout=30)
+    except subprocess.CalledProcessError as error:
+        # Keep check=True and re-raise the same exception; disclose only a fixed
+        # pinned literal after its direct subprocess has actually returned.
+        signature = selected_native_create_stdout_signature(error.stdout)
+        error.add_note("CONTROLLED_NATIVE_CREATE_CLOSED_STDOUT_SIGNATURE=" + signature
+                       + ";RAW_STDOUT_STDERR_ENV_NOT_DISCLOSED")
+        raise
     assert 'CREATED' in created.stdout
     assert (private / 'venv').stat().st_mode & 0o777 == 0o755
     assert (private / 'venv/lib').stat().st_mode & 0o777 == 0o755
@@ -1353,3 +1534,65 @@ def test_selected_pytest_component_profile_refuses_production_authority_before_a
     assert not os.path.lexists(owned['root'] / 'venv')
     assert not os.path.lexists(test_workspace.workspace_path(owned['control']))
     assert not os.path.lexists(owned['root'] / test_workspace.CLAIM)
+
+
+def test_selected_fixture_input_directory_fd_lists_real_members_without_alias_or_atime_drift(tmp_path):
+    import errno
+    import fcntl
+
+    directory = tmp_path / 'complete-component-inputs'
+    directory.mkdir(mode=0o755)
+    (directory / 'test_native_owned.py').write_bytes(b'explicit owned directory witness')
+    (directory / 'scripts').mkdir(mode=0o755)
+    before = test_workspace.attributes(directory.lstat())
+    with cleanup.directory(directory) as descriptor:
+        assert fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_PATH
+        with pytest.raises(OSError) as rejected:
+            os.listdir(descriptor)
+        assert rejected.value.errno == errno.EBADF
+    assert test_workspace.attributes(directory.lstat()) == before
+    with cleanup.directory(directory, readable=True) as descriptor:
+        flags = fcntl.fcntl(descriptor, fcntl.F_GETFL)
+        assert flags & os.O_PATH == 0 and flags & os.O_ACCMODE == os.O_RDONLY
+        assert flags & os.O_NOATIME and flags & os.O_NOFOLLOW
+        assert set(os.listdir(descriptor)) == {'scripts', 'test_native_owned.py'}
+        assert test_workspace.attributes(os.fstat(descriptor)) == before
+    assert test_workspace.attributes(directory.lstat()) == before
+    alias = tmp_path / 'foreign-input-alias'
+    alias.symlink_to(directory, target_is_directory=True)
+    with pytest.raises(OSError):
+        with cleanup.directory(alias, readable=True):
+            pytest.fail('Native directory alias must never be followed')
+    assert test_workspace.attributes(directory.lstat()) == before
+
+
+@pytest.mark.parametrize('signature', ['ValueError', 'SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED'])
+def test_controlled_native_create_diagnostic_exposes_only_known_pinned_literals(signature):
+    output = 'POROTA_PREDEPLOY_TEST_WORKSPACE=RED|' + signature + '\n'
+    assert selected_native_create_stdout_signature(output) == signature
+
+
+@pytest.mark.parametrize('mutation', ['uppercase_canary', 'extra_line', 'duplicate_status',
+                                     'oversized', 'bytes', 'text_subclass'])
+def test_controlled_native_create_diagnostic_redacts_foreign_or_ambiguous_stdout(mutation):
+    prefix = 'POROTA_PREDEPLOY_TEST_WORKSPACE=RED|'
+    known = prefix + 'ValueError\n'
+    if mutation == 'uppercase_canary':
+        output = prefix + 'FOREIGN_UPPERCASE_PRIVATE_CANARY_7654321\n'
+    elif mutation == 'extra_line':
+        output = known + 'foreign private field must remain unprinted\n'
+    elif mutation == 'duplicate_status':
+        output = known + known
+    elif mutation == 'oversized':
+        output = prefix + 'X' * 4097
+    elif mutation == 'bytes':
+        output = known.encode('ascii')
+    else:
+        class ForeignText(str):
+            def splitlines(self, *_args, **_kwargs):
+                pytest.fail('A foreign text subclass must not be consulted')
+        output = ForeignText(known)
+    observed = selected_native_create_stdout_signature(output)
+    assert observed == 'REDACTED_OR_UNRECOGNIZED'
+    assert 'FOREIGN_UPPERCASE_PRIVATE_CANARY_7654321' not in observed
+    assert 'foreign private field' not in observed

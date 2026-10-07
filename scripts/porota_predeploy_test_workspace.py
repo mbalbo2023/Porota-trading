@@ -159,7 +159,7 @@ def selected_pytest_fixture_authority(control, scope, repo, context, environ):
                 DRIVER, "test_native_owned.py"}
     for path, names in ((repo, {".git", "scripts", "test_native_owned.py"}),
                         (repo / "scripts", {Path(name).name for name in expected if name.startswith("scripts/")})):
-        with cleanup.directory(path) as descriptor:
+        with cleanup.directory(path, readable=True) as descriptor:
             bound_directory(descriptor, control, mode=0o755)
             cleanup.require(set(os.listdir(descriptor)) == names,
                             "SELECTED_FIXTURE_COMPLETE_COMPONENT_INPUT_REQUIRED")

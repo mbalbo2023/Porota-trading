@@ -5,6 +5,7 @@ The public prepared encoder and externally supplied caches retain their original
 path. Every role counts its own graph and hashes every expanded occurrence.
 """
 from decimal import Decimal
+from contextvars import ContextVar
 from collections import Counter
 import sys
 from types import FunctionType, GetSetDescriptorType
@@ -65,9 +66,125 @@ def _constants():
     return (*result, packed._VOLATILE, *((operation, operation.__code__) for operation in operations))
 
 
+# Diagnostic state has no admission or replay authority. One fixed-size
+# vector is emitted after each observed real constructor, never per data node.
+_REPLAY_REASON_CODES = ('ROLE_ATTEMPT', 'ROLE_ROOT_KIND', 'ROLE_NO_CANDIDATE', 'ROLE_CONTAINER_CAP', 'ROLE_COUNTER_AUTH', 'ROLE_NODE_KIND', 'ROLE_REFERENCE_CAP', 'ROLE_KEY_KIND', 'ROLE_CHILD_KIND', 'ROLE_ACCEPTED', 'ROLE_ACCEPTED_COUNTER_PRESENT', 'SNAPSHOT_ATTEMPT', 'SNAPSHOT_ROOT_KIND', 'SNAPSHOT_PREFLIGHT_CAPS', 'SNAPSHOT_KEY_KIND', 'SNAPSHOT_QUEUED_CAP', 'SNAPSHOT_CHILD_KIND', 'SNAPSHOT_BUILDER_IDENTITY', 'SNAPSHOT_MEMORY_CAP', 'SNAPSHOT_VALID', 'MATCH_ATTEMPT', 'MATCH_NODE_ALIAS_LENGTH', 'MATCH_KEY_IDENTITY', 'MATCH_CHILD_IDENTITY', 'MATCH_VALID', 'FRAME_ATTEMPT', 'PLAN_DISABLED_KEY', 'PLAN_FOUND', 'REPLAY_USED', 'REPLAY_DEPENDENCY_CHANGED', 'REPLAY_CHAIN_REJECTED', 'PLAN_NEW', 'PLAN_COUNT_CAP', 'DISABLED_COUNT_CAP', 'CONSTANTS_INVALID', 'FRAME_SNAPSHOT_REJECTED', 'PLAN_CAPTURE_ENTER', 'PLAN_CAPTURE_RETURN', 'PLAN_POST_CAPTURE_REJECTED', 'PLAN_BYTES_CAP', 'PLAN_STORED')
+_REPLAY_MAX_COUNTER = 2**63 - 1
+_PUBLICATION_REPLAY_OBSERVATION = ContextVar("rc6_publication_replay_observation", default=None)
+_PUBLICATION_REPLAY_HEALTH = ContextVar("rc6_publication_replay_health", default=None)
+
+
+def _fail_replay_shared(shared):
+    """Only a native metadata dictionary may receive the irreversible veto."""
+    try:
+        if type(shared) is dict and len(shared) <= 3 and all(type(key) is str for key in shared):
+            shared["healthy"] = False
+    except BaseException:
+        pass  # No formatting/getters or business-exception replacement.
+
+
+def _replay_shared_snapshot(shared):
+    """Copy only native typed metadata, without invoking a foreign getter."""
+    try:
+        if type(shared) is not dict or len(shared) != 3:
+            return None
+        snapshot = shared.copy()
+        fields = ("healthy", "constructor_closes", "report_puts_returned")
+        if (len(snapshot) != len(fields)
+                or any(type(key) is not str or key not in fields for key in snapshot)):
+            return None
+        healthy, closed, returned = (snapshot[key] for key in fields)
+        if (type(healthy) is not bool or type(closed) is not int or type(returned) is not int
+                or not 0 <= returned <= closed <= _REPLAY_MAX_COUNTER):
+            return None
+        return snapshot
+    except BaseException:
+        return None
+
+
+class _ReplayObservation:
+    __slots__ = ("shared", "counts", "fault", "closed")
+
+    def __init__(self, shared):
+        self.shared = shared
+        self.counts = dict.fromkeys(_REPLAY_REASON_CODES, 0)
+        self.fault = False
+        self.closed = False
+
+    def fail(self):
+        self.fault = True
+        _fail_replay_shared(self.shared)
+
+    def note(self, reason):
+        try:
+            if type(self.closed) is not bool or type(self.fault) is not bool:
+                self.fail()
+                return
+            if self.closed or self.fault:
+                return
+            current = self.counts[reason]
+            if type(current) is not int or not 0 <= current < _REPLAY_MAX_COUNTER:
+                self.fail()
+                return
+            self.counts[reason] = current + 1
+        except BaseException:
+            self.fail()
+
+    def finish(self, constructor_completed, context_reset_returned):
+        self.closed = True
+        try:
+            fault = self.fault
+            if (type(fault) is not bool or type(self.counts) is not dict
+                    or len(self.counts) != len(_REPLAY_REASON_CODES)
+                    or type(constructor_completed) is not bool or type(context_reset_returned) is not bool):
+                self.fail()
+                return None
+            counts = self.counts.copy()
+            if (len(counts) != len(_REPLAY_REASON_CODES)
+                    or any(type(key) is not str or key not in _REPLAY_REASON_CODES for key in counts)
+                    or any(type(value) is not int or not 0 <= value <= _REPLAY_MAX_COUNTER
+                           for value in counts.values())):
+                self.fail()
+                return None
+            shared = _replay_shared_snapshot(self.shared)
+            if shared is None:
+                self.fail()
+                return None
+            healthy = (not fault and shared["healthy"] is True and context_reset_returned is True)
+            return {"schema": "rc6.publication-replay-counters.v1",
+                "observation_context_closed": context_reset_returned,
+                "context_reset_returned": context_reset_returned,
+                "constructor_completed": constructor_completed,
+                "observational_fault": fault,
+                "observational_health": healthy,
+                "counters_complete": healthy,
+                "counter_maximum": _REPLAY_MAX_COUNTER,
+                "counters": counts,
+                "admission_or_replay_authority": False,
+                "exclusive_cost_or_material_GREEN_inferred": False}
+        except BaseException:
+            self.fail()
+            return None
+
+
+def _note_replay(reason):
+    health = _PUBLICATION_REPLAY_HEALTH.get()
+    if health is None:
+        return
+    try:
+        observation = _PUBLICATION_REPLAY_OBSERVATION.get()
+        if type(observation) is not _ReplayObservation:
+            raise ValueError("PUBLICATION_REPLAY_OBSERVER_REGISTRATION_INVALID")
+        observation.note(reason)
+    except BaseException:
+        # No reporting/classification may run before the independent fault bit.
+        _fail_replay_shared(health)
+
+
 class _Snapshot:
     """Strong edge references, with no equality or callbacks from input data."""
     def __init__(self, builder, root, budget):
+        _note_replay("SNAPSHOT_ATTEMPT")
         self.nodes = {}
         self.bytes = self.references = 0
         self.valid = False
@@ -77,6 +194,7 @@ class _Snapshot:
             node = pending.pop()
             kind = type(node)
             if kind is not dict and kind is not list and kind is not tuple:
+                _note_replay('SNAPSHOT_ROOT_KIND')
                 return
             key = id(node)
             if key in self.nodes:
@@ -86,9 +204,11 @@ class _Snapshot:
             if (budget[0] + len(self.nodes) + 1 > MAX_SNAPSHOT_CONTAINERS
                     or budget[1] + self.references + refs > MAX_SNAPSHOT_REFERENCES
                     or budget[2] + self.bytes + refs * 8 + 256 > MAX_SNAPSHOT_BYTES):
+                _note_replay('SNAPSHOT_PREFLIGHT_CAPS')
                 return
             keys = tuple(node) if kind is dict else ()
             if any(type(name) is not str for name in keys):
+                _note_replay('SNAPSHOT_KEY_KIND')
                 return
             children = tuple(node.values()) if kind is dict else tuple(node)
             for child in children:
@@ -97,12 +217,15 @@ class _Snapshot:
                     child_key = id(child)
                     if child_key not in queued:
                         if budget[0] + len(queued) + 1 > MAX_SNAPSHOT_CONTAINERS:
+                            _note_replay('SNAPSHOT_QUEUED_CAP')
                             return
                         queued.add(child_key); pending.append(child)
                 elif (child_kind is not type(None) and child_kind is not bool
                       and child_kind is not int and child_kind is not float and child_kind is not str):
+                    _note_replay('SNAPSHOT_CHILD_KIND')
                     return
             if builder.objects.get(key) is not node:
+                _note_replay('SNAPSHOT_BUILDER_IDENTITY')
                 return
             entry = (node, keys, children, builder.incoming.get(key, 0) >= 2)
             before = sys.getsizeof(self.nodes)
@@ -112,23 +235,30 @@ class _Snapshot:
             self.references += refs
             if (budget[2] + self.bytes + sys.getsizeof(pending) + sys.getsizeof(queued)
                     + len(queued) * sys.getsizeof(key) > MAX_SNAPSHOT_BYTES):
+                _note_replay('SNAPSHOT_MEMORY_CAP')
                 return
         self.valid = True
+        _note_replay("SNAPSHOT_VALID")
 
     def matches(self, builder):
+        _note_replay("MATCH_ATTEMPT")
         for key, (node, keys, children, aliased) in self.nodes.items():
             if (builder.objects.get(key) is not node
                     or (builder.incoming.get(key, 0) >= 2) is not aliased
                     or len(node) != len(children)):
+                _note_replay('MATCH_NODE_ALIAS_LENGTH')
                 return False
             if type(node) is dict:
                 if any(current is not prior for current, prior in zip(node, keys)):
+                    _note_replay('MATCH_KEY_IDENTITY')
                     return False
                 values = node.values()
             else:
                 values = node
             if any(current is not prior for current, prior in zip(values, children)):
+                _note_replay('MATCH_CHILD_IDENTITY')
                 return False
+        _note_replay('MATCH_VALID')
         return True
 
 
@@ -203,30 +333,40 @@ class _SectionScope:
         # observe them later in this role, including another root section.
         # Exact Decimal is allowed here only; snapshots still exclude it and
         # its original default=str serialization is never replayed.
+        _note_replay("ROLE_ATTEMPT")
+        counter_seen = False
         if type(value) is not dict:
+            _note_replay('ROLE_ROOT_KIND')
             return False
         # With no activable root capture, replay cannot occur in this role.
         # Candidates already exclude the publisher's mutable root fields.
         # Exact strings and builtin dict iteration add no user comparisons.
         if not any(type(name) is str and (id(member), name) in self.candidates
                    for name, member in dict.items(value)):
+            _note_replay('ROLE_NO_CANDIDATE')
             return False
         if len(builder.objects) > MAX_ROLE_CONTAINERS:
+            _note_replay('ROLE_CONTAINER_CAP')
             return False
         references = 0
         for node in builder.objects.values():
             kind = type(node)
             counter = kind is Counter
             if counter:
+                counter_seen = True
                 if not _plain_counter(node):
+                    _note_replay('ROLE_COUNTER_AUTH')
                     return False
             elif kind is not dict and kind is not list and kind is not tuple:
+                _note_replay('ROLE_NODE_KIND')
                 return False
             references += len(node) * (2 if kind is dict or counter else 1)
             if references > MAX_ROLE_REFERENCES:
+                _note_replay('ROLE_REFERENCE_CAP')
                 return False
             if kind is dict or counter:
                 if any(type(key) is not str for key in node):
+                    _note_replay('ROLE_KEY_KIND')
                     return False
                 children = node.values()
             else:
@@ -237,7 +377,11 @@ class _SectionScope:
                         and child_kind is not type(None) and child_kind is not bool
                         and child_kind is not int and child_kind is not float and child_kind is not str
                         and child_kind is not Decimal and child_kind is not Counter):
+                    _note_replay('ROLE_CHILD_KIND')
                     return False
+        _note_replay('ROLE_ACCEPTED')
+        if counter_seen:
+            _note_replay("ROLE_ACCEPTED_COUNTER_PRESENT")
         return True
 
     def record_dependency(self, key, result):
@@ -265,13 +409,16 @@ class _SectionScope:
                 or type(buffer.result) is not list or any(type(raw) is not bytes for raw in buffer.literals)
                 or len(buffer.template) > MAX_FRAME_PREFIX_BYTES):
             return False
+        _note_replay('FRAME_ATTEMPT')
         key = id(value), name, root, self.active_root
         if key in self.disabled:
+            _note_replay('PLAN_DISABLED_KEY')
             return False
         self.busy = True
         try:
             previous = self.plans.get(key)
             if previous is not None:
+                _note_replay('PLAN_FOUND')
                 snapshot, constants, dependencies, prefix, literals, suffix, tail, tail_literals = previous
                 if (constants == _constants() and snapshot.matches(builder)
                         and buffer.template == prefix and tuple(buffer.literals) == literals):
@@ -280,23 +427,31 @@ class _SectionScope:
                         buffer.result.extend(suffix)
                         buffer.template.clear(); buffer.template.extend(tail)
                         buffer.literals.clear(); buffer.literals.extend(tail_literals)
+                        _note_replay('REPLAY_USED')
                         return True
+                    _note_replay("REPLAY_DEPENDENCY_CHANGED")
                 self.disabled.add(key)
                 self.plans.pop(key)
+                _note_replay('REPLAY_CHAIN_REJECTED')
                 return False
+            _note_replay('PLAN_NEW')
             if len(self.plans) >= MAX_FRAME_PLANS:
+                _note_replay('PLAN_COUNT_CAP')
                 return False
             if len(self.disabled) >= MAX_FRAME_PLANS:
                 self.exhausted = True
                 self.plans.clear(); self.disabled.clear()
+                _note_replay('DISABLED_COUNT_CAP')
                 return False
             constants = _constants()
             if constants is None:
                 self.disabled.add(key)
+                _note_replay('CONSTANTS_INVALID')
                 return False
             snapshot = _Snapshot(builder, value, self.budget)
             if not snapshot.valid:
                 self.disabled.add(key)
+                _note_replay('FRAME_SNAPSHOT_REJECTED')
                 return False
             prefix, literals = bytes(buffer.template), tuple(buffer.literals)
             boundary = len(buffer.result)
@@ -306,7 +461,9 @@ class _SectionScope:
                 # Busy suppresses this hook during the unchanged recursive
                 # walk. The eligibility/named/small-plain checks preceding the
                 # hook cannot emit a boundary for a collection reaching here.
+                _note_replay('PLAN_CAPTURE_ENTER')
                 builder._append(value, name, buffer, root=root)
+                _note_replay("PLAN_CAPTURE_RETURN")
             finally:
                 self.trace = old_trace
             dependencies = (trace.finish(builder.cache, snapshot)
@@ -323,8 +480,11 @@ class _SectionScope:
                     self.budget[0] += len(snapshot.nodes)
                     self.budget[1] += snapshot.references
                     self.budget[2] += snapshot.bytes + extra
+                    _note_replay('PLAN_STORED')
                     return True
+                _note_replay("PLAN_BYTES_CAP")
             self.disabled.add(key)
+            _note_replay('PLAN_POST_CAPTURE_REJECTED')
             return True
         finally:
             self.busy = False

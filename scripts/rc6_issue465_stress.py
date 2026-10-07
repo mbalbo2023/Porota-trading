@@ -495,19 +495,99 @@ def _make_storage_phase_observer(queue, ordinal, cpu, errors, capture_sampling=N
     return phase_observer
 
 
+def _close_publication_replay_observation(queue, ordinal, cpu, observation, shared,
+                                          constructor_completed, context_reset_returned):
+    """One post-reset typed report; no publication/custody authority."""
+    if shared is None:
+        return
+    try:
+        from rc6_shadow_runtime import publication_storage
+        snapshot = publication_storage._replay_shared_snapshot(shared)
+        if (snapshot is None or snapshot["constructor_closes"] >= publication_storage._REPLAY_MAX_COUNTER
+                or type(ordinal) is not int or not 1 <= ordinal <= publication_storage._REPLAY_MAX_COUNTER
+                or observation is None or observation.shared is not shared):
+            publication_storage._fail_replay_shared(shared)
+            return
+        shared["constructor_closes"] = snapshot["constructor_closes"] + 1
+        report = observation.finish(constructor_completed, context_reset_returned)
+        if report is None:
+            publication_storage._fail_replay_shared(shared)
+            return
+        queue.put({"_probe_event": "PUBLICATION_REPLAY_COUNTERS", "handler_name": "storage_prepare",
+            "constructor_ordinal": ordinal, "entered_at_monotonic": time.monotonic(),
+            "child_cpu_seconds": time.process_time()-cpu, "publication_replay_counters": report})
+        shared["report_puts_returned"] = snapshot["report_puts_returned"] + 1
+    except BaseException:
+        # Never format exception names/values or replace the business exception.
+        try:
+            publication_storage._fail_replay_shared(shared)
+        except BaseException:
+            pass
+
+
+def _publication_replay_summary(shared):
+    """FINAL exports no malformed private state: typed counters or null/RED."""
+    from rc6_shadow_runtime import publication_storage
+    snapshot = publication_storage._replay_shared_snapshot(shared)
+    if snapshot is None:
+        publication_storage._fail_replay_shared(shared)
+        return {"healthy": False, "constructor_closes": None, "report_puts_returned": None}
+    return snapshot
+
+
 @contextmanager
-def _storage_constructor_observation(queue, ordinal, cpu, errors, *, capture_sampling=None):
+def _publication_replay_observation_scope(queue, ordinal, cpu, shared):
+    """The real constructor keeps its own caller/frame and all original work."""
+    if shared is None:
+        yield
+        return
+    observation, observation_token, health_token = None, None, None
+    try:
+        from rc6_shadow_runtime import publication_storage
+        observation = publication_storage._ReplayObservation(shared)
+        observation_token = publication_storage._PUBLICATION_REPLAY_OBSERVATION.set(observation)
+        health_token = publication_storage._PUBLICATION_REPLAY_HEALTH.set(shared)
+    except BaseException:
+        shared["healthy"] = False
+    constructor_completed = False
+    try:
+        yield
+        constructor_completed = True
+    finally:
+        health_reset, observation_reset = False, False
+        try:
+            if health_token is not None:
+                publication_storage._PUBLICATION_REPLAY_HEALTH.reset(health_token)
+                health_reset = True
+        except BaseException:
+            shared["healthy"] = False
+        try:
+            if observation_token is not None:
+                publication_storage._PUBLICATION_REPLAY_OBSERVATION.reset(observation_token)
+                observation_reset = True
+        except BaseException:
+            shared["healthy"] = False
+        context_reset_returned = health_reset and observation_reset
+        if not context_reset_returned:
+            shared["healthy"] = False
+        _close_publication_replay_observation(queue, ordinal, cpu, observation, shared,
+                                              constructor_completed, context_reset_returned)
+
+
+@contextmanager
+def _storage_constructor_observation(queue, ordinal, cpu, errors, *, capture_sampling=None, replay_observation=None):
     """Observe only this real constructor and restore any enclosing context."""
     from rc6_shadow_runtime import packed_storage
     callback = _make_storage_phase_observer(queue, ordinal, cpu, errors, capture_sampling)
     token = packed_storage._STORAGE_PHASE_OBSERVER.set(callback)
-    try:
-        yield
-    finally:
+    with _publication_replay_observation_scope(queue, ordinal, cpu, replay_observation):
         try:
-            callback.close()
+            yield
         finally:
-            packed_storage._STORAGE_PHASE_OBSERVER.reset(token)
+            try:
+                callback.close()
+            finally:
+                packed_storage._STORAGE_PHASE_OBSERVER.reset(token)
 
 
 def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_bytes,
@@ -593,6 +673,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
     phases = []
     handlers = {}
     storage_observation_errors = []
+    storage_replay_observation = {"healthy": True, "constructor_closes": 0, "report_puts_returned": 0}
     storage_capture_sampling = {"sample_count": 0, "healthy": True, "reporting_healthy": True}
     for module_name, function_name in (
             ("families", "family_reports"), ("lab", "evaluate_runtime_lab"),
@@ -640,7 +721,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             observation = (_storage_constructor_observation(queue, metrics["calls"], cpu,
-                storage_observation_errors, capture_sampling=storage_capture_sampling)
+                storage_observation_errors, capture_sampling=storage_capture_sampling,
+                replay_observation=storage_replay_observation)
                 if _name == "storage_prepare" else nullcontext())
             try:
                 with observation:
@@ -797,6 +879,10 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             result["import_provenance"] = {"status":"UNVERIFIED_FINAL_BOUNDARY", "native_pid":os.getpid(),
                 "parent_pid":os.getppid(), "transient_closure_verified":False,
                 "error_class":type(error).__name__, "reason":str(error)}
+    storage_replay_summary = _publication_replay_summary(storage_replay_observation)
+    result["storage_publication_replay_observation_healthy"] = storage_replay_summary["healthy"] is True
+    result["storage_publication_replay_constructor_closes"] = storage_replay_summary["constructor_closes"]
+    result["storage_publication_replay_reports_put_returned"] = storage_replay_summary["report_puts_returned"]
     sampling_healthy = (storage_capture_sampling["healthy"] is True
                         and storage_capture_sampling["reporting_healthy"] is True)
     result["storage_capture_sampler_healthy"] = sampling_healthy
@@ -896,11 +982,66 @@ def run_stress(root, *, catalog_count=12000, observations_per_identity=5,
             parent_observer.deactivate()
 
 
+def _publication_replay_transport_healthy(shadow):
+    """Only complete actual parent receipts attest observational delivery."""
+    try:
+        fields = ("storage_publication_replay_observation_healthy",
+                  "storage_publication_replay_constructor_closes",
+                  "storage_publication_replay_reports_put_returned")
+        requested = shadow.get("storage_publication_replay_observation_requested")
+        if fields[0] not in shadow:
+            # Preserve only genuinely unobserved legacy unit/control defaults.
+            return (requested is None and not any(key in shadow for key in fields[1:])
+                    and not any(row.get("event") == "PUBLICATION_REPLAY_COUNTERS"
+                                for row in shadow.get("probe_event_receipts", ())))
+        if (shadow[fields[0]] is not True
+                or requested is not None and requested is not True):
+            return False
+        from rc6_shadow_runtime.publication_storage import _REPLAY_REASON_CODES, _REPLAY_MAX_COUNTER
+        closed, returned = shadow.get(fields[1]), shadow.get(fields[2])
+        if (type(closed) is not int or type(returned) is not int
+                or not 0 <= closed <= _REPLAY_MAX_COUNTER or returned != closed):
+            return False
+        rows = [row for row in shadow.get("probe_event_receipts", ())
+                if row.get("event") == "PUBLICATION_REPLAY_COUNTERS"]
+        if len(rows) != closed:
+            return False
+        ordinals = set()
+        for row in rows:
+            ordinal = row.get("constructor_ordinal")
+            report = row.get("publication_replay_counters")
+            if (type(ordinal) is not int or not 1 <= ordinal <= closed or ordinal in ordinals
+                    or type(report) is not dict or report.get("schema") != "rc6.publication-replay-counters.v1"
+                    or report.get("observation_context_closed") is not True
+                    or report.get("context_reset_returned") is not True
+                    or report.get("constructor_completed") is not True
+                    or report.get("observational_fault") is not False
+                    or report.get("observational_health") is not True
+                    or report.get("counters_complete") is not True
+                    or type(report.get("counter_maximum")) is not int
+                    or report.get("counter_maximum") != _REPLAY_MAX_COUNTER
+                    or report.get("admission_or_replay_authority") is not False
+                    or report.get("exclusive_cost_or_material_GREEN_inferred") is not False):
+                return False
+            counts = report.get("counters")
+            if (type(counts) is not dict or set(counts) != set(_REPLAY_REASON_CODES)
+                    or any(type(value) is not int or not 0 <= value <= _REPLAY_MAX_COUNTER
+                           for value in counts.values())):
+                return False
+            ordinals.add(ordinal)
+        # The range check, uniqueness and cardinality prove exactly 1..closed
+        # without constructing a range/set from an arbitrary remote integer.
+        return True
+    except BaseException:
+        return False  # Malformed observations cannot replace StressResourceLimit.
+
+
 def _require_stress_resource_gates(result, binding):
     """Keep the six original gates and add only the observation-error veto."""
     result["resource_gates"]["storage_phase_observation_healthy"] = (
         not result["shadow"].get("storage_phase_observation_errors")
-        and result["shadow"].get("storage_capture_sampler_healthy", True) is True)
+        and result["shadow"].get("storage_capture_sampler_healthy", True) is True
+        and _publication_replay_transport_healthy(result["shadow"]))
     result["business_resource_complete"] = all(result["resource_gates"][key] for key in
                ("source_database_unchanged", "evidence_within_quota", "rss_within_two_gib", "child_cleanup_completed",
                 "complete_committed_cycle", "actual_slow_fsync_exit_isolation", "storage_phase_observation_healthy"))
@@ -963,11 +1104,11 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
             "child_elapsed_seconds": message.get("elapsed_seconds"),
             "phases": list(message.get("phases", [])),
             "handler_names": sorted(message.get("handler_resources", {}))})
-        if event in {"STORAGE_PHASE", "STORAGE_CAPTURE_SAMPLE", "STORAGE_CAPTURE_SAMPLER"}:
+        if event in {"STORAGE_PHASE", "STORAGE_CAPTURE_SAMPLE", "STORAGE_CAPTURE_SAMPLER", "PUBLICATION_REPLAY_COUNTERS"}:
             progress_receipts[-1].update({key: message[key] for key in (
                 "constructor_ordinal", "storage_phase", "storage_edge",
                 "phase_elapsed_seconds", "phase_cpu_seconds",
-                "capture_stack_sample", "capture_sampler_control") if key in message})
+                "capture_stack_sample", "capture_sampler_control", "publication_replay_counters") if key in message})
         if event == "IMPORT_PROVENANCE":
             child_import_before = message.get("import_provenance")
         elif event == "FINAL":
@@ -1042,6 +1183,7 @@ def _run_stress(root, *, catalog_count, observations_per_identity, slow_disk, ma
     shadow.setdefault("evidence_files", sum(p.is_file() for p in output.rglob("*")))
     shadow.setdefault("full_pipeline_exercised", {"families", "lab", "entry_signals", "funnel"} <= set(shadow["handler_resources"]))
     shadow["probe_event_receipts"] = progress_receipts
+    shadow["storage_publication_replay_observation_requested"] = True
     shadow["cycle_started_at_monotonic"] = cycle_begin
     source_after = source_custody_snapshot(database)
     unchanged = source_before == source_after
