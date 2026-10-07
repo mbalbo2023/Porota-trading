@@ -14,7 +14,14 @@ import pytest
 
 from tests.rc6_browser_ipc import GateFailure, PROTOCOL, ProductClient, frame, source_inventory
 from tests.rc6_browser_prepared import initialize_prepared_product, prepare_native_fixture
-from tests.test_rc6_browser_product_ipc import complete_archive
+pytest_plugins = ("tests.rc6_readonly_complete_archive_fixture",)
+
+
+@pytest.fixture(scope="module")
+def complete_archive(request, rc6_readonly_complete_archive):
+    with rc6_readonly_complete_archive.lease(
+            request.module.__name__, lambda: request.session.testsfailed) as archive:
+        yield archive
 
 
 @pytest.fixture(scope="module")

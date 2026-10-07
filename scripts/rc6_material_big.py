@@ -148,6 +148,7 @@ def native_checks(native, kernel, gov, args):
     lifecycle, exits = native["native_cli_lifecycle"], native["factual_exits"]
     finalization, fsync = lifecycle["child_infrastructure_finalization"], shadow["fsync"]
     binding = (args.sha, args.tree, args.index_sha256)
+    gov.require(isinstance(proof.get("worker_final"), dict), "NATIVE_WORKER_IMPORT_FINAL_PROOF_MISSING")
     qualified = [proof["environment_before_fixtures"], proof["worker_final"]["environment_before_product_imports"]]
     custody = native["source_custody_before"]
     finals = [node for node in shadow["probe_event_receipts"] if node["event"] == "FINAL"]

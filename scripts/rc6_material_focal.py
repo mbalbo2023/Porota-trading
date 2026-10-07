@@ -22,7 +22,13 @@ FILES=('tests/test_rc6_controlled_governed_runner.py',
        'tests/test_rc6_convergence_sre_binding.py',
        'tests/test_rc6_convergence_sre_published_evidence.py',
        'tests/test_rc6_convergence_sre_modes.py',
-       'tests/test_rc6_artifact_fixture_storage.py')
+       'tests/test_rc6_artifact_fixture_storage.py',
+       'tests/test_rc6_native_import_event_filter.py',
+       'tests/test_rc6_material_big_missing_worker_proof.py',
+       'tests/test_rc6_browser_family_health_coverage.py',
+       'tests/test_rc6_browser_prepared.py',
+       'tests/test_rc6_browser_product_ipc.py',
+       'tests/test_rc6_readonly_complete_archive.py')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',required=True);p.add_argument('--source-sha',required=True)

@@ -909,7 +909,7 @@ class NativeImportObserver:
                     and len(arguments) == 1 and arguments[0] is self._installation_nonce):
                 self.installation_receptions += 1
             return
-        if not self.active or self.native_pid != os.getpid() or event not in ("import","exec"):
+        if event not in ("import","exec") or not self.active or self.native_pid != os.getpid():
             return
         with self.lock:
             if not self.active:
