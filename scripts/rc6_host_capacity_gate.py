@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 
 
 def positive_int(value: object) -> bool:
@@ -63,6 +64,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host-snapshot", type=Path, required=True)
     parser.add_argument("--candidate-peak-rss-bytes", type=int, required=True)
+    parser.add_argument("--candidate-source-sha", required=True)
+    parser.add_argument("--peak-evidence-url", required=True)
     parser.add_argument("--qualified-cpu-count", type=int, required=True)
     parser.add_argument("--reserve-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument("--output", type=Path, required=True)
@@ -74,6 +77,13 @@ def main() -> int:
     report = screen(snapshot, peak_rss_bytes=args.candidate_peak_rss_bytes,
                     qualified_cpu_count=args.qualified_cpu_count,
                     reserve_bytes=args.reserve_bytes)
+    report["candidate_source_sha"] = args.candidate_source_sha
+    report["peak_evidence_url"] = args.peak_evidence_url
+    if (not re.fullmatch(r"[0-9a-f]{40}", args.candidate_source_sha)
+            or not args.peak_evidence_url.startswith(
+                "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-")):
+        report["status"] = "BLOCKED"
+        report["reasons"].append("CANDIDATE_PEAK_PROVENANCE_NOT_PINNED")
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("RC6_HOST_CAPACITY=" + report["status"])
     for reason in report["reasons"]:
