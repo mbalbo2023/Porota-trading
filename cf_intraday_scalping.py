@@ -396,6 +396,58 @@ def normalize_payload(payload, *, received_at, local_day=None):
     return points
 
 
+INTRADAY_POINTS_DDL = """CREATE TABLE IF NOT EXISTS ppi_intraday_points(
+  symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
+  currency TEXT NOT NULL, settlement TEXT NOT NULL, event_at TEXT NOT NULL,
+  price TEXT NOT NULL, volume TEXT NOT NULL, first_received_at TEXT NOT NULL,
+  last_verified_at TEXT NOT NULL, source TEXT NOT NULL,
+  PRIMARY KEY(symbol,asset_class,market,currency,settlement,event_at))"""
+INTRADAY_TEMPORAL_INDEX = "idx_intraday_event_julian_desc"
+INTRADAY_TEMPORAL_INDEX_DDL = ("CREATE INDEX IF NOT EXISTS " + INTRADAY_TEMPORAL_INDEX
+    + " ON ppi_intraday_points(julianday(event_at) DESC)")
+
+
+def require_intraday_temporal_index(connection):
+    """Verify the exact expression/direction without migrating a Source."""
+    row = connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+                             (INTRADAY_TEMPORAL_INDEX,)).fetchone()
+    normalized = lambda value: "".join(value.upper().split()).replace("IFNOTEXISTS", "")
+    if not row or normalized(row[0] or "") != normalized(INTRADAY_TEMPORAL_INDEX_DDL):
+        raise RuntimeError("SOURCE_TEMPORAL_INDEX_REQUIRED")
+    terms = [tuple(row) for row in connection.execute(
+        "PRAGMA index_xinfo(" + INTRADAY_TEMPORAL_INDEX + ")")]
+    if terms != [(0, -2, None, 1, "BINARY", 1), (1, -1, None, 0, "BINARY", 0)]:
+        raise RuntimeError("SOURCE_TEMPORAL_INDEX_REQUIRED")
+
+
+def _source_query_schema(connection):
+    connection.execute(INTRADAY_POINTS_DDL)
+    connection.execute(INTRADAY_TEMPORAL_INDEX_DDL)
+    require_intraday_temporal_index(connection)
+
+
+def prepare_shadow_source_index(store):
+    """Parent-owned additive migration before its first SHADOW child.
+
+    The caller holds the existing runtime lock. SQLite serializes a genuine
+    writer; contention or an interrupted build aborts before children start.
+    No child/capture path can call this migration, and the connection closes
+    before the parent's schema-ready mark becomes visible to its children.
+    """
+    with closing(store.connect()) as connection, connection:
+        state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if not state or tuple(state) != ("PRODUCTION_PAPER", 0):
+            raise RuntimeError("PAPER_SAFETY_REQUIRED")
+        connection.execute("PRAGMA busy_timeout=350")
+        deadline = time.monotonic() + 2.0
+        connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            _source_query_schema(connection)
+        finally:
+            connection.set_progress_handler(None, 0)
+
+
 def init_schema(store):
     """Initialize native inputs once, including the canonical #456 authority.
 
@@ -412,16 +464,6 @@ def init_schema(store):
           payload_json TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_decision_evidence_captured
           ON decision_evidence_snapshots(captured_at, decision_key);
-        CREATE TABLE IF NOT EXISTS ppi_intraday_points(
-          symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
-          currency TEXT NOT NULL, settlement TEXT NOT NULL, event_at TEXT NOT NULL,
-          price TEXT NOT NULL, volume TEXT NOT NULL, first_received_at TEXT NOT NULL,
-          last_verified_at TEXT NOT NULL, source TEXT NOT NULL,
-          PRIMARY KEY(symbol,asset_class,market,currency,settlement,event_at));
-        CREATE INDEX IF NOT EXISTS idx_intraday_identity_time ON ppi_intraday_points(
-          symbol,asset_class,market,currency,settlement,event_at);
-        CREATE INDEX IF NOT EXISTS idx_intraday_event_julian_desc
-          ON ppi_intraday_points(julianday(event_at) DESC);
         CREATE TABLE IF NOT EXISTS ppi_intraday_contract_state(
           symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
           currency TEXT NOT NULL, settlement TEXT NOT NULL, state TEXT NOT NULL,
@@ -445,6 +487,9 @@ def init_schema(store):
           candidates INTEGER NOT NULL, real_orders_sent INTEGER NOT NULL,
           detail TEXT NOT NULL);
         """)
+        _source_query_schema(connection)
+        connection.execute("""CREATE INDEX IF NOT EXISTS idx_intraday_identity_time
+            ON ppi_intraday_points(symbol,asset_class,market,currency,settlement,event_at)""")
 
 
 def _identity(record):
@@ -1028,11 +1073,20 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
+    if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1":
+        with closing(store.connect()) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            require_intraday_temporal_index(connection)
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {"ppi_intraday_contract_state", "scalping_candidates",
+                    "intraday_scalping_worker_state"}.issubset(tables):
+                raise RuntimeError("INTRADAY_PARENT_SCHEMA_REQUIRED")
+    else:
+        init_schema(store)
     from bd_ppi_readonly_guard import (ProductionMarketReader, retry_read,
                                        classify_read_error,
                                        instrument_not_found)
     from bf_production_paper_observer import _secret
-    init_schema(store)
     cursor = 0
     reader = None
     next_login = 0.0

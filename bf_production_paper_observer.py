@@ -1,7 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 
 import faulthandler
 import fcntl
@@ -267,7 +267,7 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, prior
 
 
 def _support_schema(store):
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS observer_commands(
           id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,

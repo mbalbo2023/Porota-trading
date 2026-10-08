@@ -48,6 +48,13 @@ Archive emits new exact compressed components on each operational clock
   -> legitimate zeroGC plus accumulated new bytes reaches512MiB before1202cuts
   -> RETENTION_ARCHIVE_CAPACITY_REACHED at1049 executed cuts
 
+Exact20:00 closing tick has no active engines
+  -> FAMILY_OBSERVE_ONLY cohort for the next session is preserved
+  -> next20:00:30 tick also emits next-session UNIVERSE_SHADOW cohorts
+  -> previous-session cohorts remain within the original24h retention
+  -> six thousand original cohorts, rather than4800 in a diagnostic that skipped20:00
+  -> projection/checkpoint jump; early CLOSED savings alone cannot bound late state
+
 Heavy producers start before exact cheap/focal qualification
   -> expensive work discovers architecture and fixture defects too late
   -> incomplete RAW preservation obscures the primary failure
@@ -152,6 +159,22 @@ a CPU improvement. The replay result SHA256 is
 OPEN steady growth and full1202 capacity remain `NO_VERIFICADO`; a savings
 percentage on six early cuts is not a full-window capacity proof.
 
+Read-only analysis of the original1049 receipts located the late-state jump:
+SQL2,207,744B until sequence771; sequence772 at20:00:00 drops to1,904,640B;
+sequence773 at20:00:30 rises to4,136,960B. Sequences774..1049 fluctuate within
+4,046,848..4,055,040B. Checkpoint grows from about1,016,273B to1,799,800B at the
+same boundary. This is a cohort/session transition, not gradual generation-ledger
+growth. Projection SQLite is freshly built for each generation. Retained cohort
+identities from both sessions and both channels are semantically required.
+
+The medium diagnostics that skipped exact20:00 retained4800 cohorts and did not
+cover the original6000-cohort late state. Their measured physical savings remain
+valid for those inputs. The conditional508,866,560B full-window forecast is
+insufficient for promotion: assumed per-cut savings were not demonstrated for
+the missing boundary/state. That forecast is superseded by the exact-boundary
+observations below, without becoming a proof of the whole retention window.
+Never remove the FAMILY_OBSERVE_ONLY partition, alter clocks or advance GC to fit.
+
 ## Architectural fixes and permanent guards
 
 * One thread/process-bound private verified primary Source image per tick.
@@ -193,7 +216,8 @@ percentage on six early cuts is not a full-window capacity proof.
   namespaces may be retired after actual FIN and sealed required RAW/hashes.
   Intraphase fixture retirement must prevent cumulative growth; end-only
   cleanup alone does not close ENOSPC. No global prune or foreign deletion.
-* Push admits only G0/G1. Later stages require actual same-SHA/tree predecessor
+* Candidate draft-PR events admit only G0/G1; push does not launch Predeploy.
+  Later stages require actual same-SHA/tree predecessor
   receipts, exact collection/execution/JUnit identities, native FIN, Source
   invariance, live capacity and canonical runner observations. Workflow success
   alone does not satisfy a gate. Identical blind reruns are rejected.
@@ -208,11 +232,41 @@ an unproved allowance. The admission comparator binds the exact Git Source
 manifest, selected cheap files, producer graph, model and original RAW bytes;
 hash-only assertions or an unknown profile cannot authorize bootstrap/heavy work.
 
+To measure missing preparation components, the existing parameterized workflow
+may run a separately authorized WIP capacity-only diagnostic. Its proposed
+filesystem bound is an authenticated own loop/ext4 project quota, with measured
+4GiB reserves on both backing and producer filesystems. Nonroot/capability-drop
+and native escape/EDQUOT probes precede any backend. This is a diagnostic bound,
+not an observed historical peak, ordinary-runner comparability or a G0..G8 PASS.
+Absent kernel capability, Source/owner binding or original FIN blocks and
+preserves the own evidence. No filesystem image or large RAW is added to Git.
+
 Physical fixture retirement is conditional on actual last-consumer teardown,
 closed Source leases and positive original kernel infrastructure census. An
 unavailable local own-children kernel interface deliberately blocks that
 positive proof. Negative unit guards passing under this condition do not qualify
 G1; canonical Actions must preserve its native positive probe and real retirement.
+
+## Recoverable WIP and coverage
+
+The independent audit required durable work without moving PR476. Checkpoint
+`239d414a002c985d6544c42931a34576244ff093`, tree
+`8a3647f88d7cca3906d3f61310efd74bd908ed1d`, is published at
+`wip/rc6-architectural-rca-20261008-1606UTC`. Its63 changed paths are code, tests,
+policy, this RCA and a compact trigger index. Fresh GitHub verification found
+zero WIP Actions and zero WIP PRs; PR476/477 remained at their original HEADs.
+The audit inspected166 Source workflows,6 default-branch workflows and all1013
+registered workflow records. The WIP push instruction is durability metadata;
+it is never counted as a qualification result or skipped test.
+
+Three modules deferred from cheap G1 are collected without fixture execution
+in G0 for both Python versions. The original collection contained96 identities:
+42 stress,42 budget-liveness and12 readonly-archive cases. G6 must include their
+complete node/class/name Counters and matching native JUnit, linked to the
+authenticated G0 of the same SHA/tree. Omission of a module or parameter blocks.
+G7 authenticates original G6 artifacts, API run/attempt/job/digests, all payload
+hashes, Source controls,157-distribution closure, native FIN and case identities.
+The absence of a new G7 pytest launch provides no test approval.
 
 The productive contract fingerprint is
 `5ee524e7370ecd908a590dc0aad007ff4858d3337adcf901231623a01ffc5358`.
@@ -249,6 +303,81 @@ All20 reads preserved the same semantic SHA256
 `33ac67aec7ad398599c3d1e85a2a1acd528eacb645813eb830f5b241218d5f18`
 and used index SEARCH without SCAN or TEMP B-TREE. This demonstrates the index
 and budget contract, not BIG cycle headroom or remote qualification.
+
+## Preventive audit closure in the second WIP
+
+Both workflows now use initial checkout depth1. The enforced order is bounded
+checkout, exact SHA/tree identity, fresh capacity on the same filesystem,
+controlled complete fetch, then fsck/fullSource and subsequent gates.
+Insufficient-capacity negative tests prevent the actual fetch callback and
+executable witness, preserving Git bytes and all11 stat fields. Shallow checkout
+cannot yield fullGit GREEN. Pipeline development passed187 exact JUnit cases
+per Python version, without failures/errors/skips; this is not Actions qualification.
+
+The parent takes the existing runtime lock before opening SQLite or running
+DDL. Parent-owned preparation installs the expression index before READY and
+every child, including SCALP OFF. Existing persistent DB copies were upgraded
+only by this locked PAPER parent; SHADOW never migrates Source. The inherited
+scalping child verifies schema read-only before SDK access. Readers verify the
+exact expression/direction and implicit rowid tie order on the private Source;
+missing or wrong indexes fail CLOSED. EXPLAIN proves SEARCH without SCAN/TEMP
+B-TREE; original rows, identities, timestamps, offsets and equal-date order match.
+
+The first copied-persistent-DB integration was RED: context-manager exit had
+committed but not closed schema writers, allowing a later WAL checkpoint and
+SOURCE_SNAPSHOT_BUSY. A READY environment leak in the test fixture was a separate
+cause of downstream WAL_REQUIRED errors. The run stopped3.12 and preserved
+original FIN/RAW/own cleanup. PaperStore constructor and parent schema scopes
+now explicitly close all connections they create on success or failure, before
+the first consumer. Normal runtime connection custody is unchanged. Changed-code
+integration passed102 cases in each Python version; the ten startup/custody
+guards passed dual too, with zero failures/errors/skips. They cover copied old
+DBs, first SHADOW with SCALP OFF, second-parent lock exclusion before DDL, genuine
+writer contention, later writer reuse, rollback, reentry and closed connections.
+No productive DB, financial policy, PPI Watch or real route was touched.
+
+Seven canonical1200/6000 native RCA cuts now include PREOPEN, OPEN,19:59:30,
+exactly20:00:00, exactly20:00:30,20:01:00 and20:01:30. They reproduce6000 cohorts
+and late projection4,050,944B, with one primary capture per cut, productive
+fingerprint, all11 Source stat fields plus hashes, original FIN and own cleanup.
+An initial collector rejected its mistaken eleven-field expectation before any
+tick; the changed collector requires all12 stat-plus-hash fields and has
+missing-field guards. This was not an identical financial rerun.
+
+Physical A/B replay of those same five original members per cut measured legacy
+16,732,160B versus candidate13,410,304B allocated archive, a19.853% reduction.
+Both used23 files/24 entries; all five members restored byte exactly. Late
+6000-cohort steady CLOSED was557,056B versus442,368B. Forced independent CLOSED
+anchors were2,265,088B versus1,777,664B, all depths0. Replay/anchor RSS was
+162,160,640B/168,841,216B. These costs include CAS, recipes, metadata and
+dependencies. Replay SHA256:
+`cb2db08ca163c9c53b94fce2dbd0cbb6f459803ace80ab7efc52770152f7335e`;
+anchor SHA256:
+`69a0ee82d5bfe3efba80b96b6f5f6870cf0ccb0fc635839f772dca36e89a747e`.
+The exact-boundary guard passed dual alongside the prior153-case development
+selection; full154 same-SHA qualification is pending. The revised piecewise
+forecast is499,376,128B plus819,200B admission allowance, with36,675,584B
+conditional headroom. Future savings and generation envelopes are not proved
+for all1202 cuts. Horizon capacity remains BLOQUEADO, full1202 was not launched,
+and XOR has no final-candidate promotion authority.
+
+Capacity-only capability diagnosis uses a5GiB own image with512MiB project hard
+limit. Bootstrap calibration, only after separately authenticating that result,
+uses a26GiB image with20GiB project hard limit. Neither changes financial limits.
+Live outer admission includes simultaneous controls/RAW/sealed copies plus4GiB,
+without credit for future cleanup. Before any loop, mkfs or mount, kernel mount
+namespace identity must differ and every shared/master/propagate_from tag is
+rejected. Namespace-local read-only attributes protect Source without globally
+remounting a shared superblock. Negative/parser unit proofs do not demonstrate
+native Actions kernel capability or positive Linux cleanup.
+
+Historical G6 artifact verification must not reject completed work merely because
+its original launch lease later expired; G7 separately requires current authority.
+A remaining gap is explicit: G6 does not yet authenticate its saved launch
+admission snapshots, and long fullGov/Horizon producers lack demonstrated
+continuous ownership monitoring and final readmission. Root heartbeats do not
+replace that programmatic proof. This blocks promotion before long material
+gates; coverage of the entire long run is not claimed.
 
 ## Qualification boundary
 

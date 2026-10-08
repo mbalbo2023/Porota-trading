@@ -6,6 +6,7 @@ marcada PRODUCTION_PAPER/SIMULATED y los identificadores comienzan con PAPER-.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -293,6 +294,20 @@ def _atomic_admission_snapshot(q, features, paper_id, at, recorded_at, score, *,
 
 
 class PaperStore:
+    @contextmanager
+    def schema_preparation(self):
+        """Own and close every native schema connection before readers start."""
+        if hasattr(self, "_schema_connections"):
+            raise RuntimeError("PAPER_SCHEMA_CONNECTION_SCOPE_REENTRY")
+        self._schema_connections = []
+        try:
+            yield self
+        finally:
+            connections = self._schema_connections
+            del self._schema_connections
+            for connection in connections:
+                connection.close()
+
     def __init__(self, path: str):
         self.path = path
         new_file = not os.path.exists(path)
@@ -300,12 +315,13 @@ class PaperStore:
         # El runtime padre migra una única vez antes de crear hijos. Repetir
         # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
         runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
-        if new_file:
-            from cg_paper_workspace import mark_new_database
-            with self.connect() as c:
-                mark_new_database(c)
+        with self.schema_preparation():
+            if new_file or not runtime_schema_ready:
+                self.init_db()
+            if new_file:
+                from cg_paper_workspace import mark_new_database
+                with self.connect() as c:
+                    mark_new_database(c)
 
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=20)
@@ -328,6 +344,9 @@ class PaperStore:
                 conn.close()
                 raise RuntimeError("PAPER_SQLITE_WAL_INIT_FAILED")
         conn.execute("PRAGMA foreign_keys=ON")
+        connections = getattr(self, "_schema_connections", None)
+        if connections is not None:
+            connections.append(conn)
         return conn
 
     def init_db(self):

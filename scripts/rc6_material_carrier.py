@@ -46,6 +46,12 @@ PREPARATION_SCOPE={'locked_python_epochs':['311','312'],'installed_distribution_
 
 def workload_fingerprint(producer):
     """Comparable workload identity excludes machine/SHA and timing outcomes."""
+    if producer in ('capacity-probe','capacity-calibration'):
+        image,hard_limit=(5*1024**3,512*1024**2) if producer=='capacity-probe' else (26*1024**3,20*1024**3)
+        return digest(canonical({'schema':'porota.rc6.capacity-diagnostic-workload.v1','producer':producer,
+            'backing_image_bytes':image,'project_hard_limit_bytes':hard_limit,'residual_reserve_bytes':4*1024**3,
+            'financial_tick_allowed':False,'qualification_claimed':False,
+            'python_versions':[] if producer=='capacity-probe' else list(VERSIONS.values())}))
     return digest(canonical({'schema':'rc6.material-workload-comparison.v1','producer':producer,
         'catalog':12000,'observations':60000,'outer_seconds':90,'maximum_rss_bytes':2*1024**3,
         'maximum_evidence_bytes':128*1024**2,'maximum_retained_entries':100000,
@@ -95,6 +101,148 @@ def preparation_capacity(a,run,root,label,*,additional_storage=()):
             'comparable_peak':comparison,'capacity_live':live})
     run.pending_capacity=launch_proofs
     return results
+
+def complete_full_git(a,run,root):
+    """A shallow checkout is transport bootstrap, never fullGit qualification."""
+    preparation_capacity(a,run,root,'before-authenticated-complete-Git-fetch')
+    shallow=git(a.repo_root,'rev-parse','--is-shallow-repository').strip()
+    need(shallow in (b'true',b'false'),'GIT_SHALLOW_STATE_UNKNOWN')
+    if shallow==b'true':
+        askpass=root/'full-git-askpass.py'
+        save_raw(askpass,b'#!/usr/bin/env python3\nimport os,sys\nprint("x-access-token" if "username" in sys.argv[1].lower() else os.environ["RC6_READONLY_GIT_TOKEN"])\n')
+        fd=os.open(askpass,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:os.fchmod(fd,0o700)
+        finally:os.close(fd)
+        token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN');need(bool(token),'FULL_GIT_READONLY_TOKEN_REQUIRED')
+        native=run(['git','--no-replace-objects','-C',str(a.repo_root),'-c','credential.helper=',
+            'fetch','--unshallow','--tags','--no-write-fetch-head','--no-auto-maintenance',ORIGIN,
+            '+refs/heads/*:refs/remotes/origin/*'],cwd=root,label='fullGit-guarded-fetch',limit=1800,
+            env={'GIT_ASKPASS':str(askpass),'RC6_READONLY_GIT_TOKEN':token})
+        need(native['returncode']==0,'CAPACITY_ADMITTED_FULL_GIT_FETCH_FAILED')
+    need(git(a.repo_root,'rev-parse','--is-shallow-repository').strip()==b'false'
+        and git(a.repo_root,'rev-parse','HEAD').decode().strip()==a.source_sha
+        and git(a.repo_root,'rev-parse','HEAD^{tree}').decode().strip()==a.source_tree,
+        'SHALLOW_BOOTSTRAP_MUST_NOT_QUALIFY_AS_FULL_GIT')
+    save(run.control/'fullGit-bootstrap-to-qualified.json',{'schema':'rc6.capacity-guarded-full-git-transition.v1',
+        'source_sha':a.source_sha,'source_tree':a.source_tree,'bootstrap_was_shallow':shallow==b'true',
+        'full_git_after_guarded_fetch':True,'same_HEAD_tree_unchanged':True,
+        'native_fetch_label':'fullGit-guarded-fetch' if shallow==b'true' else None,
+        'runtime_or_deploy_claimed':False,'real_orders_sent':0})
+
+def tooling_capacity(admission_path,repo,environ):
+    """No tooling download starts under a native-only capacity comparison."""
+    from types import SimpleNamespace
+    authority=document(read(admission_path))
+    need(authority.get('status')=='ADMITTED_NATIVE_NOT_STARTED','CANDIDATE_TOOLING_REQUIRES_ACTUAL_ADMISSION')
+    from scripts import rc6_material_pr_admission as controller
+    authority=controller.admit(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
+        launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
+    peak=authority.get('capacity_peaks',{}).get('bootstrap')
+    expected={'setup_python_action_sha':'a26af69be951a213d495a4c3e4e4022e16d87065',
+        'python_versions':['3.11.16','3.12.14'],'tool_cache_population_included':True}
+    need(type(peak) is dict and peak.get('reviewed_cpython_tooling')==expected,
+        'PYTHON_TOOLING_CAPACITY_UNKNOWN_BEFORE_ACTION_DOWNLOAD')
+    args=SimpleNamespace(repo_root=Path(repo),source_sha=authority['source_sha'],source_tree=authority['source_tree'],
+        owner_session=authority['owner_session'],capacity_peaks=authority['capacity_peaks'])
+    root=Path(admission_path).parent;control=root/'tooling-controls';control.mkdir(mode=0o700)
+    run=SimpleNamespace(control=control)
+    for label,path in (('candidate_git',Path(repo)),('admission_controls',root),
+        ('runner_temporary',safe_path(environ['RUNNER_TEMP'])),('reviewed_tool_cache',safe_path(environ['RUNNER_TOOL_CACHE']))):
+        heavy_preflight(args,run,path,'bootstrap','before-reviewed-Python-'+label)
+    save(root/'tooling-capacity.json',{'schema':'rc6.reviewed-python-tooling-capacity.v1','capacity_records':run.capacity_records,
+        'source_sha':args.source_sha,'source_tree':args.source_tree,'qualification_claimed':False,
+        'tooling_action_launched':False,'real_orders_sent':0})
+    return run.capacity_records
+
+def diagnostic_main(argv=None):
+    """Isolated quota diagnosis is never a candidate gate or a product claim."""
+    parser=argparse.ArgumentParser();parser.add_argument('--diagnostic-admission-json',type=Path,required=True)
+    parser.add_argument('--repo-root',type=Path,required=True);args=parser.parse_args(argv)
+    os.umask(0o022);repo=safe_path(args.repo_root);previous=document(read(args.diagnostic_admission_json))
+    from scripts import rc6_material_pr_admission as controller
+    need(previous.get('schema')=='porota.rc6.capacity-diagnostic-admission.v1'
+        and previous.get('qualification_claimed') is False,'ISOLATED_CAPACITY_DIAGNOSTIC_ADMISSION_REQUIRED')
+    authority=controller.admit_diagnostic(source_sha=previous['source_sha'],source_tree=previous['source_tree'],
+        launch_receipt_url=previous['launch_receipt_url'],owner_session=previous['owner_session'],gate=previous['gate'])
+    need(authority['launch_body_sha256']==previous['launch_body_sha256']
+        and git(repo,'rev-parse','HEAD').decode().strip()==authority['source_sha']
+        and git(repo,'rev-parse','HEAD^{tree}').decode().strip()==authority['source_tree']
+        and not git(repo,'status','--porcelain').strip(),'DIAGNOSTIC_CHECKOUT_OR_IMMUTABLE_AUTHORITY_REBOUND')
+    from types import SimpleNamespace
+    actual=SimpleNamespace(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
+        owner_session=authority['owner_session'])
+    binding=capacity_binding(actual,authority['gate']);namespace=fixture_lifecycle.create_namespace(Path.home(),binding)
+    controls=namespace.path/'controls';controls.mkdir(mode=0o700);output=namespace.path/'diagnostic'
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('control_root='+str(controls)+'\nsafe_payload_upload=false\n')
+    save(controls/'admission.json',authority)
+    claim_path=controls/'namespace-receipt.json';save(claim_path,fixture_lifecycle.namespace_receipt(namespace))
+    binding_path=controls/'binding.json';save(binding_path,binding)
+    producer_pin=module_pin(repo,'scripts/rc6_capacity_calibration.py',authority['source_sha'])
+    manager_pin=module_pin(repo,'scripts/rc6_controlled_native_child_manager.py',authority['source_sha'])
+    manager=runpy.run_path(str(repo/manager_pin['path']));run=OwnedRunner(manager,controls)
+    mode='capability' if authority['gate']=='capacity-probe' else 'bootstrap'
+    command=[sys.executable,'-I','-B',str(repo/producer_pin['path']),'--mode',mode,'--source-root',str(repo),
+        '--source-sha',authority['source_sha'],'--source-tree',authority['source_tree'],
+        '--namespace-receipt',str(claim_path),'--output',str(output),'--binding-json',str(binding_path)]
+    environment={key:value for key,value in os.environ.items() if key.startswith(('GITHUB_','RUNNER_'))}
+    environment['RC6_CALIBRATION_ADMISSION_JSON']=str(controls/'admission.json')
+    if mode=='bootstrap':
+        token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+        need(bool(token),'DIAGNOSTIC_SCOPED_READONLY_GIT_TOKEN_REQUIRED')
+        environment['RC6_CALIBRATION_READONLY_GIT_TOKEN']=token
+        evidence=architectural.verify_capacity_capability_artifact(authority['capability_prerequisite'],
+            source_sha=authority['source_sha'],source_tree=authority['source_tree'],
+            read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact')
+        save(controls/'capability-origin.json',evidence['origin']);save_raw(controls/'capability-receipt.json',evidence['receipt_raw'])
+        command+=['--capability-receipt',str(controls/'capability-receipt.json'),
+            '--capability-artifact-origin',str(controls/'capability-origin.json')]
+        cache=safe_path(os.environ['RUNNER_TOOL_CACHE'])
+        for epoch,version in VERSIONS.items():
+            interpreter=cache/'Python'/version/'x64/bin'/('python'+epoch[0]+'.'+epoch[1:])
+            need(interpreter.is_file() and not interpreter.is_symlink() and os.access(interpreter,os.X_OK),
+                'DIAGNOSTIC_PINNED_PREEXISTING_CPYTHON_TOOLING_MISSING')
+            command+=['--python'+epoch,str(interpreter)]
+    code=1
+    try:
+        native=run(command,cwd=repo,label='isolated-'+authority['gate'],limit=600 if mode=='capability' else 11400,
+            env=environment,namespace=namespace)
+        terminal=document(read(output/'calibration.json'))
+        need(terminal.get('schema')=='porota.rc6.capacity-calibration.v1'
+            and terminal.get('source_sha')==authority['source_sha'] and terminal.get('source_tree')==authority['source_tree']
+            and terminal.get('mode')==mode and terminal.get('binding')==binding
+            and terminal.get('qualification_claimed') is False,'DIAGNOSTIC_PRODUCER_RECEIPT_SOURCE_SCOPE_REBOUND')
+        need(terminal.get('payload_upload_safe') is True and terminal.get('cleanup',{}).get('namespace_removed') is True
+            and 'preserved_owned_namespace' not in terminal,'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
+        required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.rglob('*')) if path.is_file()]
+        required+=['isolated-'+authority['gate']+'.native.log']
+        payload=Path(args.diagnostic_admission_json).parent/'diagnostic-payload';payload.mkdir(mode=0o700)
+        destination=payload/'sealed'
+        captured=fixture_lifecycle.capture_required_evidence(namespace,run.fins[namespace.nonce],destination,required)
+        cleanup=fixture_lifecycle.cleanup_namespace(namespace,run.fins[namespace.nonce],captured)
+        code=0 if native['returncode']==0 and terminal.get('status')=='GREEN' and cleanup.get('namespace_removed') is True else 1
+        fin_name=run.fins[namespace.nonce].control_name
+        def captured_ref(name):
+            selected=[record for record in captured.files if record['relative_source']==name]
+            need(len(selected)==1,'DIAGNOSTIC_ORIGINAL_CAPTURE_REFERENCE_MISSING')
+            record=selected[0];return {'path':'sealed/'+record['capture_file'],'sha256':record['sha256']}
+        save(payload/'diagnostic-result.json',{'schema':'porota.rc6.capacity-diagnostic-result.v1',
+            'status':'GREEN_DIAGNOSTIC_ONLY' if code==0 else 'BLOCKED','source_sha':authority['source_sha'],
+            'source_tree':authority['source_tree'],'gate':authority['gate'],'producer_receipt':terminal,
+            'producer_receipt_ref':captured_ref('diagnostic/calibration.json'),
+            'outer_native_fin_ref':captured_ref(fin_name),
+            'capture_manifest_ref':{'path':'sealed/manifest.json','sha256':captured.manifest_sha256},
+            'actual_outer_cleanup':cleanup,'qualification_claimed':False,'G0_G8_claimed':False,
+            'financial_tick_executed':False,'real_orders_sent':0,'runtime_validated':False,'final_candidate_eligible':False})
+        if os.environ.get('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+                stream.write('control_root='+str(Path(args.diagnostic_admission_json).parent)+'\nsafe_payload_upload=true\npayload_root='+str(payload)+'\n')
+    except BaseException as error:
+        reason=str(error).partition(':')[0];reason=reason if re.fullmatch('[A-Z][A-Z0-9_]{0,191}',reason) else 'NON_LITERAL_DIAGNOSTIC_FAILURE'
+        target=controls if controls.exists() else Path(args.diagnostic_admission_json).parent
+        save(target/'diagnostic-error.json',{'status':'BLOCKED','reason':reason,'class':type(error).__name__,
+            'payload_reads_allowed':not run.unknown,'qualification_claimed':False,'G0_G8_claimed':False,'real_orders_sent':0})
+    return code
 
 def need(ok,reason):
     if not ok:raise ValueError(reason)
@@ -330,7 +478,7 @@ def prepare_gov(a,run,root,interpreters,auth,manager_pin,native_pin):
     return derived,documents[0]['prepared'],authority_path,authority_sha
 
 def static_admission(a,run,root,prepared,interpreters):
-    started=a.preparation_started_utc;evidence={};native=[]
+    started=a.preparation_started_utc;evidence={};native=[];heavy_corpora={}
     g=runpy.run_path(str(a.repo_root/'scripts/rc6_controlled_governed_runner.py'))
     arguments,exclusions,inventory=g['approved_scope'](a.repo_root,a.source_sha)
     fip=inventory
@@ -363,6 +511,7 @@ def static_admission(a,run,root,prepared,interpreters):
         need(final['status']=='GREEN' and final['kernel_echild_before_phase_return'] is True,
             'G0_NATIVE_ADMISSION_FIN_UNKNOWN')
         report=document(read(output/'collection.observations.json'))
+        heavy_corpora[epoch]=architectural.validate_preserved_heavy_corpus(report.get('preserved_heavy_corpus'))
         need(row['returncode']==report['native_exit_code']==0 and report['compiled_product_files']>0
             and report['source_namespace_exact_before_after'] is True and not report['inet_socket_attempts']
             and report['closure_before_fixture']['installed_total']==157,
@@ -389,14 +538,16 @@ def static_admission(a,run,root,prepared,interpreters):
             'kernel':{'path':'controls/'+kernel.name,'sha256':digest(read(kernel))}})
     capacity_index={'schema':'rc6.G0-actual-capacity-launch-index.v1','source_sha':a.source_sha,
         'source_tree':a.source_tree,'capacity_records':run.capacity_records,'commands':commands,
-        'preparation_scope':a.capacity_peaks['bootstrap']['preparation_scope']}
+        'preparation_scope':a.capacity_peaks['bootstrap']['preparation_scope'],
+        'full_git_transition':{'path':'controls/fullGit-bootstrap-to-qualified.json',
+            'sha256':digest(read(run.control/'fullGit-bootstrap-to-qualified.json'))}}
     save(root/'G0.capacity-index.json',capacity_index)
     evidence['capacity_index']={'path':'carrier/G0.capacity-index.json','sha256':digest(read(root/'G0.capacity-index.json'))}
     checks={name:True for name in ('ownership','inventory','closure_matrix','compile_import','paper_invariants',
         'ppi_watch_invariant','full_git_fsck','full_source','capacity_preflight')}
     row=architectural.receipt_base('G0',source_sha=a.source_sha,source_tree=a.source_tree,
         read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,checks=checks,
-        native_evidence=evidence,static_native_receipts=native)
+        native_evidence=evidence,static_native_receipts=native,preserved_heavy_corpora=heavy_corpora)
     save(root/'G0.receipt.json',row)
     return row
 
@@ -461,6 +612,10 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
         need(not any(counts[key] for key in ('failure','error','skipped'))
             and collection['pytest_exit_code']==execution['pytest_exit_code']==0,'FULL_GOV_LOGICAL_RED')
         actual_nodes={node['nodeid'] for node in collection['items']}
+        g0=next(prior for prior in a.verified_prerequisites['authenticated_receipts'] if prior['gate']=='G0')
+        required_heavy=g0['preserved_heavy_corpora'][epoch]
+        architectural.verify_preserved_heavy_coverage(required_heavy,collection,execution,
+            read(output/'porota-governed-tests.xml'))
         for prior in a.verified_prerequisites['authenticated_receipts']:
             if prior['gate'] in ('G2','G3'):
                 need(all(node['nodeid'] in actual_nodes for node in prior.get('complete_focal_corpus',[]))
@@ -495,6 +650,8 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
     receipt=architectural.receipt_base('G6.'+epoch,source_sha=a.source_sha,source_tree=a.source_tree,
         read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,checks=checks,
         native_exit_code=code,native_evidence=native_evidence,python_epoch=epoch,test_cases=counts['cases'],
+        required_preserved_heavy_corpus=next(prior for prior in a.verified_prerequisites['authenticated_receipts']
+            if prior['gate']=='G0')['preserved_heavy_corpora'][epoch],
         identity_verified=identity,failures=counts['failure'],errors=counts['error'],skipped=counts['skipped'],xfail=0,
         scope='repository-root automatic pytest discovery',cleanup_receipt=cleanup,reason=reason,
         source_unchanged=code==0)
@@ -900,6 +1057,7 @@ def stage_raw(a,run,root,prepared,report):
         read=read,save_raw=save_raw,save=save,source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
 
 def main():
+    if '--diagnostic-admission-json' in sys.argv:return diagnostic_main()
     p=argparse.ArgumentParser();p.add_argument('--repo-root',type=Path,required=True);p.add_argument('--source-sha',required=True)
     p.add_argument('--source-tree',required=True);p.add_argument('--launch-receipt-url',required=True)
     p.add_argument('--owner-session',required=True)
@@ -913,8 +1071,8 @@ def main():
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'CANONICAL_ACTIONS_REPOSITORY_REQUIRED')
     need(re.fullmatch('[0-9a-f]{40}',a.source_sha) and re.fullmatch('[0-9a-f]{40}',a.source_tree),'EXACT_LITERAL_SOURCE_SHA_TREE_REQUIRED')
     need(git(a.repo_root,'rev-parse','HEAD').decode().strip()==a.source_sha
-        and git(a.repo_root,'rev-parse','HEAD^{tree}').decode().strip()==a.source_tree
-        and git(a.repo_root,'rev-parse','--is-shallow-repository').strip()==b'false','EXACT_FULL_GIT_CHECKOUT_REQUIRED')
+        and git(a.repo_root,'rev-parse','HEAD^{tree}').decode().strip()==a.source_tree,
+        'EXACT_SOURCE_BOOTSTRAP_CHECKOUT_REQUIRED')
     need(not git(a.repo_root,'status','--porcelain').strip(),'CLEAN_ACTIONS_CHECKOUT_REQUIRED')
     home=safe_path(Path.home());need(len(os.fsencode(home))<=24 and home.lstat().st_uid==os.geteuid(),'SHORT_OWNED_ACTIONS_HOME_REQUIRED')
     import tempfile
@@ -939,6 +1097,7 @@ def main():
             save(controls/'ordered-prerequisite-admission.json',a.verified_prerequisites)
         auth=authority(a)
         a.preparation_started_utc=architectural.utc()
+        complete_full_git(a,run,root)
         preparation_capacity(a,run,root,'before-installed-environments')
         interpreters=installed_env(a,run,root)
         preparation_capacity(a,run,root,'before-original-Git-object-preparation')

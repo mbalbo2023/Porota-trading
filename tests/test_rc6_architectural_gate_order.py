@@ -18,6 +18,11 @@ SOURCE_SHA = "a" * 40
 SOURCE_TREE = "b" * 40
 CONTRACT = DEFAULT_READ_CONTRACT.fingerprint()
 
+def preserved_heavy_fixture():
+    return [{'nodeid':name+'::test_counter_case[unit_only]',
+        'classname':name[:-3].replace('/','.'),'name':'test_counter_case[unit_only]'}
+        for name in sorted(gates.G6_PRESERVED_HEAVY_FILES)]
+
 
 def receipt(gate):
     index = gates.GATES.index(gate)
@@ -33,6 +38,7 @@ def receipt(gate):
     if gate == "G0":
         row["checks"] = {name: True for name in ("ownership", "inventory", "closure_matrix", "compile_import",
             "paper_invariants", "ppi_watch_invariant", "full_git_fsck", "full_source", "capacity_preflight")}
+        row['preserved_heavy_corpora']={epoch:preserved_heavy_fixture() for epoch in ('311','312')}
     if gate in ("G1.311", "G1.312", "G2", "G3", "G6.311", "G6.312"):
         row.update(test_cases=1, identity_verified=True, failures=0, errors=0, skipped=0, xfail=0,
             python_epoch="312" if gate in ("G1.312", "G3", "G6.312") else "311")
@@ -49,6 +55,7 @@ def receipt(gate):
     if gate.startswith("G6."):
         row["scope"] = "repository-root automatic pytest discovery"
         row["checks"].update(full_source=True, closure_matrix=True)
+        row['required_preserved_heavy_corpus']=preserved_heavy_fixture()
     return row
 
 
@@ -82,7 +89,7 @@ def test_cheap_pass_cannot_substitute_for_any_required_architectural_guard_modul
         gates.validate_g1_files(sorted(gates.G1_REQUIRED_CHEAP_FILES-{missing}))
 
 
-@pytest.mark.parametrize('heavy',['tests/test_issue465_stress.py','tests/test_rc6_convergence_budget_liveness.py'])
+@pytest.mark.parametrize('heavy',sorted(gates.G1_HEAVY_FILES))
 def test_cheap_architectural_corpus_cannot_include_heavy_big_or_liveness_module(heavy):
     with pytest.raises(ValueError,match='REQUIRED_CHEAP_ARCHITECTURAL_CORPUS_MISSING_OR_HEAVY'):
         gates.validate_g1_files(sorted(gates.G1_REQUIRED_CHEAP_FILES)+[heavy])
@@ -193,6 +200,35 @@ def test_equal_counts_with_different_collected_nodes_are_rejected():
     execution["items"][0]["nodeid"] = "tests/test_other.py::test_a"
     with pytest.raises(ValueError, match="COLLECTION_EXECUTION_IDENTITY"):
         gates.validate_junit(cases(), execution, junit())
+
+
+@pytest.mark.parametrize('omission',['module','parameter'])
+def test_g6_cannot_omit_original_heavy_module_or_parameter_even_if_its_own_junit_is_green(omission):
+    required=preserved_heavy_fixture()
+    required.append(dict(required[0],nodeid=required[0]['nodeid'].replace('unit_only','second_parameter'),
+        name='test_counter_case[second_parameter]'))
+    actual=required[1:] if omission=='module' else required[:-1]
+    if omission=='module':actual=[row for row in actual if row['nodeid'].split('::',1)[0]!=required[0]['nodeid'].split('::',1)[0]]
+    report={'items':actual,'pytest_exit_code':0}
+    xml=''.join('<testcase classname="'+row['classname']+'" name="'+row['name']+'"/>' for row in actual)
+    with pytest.raises(ValueError,match='PARAMETER_IDENTITY_COVERAGE_MISMATCH'):
+        gates.verify_preserved_heavy_coverage(required,report,report,junit(xml,tests=len(actual)))
+
+
+def test_g6_complete_original_heavy_corpus_requires_exact_collection_execution_and_junit():
+    required=preserved_heavy_fixture();report={'items':required,'pytest_exit_code':0}
+    xml=''.join('<testcase classname="'+row['classname']+'" name="'+row['name']+'"/>' for row in required)
+    result=gates.verify_preserved_heavy_coverage(required,report,report,junit(xml,tests=len(required)))
+    assert result['required_original_heavy_node_count']==3
+    assert result['required_modules']==sorted(gates.G6_PRESERVED_HEAVY_FILES)
+    assert result['collection_execution_JUnit_identity_verified']
+
+
+def test_g6_heavy_ledger_cannot_be_replaced_after_authentic_g0_or_between_epochs():
+    rows=chain();g6=next(row for row in rows if row['gate']=='G6.312')
+    g6['required_preserved_heavy_corpus'][0]['nodeid']+='-other'
+    with pytest.raises(ValueError,match='NOT_BOUND_TO_AUTHENTIC_G0_SAME_SHA_TREE'):
+        admit(rows)
 
 
 @pytest.mark.parametrize("name", ["../other.json", "/other.json", "a/../other.json", "a\\other.json"])
@@ -525,11 +561,16 @@ def test_g0_capacity_protocol_roundtrip_preserves_real_tiny_native_fin_and_launc
         intent=run.control/(label+'.launch-intent.json');kernel=run.control/(label+'.kernel.json')
         commands.append({'label':label,'intent':{'path':'controls/'+intent.name,'sha256':hashlib.sha256(carrier.read(intent)).hexdigest()},
             'kernel':{'path':'controls/'+kernel.name,'sha256':hashlib.sha256(carrier.read(kernel)).hexdigest()}})
+    transition={'schema':'rc6.capacity-guarded-full-git-transition.v1','source_sha':SOURCE_SHA,'source_tree':SOURCE_TREE,
+        'bootstrap_was_shallow':False,'full_git_after_guarded_fetch':True,'same_HEAD_tree_unchanged':True,
+        'native_fetch_label':None,'assertion_scope':'UNIT_PROTOCOL_ONLY_NO_REAL_PRODUCT_FULL_GIT_CLAIM'}
+    transition_sha=carrier.save(run.control/'fullGit-bootstrap-to-qualified.json',transition)
     archive=tmp_path/'tiny-native-protocol.zip'
     with zipfile.ZipFile(archive,'w') as packed:
         for path in sorted(run.control.iterdir()):packed.writestr('controls/'+path.name,carrier.read(path))
     index={'schema':'rc6.G0-actual-capacity-launch-index.v1','source_sha':SOURCE_SHA,'source_tree':SOURCE_TREE,
         'capacity_records':run.capacity_records,'commands':commands,'preparation_scope':carrier.PREPARATION_SCOPE,
+        'full_git_transition':{'path':'controls/fullGit-bootstrap-to-qualified.json','sha256':transition_sha},
         'assertion_scope':'UNIT_PROTOCOL_ONLY_NOT_A_REAL_VENV_PIP_FULLSOURCE_OR_G0_PASS'}
     result=gates.verify_g0_capacity_index(index,receipt('G0'),archive)
     assert result['actual_native_commands']==11 and result['actual_capacity_proofs']==29
@@ -547,6 +588,282 @@ def test_bootstrap_unknown_peak_blocks_before_any_venv_or_pip_creation(tmp_path,
     with pytest.raises(ValueError,match='COMPARABLE_BOOTSTRAP_PEAK_REQUIRED_BEFORE_PREPARATION'):
         carrier.installed_env(args,forbidden,tmp_path)
     assert not (tmp_path/'product311').exists() and not (tmp_path/'product312').exists()
+
+
+def test_bootstrap_unknown_peak_blocks_full_git_fetch_before_any_git_mutation(tmp_path,monkeypatch):
+    args,run,carrier,_capacity=carrier_capacity_fixture(tmp_path,monkeypatch)
+    def forbidden(*_args,**_kwargs):raise AssertionError('Unknown capacity cannot run a full fetch')
+    monkeypatch.setattr(carrier,'git',forbidden)
+    with pytest.raises(ValueError,match='COMPARABLE_BOOTSTRAP_PEAK_REQUIRED_BEFORE_PREPARATION'):
+        carrier.complete_full_git(args,run,tmp_path)
+    assert not (tmp_path/'full-git-askpass.py').exists()
+
+def real_insufficient_peak(args,carrier,capacity,path,producer):
+    binding=carrier.capacity_binding(args,producer)
+    measured=capacity.measure_filesystem(path)
+    measurement={'allocated_bytes':measured['free_bytes']+1,'retained_entries':1,
+        'assertion_scope':'UNIT_REJECTION_BOUND_ONLY_NOT_MEASURED_MATERIAL_PEAK'}
+    return {'schema':'porota.rc6.comparable-capacity-peak.v1',
+        **{key:binding[key] for key in ('producer','runner_class','workload_fingerprint')},
+        'peak_allocated_bytes':measurement['allocated_bytes'],'preparation_scope':copy.deepcopy(carrier.PREPARATION_SCOPE),
+        'evidence':{'uri':'https://github.com/mbalbo2023/Porota-trading/issues/471',
+            'measurement':measurement,'sha256':capacity.digest(measurement)}}
+
+def git_fixture_files(root,carrier):
+    return {path.relative_to(root).as_posix():{'bytes_sha256':hashlib.sha256(carrier.read(path)).hexdigest(),
+        'stat':tuple(getattr(path.stat(),name) for name in carrier.FIELDS)}
+        for path in sorted((root/'.git').rglob('*')) if path.is_file()}
+
+def test_insufficient_live_capacity_physically_blocks_full_git_fetch_and_preserves_git(tmp_path,monkeypatch,tiny_frozen_source):
+    args,fixture,carrier,capacity=carrier_capacity_fixture(tmp_path,monkeypatch)
+    root,sha,tree,*_=tiny_frozen_source;args.repo_root=root;args.source_sha=sha;args.source_tree=tree
+    policy=capacity.load_policy();monkeypatch.setattr(capacity,'load_policy',lambda _path=None:policy)
+    args.capacity_peaks['bootstrap']=real_insufficient_peak(args,carrier,capacity,tmp_path,'bootstrap')
+    before=git_fixture_files(root,carrier);calls=[];sentinel=tmp_path/'FETCH_WAS_CALLED'
+    class FetchSentinel:
+        control=fixture.control
+        def __call__(self,*_args,**_kwargs):
+            calls.append('fetch');sentinel.write_bytes(b'physical launch reached');raise AssertionError('fetch must remain NOT_CALLED')
+    with pytest.raises(ValueError,match='CAPACITY_PREFLIGHT_BLOCKED_BEFORE_PRODUCER'):
+        carrier.complete_full_git(args,FetchSentinel(),tmp_path)
+    receipt=json.loads(next(fixture.control.glob('*.capacity-before.json')).read_bytes())
+    assert receipt['capacity']['status']=='BLOCKED'
+    assert receipt['filesystem']['free_bytes']<receipt['comparable_peak']['peak_allocated_bytes']+4*1024**3
+    assert calls==[] and not sentinel.exists() and not (tmp_path/'full-git-askpass.py').exists()
+    assert git_fixture_files(root,carrier)==before
+
+def test_insufficient_live_capacity_physically_blocks_g7_full_git_fetch_and_preserves_git(tmp_path,monkeypatch,tiny_frozen_source):
+    args,_fixture,carrier,capacity=carrier_capacity_fixture(tmp_path,monkeypatch)
+    root,sha,tree,*_=tiny_frozen_source;args.repo_root=root;args.source_sha=sha;args.source_tree=tree
+    from scripts import porota_predeploy_cleanup as cleanup
+    policy=capacity.load_policy();monkeypatch.setattr(capacity,'load_policy',lambda _path=None:policy)
+    peak=real_insufficient_peak(args,carrier,capacity,tmp_path,'predeploy')
+    context={'candidate_sha':sha,'candidate_tree':tree};owner={'private_root':str(tmp_path)}
+    monkeypatch.setattr(cleanup,'execution_context',lambda *_args:context)
+    monkeypatch.setattr(cleanup,'cli_owner',lambda *_args:(owner,{}))
+    monkeypatch.setattr(gates.subprocess,'check_output',lambda *_args,**_kwargs:str(tmp_path))
+    before=git_fixture_files(root,carrier);calls=[];sentinel=tmp_path/'G7_FETCH_WAS_CALLED'
+    def forbidden(*_args,**_kwargs):
+        calls.append('fetch');sentinel.write_bytes(b'physical launch reached');raise AssertionError('G7 fetch must remain NOT_CALLED')
+    monkeypatch.setattr(carrier,'OwnedRunner',forbidden)
+    authority={'status':'ADMITTED_NATIVE_NOT_STARTED','gate':'predeploy','source_sha':sha,'source_tree':tree,
+        'owner_session':args.owner_session,'capacity_peaks':{'predeploy':peak}}
+    with pytest.raises(ValueError,match='CAPACITY_'):
+        gates.complete_predeploy_full_git(authority,scope=tmp_path,repo=root,environ={})
+    receipt=json.loads((tmp_path/'porota-g7-full-git-workspace-capacity-before.json').read_bytes())
+    assert receipt['capacity']['status']=='BLOCKED'
+    assert receipt['filesystem']['free_bytes']<receipt['comparable_peak']['peak_allocated_bytes']+4*1024**3
+    assert calls==[] and not sentinel.exists() and not (tmp_path/'g7-full-git-askpass.py').exists()
+    assert git_fixture_files(root,carrier)==before
+
+
+@pytest.fixture
+def tiny_frozen_source(tmp_path):
+    import subprocess
+    from scripts import rc6_material_pr_admission as admission
+    root=tmp_path/'tiny-frozen-Git';root.mkdir()
+    (root/'plain.py').write_bytes(b'VALUE = 1\n')
+    (root/'entry.py').write_bytes(b'ENTRY = True\n');(root/'entry.py').chmod(0o755)
+    def git(*args):return subprocess.run(['git','-C',str(root),*args],check=True,capture_output=True).stdout
+    git('init','-q');git('add','.');git('-c','user.name=RC6 unit','-c','user.email=unit@example.invalid',
+        'commit','-q','--no-gpg-sign','-m','Controlled unit only')
+    sha=git('rev-parse','HEAD').decode().strip();tree=git('rev-parse','HEAD^{tree}').decode().strip()
+    inventory=admission.frozen_source_inventory(root,sha,tree)
+    cheap=sorted(gates.G1_REQUIRED_CHEAP_FILES)
+    manifest={'schema':admission.CAPACITY_COMPARISON_MANIFEST_SCHEMA,'source_sha':sha,'source_tree':tree,
+        'source_manifest_sha256':hashlib.sha256(admission.wire(inventory)).hexdigest(),
+        'cheap_files_sha256':hashlib.sha256(admission.wire(cheap)).hexdigest(),
+        'status':'BLOCKED_UNKNOWN_COMPONENTS','unknown_components':['bootstrap_sdists_temporal_allocation'],
+        'records':[]}
+    fields={'SOURCE_MANIFEST_SHA256':manifest['source_manifest_sha256'],'CHEAP_FILES_JSON':json.dumps(cheap),
+        'CAPACITY_PEAKS_JSON':'{}','CAPACITY_COMPARISON_MANIFEST_JSON':json.dumps(manifest)}
+    return root,sha,tree,inventory,manifest,fields,admission
+
+
+def test_source_manifest_uses_frozen_git_bytes_modes_and_oids_not_workspace_attributes(tiny_frozen_source):
+    root,sha,tree,inventory,_manifest,_fields,admission=tiny_frozen_source
+    records={row['path']:row for row in inventory['files']}
+    assert records['entry.py']['mode']=='100755' and records['plain.py']['mode']=='100644'
+    (root/'entry.py').chmod(0o600);(root/'plain.py').write_bytes(b'DIRTY_WORKSPACE_NOT_FROZEN_SOURCE\n')
+    assert admission.frozen_source_inventory(root,sha,tree)==inventory
+    assert records['plain.py']['sha256']==hashlib.sha256(b'VALUE = 1\n').hexdigest()
+
+
+def test_unknown_capacity_comparison_stops_before_bootstrap_despite_exact_source_manifest(tiny_frozen_source):
+    root,sha,tree,_inventory,_manifest,fields,admission=tiny_frozen_source
+    with pytest.raises(ValueError,match='UNKNOWN_COMPONENTS_BEFORE_BOOTSTRAP'):
+        admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
+
+
+@pytest.mark.parametrize('fault',['source','cheap','tree'])
+def test_capacity_manifest_requires_actual_frozen_source_and_reviewed_cheap_fingerprints(tiny_frozen_source,fault):
+    root,sha,tree,_inventory,manifest,fields,admission=tiny_frozen_source
+    if fault=='source':
+        fields['SOURCE_MANIFEST_SHA256']=manifest['source_manifest_sha256']='0'*64
+    elif fault=='cheap':manifest['cheap_files_sha256']='0'*64
+    elif fault=='tree':manifest['source_tree']='0'*40
+    fields['CAPACITY_COMPARISON_MANIFEST_JSON']=json.dumps(manifest)
+    with pytest.raises(ValueError,match='DIGEST_MISMATCH|FINGERPRINT_MISMATCH|MANIFEST_REQUIRED'):
+        admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
+
+
+def test_self_declared_verified_hash_only_comparison_never_authorizes_v2(tiny_frozen_source):
+    root,sha,tree,_inventory,manifest,fields,admission=tiny_frozen_source
+    manifest.update(status='VERIFIED',unknown_components=[],records=[])
+    fields['CAPACITY_COMPARISON_MANIFEST_JSON']=json.dumps(manifest)
+    with pytest.raises(ValueError,match='HASH_ONLY_COMPARISON_EVIDENCE_BLOCKED'):
+        admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
+
+
+def test_verified_inline_coherence_does_not_replace_original_git_transport_and_exhaustive_graph(tiny_frozen_source):
+    root,sha,tree,_inventory,manifest,fields,admission=tiny_frozen_source
+    raw='Controlled unit RAW only; no temporal peak or external authenticity claim.'
+    manifest.update(status='VERIFIED',unknown_components=[],records=[{'uri':
+        'https://github.com/mbalbo2023/Porota-trading/blob/'+sha+'/plain.py',
+        'sha256':hashlib.sha256(raw.encode()).hexdigest(),'raw_utf8':raw}])
+    fields['CAPACITY_COMPARISON_MANIFEST_JSON']=json.dumps(manifest)
+    with pytest.raises(ValueError,match='VERIFIED_COMPARISON_PROOF_BLOCK_UNSUPPORTED'):
+        admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
+
+def diagnostic_unit_launch(tiny_frozen_source,monkeypatch,gate='capacity-probe'):
+    root,sha,tree,_inventory,manifest,_fields,admission=tiny_frozen_source
+    monkeypatch.setattr(gates,'productive_contract',lambda _root:CONTRACT)
+    image,hard_limit=(5*1024**3,512*1024**2) if gate=='capacity-probe' else (26*1024**3,20*1024**3)
+    scope={'schema':'porota.rc6.capacity-diagnostic-scope.v1','mode':gate,'backing_image_bytes':image,
+        'project_hard_limit_bytes':hard_limit,'residual_reserve_bytes':4*1024**3,
+        'financial_tick_allowed':False,'qualification_claimed':False}
+    fields={'RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION':'APPROVED','WORKSTREAM_ID':admission.WORKSTREAM,
+        'DIAGNOSTIC_MODE':gate,'SOURCE_WIP':admission.DIAGNOSTIC_BRANCH,'SOURCE_SHA':sha,'SOURCE_TREE':tree,
+        'SESSION_SUCCESSOR':admission.SUCCESSOR_OWNER,'WRITE_OWNER':admission.SUCCESSOR_OWNER,
+        'INTEGRATION_OWNER':admission.SUCCESSOR_OWNER,'DEPLOY_OWNER':'NOT_ACQUIRED','RELEASED':'false',
+        'MODE':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':'0','READ_CONTRACT_SHA256':CONTRACT,
+        'SOURCE_MANIFEST_SHA256':manifest['source_manifest_sha256'],
+        'CAPACITY_DIAGNOSTIC_SCOPE_JSON':json.dumps(scope),'CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON':'null'}
+    row={'user':{'login':'mbalbo2023'},'issue_url':'https://api.github.com/repos/'+admission.REPO+'/issues/471',
+        'created_at':'2026-10-08T16:30:00Z','updated_at':'2026-10-08T16:30:00Z',
+        'body':'\n'.join(key+'='+value for key,value in fields.items())+'\n'}
+    return root,sha,tree,row,scope,fields,admission
+
+def test_diagnostic_authority_is_exact_wip_source_and_explicitly_not_candidate_qualification(tiny_frozen_source,monkeypatch):
+    root,sha,tree,row,scope,_fields,admission=diagnostic_unit_launch(tiny_frozen_source,monkeypatch)
+    _auth,observed,prior=admission.diagnostic_launch_fields(row,sha,tree,admission.SUCCESSOR_OWNER,'capacity-probe',repo=root)
+    assert observed==scope and prior is None and observed['qualification_claimed'] is False
+    assert set(admission.DIAGNOSTIC_GATES).isdisjoint(gates.GATES)
+    assert scope['backing_image_bytes']!=scope['project_hard_limit_bytes']
+
+@pytest.mark.parametrize('fault',['edited','owner','source','tree','contract','manifest','branch','deploy'])
+def test_diagnostic_owner_hash_or_mode_cannot_be_rebound(tiny_frozen_source,monkeypatch,fault):
+    root,sha,tree,row,_scope,fields,admission=diagnostic_unit_launch(tiny_frozen_source,monkeypatch)
+    if fault=='edited':row['updated_at']='2026-10-08T16:31:00Z'
+    else:
+        key={'owner':'WRITE_OWNER','source':'SOURCE_SHA','tree':'SOURCE_TREE','contract':'READ_CONTRACT_SHA256',
+            'manifest':'SOURCE_MANIFEST_SHA256','branch':'SOURCE_WIP','deploy':'DEPLOY_OWNER'}[fault]
+        fields[key]='wrong';row['body']='\n'.join(key+'='+value for key,value in fields.items())+'\n'
+    with pytest.raises(ValueError,match='DIAGNOSTIC|CONTRACT_REBOUND|SOURCE_MANIFEST'):
+        admission.diagnostic_launch_fields(row,sha,tree,admission.SUCCESSOR_OWNER,'capacity-probe',repo=root)
+
+@pytest.mark.parametrize('field,value',[('backing_image_bytes',6*1024**3),('project_hard_limit_bytes',1024**3),
+    ('residual_reserve_bytes',0),('financial_tick_allowed',True),('qualification_claimed',True)])
+def test_diagnostic_outer_backing_inner_project_and_reserve_cannot_be_relaxed(tiny_frozen_source,monkeypatch,field,value):
+    _root,_sha,_tree,_row,scope,_fields,admission=diagnostic_unit_launch(tiny_frozen_source,monkeypatch)
+    scope[field]=value
+    with pytest.raises(ValueError,match='QUOTA_SCOPE_REBOUND'):admission.diagnostic_scope('capacity-probe',scope)
+
+def test_diagnostic_bootstrap_cannot_start_without_capability_artifact_reference(tiny_frozen_source,monkeypatch):
+    root,sha,tree,row,_scope,_fields,admission=diagnostic_unit_launch(tiny_frozen_source,monkeypatch,'capacity-calibration')
+    with pytest.raises(ValueError,match='ACTUAL_CAPABILITY_ARTIFACT'):
+        admission.diagnostic_launch_fields(row,sha,tree,admission.SUCCESSOR_OWNER,'capacity-calibration',repo=root)
+
+@pytest.mark.parametrize('field,value',[('GITHUB_RUN_ATTEMPT','2'),('GITHUB_SHA','c'*40),
+    ('GITHUB_WORKFLOW_SHA','d'*40),('RUNNER_ENVIRONMENT','self-hosted')])
+def test_diagnostic_rerun_or_alternate_runner_blocks_before_any_actions_payload_read(monkeypatch,field,value):
+    from scripts import rc6_material_pr_admission as admission
+    environment={'GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':SOURCE_SHA,
+        'GITHUB_WORKFLOW_SHA':SOURCE_SHA,'GITHUB_REF':'refs/heads/'+admission.DIAGNOSTIC_BRANCH,
+        'GITHUB_WORKFLOW_REF':admission.REPO+'/.github/workflows/rc6-unified-candidate-tests.yml@refs/heads/'+admission.DIAGNOSTIC_BRANCH,
+        'RUNNER_ENVIRONMENT':'github-hosted','RUNNER_OS':'Linux','RUNNER_ARCH':'X64','GITHUB_RUN_ID':'111'}
+    for key,content in environment.items():monkeypatch.setenv(key,content)
+    monkeypatch.setenv(field,value);reads=[]
+    monkeypatch.setattr(admission,'api',lambda path:reads.append(path))
+    with pytest.raises(ValueError,match='FIRST_ATTEMPT_STANDARD_ACTIONS'):
+        admission.diagnostic_actions_origin(SOURCE_SHA,'capacity-probe')
+    assert reads==[]
+
+@pytest.mark.parametrize('moved',[476,477])
+def test_diagnostic_never_moves_or_accepts_a_changed_candidate_pr(monkeypatch,moved):
+    from scripts import rc6_material_pr_admission as admission
+    def get(path):
+        if path=='':return {'id':admission.REPO_ID}
+        if path.startswith('/git/ref/'):return {'object':{'sha':SOURCE_SHA}}
+        if path=='/git/commits/'+SOURCE_SHA:
+            return {'sha':SOURCE_SHA,'tree':{'sha':SOURCE_TREE},'parents':[{'sha':admission.RECOVERY_HEAD}]}
+        if path=='/git/commits/'+admission.RECOVERY_HEAD:
+            return {'sha':admission.RECOVERY_HEAD,'tree':{'sha':admission.RECOVERY_TREE}}
+        number=int(path.rsplit('/',1)[1]);head=admission.RECOVERY_HEAD if number==476 else admission.GUARDS_HEAD
+        return {'number':number,'state':'open','draft':True,'merged':False,'merged_at':None,
+            'user':{'login':'mbalbo2023'},'head':{'sha':'f'*40 if number==moved else head,
+                'ref':admission.BRANCH if number==476 else 'governance/rc6-error-learning-runner-20261007',
+                'repo':{'id':admission.REPO_ID}},'base':{'ref':admission.BASE if number==476 else admission.BRANCH}}
+    monkeypatch.setattr(admission,'api',get)
+    with pytest.raises(ValueError,match='MUST_NOT_MOVE_OR_PROMOTE'):
+        admission.fresh_diagnostic_source(SOURCE_SHA,SOURCE_TREE)
+
+def test_candidate_tooling_download_is_blocked_without_a_comparison_that_accounts_for_toolcache(tmp_path,monkeypatch):
+    from scripts import rc6_material_carrier as carrier
+    from scripts import rc6_material_pr_admission as admission
+    path=tmp_path/'admission.json'
+    row={'status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':SOURCE_SHA,'source_tree':SOURCE_TREE,
+        'launch_receipt_url':'unit-only','owner_session':'unit-only','gate':'cheap','capacity_peaks':{}}
+    carrier.save(path,row);monkeypatch.setattr(admission,'admit',lambda **_kwargs:row)
+    with pytest.raises(ValueError,match='PYTHON_TOOLING_CAPACITY_UNKNOWN_BEFORE_ACTION_DOWNLOAD'):
+        carrier.tooling_capacity(path,tmp_path,{})
+    assert not (tmp_path/'tooling-controls').exists()
+
+def test_actual_diagnostic_parent_binding_is_accepted_by_calibration_admission_without_sdk_or_quota_launch(tmp_path,monkeypatch):
+    args,_run,carrier,_capacity=carrier_capacity_fixture(tmp_path,monkeypatch)
+    from scripts import rc6_material_pr_admission as admission
+    from scripts import rc6_capacity_calibration as calibration
+    monkeypatch.setenv('GITHUB_REPOSITORY',admission.REPO)
+    binding=carrier.capacity_binding(args,'capacity-probe')
+    scope={'schema':'porota.rc6.capacity-diagnostic-scope.v1','mode':'capacity-probe',
+        'backing_image_bytes':5*1024**3,'project_hard_limit_bytes':512*1024**2,'residual_reserve_bytes':4*1024**3,
+        'financial_tick_allowed':False,'qualification_claimed':False}
+    authority={'schema':'porota.rc6.capacity-diagnostic-admission.v1','status':'ADMITTED_DIAGNOSTIC_NOT_STARTED',
+        'gate':'capacity-probe','source_sha':args.source_sha,'source_tree':args.source_tree,
+        'owner_session':args.owner_session,'scope':scope,'qualification_claimed':False,'material_gates':[],
+        'real_orders_sent':0,'mode':'PRODUCTION_PAPER / SIMULATION','real_routes':'NOT_CALLED','ppi_watch':'UNTOUCHED',
+        'DEPLOY_OWNER':'NOT_ACQUIRED','actions_origin':{'run':{'id':111}}}
+    assert calibration.verify_admission(authority,binding,'capability')==authority
+    assert calibration.limits_for('capability')=={key:scope[key] for key in
+        ('backing_image_bytes','project_hard_limit_bytes','residual_reserve_bytes')}
+    assert binding['owner_id']==authority['owner_session'] and 'owner' not in binding
+
+def unit_probe_observations():
+    import errno
+    checks={name:{'errno':errno.EPERM,'denied':True} for name in
+        ('project_id_change','inheritance_clear','setflags','quota_mutation')}
+    checks.update(edquot={'errno':errno.EDQUOT,'actual_positive':True,'probe_limit_bytes':1024**2},
+        outside_write={'errno':errno.EROFS,'readonly':True},supervisor_fd_escape={'errno':errno.EACCES,'denied':True})
+    return {'actual_positive':True,'same_uid':1001,'checks':checks,'project_attributes_unchanged':True,
+        'source_financial_code_called':False}, {'uid':1001,'capabilities_zero':True,'no_new_privileges':True,
+            'seccomp_mode':2,'mount_namespace_inode':1234}
+
+def test_diagnostic_errno_raw_validation_never_claims_actual_probe_execution():
+    probe,privilege=unit_probe_observations()
+    result=gates.verify_capacity_probe_observations(probe,privilege)
+    assert result=={'actual_observations_coherent':True,'qualification_claimed':False}
+
+@pytest.mark.parametrize('fault',['edquot','outside_write','supervisor_fd_escape','project_id_change','inheritance_clear',
+    'setflags','quota_mutation','source_financial_code_called','project_attributes_unchanged',
+    'uid','capabilities_zero','no_new_privileges','seccomp_mode','mount_namespace_inode'])
+def test_diagnostic_green_boolean_cannot_replace_real_errno_privilege_and_escape_controls(fault):
+    probe,privilege=unit_probe_observations()
+    if fault in probe['checks']:probe['checks'][fault]['errno']=0
+    elif fault in probe:probe[fault]=not probe[fault]
+    elif fault in ('uid','seccomp_mode','mount_namespace_inode'):privilege[fault]=0
+    else:privilege[fault]=False
+    with pytest.raises(ValueError,match='CAPABILITY_'):
+        gates.verify_capacity_probe_observations(probe,privilege)
 
 
 def test_native_epoch_peak_cannot_be_assumed_to_cover_compound_bootstrap(tmp_path,monkeypatch):

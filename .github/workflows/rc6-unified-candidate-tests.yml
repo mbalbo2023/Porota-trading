@@ -1,7 +1,7 @@
 name: RC6 supplemental material evidence
 run-name: RC6 material ${{ inputs.gate || 'cheap' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
 
-# Push admits G0/G1 only. Every later stage needs exact native Actions payloads
+# Draft candidate PR events admit G0/G1 only. Later stages need native Actions payloads
 # from its predecessors and a fresh single-gate owner authorization.
 on:
   pull_request:
@@ -28,6 +28,8 @@ on:
           - Horizon
           - full-gov311
           - full-gov312
+          - capacity-probe
+          - capacity-calibration
       launch_receipt_url:
         description: Immutable issue471 single-gate authorization with predecessor artifact manifest
         required: true
@@ -63,27 +65,15 @@ jobs:
       RC6_OWNER_SESSION: ${{ inputs.owner_session }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout exact owned candidate with full Git history
+      - name: Checkout exact candidate Source for bounded admission bootstrap only
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ env.RC6_SOURCE_SHA }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
-      - name: Prepare reviewed CPython311 tooling
-        id: py311
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.11.16"
-      - name: Prepare reviewed CPython312 tooling
-        id: py312
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12.14"
       - name: Resolve exact scoped authorization and fresh successor lease
         id: admit
         shell: bash
-        env:
-          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
         run: |
           set -Eeuo pipefail
           umask 022
@@ -91,7 +81,33 @@ jobs:
           if [ -n "$RC6_SOURCE_TREE" ]; then args+=(--source-tree "$RC6_SOURCE_TREE"); fi
           if [ -n "$RC6_LAUNCH_RECEIPT" ]; then args+=(--launch-receipt-url "$RC6_LAUNCH_RECEIPT"); fi
           if [ -n "$RC6_OWNER_SESSION" ]; then args+=(--owner-session "$RC6_OWNER_SESSION"); fi
-          "$RC6_PYTHON311" -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
+          python3 -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
+      - name: Measure live compound capacity before reviewed Python tooling
+        if: env.RC6_GATE != 'capacity-probe' && env.RC6_GATE != 'capacity-calibration'
+        shell: bash
+        env:
+          RC6_ADMISSION_JSON: ${{ steps.admit.outputs.admission_path }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B - <<'PY_TOOLING'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()))
+          from scripts.rc6_material_carrier import tooling_capacity
+          tooling_capacity(Path(os.environ['RC6_ADMISSION_JSON']),Path.cwd(),os.environ)
+          PY_TOOLING
+      - name: Prepare reviewed CPython311 tooling
+        if: env.RC6_GATE != 'capacity-probe' && env.RC6_GATE != 'capacity-calibration'
+        id: py311
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11.16"
+      - name: Prepare reviewed CPython312 tooling
+        if: env.RC6_GATE != 'capacity-probe' && env.RC6_GATE != 'capacity-calibration'
+        id: py312
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.14"
       - name: Verify canonical policy and cheap-only push boundary
         shell: bash
         run: |
@@ -106,6 +122,7 @@ jobs:
           echo 'real_orders_sent=0'
       - name: Run one stage after payload and live capacity admission
         id: gate
+        if: env.RC6_GATE != 'capacity-probe' && env.RC6_GATE != 'capacity-calibration'
         shell: bash
         env:
           RC6_SOURCE_TREE: ${{ steps.admit.outputs.source_tree }}
@@ -120,6 +137,17 @@ jobs:
             --repo-root "$GITHUB_WORKSPACE" --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
             --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
             --require-pr-admission --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
+      - name: Run isolated capacity diagnosis without candidate qualification
+        id: diagnostic
+        if: github.event_name == 'workflow_dispatch' && (env.RC6_GATE == 'capacity-probe' || env.RC6_GATE == 'capacity-calibration')
+        shell: bash
+        env:
+          RC6_DIAGNOSTIC_ADMISSION: ${{ steps.admit.outputs.admission_path }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          python3 -I -B scripts/rc6_material_carrier.py \
+            --diagnostic-admission-json "$RC6_DIAGNOSTIC_ADMISSION" --repo-root "$GITHUB_WORKSPACE"
       - name: Preserve bounded admission controls on every terminal path
         if: always() && steps.admit.outputs.control_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -136,6 +164,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.control_root }}/*.json
+      - name: Preserve isolated diagnostic controls on every terminal path
+        if: always() && steps.diagnostic.outputs.control_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-capacity-controls-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.diagnostic.outputs.control_root }}/*.json
+      - name: Preserve diagnostic RAW only after physical FIN and authenticated cleanup
+        if: always() && steps.diagnostic.outputs.safe_payload_upload == 'true' && steps.diagnostic.outputs.payload_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-capacity-diagnostic-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.diagnostic.outputs.payload_root }}
       - name: Preserve original RAW after physical FIN even on logical RED
         if: always() && steps.gate.outputs.safe_payload_upload == 'true' && steps.gate.outputs.payload_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

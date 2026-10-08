@@ -486,4 +486,3 @@ def test_nonempty_or_foreign_fixture_cannot_be_adopted(tmp_path):
     with pytest.raises(custody.CleanupRejected, match="FRESH_PYTEST_SCOPE_REQUIRED"):
         lifecycle.adopt_empty_fixture_namespace(foreign, real_binding(), control_parent=controls,
             parent_claim=lifecycle.namespace_receipt(namespace), nodeid="tests/test_control.py::test_case")
-

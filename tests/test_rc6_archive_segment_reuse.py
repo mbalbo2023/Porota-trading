@@ -355,3 +355,94 @@ def test_checkpoint_binary_dependency_without_projection_survives_gc_and_restore
     assert result["expired_generations"] == 0
     for _, originals, receipt in cuts:
         assert owner.restore_generation(receipt["generation_id"])["members"] == originals
+
+
+def test_exact_close_boundary_retains_all_three_prospective_partitions_and_original_members(monkeypatch):
+    """The exact close tick is material: it adds a distinct family-only reach.
+
+    Skipping20:00 creates a smaller state and cannot represent the canonical
+    Horizon's two-session archive. Keep the channels/identity meanings intact.
+    """
+    from collections import Counter
+    from cg_paper_workspace import artifact_root
+    from rc6_audit_evidence import sqlite_scratch
+    from rc6_shadow_runtime.read_contract import DEFAULT_READ_CONTRACT
+    from rc6_shadow_runtime.retention import EvidenceRetention
+    from rc6_shadow_runtime.worker import ShadowRuntime
+    from scripts.rc6_issue465_stress import fixture_database, AT
+    from tests.rc6_external_disk_fixture import external_disk_fixture
+    from tests.test_rc6_native_source_reads import source_inventory
+
+    count = 64
+    close = AT.replace(hour=20, minute=0, second=0, microsecond=0)
+    clocks = (PRE, AT, close-timedelta(seconds=30), close,
+              close+timedelta(seconds=30), close+timedelta(seconds=60))
+    with external_disk_fixture(prefix=".rc6-exact-close-boundary-") as private:
+        database = private / "paper.db"
+        artifacts = artifact_root(database)
+        scratch = artifacts / "sqlite-read-scratch"
+        scratch.mkdir(mode=0o700, parents=True)
+        for name, value in {
+                "DATA_DIR": private, "PAPER_V17_DB_PATH": database,
+                "HIST_DB_PATH": private / "absent-history.db",
+                "POROTA_DYNAMIC_SHADOW_ROOT": artifacts / "dynamic-shadow",
+                "POROTA_SHADOW_RUNTIME_ROOT": artifacts / "dynamic-shadow",
+                "POROTA_DYNAMIC_SHADOW_ARCHIVE_ROOT": artifacts / "dynamic-shadow-archive",
+                sqlite_scratch.ENV_PREFIX + "ROOT": scratch,
+                sqlite_scratch.ENV_PREFIX + "MAX_BYTES": 512 * 1024**2,
+                sqlite_scratch.ENV_PREFIX + "RESERVE_BYTES": 2 * 1024**3,
+                sqlite_scratch.ENV_PREFIX + "MIN_FREE_INODE_PERCENT": 10}.items():
+            monkeypatch.setenv(name, str(value))
+        fixture_database(database, catalog_count=count, observations_per_identity=5)
+        before = source_inventory(database)
+        assert set(before) == {""}, "Fixture writers must close before Source custody begins"
+        worker = ShadowRuntime.from_environment(database)
+        expected_contract = DEFAULT_READ_CONTRACT.fingerprint()
+        configuration = worker.configuration_fingerprint(PRE)
+        partitions, previous_reaches, old_session, next_session = [], None, None, None
+        for number, clock in enumerate(clocks, 1):
+            report = worker.tick(clock)
+            assert report["sequence"] == number and report["as_of"] == clock.isoformat()
+            assert report["configuration_fingerprint"] == configuration
+            assert report["provider_requests"] == report["real_orders_sent"] == 0
+            assert report["real_routes"] == "NOT_CALLED" and report["ppi_watch"] == "UNTOUCHED"
+            assert len(report["catalog_ready"]) == count
+            receipt = worker.last_source_read_receipt
+            assert receipt["read_contract_sha256"] == expected_contract
+            assert receipt["primary_captures"] == 1 and receipt["additional_captures"] == []
+            assert receipt["source_unchanged"] and receipt["private_image_unchanged"] and receipt["cleanup_complete"]
+            assert all(query["consumer"] + "_query_seconds" in DEFAULT_READ_CONTRACT.document()
+                       for query in receipt["query_consumers"])
+            assert source_inventory(database) == before
+            funnel = report["operational_funnel"]
+            groups = Counter((row["session"], row["channel"]) for row in funnel["cohorts"])
+            reaches = {digest(row): row for row in funnel["state_reaches"]}
+            partitions.append(groups)
+            if number == 1:
+                old_session = report["session"]
+                assert groups == {(old_session, "UNIVERSE_SHADOW"): count * 2}
+            if clock == close:
+                next_session = report["session"]
+                assert next_session != old_session and report["phase"] == "CLOSED" and report["engines"] == {}
+                assert report["status"] == "PREOPEN_SNAPSHOT_PENDING_AFTER_SESSION_CUTOFF"
+                assert groups == {(old_session, "UNIVERSE_SHADOW"): count * 2,
+                                  (next_session, "FAMILY_OBSERVE_ONLY"): count}
+                previous_reaches = reaches
+            elif clock > close:
+                assert groups == {(old_session, "UNIVERSE_SHADOW"): count * 2,
+                                  (next_session, "FAMILY_OBSERVE_ONLY"): count,
+                                  (next_session, "UNIVERSE_SHADOW"): count * 2}
+                assert previous_reaches.keys() <= reaches.keys(), "Distinct family reaches must survive the next preopen"
+                assert {row["channel"] for row in funnel["cohorts"]} == {"UNIVERSE_SHADOW", "FAMILY_OBSERVE_ONLY"}
+                assert len(funnel["cohorts"]) == count * 5
+            directory = worker.root / ("gen-" + report["generation_id"])
+            originals = members(directory)
+            assert set(originals) == components.MEMBERS
+            custody = tree_custody(directory)
+            owner = EvidenceRetention(worker.root, archive_root=worker.files.archive_root, archive_format="COMPONENT_V3")
+            ack = owner.archive_generation(directory)
+            restored = owner.restore_generation(ack["generation_id"])
+            assert restored["members"] == originals
+            assert restored["manifest"]["generation_id"] == report["generation_id"]
+            assert tree_custody(directory) == custody and source_inventory(database) == before
+        assert partitions[-2] == partitions[-1]

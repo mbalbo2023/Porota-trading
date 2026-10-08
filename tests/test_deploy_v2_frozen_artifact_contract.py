@@ -83,3 +83,59 @@ def test_governed_pytest_isolated_from_runner_entrypoints():
     assert "original['compare_records157'](records_before,records_after)" in verifier
     assert 'G7_EXTERNAL_G6_ARCHIVE_CHANGED' in verifier
     assert 'G7_EXTERNAL_G6_NATIVE_ORIGIN_REBOUND' in verifier
+
+
+def test_initial_checkouts_cannot_fetch_full_history_before_owner_and_capacity_admission():
+    carrier=yaml.safe_load(Path('.github/workflows/rc6-unified-candidate-tests.yml').read_text())
+    predeploy=yaml.safe_load(WORKFLOW)
+    for workflow in (carrier,predeploy):
+        job=next(iter(workflow['jobs'].values()))
+        checkout=next(step for step in job['steps'] if step.get('uses','').startswith('actions/checkout@'))
+        assert checkout['with']['fetch-depth']==1 and checkout['with']['persist-credentials'] is False
+    steps=predeploy['jobs']['artifact-gate']['steps']
+    prior=next(index for index,step in enumerate(steps) if step.get('id')=='prerequisite_gates')
+    fetch=next(index for index,step in enumerate(steps) if 'Complete Git history' in step['name'])
+    source=next(index for index,step in enumerate(steps) if step['name']=='Freeze checkout byte provenance before build')
+    assert prior<fetch<source
+    code=Path('scripts/rc6_material_carrier.py').read_text()
+    function=code[code.index('def complete_full_git('):code.index('def need(')]
+    assert function.index('preparation_capacity(')<function.index("'fetch','--unshallow'")
+    assert "label='fullGit-guarded-fetch'" in function and "SHALLOW_BOOTSTRAP_MUST_NOT_QUALIFY_AS_FULL_GIT" in function
+    main=code[code.index('def main():'):]
+    assert main.index('auth=authority(a)')<main.index('complete_full_git(a,run,root)')<main.index('interpreters=installed_env(')
+    verifier=Path('scripts/rc6_architectural_gates.py').read_text()
+    g7=verifier[verifier.index('def complete_predeploy_full_git('):verifier.index('def receipt_base(')]
+    assert g7.index('predeploy_capacity_gate(')<g7.index("'--unshallow'")
+    assert "'pytest_launched':False" in g7 and "'G7_PYTEST_FIN_claimed':False" in g7
+
+def test_capacity_diagnosis_is_dispatch_only_and_never_reaches_candidate_or_tooling_jobs():
+    workflow=yaml.safe_load(Path('.github/workflows/rc6-unified-candidate-tests.yml').read_text())
+    trigger=workflow.get('on',workflow.get(True))
+    modes=trigger['workflow_dispatch']['inputs']['gate']['options']
+    assert 'capacity-probe' in modes and 'capacity-calibration' in modes
+    steps=workflow['jobs']['ordered-source-gate']['steps']
+    admit=next(index for index,step in enumerate(steps) if step.get('id')=='admit')
+    toolcap=next(index for index,step in enumerate(steps) if step['name']=='Measure live compound capacity before reviewed Python tooling')
+    assert 'python3 -I -B scripts/rc6_material_pr_admission.py' in steps[admit]['run']
+    for index,step in enumerate(steps):
+        if step.get('uses','').startswith('actions/setup-python@') or step.get('id')=='gate':
+            assert admit<toolcap<index
+            assert "env.RC6_GATE != 'capacity-probe'" in step['if']
+            assert "env.RC6_GATE != 'capacity-calibration'" in step['if']
+    diagnostic=next(step for step in steps if step.get('id')=='diagnostic')
+    assert "github.event_name == 'workflow_dispatch'" in diagnostic['if']
+    assert '--diagnostic-admission-json' in diagnostic['run']
+    assert '--python311' not in diagnostic['run'] and 'setup-python' not in diagnostic['run']
+    code=Path('scripts/rc6_material_carrier.py').read_text()
+    mode=code[code.index('def diagnostic_main('):code.index('def need(')]
+    assert 'static_admission(' not in mode and 'installed_env(' not in mode and 'receipt_base(' not in mode
+    assert mode.index('native=run(')<mode.index("terminal=document(read(output/'calibration.json'))")
+    assert mode.index('DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')<mode.index('capture_required_evidence(')<mode.index('cleanup_namespace(')
+    assert "'G0_G8_claimed':False" in mode and "'qualification_claimed':False" in mode
+
+def test_g7_prerequisite_and_capacity_checks_precede_any_python_tooling_download():
+    steps=yaml.safe_load(WORKFLOW)['jobs']['artifact-gate']['steps']
+    prior=next(index for index,step in enumerate(steps) if step.get('id')=='prerequisite_gates')
+    capacity=next(index for index,step in enumerate(steps) if step['name']=='Measure capacity before reviewed Python tooling download')
+    tooling=next(index for index,step in enumerate(steps) if step.get('uses','').startswith('actions/setup-python@'))
+    assert prior<capacity<tooling and "stage='reviewed-tooling'" in steps[capacity]['run']

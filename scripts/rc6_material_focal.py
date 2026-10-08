@@ -46,6 +46,27 @@ def classify_node(nodeid):
     plain=nodeid.split('[',1)[0]
     return MATERIAL_NODES.get(plain)
 
+def collect_preserved_heavy_inventory(output):
+    """Collect complete module identities before any heavy fixture can start."""
+    import pytest
+    from _pytest.junitxml import mangle_test_address
+    from scripts.rc6_architectural_gates import G6_PRESERVED_HEAVY_FILES
+    rows=[]
+    class CollectionOnly:
+        def pytest_collection_finish(self,session):
+            for item in session.items:
+                address=mangle_test_address(item.nodeid)
+                rows.append({'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]})
+        def pytest_fixture_setup(self,fixturedef,request):
+            raise RuntimeError('G0_HEAVY_IDENTITY_COLLECTION_MUST_NOT_START_FIXTURES')
+    rc=int(pytest.main(['--collect-only','-q','-p','no:cacheprovider','-o','pythonpath=.',
+        '--basetemp='+str(Path(output)/'heavy-collection-private'),*sorted(G6_PRESERVED_HEAVY_FILES)],
+        plugins=[CollectionOnly()]))
+    if rc!=0 or not rows:raise ValueError('G0_COMPLETE_HEAVY_MODULE_IDENTITY_COLLECTION_RED')
+    if {row['nodeid'].split('::',1)[0] for row in rows}!=set(G6_PRESERVED_HEAVY_FILES):
+        raise ValueError('G0_ORIGINAL_HEAVY_MODULE_OMITTED_FROM_COLLECTION')
+    return rows
+
 def main():
     p=argparse.ArgumentParser();p.add_argument('--repo-root',required=True);p.add_argument('--source-sha',required=True)
     p.add_argument('--source-tree',required=True);p.add_argument('--output-root',required=True)
@@ -94,6 +115,8 @@ def main():
                     'rc6_shadow_runtime.worker','rc6_shadow_runtime.persistence',
                     'rc6_shadow_runtime.publication_storage','rc6_trader_dashboard.projection'):
                 imported.append(importlib.import_module(name).__name__)
+            sys.path.insert(0,str(root))
+            heavy_corpus=collect_preserved_heavy_inventory(output)
         finally:
             finalization=g['finalize_child_infrastructure'](initial)
             g['publish'](output/(a.phase+'.child-finalization.json'),g['canonical'](finalization))
@@ -106,7 +129,8 @@ def main():
             'compiled_product_files':compiled,'imported_product_modules':imported,'closure_before_fixture':closure,
             'source_namespace_exact_before_after':True,'child_infrastructure_finalization':finalization,
             'observed_CODE_atime_changes':atime,'offline_inet_creation_capability':capability,**observations,
-            'native_exit_code':0,'real_orders_sent':0,'native_fixtures_started':False,'whole_Gov_claim':False}
+            'native_exit_code':0,'real_orders_sent':0,'native_fixtures_started':False,'whole_Gov_claim':False,
+            'preserved_heavy_corpus':heavy_corpus,'preserved_heavy_collection_only':True}
         g['publish'](output/(a.phase+'.observations.json'),g['canonical'](report))
         return 0
     import pytest

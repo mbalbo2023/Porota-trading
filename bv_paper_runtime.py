@@ -416,6 +416,39 @@ def run_reader(store, stop):
                 reader.close()
 
 
+def _run_parent(stop):
+    # Reject a second supervisor before opening SQLite or running any DDL.
+    target = database_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(target) + ".runtime.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.environ.pop("POROTA_RUNTIME_SCHEMA_READY", None)
+        store = runtime_store()
+        from bf_production_paper_observer import _support_schema
+        from cf_intraday_scalping import init_schema, prepare_shadow_source_index
+        with store.schema_preparation():
+            _support_schema(store)
+            prepare_shadow_source_index(store)
+            if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"}:
+                init_schema(store)
+        os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
+        os.environ[DB_ENV] = store.path
+        children = ChildProcesses({
+            "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
+            "performance": [sys.executable, str(Path(__file__).resolve()), "--performance-worker"],
+            "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
+            "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
+            "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
+            "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
+            **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
+              if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
+            **({"caucion_cash_sweep": [sys.executable, str(Path(__file__).resolve()), "--caucion-cash-sweep-worker"]}
+              if os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
+        })
+        run_clock(store,children,stop)
+    return 0
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--performance-worker'], ['--dynamic-shadow-worker'],
@@ -434,6 +467,8 @@ def main(argv=None):
         from rc6_performance.capture import run_worker
         run_worker(database_path(), stop)
         return 0
+    if not argv:
+        return _run_parent(stop)
     # Sólo el proceso padre prepara el esquema. Los hijos heredan la marca
     # y deben abrir SQLite sin ejecutar DDL ni reconstruir índices: al borrar
     # esa marca cada worker volvía a tomar el lock y el scanner nunca llegaba
@@ -448,6 +483,9 @@ def main(argv=None):
         store = runtime_store()
         from bf_production_paper_observer import _support_schema
         _support_schema(store)
+        if argv == ["--intraday-scalping-worker"]:
+            from cf_intraday_scalping import init_schema
+            init_schema(store)
         os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
     os.environ[DB_ENV] = store.path
@@ -470,23 +508,7 @@ def main(argv=None):
         from di_caucion_cash_sweep_runtime_hf6 import run_worker
         run_worker(store, stop, clock_fn=now_iso)
         return 0
-    # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
-    with open(store.path + ".runtime.lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        children = ChildProcesses({
-            "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
-            "performance": [sys.executable, str(Path(__file__).resolve()), "--performance-worker"],
-            "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
-            "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
-            "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
-            "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
-            **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
-              if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
-            **({"caucion_cash_sweep": [sys.executable, str(Path(__file__).resolve()), "--caucion-cash-sweep-worker"]}
-              if os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
-        })
-        run_clock(store,children,stop)
-    return 0
+    raise AssertionError("UNREACHABLE_PAPER_CHILD_ARGUMENT")
 
 
 if __name__ == "__main__":

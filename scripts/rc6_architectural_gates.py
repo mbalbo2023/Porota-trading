@@ -63,11 +63,15 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_predeploy_scoped_cleanup.py', 'tests/test_deploy_v2_frozen_artifact_contract.py',
     'tests/test_rc6_architectural_gate_order.py',
     'tests/test_rc6_pytest_fixture_lifecycle.py', 'tests/test_rc6_archive_segment_reuse.py',
+    'tests/test_rc6_source_schema_startup.py',
+    'tests/test_rc6_capacity_calibration.py',
 })
 G1_HEAVY_FILES = frozenset({
     'tests/test_issue465_stress.py',
     'tests/test_rc6_convergence_budget_liveness.py',
+    'tests/test_rc6_readonly_complete_archive.py',
 })
+G6_PRESERVED_HEAVY_FILES=G1_HEAVY_FILES
 
 
 def require(value, reason):
@@ -81,6 +85,27 @@ def validate_g1_files(files):
         and G1_HEAVY_FILES.isdisjoint(files) and G1_REQUIRED_CHEAP_FILES.issubset(files),
         'G1_REQUIRED_CHEAP_ARCHITECTURAL_CORPUS_MISSING_OR_HEAVY')
     return files
+
+def validate_preserved_heavy_corpus(rows):
+    require(type(rows) is list and bool(rows) and all(type(row) is dict and type(row.get('nodeid')) is str
+        and type(row.get('classname')) is str and type(row.get('name')) is str for row in rows)
+        and len(rows)==len({row['nodeid'] for row in rows})
+        and {row['nodeid'].split('::',1)[0] for row in rows}==set(G6_PRESERVED_HEAVY_FILES),
+        'G6_COMPLETE_ORIGINAL_HEAVY_MODULE_CORPUS_REQUIRED')
+    return rows
+
+def verify_preserved_heavy_coverage(required,collection,execution,junit_raw):
+    required=validate_preserved_heavy_corpus(required)
+    # First join all native identities and JUnit headers exactly; neither a
+    # subset, a successful workflow nor a matching integer can replace it.
+    validate_junit(collection,execution,junit_raw)
+    expected=Counter((row['nodeid'],row['classname'],row['name']) for row in required)
+    for report in (collection,execution):
+        actual=Counter((row['nodeid'],row['classname'],row['name']) for row in report['items']
+            if row['nodeid'].split('::',1)[0] in G6_PRESERVED_HEAVY_FILES)
+        require(actual==expected,'G6_DEFERRED_HEAVY_NODE_OR_PARAMETER_IDENTITY_COVERAGE_MISMATCH')
+    return {'status':'GREEN','required_original_heavy_node_count':len(required),
+        'required_modules':sorted(G6_PRESERVED_HEAVY_FILES),'collection_execution_JUnit_identity_verified':True}
 
 
 def canonical(value):
@@ -230,6 +255,11 @@ def validate_chain(receipts, *, source_sha, source_tree, target_gate, read_contr
         for previous in PREREQUISITES[gate]:
             require(previous in by_gate and stamp(by_gate[previous]["completed_utc"]) <= stamp(by_gate[gate]["started_utc"]),
                     "GATE_ORDER_VIOLATION")
+        if gate.startswith('G6.'):
+            epoch=gate[-3:];corpus=by_gate['G0'].get('preserved_heavy_corpora',{}).get(epoch)
+            validate_preserved_heavy_corpus(corpus)
+            require(by_gate[gate].get('required_preserved_heavy_corpus')==corpus,
+                'G6_HEAVY_COVERAGE_LEDGER_NOT_BOUND_TO_AUTHENTIC_G0_SAME_SHA_TREE')
     return {"schema": "rc6.architectural-gate-admission.v1", "status": "GREEN", "target_gate": target_gate,
             "source_sha": source_sha, "source_tree": source_tree, "verified_prerequisites": list(required),
             "read_contract_sha256": by_gate[required[0]]["read_contract_sha256"] if required else read_contract_sha256,
@@ -456,6 +486,17 @@ def verify_g0_capacity_index(index,row,archive):
         verified[label]=live
     required={'venv311','venv312','locked311-0','locked311-1','locked312-0','locked312-1',
         'fullGit-original-inputs','G0-fsck311','G0-fsck312','G0-admission311','G0-admission312'}
+    transition=native(index.get('full_git_transition'))
+    require(transition.get('schema')=='rc6.capacity-guarded-full-git-transition.v1'
+        and transition.get('source_sha')==row['source_sha'] and transition.get('source_tree')==row['source_tree']
+        and transition.get('full_git_after_guarded_fetch') is True
+        and transition.get('same_HEAD_tree_unchanged') is True
+        and type(transition.get('bootstrap_was_shallow')) is bool,
+        'G0_SHALLOW_BOOTSTRAP_CANNOT_CLAIM_FULL_GIT')
+    if transition['bootstrap_was_shallow']:
+        require(transition.get('native_fetch_label')=='fullGit-guarded-fetch',
+            'G0_FULL_GIT_MISSING_ACTUAL_GUARDED_FETCH')
+        required.add('fullGit-guarded-fetch')
     observed=set()
     for command in commands:
         require(type(command) is dict,'G0_CAPACITY_ACTUAL_NATIVE_COMMAND_REQUIRED')
@@ -481,6 +522,10 @@ def verify_g0_capacity_index(index,row,archive):
             if label.startswith(('venv','locked')):
                 require(any(name.endswith(('-bootstrap_temporary','-pip_temporary')) for name in proofs),
                     'G0_CAPACITY_ACTUAL_PIP_TEMPORARY_FILESYSTEM_NOT_MEASURED')
+            if label=='fullGit-guarded-fetch':
+                require('git' in intent.get('argv',[]) and '--unshallow' in intent['argv']
+                    and '--tags' in intent['argv'] and carrier.ORIGIN in intent['argv'],
+                    'G0_FULL_GIT_FETCH_NOT_ACTUAL_CANONICAL_HISTORY_TRANSPORT')
         launch_ns=intent.get('intent_recorded_unix_ns')
         require(positive(launch_ns) and all(0<=launch_ns-verified[name]['measured_at_unix_ns']<=60*10**9
             for name in proofs),'G0_CAPACITY_PREFLIGHT_STALE_AT_ACTUAL_PRODUCER_LAUNCH')
@@ -522,6 +567,10 @@ def verify_native_evidence(row, archive):
         from scripts.rc6_controlled_native_child_manager import managed_phase_green
         for epoch in ('311','312'):
             native=document(captured['admission'+epoch]);control=document(captured['admission'+epoch+'_kernel'])
+            corpus=validate_preserved_heavy_corpus(native.get('preserved_heavy_corpus'))
+            require(native.get('preserved_heavy_collection_only') is True
+                and row.get('preserved_heavy_corpora',{}).get(epoch)==corpus,
+                'G0_PRESERVED_HEAVY_INVENTORY_NOT_ACTUAL_COLLECTION')
             require(native.get('schema')=='rc6.architectural-native-static.v1'
                 and native.get('source_sha')==row['source_sha'] and native.get('source_tree')==row['source_tree']
                 and positive(native.get('compiled_product_files'))
@@ -579,6 +628,8 @@ def verify_native_evidence(row, archive):
                 and kernel.get('pid')==document(captured[phase]).get('pid'),
                 "GATE_ACTUAL_NATIVE_KERNEL_FIN_OR_LOGICAL_EXIT_RED")
         if row["gate"] in ("G6.311","G6.312"):
+            verify_preserved_heavy_coverage(row.get('required_preserved_heavy_corpus'),
+                collection,execution,captured['junit'])
             require(all(name in captured for name in ("governed","FIP","native_execution",
                 'source_before','source_after','records_before','records_after')),
                 "G6_NATIVE_FULL_GOVERNED_EVIDENCE_INCOMPLETE")
@@ -789,6 +840,165 @@ def productive_contract(root):
     values = runpy.run_path(str(Path(root) / "rc6_shadow_runtime/read_contract.py"))
     return values["DEFAULT_READ_CONTRACT"].fingerprint()
 
+def verify_capacity_capability_artifact(reference,*,source_sha,source_tree,read_contract_sha256,
+                                       evidence_root,get=None,download=None):
+    """A quota capability receipt authenticates diagnosis, never G0..G8."""
+    from scripts import rc6_material_pr_admission as admission
+    from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    if get is None or download is None:
+        from scripts.porota_artifact_http import api_get,download_artifact
+        get=get or api_get;download=download or download_artifact
+    require(type(reference) is dict and type(reference.get('receipt_member')) is str
+        and DIGEST.fullmatch(reference.get('receipt_sha256','')),'CAPABILITY_EXACT_ARTIFACT_RECEIPT_REQUIRED')
+    artifact=get('/actions/artifacts/'+str(reference.get('artifact_id')))
+    run=get('/actions/runs/'+str(reference.get('run_id')))
+    attempt=get('/actions/runs/'+str(reference.get('run_id'))+'/attempts/'+str(reference.get('run_attempt')))
+    artifact_origin(reference,artifact,run,attempt,source_sha=source_sha)
+    require(run.get('path')==WORKFLOW and run.get('event')=='workflow_dispatch'
+        and run.get('head_branch')==admission.DIAGNOSTIC_BRANCH
+        and run.get('display_title')=='RC6 material capacity-probe @ '+source_sha,
+        'CAPABILITY_ACTUAL_WIP_PROBE_ORIGIN_REQUIRED')
+    job=actions_runner_origin(get('/actions/runs/'+str(reference['run_id'])+'/attempts/1/jobs?per_page=100'),
+        run_id=reference['run_id'])
+    root=Path(evidence_root)
+    require(root.is_absolute() and not any(path.is_symlink() for path in (root,*root.parents))
+        and not os.path.lexists(root),'CAPABILITY_FRESH_OWNED_ARTIFACT_ROOT_REQUIRED')
+    root.mkdir(mode=0o700);archive=root/'capability.zip'
+    download(reference['artifact_id'],archive,expected_size=artifact['size_in_bytes'],
+        expected_digest=artifact['digest'],deadline=time.monotonic()+300)
+    require(archive.stat().st_size==artifact['size_in_bytes']
+        and 'sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest()==artifact['digest'],
+        'CAPABILITY_EXACT_DOWNLOADED_ARTIFACT_DIGEST_MISMATCH')
+    def raw_ref(item,*,allow_empty=False):
+        require(type(item) is dict and type(item.get('path')) is str and DIGEST.fullmatch(item.get('sha256','')),
+            'CAPABILITY_ORIGINAL_RAW_REFERENCE_REQUIRED')
+        if allow_empty:
+            members=archive_members(archive)
+            require(item['path'] in members and not members[item['path']].is_dir(),'CAPABILITY_ORIGINAL_RAW_MEMBER_MISSING')
+            with zipfile.ZipFile(archive) as packed:raw=packed.read(members[item['path']])
+        else:raw=capture_member(archive,item['path'])
+        require(hashlib.sha256(raw).hexdigest()==item['sha256'],'CAPABILITY_ORIGINAL_RAW_DIGEST_CHANGED')
+        return raw
+    raw=capture_member(archive,reference['receipt_member'])
+    require(hashlib.sha256(raw).hexdigest()==reference['receipt_sha256'],'CAPABILITY_RESULT_MEMBER_DIGEST_CHANGED')
+    result=document(raw)
+    require(result.get('schema')=='porota.rc6.capacity-diagnostic-result.v1'
+        and result.get('status')=='GREEN_DIAGNOSTIC_ONLY' and result.get('gate')=='capacity-probe'
+        and result.get('source_sha')==source_sha and result.get('source_tree')==source_tree
+        and all(result.get(key) is False for key in
+            ('qualification_claimed','G0_G8_claimed','financial_tick_executed','runtime_validated','final_candidate_eligible'))
+        and result.get('real_orders_sent')==0 and type(result['real_orders_sent']) is int,
+        'CAPABILITY_DIAGNOSIS_CANNOT_SUBSTITUTE_FOR_CANDIDATE_QUALIFICATION')
+    producer_raw=raw_ref(result.get('producer_receipt_ref'));receipt=document(producer_raw)
+    require(receipt==result.get('producer_receipt') and receipt.get('schema')=='porota.rc6.capacity-calibration.v1'
+        and receipt.get('mode')=='capability' and receipt.get('status')=='GREEN'
+        and receipt.get('source_sha')==source_sha and receipt.get('source_tree')==source_tree
+        and receipt.get('read_contract_sha256')==read_contract_sha256
+        and receipt.get('actual_capability_proved') is True and receipt.get('qualification_claimed') is False
+        and receipt.get('source_unchanged') is True and receipt.get('payload_upload_safe') is True
+        and receipt.get('cleanup',{}).get('namespace_removed') is True and 'preserved_owned_namespace' not in receipt,
+        'CAPABILITY_NATIVE_QUOTA_PROOF_NOT_VERIFIED')
+    scope=admission.diagnostic_scope('capacity-probe',{'schema':'porota.rc6.capacity-diagnostic-scope.v1',
+        'mode':'capacity-probe',**receipt.get('limits',{}),
+        'financial_tick_allowed':False,'qualification_claimed':False})
+    require(all(receipt.get('capability_checks',{}).get(key) is True for key in
+        ('project_hard_limit_enforced','same_uid_escape_blocked','project_reassignment_blocked',
+         'quota_mutation_blocked','privilege_drop_seccomp_enforced')),'CAPABILITY_REQUIRED_KERNEL_DEFENSE_NOT_PROVED')
+    fin=document(raw_ref(result.get('outer_native_fin_ref')));kernel=fin.get('kernel',{})
+    require(managed_phase_green(kernel) and kernel.get('owned_cleanup_management_bound_seconds')==5,
+        'CAPABILITY_ORIGINAL_OUTER_NATIVE_FIN_RED')
+    capture=document(raw_ref(result.get('capture_manifest_ref')));cleanup=result.get('actual_outer_cleanup',{})
+    binding=receipt.get('binding')
+    require(type(binding) is dict and binding.get('candidate_sha')==source_sha and binding.get('candidate_tree')==source_tree
+        and binding.get('producer')=='capacity-probe' and binding.get('runner_class')==RUNNER_CLASS
+        and binding.get('attempt_id')==str(reference['run_id'])+':1'
+        and capture.get('binding')==cleanup.get('binding')==binding
+        and capture.get('actual_owned_fin_closed') is True and capture.get('phase_green') is True
+        and cleanup.get('namespace_removed') is True and cleanup.get('actual_owned_fin_closed') is True
+        and cleanup.get('phase_green') is True and cleanup.get('foreign_paths_removed')==0
+        and cleanup.get('runtime_paths_authorized') is False
+        and cleanup.get('capture_manifest_sha256')==result['capture_manifest_ref']['sha256'],
+        'CAPABILITY_AUTHENTICATED_OUTER_NAMESPACE_CLEANUP_NOT_VERIFIED')
+    require(type(capture.get('files')) is list and bool(capture['files']),'CAPABILITY_ORIGINAL_RAW_CAPTURE_INVENTORY_REQUIRED')
+    preserved={}
+    for item in capture['files']:
+        require(type(item) is dict and type(item.get('capture_file')) is str
+            and re.fullmatch('[0-9]{4,}\\.raw',item['capture_file'])
+            and type(item.get('bytes')) is int and item['bytes']>=0,
+            'CAPABILITY_ORIGINAL_RAW_CAPTURE_MEMBER_INVALID')
+        raw=raw_ref({'path':'sealed/'+item['capture_file'],'sha256':item.get('sha256')},allow_empty=True)
+        require(len(raw)==item['bytes'],'CAPABILITY_ORIGINAL_RAW_CAPTURE_BYTES_REBOUND')
+        require(type(item.get('relative_source')) is str and item['relative_source'] not in preserved,
+            'CAPABILITY_ORIGINAL_RAW_SOURCE_DUPLICATED')
+        preserved[item['relative_source']]=raw
+    verify_capacity_kernel_probe(receipt,preserved)
+    hashes=receipt.get('code_hashes')
+    require(type(hashes) is dict and all(path in hashes for path in
+        ('scripts/rc6_capacity_calibration.py','scripts/rc6_controlled_native_child_manager.py')),
+        'CAPABILITY_ACTUAL_SOURCE_CODE_HASHES_REQUIRED')
+    inventory=admission.frozen_source_inventory(ROOT,source_sha,source_tree)
+    actual={entry['path']:entry['sha256'] for entry in inventory['files']}
+    require(all(type(path) is str and DIGEST.fullmatch(value or '') and actual.get(path)==value
+        for path,value in hashes.items()),'CAPABILITY_SOURCE_CODE_HASHES_REBOUND')
+    origin={'schema':'porota.rc6.capacity-capability-artifact-origin.v1','source_sha':source_sha,'source_tree':source_tree,
+        'read_contract_sha256':read_contract_sha256,'artifact_id':reference['artifact_id'],
+        'artifact_digest':artifact['digest'],'run_id':reference['run_id'],'run_attempt':1,'workflow_path':WORKFLOW,
+        'receipt_member':reference['receipt_member'],'receipt_sha256':reference['receipt_sha256'],
+        'producer_receipt_sha256':hashlib.sha256(producer_raw).hexdigest(),
+        'downloaded_exact_bytes_verified':True,'actual_job_runner':job,'original_outer_native_fin_verified':True,
+        'actual_outer_cleanup_verified':True,'source_code_hashes_verified':hashes,'qualification_claimed':False}
+    return {'receipt':receipt,'receipt_raw':producer_raw,'origin':origin,'scope':scope,'qualification_claimed':False}
+
+def verify_capacity_kernel_probe(receipt,preserved):
+    """Replay the actual errno/native controls behind the five quota booleans."""
+    from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    required=receipt.get('required_raw')
+    require(type(required) is list and bool(required),'CAPABILITY_REQUIRED_NATIVE_RAW_MISSING')
+    raw={}
+    for item in required:
+        require(type(item) is dict and re.fullmatch('[A-Za-z0-9_.-]{1,100}',item.get('path',''))
+            and item['path'] not in raw,'CAPABILITY_REQUIRED_NATIVE_RAW_MEMBER_INVALID')
+        original=preserved.get('diagnostic/'+item['path'])
+        require(type(original) is bytes and len(original)==item.get('bytes')
+            and hashlib.sha256(original).hexdigest()==item.get('sha256'),'CAPABILITY_NATIVE_RAW_HASH_OR_CAPTURE_CHANGED')
+        raw[item['path']]=original
+    require(all(name in raw for name in ('capability.log','capability.kernel.json')),
+        'CAPABILITY_REAL_PROBE_NATIVE_RAW_MISSING')
+    probe=document(raw['capability.log']);kernel=document(raw['capability.kernel.json']);worker=receipt.get('worker',{})
+    verify_capacity_probe_observations(probe,worker.get('privilege',{}))
+    require(probe==worker.get('capability') and managed_phase_green(kernel)
+        and kernel.get('launcher_management_deadline_seconds')==60
+        and kernel.get('owned_cleanup_management_bound_seconds')==5
+        and any(command.get('label')=='capability' and command.get('kernel')==kernel
+            for command in worker.get('commands',[])), 'CAPABILITY_ACTUAL_PROBE_ORIGINAL_KERNEL_FIN_NOT_VERIFIED')
+    quotas=worker.get('quotas')
+    require(type(quotas) is list and len(quotas)==2
+        and all(item.get('kernel_readback') is True and item.get('hard_inodes')==100000 for item in quotas)
+        and sorted(item.get('hard_bytes',0) for item in quotas)==[1024**2,receipt['limits']['project_hard_limit_bytes']]
+        and worker.get('outside_mounts_readonly_verified') is True
+        and worker.get('absolute_enforced_project_bound_bytes')==receipt['limits']['project_hard_limit_bytes'],
+        'CAPABILITY_ACTUAL_BACKING_PROJECT_QUOTA_READBACK_MISSING')
+    return {'status':'GREEN_DIAGNOSTIC_RAW_ONLY','qualification_claimed':False}
+
+def verify_capacity_probe_observations(probe,privilege):
+    import errno
+    require(type(probe) is dict and probe.get('actual_positive') is True and positive(probe.get('same_uid'))
+        and probe.get('source_financial_code_called') is False and probe.get('project_attributes_unchanged') is True,
+        'CAPABILITY_ACTUAL_POSITIVE_ERRNO_OBSERVATIONS_REQUIRED')
+    checks=probe.get('checks',{})
+    for label in ('project_id_change','inheritance_clear','setflags','quota_mutation'):
+        require(checks.get(label,{}).get('errno')==errno.EPERM and checks[label].get('denied') is True,
+            'CAPABILITY_PROJECT_OR_QUOTA_ESCAPE_NOT_REAL_EPERM')
+    require(checks.get('edquot',{}).get('errno')==errno.EDQUOT
+        and checks['edquot'].get('actual_positive') is True and checks['edquot'].get('probe_limit_bytes')==1024**2
+        and checks.get('outside_write',{}).get('errno')==errno.EROFS and checks['outside_write'].get('readonly') is True
+        and checks.get('supervisor_fd_escape',{}).get('errno')==errno.EACCES
+        and checks['supervisor_fd_escape'].get('denied') is True,'CAPABILITY_EDQUOT_OR_SAME_UID_ESCAPE_NOT_REAL')
+    require(privilege.get('uid')==probe['same_uid'] and privilege.get('capabilities_zero') is True
+        and privilege.get('no_new_privileges') is True and privilege.get('seccomp_mode')==2
+        and positive(privilege.get('mount_namespace_inode')),'CAPABILITY_ACTUAL_PRIVILEGE_DROP_OR_SECCOMP_NOT_VERIFIED')
+    return {'actual_observations_coherent':True,'qualification_claimed':False}
+
 
 def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
     """Measure both actual storage filesystems immediately before G7 producers."""
@@ -796,7 +1006,7 @@ def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
     from scripts import rc6_material_carrier as carrier
     from scripts import porota_predeploy_cleanup as cleanup
     from types import SimpleNamespace
-    require(stage in ('environment-bootstrap','locked-build','locked-runtime','build','artifact-export'),
+    require(stage in ('reviewed-tooling','full-git','environment-bootstrap','locked-build','locked-runtime','build','artifact-export'),
         'G7_CAPACITY_UNKNOWN_PRODUCER_STAGE')
     context=cleanup.execution_context(Path(repo),environ)
     owner,_=cleanup.cli_owner(Path(scope),Path(repo),context,environ)
@@ -811,7 +1021,14 @@ def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
     policy=capacity.load_policy(Path(repo)/'ops/policy/rc6-heavy-test-governance-v1.json')
     docker_root=subprocess.check_output(['docker','info','--format','{{.DockerRootDir}}'],
         env=dict(environ),text=True,timeout=10).strip()
-    paths=[('workspace',Path(owner['private_root'])),('docker',cleanup.safe_absolute(docker_root))]
+    paths=[('workspace',Path(owner['private_root'])),('candidate_git',Path(repo).absolute()),
+        ('docker',cleanup.safe_absolute(docker_root))]
+    if stage=='reviewed-tooling':
+        require(peak.get('reviewed_cpython_tooling')=={
+            'setup_python_action_sha':'a26af69be951a213d495a4c3e4e4022e16d87065',
+            'python_versions':['3.11.16'],'tool_cache_population_included':True},
+            'G7_REVIEWED_PYTHON_TOOLING_COMPARISON_UNKNOWN')
+        paths.append(('reviewed_tool_cache',cleanup.safe_absolute(environ['RUNNER_TOOL_CACHE'])))
     if environ.get('TMPDIR'):
         temporary=cleanup.safe_absolute(environ['TMPDIR'])
         require(temporary.is_relative_to(Path(owner['private_root'])),'G7_TEMPORARY_ROOT_OUTSIDE_OWN_NAMESPACE')
@@ -828,6 +1045,47 @@ def predeploy_capacity_gate(authority,*,scope,repo,environ,stage):
         'source_sha':context['candidate_sha'],'source_tree':context['candidate_tree'],'binding':binding,
         'storage_filesystems_measured_independently':True,'measured_storage':checks,
         'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED','producer_started':False}
+
+
+def complete_predeploy_full_git(authority,*,scope,repo,environ):
+    """G7 may fetch history only after prior native evidence and live capacity."""
+    from scripts import rc6_material_carrier as carrier
+    from scripts import porota_predeploy_cleanup as cleanup
+    repo=Path(repo).absolute();context=cleanup.execution_context(repo,environ)
+    owner,_=cleanup.cli_owner(Path(scope),repo,context,environ)
+    admission=predeploy_capacity_gate(authority,scope=scope,repo=repo,environ=environ,stage='full-git')
+    private=Path(owner['private_root']);controls=private/'g7-full-git-controls';controls.mkdir(mode=0o700)
+    manager=runpy.run_path(str(repo/'scripts/rc6_controlled_native_child_manager.py'))
+    run=carrier.OwnedRunner(manager,controls)
+    shallow=carrier.git(repo,'rev-parse','--is-shallow-repository').strip()
+    require(shallow in (b'true',b'false'),'G7_GIT_SHALLOW_STATE_UNKNOWN')
+    kernel=None
+    if shallow==b'true':
+        askpass=private/'g7-full-git-askpass.py'
+        carrier.save_raw(askpass,b'#!/usr/bin/env python3\nimport os,sys\nprint("x-access-token" if "username" in sys.argv[1].lower() else os.environ["RC6_READONLY_GIT_TOKEN"])\n')
+        fd=os.open(askpass,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:os.fchmod(fd,0o700)
+        finally:os.close(fd)
+        token=environ.get('GH_TOKEN') or environ.get('GITHUB_TOKEN');require(bool(token),'G7_FULL_GIT_READONLY_TOKEN_REQUIRED')
+        now=time.time_ns()
+        require(all(0<=now-item['actual_live_receipt']['measured_at_unix_ns']<=60*10**9
+            for item in admission['measured_storage']),'G7_FULL_GIT_LIVE_CAPACITY_STALE_BEFORE_FETCH')
+        native=run(['git','--no-replace-objects','-C',str(repo),'-c','credential.helper=','fetch',
+            '--unshallow','--tags','--no-write-fetch-head','--no-auto-maintenance',carrier.ORIGIN,
+            '+refs/heads/*:refs/remotes/origin/*'],cwd=private,label='G7-fullGit-guarded-fetch',limit=1800,
+            env={'GIT_ASKPASS':str(askpass),'RC6_READONLY_GIT_TOKEN':token})
+        require(native['returncode']==0,'G7_CAPACITY_ADMITTED_FULL_GIT_FETCH_FAILED');kernel=native['kernel']
+    require(carrier.git(repo,'rev-parse','--is-shallow-repository').strip()==b'false'
+        and carrier.git(repo,'rev-parse','HEAD').decode().strip()==context['candidate_sha']
+        and carrier.git(repo,'rev-parse','HEAD^{tree}').decode().strip()==context['candidate_tree'],
+        'G7_SHALLOW_BOOTSTRAP_CANNOT_QUALIFY_FULL_GIT')
+    receipt={'schema':'rc6.predeploy-capacity-guarded-full-git.v1','status':'GREEN_FULL_GIT_ONLY',
+        'source_sha':context['candidate_sha'],'source_tree':context['candidate_tree'],
+        'bootstrap_was_shallow':shallow==b'true','actual_native_fetch_kernel':kernel,
+        'full_git_after_guarded_fetch':True,'pytest_launched':False,'G7_PYTEST_FIN_claimed':False,
+        'runtime_or_deploy_validated':False,'real_orders_sent':0}
+    cleanup.publish(private/'porota-g7-full-git-native.json',receipt)
+    return receipt
 
 
 def receipt_base(gate, *, source_sha, source_tree, read_contract_sha256, started_utc, checks,

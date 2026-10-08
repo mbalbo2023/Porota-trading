@@ -56,6 +56,8 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=None)
         tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         observations = []
         if "ppi_intraday_points" in tables:
+            from cf_intraday_scalping import require_intraday_temporal_index
+            require_intraday_temporal_index(connection)
             contracts = {}
             if "ppi_intraday_contract_state" in tables:
                 for r in connection.execute("SELECT * FROM ppi_intraday_contract_state LIMIT ?", (row_limit+1,)):

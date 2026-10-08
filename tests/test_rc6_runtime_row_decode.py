@@ -183,6 +183,8 @@ def scalar_source():
                 currency TEXT,settlement TEXT,event_at TEXT,first_received_at TEXT,last_verified_at TEXT,
                 price,volume,source TEXT);
         """)
+        from cf_intraday_scalping import INTRADAY_TEMPORAL_INDEX_DDL
+        connection.execute(INTRADAY_TEMPORAL_INDEX_DDL)
         cases = _clock_cases(at)
         connection.executemany("INSERT INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?)",
             ((symbol,"ACCIONES","BYMA","ARS","A-24HS",state,last,checked)
@@ -248,7 +250,15 @@ def test_read_runtime_matches_frozen_native_row_contract_and_preserves_source(sc
     expected = _legacy_read_runtime(scalar_source.database,as_of=scalar_source.as_of,row_limit=row_limit)
     actual = runtime.read_runtime(scalar_source.database,as_of=scalar_source.as_of,row_limit=row_limit)
     assert actual == expected
-    assert traces[0] == traces[1]
+    index_guards = [
+        "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_intraday_event_julian_desc'",
+        "PRAGMA index_xinfo(idx_intraday_event_julian_desc)",
+    ]
+    # Two new read-only schema prerequisites precede the unchanged financial
+    # queries. Require each exactly once; retain exact legacy query order.
+    assert all(traces[1].count(statement) == 1 for statement in index_guards)
+    assert len(traces[1]) == len(traces[0]) + len(index_guards)
+    assert traces[0] == [statement for statement in traces[1] if statement not in index_guards]
     assert factories == [sqlite3.Row,sqlite3.Row]
     assert _source_inventory(scalar_source.database) == before
     if row_limit == 20:

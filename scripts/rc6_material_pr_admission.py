@@ -28,6 +28,11 @@ BASE='deploy/rc6-pr69-isolated-20260915'
 BASE_SHA='da697c6e6c2274579f9e4a112fabc4327475dd35'
 PR=476
 GATES=('cheap','focal311','focal312','BIG-browser','Horizon','full-gov311','full-gov312','predeploy')
+DIAGNOSTIC_GATES=('capacity-probe','capacity-calibration')
+DIAGNOSTIC_BRANCH='wip/rc6-architectural-rca-20261008-1606UTC'
+RECOVERY_HEAD='dfc240a478cf08e0c6a9b0ba1b760307b09a9565'
+RECOVERY_TREE='192ea26348c8fe10db55857cdd6029edd8344708'
+GUARDS_HEAD='756d37b93aa26bb6395dac481bf3c2dda9d034d7'
 OPS='docs/automation/rc6-night-20261005/state.json'
 OPS_REF='ops/rc6-night-supervisor-20261005'
 CAP=1024*1024
@@ -41,7 +46,9 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'RECONCILED_OPS_STATE_SHA256','CANONICAL_GOV311_CUSTODY_RECEIPT_URL',
     'SUPPLEMENTARY_GOV311_JUSTIFICATION_URL','PREREQUISITES_MANIFEST_JSON','CAPACITY_PEAKS_JSON',
     'CHEAP_FILES_JSON','RC6_PREDEPLOY_G7_AUTHORIZATION','SOURCE_MANIFEST_SHA256',
-    'CAPACITY_COMPARISON_MANIFEST_JSON'}
+    'CAPACITY_COMPARISON_MANIFEST_JSON','RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION',
+    'DIAGNOSTIC_MODE','SOURCE_WIP','READ_CONTRACT_SHA256','CAPACITY_DIAGNOSTIC_SCOPE_JSON',
+    'CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -303,9 +310,11 @@ def actual_event(gate):
         for descriptor in reversed(held):os.close(descriptor)
     event=document(raw)
     if os.environ['GITHUB_EVENT_NAME']=='workflow_dispatch':
+        expected_ref=DIAGNOSTIC_BRANCH if gate in DIAGNOSTIC_GATES else BRANCH
         require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
             and event['sender']['login']=='mbalbo2023' and event.get('inputs',{}).get('gate')==gate
-            and event.get('ref')==BRANCH,'SOLE_OWNED_SCOPED_DISPATCH_EVENT_REQUIRED')
+            and event.get('ref') in (expected_ref,'refs/heads/'+expected_ref),
+            'SOLE_OWNED_SCOPED_DISPATCH_EVENT_REQUIRED')
         return event,custody
     pr=event['pull_request']
     require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
@@ -508,6 +517,120 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
         'same_read_lease_valid_for_whole_long_gate_claimed':False,'real_orders_sent':0,
         'DEPLOY_OWNER':'NOT_ACQUIRED','canonical_artifact_pipeline':'PREDEPLOY_V2_ONLY','final_candidate_eligible':False}
 
+def diagnostic_scope(gate,value):
+    require(gate in DIAGNOSTIC_GATES and type(value) is dict,'EXACT_CAPACITY_DIAGNOSTIC_MODE_REQUIRED')
+    image,hard_limit=(5*1024**3,512*1024**2) if gate=='capacity-probe' else (26*1024**3,20*1024**3)
+    expected={'schema':'porota.rc6.capacity-diagnostic-scope.v1','mode':gate,
+        'backing_image_bytes':image,'project_hard_limit_bytes':hard_limit,'residual_reserve_bytes':4*1024**3,
+        'financial_tick_allowed':False,'qualification_claimed':False}
+    require(value==expected and all(type(value[key]) is int for key in
+        ('backing_image_bytes','project_hard_limit_bytes','residual_reserve_bytes')),
+        'CAPACITY_DIAGNOSTIC_QUOTA_SCOPE_REBOUND')
+    return expected
+
+def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT):
+    require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
+        and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_DIAGNOSTIC_AUTHOR_REQUIRED')
+    f=fields(row['body'])
+    require(f.get('RC6_CAPACITY_DIAGNOSTIC_AUTHORIZATION')=='APPROVED'
+        and f.get('WORKSTREAM_ID')==WORKSTREAM and f.get('DIAGNOSTIC_MODE')==gate
+        and f.get('SOURCE_WIP')==DIAGNOSTIC_BRANCH and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
+        and f.get('SESSION_SUCCESSOR')==session==SUCCESSOR_OWNER
+        and f.get('WRITE_OWNER')==f.get('INTEGRATION_OWNER')==session
+        and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+        and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0',
+        'EXACT_IMMUTABLE_CAPACITY_DIAGNOSTIC_AUTHORITY_REQUIRED')
+    from scripts.rc6_architectural_gates import productive_contract
+    require(f.get('READ_CONTRACT_SHA256')==productive_contract(repo),'DIAGNOSTIC_PRODUCTIVE_CONTRACT_REBOUND')
+    require(hashlib.sha256(wire(frozen_source_inventory(repo,sha,tree))).hexdigest()==f.get('SOURCE_MANIFEST_SHA256'),
+        'DIAGNOSTIC_FROZEN_GIT_SOURCE_MANIFEST_REBOUND')
+    scope=diagnostic_scope(gate,document(f.get('CAPACITY_DIAGNOSTIC_SCOPE_JSON','null')))
+    prior=document(f.get('CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON','null'))
+    require((gate=='capacity-probe' and prior is None) or (gate=='capacity-calibration' and type(prior) is dict),
+        'DIAGNOSTIC_CALIBRATION_REQUIRES_ACTUAL_CAPABILITY_ARTIFACT')
+    return f,scope,prior
+
+def fresh_diagnostic_source(sha,tree):
+    require(re.fullmatch('[0-9a-f]{40}',sha or '') and re.fullmatch('[0-9a-f]{40}',tree or ''),
+        'DIAGNOSTIC_EXACT_WIP_SHA_TREE_REQUIRED')
+    repository=api('');ref=api('/git/ref/heads/'+DIAGNOSTIC_BRANCH);commit=api('/git/commits/'+sha)
+    require(repository.get('id')==REPO_ID and ref.get('object',{}).get('sha')==sha
+        and commit.get('sha')==sha and commit.get('tree',{}).get('sha')==tree,
+        'DIAGNOSTIC_REMOTE_WIP_HEAD_TREE_REBOUND')
+    lineage=[]
+    for _ in range(32):
+        if commit['sha']==RECOVERY_HEAD:break
+        parents=commit.get('parents')
+        require(type(parents) is list and len(parents)==1 and re.fullmatch('[0-9a-f]{40}',parents[0].get('sha','')),
+            'DIAGNOSTIC_ISOLATED_FIX_FORWARD_LINEAGE_REQUIRED')
+        lineage.append(commit['sha']);commit=api('/git/commits/'+parents[0]['sha'])
+        require(commit.get('sha')==parents[0]['sha'],'DIAGNOSTIC_GIT_PARENT_IDENTITY_REBOUND')
+    else:raise ValueError('DIAGNOSTIC_FIX_FORWARD_LINEAGE_LIMIT')
+    require(bool(lineage) and commit.get('tree',{}).get('sha')==RECOVERY_TREE,
+        'DIAGNOSTIC_WIP_MUST_DESCEND_FROM_UNCHANGED_RECOVERY_HEAD')
+    for number,head,branch in ((476,RECOVERY_HEAD,BRANCH),
+        (477,GUARDS_HEAD,'governance/rc6-error-learning-runner-20261007')):
+        pr=api('/pulls/'+str(number))
+        require(pr.get('number')==number and pr.get('state')=='open' and pr.get('draft') is True
+            and pr.get('merged') is False and pr.get('merged_at') is None
+            and pr.get('user',{}).get('login')=='mbalbo2023' and pr.get('head',{}).get('sha')==head
+            and pr['head'].get('ref')==branch and pr['head'].get('repo',{}).get('id')==REPO_ID
+            and pr.get('base',{}).get('ref')==(BASE if number==476 else BRANCH),
+            'DIAGNOSTIC_MUST_NOT_MOVE_OR_PROMOTE_PR476_OR_PR477')
+    return {'wip_branch':DIAGNOSTIC_BRANCH,'source_sha':sha,'source_tree':tree,
+        'single_parent_fix_forward_lineage':lineage,'PR476_unchanged_sha':RECOVERY_HEAD,
+        'PR477_unchanged_sha':GUARDS_HEAD,'qualification_claimed':False}
+
+def diagnostic_actions_origin(sha,gate):
+    require(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_RUN_ATTEMPT')=='1'
+        and os.environ.get('GITHUB_SHA')==os.environ.get('GITHUB_WORKFLOW_SHA')==sha
+        and os.environ.get('GITHUB_REF')=='refs/heads/'+DIAGNOSTIC_BRANCH
+        and os.environ.get('GITHUB_WORKFLOW_REF')==REPO+'/.github/workflows/rc6-unified-candidate-tests.yml@refs/heads/'+DIAGNOSTIC_BRANCH
+        and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and os.environ.get('RUNNER_OS')=='Linux'
+        and os.environ.get('RUNNER_ARCH')=='X64','DIAGNOSTIC_EXACT_FIRST_ATTEMPT_STANDARD_ACTIONS_REQUIRED')
+    identifier=int(os.environ['GITHUB_RUN_ID']);run=api('/actions/runs/'+str(identifier))
+    require(run.get('id')==identifier and run.get('head_sha')==sha and run.get('head_branch')==DIAGNOSTIC_BRANCH
+        and run.get('run_attempt')==1 and run.get('event')=='workflow_dispatch'
+        and run.get('status')=='in_progress' and run.get('repository',{}).get('id')==REPO_ID
+        and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml',
+        'DIAGNOSTIC_ACTUAL_ACTIONS_RUN_ORIGIN_REBOUND')
+    jobs=api('/actions/runs/'+str(identifier)+'/attempts/1/jobs?per_page=100')
+    require(jobs.get('total_count')==1 and type(jobs.get('jobs')) is list and len(jobs['jobs'])==1,
+        'DIAGNOSTIC_SINGLE_ACTIONS_JOB_REQUIRED')
+    job=jobs['jobs'][0]
+    require(job.get('run_id')==identifier and type(job.get('id')) is int and job['id']>0
+        and job.get('status')=='in_progress' and job.get('labels')==['ubuntu-24.04']
+        and job.get('runner_group_name')=='GitHub Actions'
+        and type(job.get('runner_name')) is str and job['runner_name'].startswith('GitHub Actions '),
+        'DIAGNOSTIC_ACTUAL_STANDARD_HOSTED_RUNNER_REQUIRED')
+    return {'run':run,'job':job,'dedup':dedup_admission(sha,gate)}
+
+def admit_diagnostic(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now=None):
+    require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
+        and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
+    require(gate in DIAGNOSTIC_GATES and owner_session==SUCCESSOR_OWNER,
+        'CAPACITY_DIAGNOSTIC_SEPARATE_WIP_AUTHORITY_REQUIRED')
+    event,custody=actual_event(gate)
+    require(event.get('inputs',{}).get('source_sha')==source_sha and event['inputs'].get('source_tree')==source_tree
+        and event['inputs'].get('launch_receipt_url')==launch_receipt_url
+        and event['inputs'].get('owner_session')==owner_session,'DIAGNOSTIC_EVENT_LAUNCH_BINDING_REBOUND')
+    now=now or datetime.now(timezone.utc);source=fresh_diagnostic_source(source_sha,source_tree)
+    origin=diagnostic_actions_origin(source_sha,gate)
+    recovery=recovery_anchors(RECOVERY_OWNER);successor=successor_anchors(owner_session)
+    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
+    launch=comment(launch_receipt_url,471)
+    auth,scope,prior=diagnostic_launch_fields(launch,source_sha,source_tree,owner_session,gate)
+    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now) for issue in (471,473)}
+    ops=ops_admission(auth,owner_session,now,recovery)
+    return {'schema':'porota.rc6.capacity-diagnostic-admission.v1','status':'ADMITTED_DIAGNOSTIC_NOT_STARTED',
+        'source_sha':source_sha,'source_tree':source_tree,'gate':gate,'owner_session':owner_session,
+        'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+        'scope':scope,'capability_prerequisite':prior,'fresh_ownership':owners,'ops':ops,'event_custody':custody,
+        'source':source,'actions_origin':origin,'material_gates':[],'qualification_claimed':False,
+        'mode':'PRODUCTION_PAPER / SIMULATION','real_orders_sent':0,'real_routes':'NOT_CALLED',
+        'ppi_watch':'UNTOUCHED','DEPLOY_OWNER':'NOT_ACQUIRED','runtime_validated':False,'final_candidate_eligible':False}
+
 def publish_new(root,row):
     root=Path(os.path.abspath(root));require(not any(p.is_symlink() for p in (root,*root.parents))
         and not os.path.lexists(root),'FRESH_ADMISSION_CONTROL_NAMESPACE_REQUIRED')
@@ -518,10 +641,11 @@ def publish_new(root,row):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--source-sha',required=True);parser.add_argument('--source-tree')
-    parser.add_argument('--launch-receipt-url');parser.add_argument('--owner-session');parser.add_argument('--gate',choices=GATES,required=True)
+    parser.add_argument('--launch-receipt-url');parser.add_argument('--owner-session');parser.add_argument('--gate',choices=GATES+DIAGNOSTIC_GATES,required=True)
     parser.add_argument('--control-root',type=Path,required=True);args=parser.parse_args()
     try:
-        row=admit(source_sha=args.source_sha,source_tree=args.source_tree,launch_receipt_url=args.launch_receipt_url,
+        controller=admit_diagnostic if args.gate in DIAGNOSTIC_GATES else admit
+        row=controller(source_sha=args.source_sha,source_tree=args.source_tree,launch_receipt_url=args.launch_receipt_url,
             owner_session=args.owner_session,gate=args.gate);path=publish_new(args.control_root,row)
         if os.environ.get('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'],'a') as stream:

@@ -33,12 +33,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 verified2026-10-05
         with:
           ref: ${{ env.CANDIDATE_SHA }}
-          fetch-depth: 0
-
-      - name: Set reviewed Python tooling platform
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 verified2026-10-05
-        with:
-          python-version: "3.11.16"
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Require exact G0 through G6 native evidence before any Predeploy workspace or build
         id: prerequisite_gates
@@ -49,9 +45,9 @@ jobs:
           CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
           CONTROL_ROOT="$RUNNER_TEMP/rc6-g7-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           VERIFIED="$RUNNER_TEMP/rc6-g7-verified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          python -I -B scripts/rc6_material_pr_admission.py \
+          python3 -I -B scripts/rc6_material_pr_admission.py \
             --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --gate predeploy --control-root "$CONTROL_ROOT"
-          python -I -B scripts/rc6_architectural_gates.py \
+          python3 -I -B scripts/rc6_architectural_gates.py \
             --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --target-gate G7 \
             --admission-json "$CONTROL_ROOT/admission.json" \
             --evidence-root "$RUNNER_TEMP/rc6-g7-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --json-out "$VERIFIED"
@@ -66,7 +62,40 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python scripts/porota_predeploy_cleanup.py init
+          python3 scripts/porota_predeploy_cleanup.py init
+
+      - name: Measure capacity before reviewed Python tooling download
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -I -B - <<'PY_TOOLING'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()))
+          from scripts.rc6_architectural_gates import predeploy_capacity_gate,document
+          authority=document(Path(os.environ['RC6_G7_OWNER_ADMISSION']).read_bytes())
+          predeploy_capacity_gate(authority,scope=Path(os.environ['POROTA_PREDEPLOY_OWNER']),
+              repo=Path.cwd(),environ=os.environ,stage='reviewed-tooling')
+          PY_TOOLING
+
+      - name: Set reviewed Python tooling platform
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 verified2026-10-05
+        with:
+          python-version: "3.11.16"
+
+      - name: Complete Git history only after authenticated G6 and live capacity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -I -B - <<'PY_FULL_GIT'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()))
+          from scripts.rc6_architectural_gates import complete_predeploy_full_git,document
+          authority=document(Path(os.environ['RC6_G7_OWNER_ADMISSION']).read_bytes())
+          complete_predeploy_full_git(authority,scope=Path(os.environ['POROTA_PREDEPLOY_OWNER']),
+              repo=Path.cwd(),environ=os.environ)
+          PY_FULL_GIT
 
       - name: Freeze checkout byte provenance before build
         shell: bash
