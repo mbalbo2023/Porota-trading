@@ -1,0 +1,183 @@
+{
+  "boundary_measurements": [
+    {
+      "as_of": "2026-10-05T19:59:30+00:00",
+      "checkpoint": 1016273,
+      "increment": 405504,
+      "phase": "OPEN",
+      "projection": 2207744,
+      "report": 880323,
+      "sequence": 771
+    },
+    {
+      "as_of": "2026-10-05T20:00:00+00:00",
+      "checkpoint": 891031,
+      "increment": 2084864,
+      "phase": "CLOSED",
+      "projection": 1904640,
+      "report": 392222,
+      "sequence": 772
+    },
+    {
+      "as_of": "2026-10-05T20:00:30+00:00",
+      "checkpoint": 1799941,
+      "increment": 4149248,
+      "phase": "CLOSED",
+      "projection": 4136960,
+      "report": 977113,
+      "sequence": 773
+    },
+    {
+      "as_of": "2026-10-05T20:01:00+00:00",
+      "checkpoint": 1799768,
+      "increment": 2338816,
+      "phase": "CLOSED",
+      "projection": 4050944,
+      "report": 1027057,
+      "sequence": 774
+    },
+    {
+      "as_of": "2026-10-05T20:01:30+00:00",
+      "checkpoint": 1799813,
+      "increment": 557056,
+      "phase": "CLOSED",
+      "projection": 4050944,
+      "report": 1027049,
+      "sequence": 775
+    }
+  ],
+  "elapsed_cpu_seconds": 15446.268302871,
+  "elapsed_wall_seconds": 15468.766192219999,
+  "error": {
+    "class": "RetentionPressure",
+    "reason": "RETENTION_ARCHIVE_CAPACITY_REACHED",
+    "traceback_withheld_until_native_fin": false
+  },
+  "factory_restarts": [
+    361,
+    841
+  ],
+  "factory_restarts_are_crash_proof": false,
+  "last_committed_archive": {
+    "allocated_bytes_including_directories": 535801856,
+    "entries_excluding_root": 3149,
+    "files": 3149,
+    "logical_bytes_including_directories": 528729593,
+    "pending_temporaries_or_intents": 0
+  },
+  "measured_cuts": 1049,
+  "measured_cuts_csv_sha256": "d4f43f10d920aa7d610dc7c7aae8783f8ad4f6265d41f68d58475b5fe9e1e536",
+  "measured_native_result_sha256": "985e50fcfecc33d451266b6ee563e426be6a10f2c087f3496f00cbdb653c5009",
+  "measured_source_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9",
+  "measured_source_tree": "71429a1c883df05120aff5411e556a26745320db",
+  "native_gc_deleted_members": 0,
+  "native_gc_expired_generations": 0,
+  "new_arithmetic_and_synthetic_counterexample": {
+    "assertion_groups_passed": 6,
+    "capacity_arithmetic": {
+      "REPORTED_anchor_premium_bytes": 1335296,
+      "REPORTED_conditional_headroom_bytes": 36675584,
+      "REPORTED_conditional_total_bytes": 500195328,
+      "additional_anchors_erasing_REPORTED_headroom": 28,
+      "all_closed_as_REPORTED_anchors_counterexample_bytes": 766173184,
+      "counterexample_is_prediction": false,
+      "limit_bytes": 536870912,
+      "mean_bytes_per_cut_before_controls": 446648.0133111481
+    },
+    "financial_workload_executed": false,
+    "python": "3.12.14",
+    "qualification_claimed": false,
+    "real_orders_sent": 0,
+    "retention": {
+      "credit_for_unproved_dependency_or_pack_GC": 0,
+      "first_possible_time_expiry": "2026-10-05T23:20:00+00:00",
+      "historical_last_cut": "2026-10-05T22:18:30+00:00"
+    },
+    "schedule": {
+      "counts": {
+        "CLOSED": 431,
+        "OPEN": 770,
+        "PREOPEN": 1
+      },
+      "cuts": 1202,
+      "first": "2026-10-05T13:20:00+00:00",
+      "fixed_anchors_are_upper_bound": false,
+      "fixed_closed_anchors": 13,
+      "last": "2026-10-05T23:35:00+00:00"
+    },
+    "scope": "READ_ONLY_SYNTHETIC_COUNTEREXAMPLES_AND_ARITHMETIC",
+    "source_sha": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+    "synthetic_dictionary_churn": {
+      "blob_size_pairs": [
+        [
+          75,
+          75
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ],
+        [
+          76,
+          76
+        ]
+      ],
+      "bytes_after_dictionary_header_equal": 8,
+      "changed_encoded_rows": 8,
+      "dictionary_sha256": [
+        "3f9f75ca9f19805236d83a2b4fcb6bdce266331bc63558461020d6464c169f96",
+        "923d05d22db65ec1e530323d2f868c8a4e3d887ab1d0002fb7a210d35e947cfe"
+      ],
+      "rows": 8,
+      "unchanged_decoded_rows": 8
+    }
+  },
+  "peak_archive": {
+    "allocated_bytes_including_directories": 535810048,
+    "entries_excluding_root": 3151,
+    "files": 3151,
+    "logical_bytes_including_directories": 528730673,
+    "pending_temporaries_or_intents": 2
+  },
+  "phase_increment_summary": {
+    "CLOSED": {
+      "cuts": 278,
+      "maximum": 4149248,
+      "median": 507904.0,
+      "minimum": 503808
+    },
+    "OPEN": {
+      "cuts": 770,
+      "maximum": 2723840,
+      "median": 405504.0,
+      "minimum": 376832
+    },
+    "PREOPEN": {
+      "cuts": 1,
+      "maximum": 2375680,
+      "median": 2375680,
+      "minimum": 2375680
+    }
+  },
+  "planned_cuts": 1202
+}

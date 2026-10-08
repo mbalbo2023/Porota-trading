@@ -1,0 +1,35 @@
+{
+  "source_sha": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+  "default_sha": "183a0be3f6c443d8fab48b1c0f52dcc80b1b88d1",
+  "source_workflows_inspected": 166,
+  "default_workflows_inspected": 6,
+  "review_branch": "review/rc6-systemic-rca-ecad18b6-20261008",
+  "draft_pr_base": "wip/rc6-architectural-rca-20261008-1606UTC",
+  "changed_paths": [
+    "docs/governance/rc6-systemic-review-20261008/ERROR_MATRIX.md",
+    "docs/governance/rc6-systemic-review-20261008/horizon-analysis.json",
+    "docs/governance/rc6-systemic-review-20261008/QUALIFICATION_PLAN.md",
+    "docs/governance/rc6-systemic-review-20261008/horizon-measured-cuts.csv",
+    "docs/governance/rc6-systemic-review-20261008/cheap-native-junit.xml",
+    "docs/governance/rc6-systemic-review-20261008/repository-footprint.json",
+    "docs/governance/rc6-systemic-review-20261008/RCA.md",
+    "docs/governance/rc6-systemic-review-20261008/reproduce_analysis.py",
+    "docs/governance/rc6-systemic-review-20261008/evidence-index.json",
+    "docs/governance/rc6-systemic-review-20261008/cheap-validation.json",
+    "docs/governance/rc6-systemic-review-20261008/artifact-members.csv",
+    "docs/governance/rc6-systemic-review-20261008/pr476-complete-inventory.csv",
+    "docs/governance/rc6-systemic-review-20261008/publication-trigger-audit.json"
+  ],
+  "matching_push": [],
+  "matching_PR_source_opened": [],
+  "default_matching_PR_metadata_only": [
+    {
+      "file": "checkpoint-attestation.yml",
+      "name": "Checkpoint attestation"
+    }
+  ],
+  "workflow_run_dependents": [],
+  "heavy_dispatch_called": false,
+  "checkpoint_is_metadata_only": true,
+  "prior_audit_assumption_corrected": "Source PR has no matching workflow; checkpoint-attestation exists only in default. No positive Actions claim without actual run."
+}
