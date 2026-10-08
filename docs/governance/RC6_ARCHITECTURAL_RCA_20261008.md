@@ -373,11 +373,18 @@ native Actions kernel capability or positive Linux cleanup.
 
 Historical G6 artifact verification must not reject completed work merely because
 its original launch lease later expired; G7 separately requires current authority.
-A remaining gap is explicit: G6 does not yet authenticate its saved launch
-admission snapshots, and long fullGov/Horizon producers lack demonstrated
-continuous ownership monitoring and final readmission. Root heartbeats do not
-replace that programmatic proof. This blocks promotion before long material
-gates; coverage of the entire long run is not claimed.
+An API-only monitor and historical replay are now developed for ordinary native
+G0/G1/focal/BIG/Horizon/fullGov producers. The original supervisor remains byte
+exact; callback failure enters its original TERM/reap/ECHILD/restore path and
+cannot reset RED. Immutable same-Source lease unions cover actual launch through
+FIN in both issues; saved API objects are hash referenced and deduplicated within
+16MiB. The final native receipt requires post-FIN readmission.233 collected/native
+JUnit cases passed in each local Python version with no fail/error/skip; handoff
+SHA256 `a857cab74a2a3e74c073bd518a56814f3d17849efa9fa3a55f90a550cf714194`.
+This is development proof, not a material Actions PASS. WIP10800 bootstrap still
+needs issuer-side loop-safe monitoring. G7 tooling and Docker require their own
+actual producer custody: CLI FIN does not prove daemon builder/container FIN.
+Missing witnesses remain BLOCKED; no complete long-run coverage is claimed.
 
 ## First native capacity diagnostic: RED with original evidence
 
@@ -433,9 +440,91 @@ errors or skips. Handoff SHA256:
 Script/test SHA256:
 `bc2245a33984503611732313a2db2f2dd2d728d1000286bc142035407d31fc4c` /
 `9e177ea9c8de3b63bd2bc63c3a0554d897e3eb3d9525cf39905084421a503255`.
-These are file-hash development proofs. The next WIP checkpoint excludes the
-unfinished long-gate monitor; neither native capability nor G0/G1 is approved
-by this publication. Historical errno and the EBUSY hypothesis remain unverified.
+These are file-hash development proofs. Checkpoint7c4abff3 excluded the then
+unfinished long-gate monitor; neither native capability nor G0/G1 was approved
+by that publication. Historical errno and the EBUSY hypothesis remain unverified.
+
+## Successor native capacity diagnostic: first barrier passed, quota mount RED
+
+The corrective checkpoint7c4abff319bdc9c3958141925967c0cb8def7149/tree
+00ecd79e7bd3533e69be8be26213ad63a6fdc686 was published before immutable scoped
+authorization471/6067196113. Run37830339583 attempt1/job113493745953 admitted
+the exact Source and remained capacity-only. All13 JSON members from diagnostic
+11573037197 and controls11573535653/11572813070 were recovered and verified,
+including API ZIP digests/CRC, nested manifests, eight exact Git program hashes,
+root request hashes and original inner/outer FIN. The compact index is
+`RC6_CAPACITY_PROBE_RCA_37830339583.json`; original RAW remains in Actions.
+
+The prior recursive readonly barrier passed natively: syscall442 returned0 with
+errno0 in private mount namespace4026532310, distinct from issuer4026531832;
+kernel6.17.0-1022-azure. Own mkfs.ext4 completed0. First new failure is
+mount_own_ext4: mount ext4/prjquota/nodev/nosuid returned32 with util-linux text
+“No such process.” RAW SHA256
+`1c30261908276bd1ad2d0bc350cf40008f6294576ffa190e655a33d3399262e1`.
+Numeric mount errno, quota-format availability and a platform limitation remain
+NO_VERIFICADO. Official e2fsprogs initialization refutes treating a missing
+project-quota inode as an automatic consequence of `-O project,quota`.
+
+Physical outer admission passed:91,698,946,048B before5GiB backing,
+86,330,220,544B afterwards, with367,263,744B controls plus separate4GiB reserve;
+18,423,036/19,529,728 free inodes. Helper wall0.200840933s/RSS27,602,944B.
+Original FIN, AUTOCLEAR absence, Source unchanged and exclusive own cleanup were
+GREEN; no foreign deletion. Project quota, privilege drop and genuine nonroot
+escape/seccomp probes were NOT_REACHED. No same-SHA retry is authorized.
+
+Full-path preventive RCA before another probe found independent code defects:
+project-PROJINHERIT statvfs can report quotaB rather than physical capacity;
+mkfs discard releases preallocated backing; partial backend RED can lose required
+RAW inside a cleaned image; ioctl/prctl kernel commands narrow to32bits while
+the filter compared64bits. These are static findings, not falsely attributed
+failures of37830339583. One corrective delta must separate physical reserve from
+quota readback, retain preallocation, preserve partial controls after actual FIN,
+authenticate loop birth for safe STOP, and mask the command ABI. Kernel/formats
+and tool prerequisites must be inspected read-only before allocating backing;
+unknown or absent prerequisites stop early with an authentic NOT_STARTED state,
+never an invented inner cleanup or quota PASS. The public canonical repository
+can be fetched anonymously without passing the ownership control token to sudo,
+Git or build backends. No module installation, global remount or quota weakening
+is part of this correction. A new durable checkpoint and dual cheap evidence
+must precede any next isolated diagnostic.
+
+## Ownership metadata incident and correction
+
+An environment restart discarded the orchestrator's in-memory store. The20:09
+heartbeat wrongly interpolated absent owner/SHA/tree values. It was never a
+valid lease. Last valid lease expired20:13:07; local development continued until
+the error was detected and writes stopped20:20. No push, Actions or qualification
+occurred during that gap, and no retroactive continuity is asserted.
+
+Original bodies and metadata were preserved by hash. Only those two own malformed
+comments were explicitly corrected as RELEASED/NON_AUTHORITY; immutable launch
+anchors were untouched. New receipts471/6068450070 and473/6068450366 were read
+back from GitHub and checked through the actual latest_writer predicate before
+development resumed. The compact incident index is
+`RC6_OWNER_RECEIPT_INCIDENT_20261008.json`.
+
+The permanent receipt builder requires explicit complete identity, fresh GitHub
+branch/commit/tree/PR/runs observations and a verified live pair. Missing store
+values, rebound Source, expiry/conflict, unbounded leases or narrative authority
+injection prevent even the first issue post.71 native collected/JUnit identities
+passed in each local Python3.11/3.12 without failures/errors/skips. This is a
+development proof; G1 Actions and material qualification remain blocked.
+
+## Privileged setup signal custody remains unresolved
+
+Preventive review found a distinct control gap: the NONROOT issuer's original
+killpg may lack permission over a ROOT sudo/unshare actor before UIDdrop. This
+is not an observed EPERM or a proven failure of sudo forwarding. Neither the
+original manager nor its TERM2/FIN5 contract is changed, and no wrapper creates
+an artificial FIN.
+
+An immutable NO_VERIFICADO signal-custody guard now stops before image,
+inner namespace and ROOT helper, even with PREREQUISITES_PRESENT metadata.
+The authentic terminal remains NOT_STARTED; both Source pins, no inner FIN
+and every NOT_CALLED operation are checked.129 collected/JUnit identities
+passed in each local Python3.11/3.12. Next isolated inspection is read-only
+kernel metadata only. Physical quota capability, privileged signal custody
+and all G0..G8 qualification remain blocked until genuine native evidence.
 
 ## Required final qualification
 

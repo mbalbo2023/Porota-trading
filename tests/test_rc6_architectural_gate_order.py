@@ -793,7 +793,7 @@ def test_diagnostic_rerun_or_alternate_runner_blocks_before_any_actions_payload_
 def test_diagnostic_never_moves_or_accepts_a_changed_candidate_pr(monkeypatch,moved):
     from scripts import rc6_material_pr_admission as admission
     def get(path):
-        if path=='':return {'id':admission.REPO_ID}
+        if path=='':return {'id':admission.REPO_ID,'full_name':admission.REPO,'private':False}
         if path.startswith('/git/ref/'):return {'object':{'sha':SOURCE_SHA}}
         if path=='/git/commits/'+SOURCE_SHA:
             return {'sha':SOURCE_SHA,'tree':{'sha':SOURCE_TREE},'parents':[{'sha':admission.RECOVERY_HEAD}]}
@@ -842,8 +842,12 @@ def unit_probe_observations():
     import errno
     checks={name:{'errno':errno.EPERM,'denied':True} for name in
         ('project_id_change','inheritance_clear','setflags','quota_mutation')}
+    checks.update({name:{'return':-1,'errno':errno.EPERM,'denied':True} for name in
+        ('high32_project_id_change','high32_setflags','high32_prctl')})
     checks.update(edquot={'errno':errno.EDQUOT,'actual_positive':True,'probe_limit_bytes':1024**2},
-        outside_write={'errno':errno.EROFS,'readonly':True},supervisor_fd_escape={'errno':errno.EACCES,'denied':True})
+        outside_write={'errno':errno.EROFS,'readonly':True},supervisor_fd_escape={'errno':errno.EACCES,'denied':True},
+        original_issuer_root_escape={'errno':errno.EACCES,'denied':True,'issuer_pid':123,
+            'operation':'open_own_namespace_through_original_issuer_root'})
     return {'actual_positive':True,'same_uid':1001,'checks':checks,'project_attributes_unchanged':True,
         'source_financial_code_called':False}, {'uid':1001,'capabilities_zero':True,'no_new_privileges':True,
             'seccomp_mode':2,'mount_namespace_inode':1234}
@@ -854,6 +858,7 @@ def test_diagnostic_errno_raw_validation_never_claims_actual_probe_execution():
     assert result=={'actual_observations_coherent':True,'qualification_claimed':False}
 
 @pytest.mark.parametrize('fault',['edquot','outside_write','supervisor_fd_escape','project_id_change','inheritance_clear',
+    'original_issuer_root_escape','high32_project_id_change','high32_setflags','high32_prctl',
     'setflags','quota_mutation','source_financial_code_called','project_attributes_unchanged',
     'uid','capabilities_zero','no_new_privileges','seccomp_mode','mount_namespace_inode'])
 def test_diagnostic_green_boolean_cannot_replace_real_errno_privilege_and_escape_controls(fault):

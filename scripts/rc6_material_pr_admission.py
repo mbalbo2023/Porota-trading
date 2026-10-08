@@ -200,20 +200,20 @@ def api(path):
     with urllib.request.urlopen(request,timeout=30) as response:raw=response.read(CAP+1)
     require(len(raw)<=CAP,'ADMISSION_API_RESPONSE_BOUND')
     return document(raw)
-def comment(url,issue):
+def comment(url,issue,*,get=None):
     match=re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/'+str(issue)+r'#issuecomment-([0-9]+)',url or '')
     require(match is not None,'EXACT_OWNER_RECEIPT_URL_REQUIRED')
-    row=api('/issues/comments/'+match[1])
+    row=(get or api)('/issues/comments/'+match[1])
     require(row['html_url']==url and row['issue_url'].endswith('/issues/'+str(issue))
         and row['user']['login']=='mbalbo2023','AUTHENTIC_REPOSITORY_OWNER_RECEIPT_REQUIRED')
     return row
 
-def recovery_anchors(owner):
+def recovery_anchors(owner,*,get=None):
     require(owner==RECOVERY_OWNER,'EXACT_CONTROLLED_RECOVERY_SESSION_REQUIRED')
     result={}
     for issue,(identifier,created) in RECOVERY_ANCHORS.items():
         url='https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+str(identifier)
-        row=comment(url,issue);f=fields(row['body'])
+        row=comment(url,issue,get=get);f=fields(row['body'])
         require(row['id']==identifier and row['created_at']==row['updated_at']==created
             and hashlib.sha256(row['body'].encode()).hexdigest()==RECOVERY_BODY_SHA256
             and f.get('WORKSTREAM_ID')==WORKSTREAM and f.get('SESSION')==owner
@@ -224,12 +224,12 @@ def recovery_anchors(owner):
         result[issue]=row
     return result
 
-def successor_anchors(owner):
+def successor_anchors(owner,*,get=None):
     require(owner==SUCCESSOR_OWNER,'EXACT_ARCHITECTURAL_SUCCESSOR_SESSION_REQUIRED')
     result={}
     for issue,(identifier,created) in SUCCESSOR_ANCHORS.items():
         url='https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+str(identifier)
-        row=comment(url,issue);f=fields(row['body'])
+        row=comment(url,issue,get=get);f=fields(row['body'])
         require(row['id']==identifier and row['created_at']==row['updated_at']==created
             and hashlib.sha256(row['body'].encode()).hexdigest()==SUCCESSOR_BODY_SHA256
             and f.get('WORKSTREAM_ID')==WORKSTREAM and f.get('SESSION_SUCCESSOR')==owner
@@ -246,7 +246,7 @@ def effective_stamp(row):
     require(created<=updated,'COMMENT_CREATED_UPDATED_CUSTODY_INVALID')
     return updated
 
-def recent(issue,anchor,now):
+def recent(issue,anchor,now,*,get=None):
     # GitHub issue-comments `since` selects last-updated timestamps. A comment
     # created before the controlled anchor but edited afterwards is included.
     # No moving two-hour window and no silently truncated page are permitted.
@@ -255,7 +255,7 @@ def recent(issue,anchor,now):
     rows=[]
     ids=set()
     for page in range(1,COMMENT_PAGES+1):
-        batch=api('/issues/'+str(issue)+'/comments?'+urllib.parse.urlencode({'since':since,'per_page':100,'page':page}))
+        batch=(get or api)('/issues/'+str(issue)+'/comments?'+urllib.parse.urlencode({'since':since,'per_page':100,'page':page}))
         require(isinstance(batch,list) and len(batch)<=100,'ACTUAL_COMMENT_ARRAY_REQUIRED')
         for row in batch:
             require(row['id'] not in ids and row['issue_url'].endswith('/issues/'+str(issue)),
@@ -329,9 +329,10 @@ def actual_event(gate):
         'PR_PUSH_AUTHORIZES_CHEAP_ONLY_READY_FOR_REVIEW_AUTHORIZES_G7_ONLY')
     return event,custody
 
-def fresh_source(sha,tree,gate=None):
+def fresh_source(sha,tree,gate=None,*,get=None):
     require(re.fullmatch('[0-9a-f]{40}',sha or ''),'EXACT_HEAD_SOURCE_SHA_REQUIRED')
-    repo=api('');ref=api('/git/ref/heads/'+BRANCH);commit=api('/git/commits/'+sha);pr=api('/pulls/'+str(PR))
+    reader=get or api
+    repo=reader('');ref=reader('/git/ref/heads/'+BRANCH);commit=reader('/git/commits/'+sha);pr=reader('/pulls/'+str(PR))
     require(repo['id']==REPO_ID and ref['object']['sha']==sha and commit['sha']==sha
         and pr['number']==PR and pr['state']=='open' and pr['draft'] is (gate!='predeploy')
         and pr['user']['login']=='mbalbo2023' and pr['head']['sha']==sha and pr['head']['ref']==BRANCH
@@ -342,7 +343,7 @@ def fresh_source(sha,tree,gate=None):
     if tree:require(tree==actual,'EXACT_TREE_AUTHORITY_REBOUND')
     return actual
 
-def launch_fields(row,sha,tree,session=None,gate=None):
+def launch_fields(row,sha,tree,session=None,gate=None,*,get=None):
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
     f=fields(row['body']);owner=f.get('SESSION_SUCCESSOR')
@@ -359,7 +360,7 @@ def launch_fields(row,sha,tree,session=None,gate=None):
     require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',f.get('CAUSE_EVIDENCE_URL','')),
         'EVIDENCED_NEW_SOURCE_REPAIR_REQUIRED_BEFORE_MATERIAL_RETRY')
     require(BRANCH in row['body'],'LAUNCH_RECEIPT_SOLE_SUCCESSOR_BRANCH_REQUIRED')
-    comment(f['CAUSE_EVIDENCE_URL'],int(f['CAUSE_EVIDENCE_URL'].split('/issues/',1)[1].split('#',1)[0]))
+    comment(f['CAUSE_EVIDENCE_URL'],int(f['CAUSE_EVIDENCE_URL'].split('/issues/',1)[1].split('#',1)[0]),get=get)
     require(type(document(f.get('CAPACITY_PEAKS_JSON','null'))) is dict,'EXACT_COMPARABLE_CAPACITY_PEAKS_REQUIRED')
     if gates==['cheap']:
         cheap=document(f.get('CHEAP_FILES_JSON','null'))
@@ -436,8 +437,8 @@ def latest_writer(rows,issue,sha,tree,owner,now):
         'all_post_anchor_owner_record_ids':[item[0]['id'] for item in records],
         'all_post_anchor_records_and_old_comment_edits_checked':True,'maximum_lease_seconds':1200}
 
-def ops_admission(auth,owner,now,anchors):
-    response=api('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
+def ops_admission(auth,owner,now,anchors,*,get=None):
+    response=(get or api)('/contents/'+OPS+'?'+urllib.parse.urlencode({'ref':OPS_REF}))
     require(response['type']=='file' and response['path']==OPS and response['encoding']=='base64','ACTUAL_OPS_STATE_FILE_REQUIRED')
     raw=base64.b64decode(response['content'],validate=False)
     require(len(raw)<=CONTROL_CAP and hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==response['sha'],
@@ -469,6 +470,44 @@ def ops_admission(auth,owner,now,anchors):
     return {'blob':response['sha'],'sha256':hashlib.sha256(raw).hexdigest(),'lease':lease,
         'write_owner':writer,'deploy_owner':None,'exact_reconciliation_receipts':proofs,'ops_modified':False,
         'supervisor_released_claimed':False,'lease_expiration_treated_as_release':False}
+
+def owned_gate_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now,get,
+                             run_id=None,run_attempt=None):
+    """API-only ownership observation; safe while one native producer is live.
+
+    The injected reader has a single total HTTP deadline and records every
+    returned document. It creates no child/thread and never reads checkout,
+    event, Source or producer RAW. Full admission remains a separate barrier.
+    """
+    run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
+    run_id=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
+    require(gate in GATES and owner_session==SUCCESSOR_OWNER and type(run_attempt) is int and run_attempt==1
+        and type(run_id) is int and run_id>0,'OWNED_GATE_FIRST_EXACT_SUCCESSOR_SCOPE_REQUIRED')
+    anchors=recovery_anchors(RECOVERY_OWNER,get=get)
+    successor=successor_anchors(owner_session,get=get)
+    fresh_source(source_sha,source_tree,gate,get=get)
+    launch=comment(launch_receipt_url,471,get=get)
+    auth=launch_fields(launch,source_sha,source_tree,owner_session,gate,get=get)
+    timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
+    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
+        for issue in (471,473)}
+    require(all(fields(row['body']).get('WORKSTREAM_ID')==WORKSTREAM
+        for issue in (471,473) for row in timelines[issue]
+        if row['id']==owners[str(issue)]['comment_id']),'OWNED_GATE_WORKSTREAM_REBOUND')
+    ops=ops_admission(auth,owner_session,now,anchors,get=get)
+    run=get('/actions/runs/'+str(run_id)+'/attempts/1')
+    require(run.get('id')==run_id and run.get('run_attempt')==1 and run.get('head_sha')==source_sha
+        and run.get('status')=='in_progress' and run.get('conclusion') is None
+        and run.get('repository',{}).get('id')==REPO_ID
+        and run.get('repository',{}).get('full_name')==REPO
+        and run.get('head_repository',{}).get('id')==REPO_ID
+        and run.get('path')==('.github/workflows/porota-predeploy-v2.yml' if gate=='predeploy'
+            else '.github/workflows/rc6-unified-candidate-tests.yml'),
+        'OWNED_GATE_ACTIONS_CANCELLED_OR_REBOUND')
+    return {'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
+        'run_id':run_id,'run_attempt':1,'read_utc':now.isoformat().replace('+00:00','Z'),
+        'launch_receipt_url':launch_receipt_url,'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'fresh_ownership':owners,'ops':ops,'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED'}
 
 def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=None,gate,now=None):
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
@@ -528,7 +567,8 @@ def diagnostic_scope(gate,value):
         'CAPACITY_DIAGNOSTIC_QUOTA_SCOPE_REBOUND')
     return expected
 
-def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT):
+def diagnostic_launch_control_fields(row,sha,tree,session,gate):
+    """Immutable diagnostic authority, without Git/Source/event/file access."""
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_DIAGNOSTIC_AUTHOR_REQUIRED')
     f=fields(row['body'])
@@ -540,21 +580,29 @@ def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT):
         and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
         and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0',
         'EXACT_IMMUTABLE_CAPACITY_DIAGNOSTIC_AUTHORITY_REQUIRED')
-    from scripts.rc6_architectural_gates import productive_contract
-    require(f.get('READ_CONTRACT_SHA256')==productive_contract(repo),'DIAGNOSTIC_PRODUCTIVE_CONTRACT_REBOUND')
-    require(hashlib.sha256(wire(frozen_source_inventory(repo,sha,tree))).hexdigest()==f.get('SOURCE_MANIFEST_SHA256'),
-        'DIAGNOSTIC_FROZEN_GIT_SOURCE_MANIFEST_REBOUND')
+    require(all(re.fullmatch('[0-9a-f]{64}',f.get(key,'')) for key in
+        ('READ_CONTRACT_SHA256','SOURCE_MANIFEST_SHA256')),'DIAGNOSTIC_PINNED_SOURCE_CONTRACT_DIGEST_REQUIRED')
     scope=diagnostic_scope(gate,document(f.get('CAPACITY_DIAGNOSTIC_SCOPE_JSON','null')))
     prior=document(f.get('CAPACITY_DIAGNOSTIC_PREREQUISITES_JSON','null'))
     require((gate=='capacity-probe' and prior is None) or (gate=='capacity-calibration' and type(prior) is dict),
         'DIAGNOSTIC_CALIBRATION_REQUIRES_ACTUAL_CAPABILITY_ARTIFACT')
     return f,scope,prior
 
-def fresh_diagnostic_source(sha,tree):
+def diagnostic_launch_fields(row,sha,tree,session,gate,*,repo=ROOT):
+    f,scope,prior=diagnostic_launch_control_fields(row,sha,tree,session,gate)
+    from scripts.rc6_architectural_gates import productive_contract
+    require(f.get('READ_CONTRACT_SHA256')==productive_contract(repo),'DIAGNOSTIC_PRODUCTIVE_CONTRACT_REBOUND')
+    require(hashlib.sha256(wire(frozen_source_inventory(repo,sha,tree))).hexdigest()==f.get('SOURCE_MANIFEST_SHA256'),
+        'DIAGNOSTIC_FROZEN_GIT_SOURCE_MANIFEST_REBOUND')
+    return f,scope,prior
+
+def fresh_diagnostic_source(sha,tree,*,get=None):
     require(re.fullmatch('[0-9a-f]{40}',sha or '') and re.fullmatch('[0-9a-f]{40}',tree or ''),
         'DIAGNOSTIC_EXACT_WIP_SHA_TREE_REQUIRED')
-    repository=api('');ref=api('/git/ref/heads/'+DIAGNOSTIC_BRANCH);commit=api('/git/commits/'+sha)
-    require(repository.get('id')==REPO_ID and ref.get('object',{}).get('sha')==sha
+    reader=get or api
+    repository=reader('');ref=reader('/git/ref/heads/'+DIAGNOSTIC_BRANCH);commit=reader('/git/commits/'+sha)
+    require(repository.get('id')==REPO_ID and repository.get('full_name')==REPO
+        and repository.get('private') is False and ref.get('object',{}).get('sha')==sha
         and commit.get('sha')==sha and commit.get('tree',{}).get('sha')==tree,
         'DIAGNOSTIC_REMOTE_WIP_HEAD_TREE_REBOUND')
     lineage=[]
@@ -563,14 +611,14 @@ def fresh_diagnostic_source(sha,tree):
         parents=commit.get('parents')
         require(type(parents) is list and len(parents)==1 and re.fullmatch('[0-9a-f]{40}',parents[0].get('sha','')),
             'DIAGNOSTIC_ISOLATED_FIX_FORWARD_LINEAGE_REQUIRED')
-        lineage.append(commit['sha']);commit=api('/git/commits/'+parents[0]['sha'])
+        lineage.append(commit['sha']);commit=reader('/git/commits/'+parents[0]['sha'])
         require(commit.get('sha')==parents[0]['sha'],'DIAGNOSTIC_GIT_PARENT_IDENTITY_REBOUND')
     else:raise ValueError('DIAGNOSTIC_FIX_FORWARD_LINEAGE_LIMIT')
     require(bool(lineage) and commit.get('tree',{}).get('sha')==RECOVERY_TREE,
         'DIAGNOSTIC_WIP_MUST_DESCEND_FROM_UNCHANGED_RECOVERY_HEAD')
     for number,head,branch in ((476,RECOVERY_HEAD,BRANCH),
         (477,GUARDS_HEAD,'governance/rc6-error-learning-runner-20261007')):
-        pr=api('/pulls/'+str(number))
+        pr=reader('/pulls/'+str(number))
         require(pr.get('number')==number and pr.get('state')=='open' and pr.get('draft') is True
             and pr.get('merged') is False and pr.get('merged_at') is None
             and pr.get('user',{}).get('login')=='mbalbo2023' and pr.get('head',{}).get('sha')==head
@@ -579,7 +627,57 @@ def fresh_diagnostic_source(sha,tree):
             'DIAGNOSTIC_MUST_NOT_MOVE_OR_PROMOTE_PR476_OR_PR477')
     return {'wip_branch':DIAGNOSTIC_BRANCH,'source_sha':sha,'source_tree':tree,
         'single_parent_fix_forward_lineage':lineage,'PR476_unchanged_sha':RECOVERY_HEAD,
-        'PR477_unchanged_sha':GUARDS_HEAD,'qualification_claimed':False}
+        'PR477_unchanged_sha':GUARDS_HEAD,'repository_public_verified':True,
+        'anonymous_source_origin':'https://github.com/'+REPO+'.git','qualification_claimed':False}
+
+def diagnostic_control_binding(row):
+    """Source pins established by full admission, reused by API-only polling."""
+    require(type(row) is dict and row.get('schema')=='porota.rc6.capacity-diagnostic-admission.v1'
+        and row.get('qualification_claimed') is False,'DIAGNOSTIC_FULL_ADMISSION_REQUIRED_FOR_MONITOR')
+    result={key:row.get(key) for key in ('launch_body_sha256','source_manifest_sha256','read_contract_sha256',
+        'scope','capability_prerequisite')}
+    require(all(re.fullmatch('[0-9a-f]{64}',result.get(key) or '') for key in
+        ('launch_body_sha256','source_manifest_sha256','read_contract_sha256')),
+        'DIAGNOSTIC_FULL_ADMISSION_PINNED_DIGEST_REQUIRED')
+    diagnostic_scope(row['gate'],result['scope'])
+    return result
+
+def owned_diagnostic_control_scope(*,source_sha,source_tree,launch_receipt_url,owner_session,gate,now,get,
+                                   diagnostic_binding,run_id=None,run_attempt=None):
+    """WIP control-plane read while Native is live; no checkout/Source/event."""
+    run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']) if run_attempt is None else run_attempt
+    run_id=int(os.environ['GITHUB_RUN_ID']) if run_id is None else run_id
+    require(gate in DIAGNOSTIC_GATES and owner_session==SUCCESSOR_OWNER
+        and type(run_attempt) is int and run_attempt==1 and type(run_id) is int and run_id>0,
+        'OWNED_DIAGNOSTIC_FIRST_EXACT_SUCCESSOR_SCOPE_REQUIRED')
+    anchors=recovery_anchors(RECOVERY_OWNER,get=get);successor=successor_anchors(owner_session,get=get)
+    source=fresh_diagnostic_source(source_sha,source_tree,get=get)
+    launch=comment(launch_receipt_url,471,get=get)
+    auth,scope,prior=diagnostic_launch_control_fields(launch,source_sha,source_tree,owner_session,gate)
+    require(type(diagnostic_binding) is dict and diagnostic_binding=={
+        'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
+        'source_manifest_sha256':auth['SOURCE_MANIFEST_SHA256'],'read_contract_sha256':auth['READ_CONTRACT_SHA256'],
+        'scope':scope,'capability_prerequisite':prior},'OWNED_DIAGNOSTIC_FULL_ADMISSION_PINS_REBOUND')
+    timelines={issue:recent(issue,successor[issue],now,get=get) for issue in (471,473)}
+    owners={str(issue):latest_writer(timelines[issue],issue,source_sha,source_tree,owner_session,now)
+        for issue in (471,473)}
+    require(all(fields(row['body']).get('WORKSTREAM_ID')==WORKSTREAM
+        for issue in (471,473) for row in timelines[issue]
+        if row['id']==owners[str(issue)]['comment_id']),'OWNED_DIAGNOSTIC_WORKSTREAM_REBOUND')
+    ops=ops_admission(auth,owner_session,now,anchors,get=get)
+    run=get('/actions/runs/'+str(run_id)+'/attempts/1')
+    require(run.get('id')==run_id and run.get('run_attempt')==1 and run.get('head_sha')==source_sha
+        and run.get('head_branch')==DIAGNOSTIC_BRANCH and run.get('event')=='workflow_dispatch'
+        and run.get('status')=='in_progress' and run.get('conclusion') is None
+        and run.get('repository',{}).get('id')==REPO_ID and run['repository'].get('full_name')==REPO
+        and run.get('head_repository',{}).get('id')==REPO_ID
+        and run.get('path')=='.github/workflows/rc6-unified-candidate-tests.yml',
+        'OWNED_DIAGNOSTIC_ACTIONS_CANCELLED_OR_REBOUND')
+    return {'source_sha':source_sha,'source_tree':source_tree,'owner_session':owner_session,'gate':gate,
+        'run_id':run_id,'run_attempt':1,'read_utc':now.isoformat().replace('+00:00','Z'),
+        'launch_receipt_url':launch_receipt_url,'launch_body_sha256':diagnostic_binding['launch_body_sha256'],
+        'diagnostic_binding':diagnostic_binding,'source':source,'fresh_ownership':owners,'ops':ops,
+        'real_orders_sent':0,'DEPLOY_OWNER':'NOT_ACQUIRED','qualification_claimed':False}
 
 def diagnostic_actions_origin(sha,gate):
     require(os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch' and os.environ.get('GITHUB_RUN_ATTEMPT')=='1'

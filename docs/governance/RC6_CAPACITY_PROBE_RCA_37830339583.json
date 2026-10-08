@@ -1,0 +1,232 @@
+{
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "all_original_members": [
+    {
+      "artifact_id": 11573535653,
+      "bytes": 25109,
+      "name": "admission.json",
+      "sha256": "b074d3220579612cf65827053c946cf4e1aa514e9589972559ba49bf2be983a8"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 16309,
+      "name": "diagnostic-result.json",
+      "sha256": "177f5a3423fbd99c0a809bdb364c977bd67e83fc544d36b26c1edd89b7a1b668"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 773,
+      "name": "sealed/0002.raw",
+      "sha256": "adb259c8ec9c7028c72730b25e18bf2cd69d5752de17286518e3c2b908ac3f66"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 13805,
+      "name": "sealed/0001.raw",
+      "sha256": "65b7698aef089c746a0f51e3a74da04a96f3f43dabfa436fd1036672cd335d9f"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 747,
+      "name": "sealed/0000.raw",
+      "sha256": "5fd9832757797ef6cd04fbfcf40d440f05fe8413c9a67f43ae492df69ef44a59"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 5750,
+      "name": "sealed/0003.raw",
+      "sha256": "ced655afddae7917efadd42b47b287b4287026048afd1168a93a52f2bf2a1e9e"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 3197,
+      "name": "sealed/0005.raw",
+      "sha256": "159cc7f8608a095cfd4d39ea8d720ae7f6648554e8391967526132da503eea0f"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 2693,
+      "name": "sealed/0004.raw",
+      "sha256": "6e2e0c117d56807953c116c9912ecde5865a1e2522faa379c2784d6fef4e31ef"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 1763,
+      "name": "sealed/0006.raw",
+      "sha256": "ecfa041cfa6f2f8250f2dab1b95018e215483d7264e8b1cb8f6ed401784dc368"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 162,
+      "name": "sealed/0007.raw",
+      "sha256": "a3ca621b2ac1d344f0d0c5bdddf824bfc5a042181bf8e4a08fac65ac8da6077d"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 2882,
+      "name": "sealed/0008.raw",
+      "sha256": "0d09d264c37b2a6c2b58401a166820c4ff15b3a4016a071df158294c159efdd5"
+    },
+    {
+      "artifact_id": 11573037197,
+      "bytes": 3139,
+      "name": "sealed/manifest.json",
+      "sha256": "72b927bd23a8270220e750a6e8e4003a27a9a65dc9b03a466b9784b78912c390"
+    },
+    {
+      "artifact_id": 11572813070,
+      "bytes": 25109,
+      "name": "admission.json",
+      "sha256": "b074d3220579612cf65827053c946cf4e1aa514e9589972559ba49bf2be983a8"
+    }
+  ],
+  "attempt": 1,
+  "canonical_raw": "GitHub Actions run37830339583 artifacts11573037197/11573535653/11572813070",
+  "code_defects_found_before_next_probe": [
+    {
+      "defect": "project statvfs can be quota capped; physical capacity/reserve must be observed outside project inherit flags",
+      "kind": "PREVENTIVE_STATIC_RCA",
+      "observed_remote_failure": false
+    },
+    {
+      "defect": "partial nonroot backend RED can lose nested required RAW when image is cleaned; must seal needed controls after actual FIN before cleanup",
+      "kind": "PREVENTIVE_STATIC_RCA",
+      "observed_remote_failure": false
+    },
+    {
+      "defect": "seccomp ioctl/prctl compares full64bits although kernel casts command to32bits; use masked lower32 bits and genuine own high-bit denial probe",
+      "kind": "PREVENTIVE_STATIC_RCA",
+      "observed_remote_failure": false
+    }
+  ],
+  "control_state": "RCA_OPEN_NO_NEW_PROBE_AUTHORIZED",
+  "examination_sha256": "9385c00924f36d39078bec09a5650acda34dc126074c10615a0e0081737e3c10",
+  "financial_tick_executed": false,
+  "first_verified_failure": {
+    "command": [
+      "mount",
+      "-t",
+      "ext4",
+      "-o",
+      "prjquota,nodev,nosuid",
+      "/dev/loop0",
+      "/home/runner/r6-04S80RNJSx6tlNEmxs1Vbw/r6-CtwYqyiJThOeBBw0aREHaQ/mount"
+    ],
+    "exit_code": 32,
+    "kernel_release": "6.17.0-1022-azure",
+    "numeric_mount_errno": "NO_VERIFICADO",
+    "raw_sha256": "1c30261908276bd1ad2d0bc350cf40008f6294576ffa190e655a33d3399262e1",
+    "reason": "CALIBRATION_OWN_SETUP_COMMAND_FAILED",
+    "stage": "mount_own_ext4",
+    "util_linux_reported_errno_text": "No such process"
+  },
+  "heavy_successors": "BLOCKED",
+  "job_id": 113493745953,
+  "later_preventive_privileged_signal_custody": {
+    "diagnosis_now_authorized": "READ_ONLY_KERNEL_METADATA_ONLY_AFTER_CORRECTIVE_CHECKPOINT",
+    "historical_EPERM_observed": false,
+    "image_namespace_root_launch": "NOT_CALLED_REQUIRED",
+    "kind": "PREVENTIVE_CONTROL_RCA_NOT_OBSERVED_REMOTE_FAILURE",
+    "original_manager_changed": false,
+    "root_actor_before_uid_drop_signal_delivery": "NO_VERIFICADO"
+  },
+  "no_identical_rerun": true,
+  "previous_failure_resolved": {
+    "errno": 0,
+    "operation": "mount_setattr",
+    "original_backing_verified": true,
+    "private_namespace": {
+      "actual_mount_namespace_inode": 4026532310,
+      "before_any_mutation": true,
+      "issuer_mount_namespace_inode": 4026531832,
+      "kernel_namespace_differs": true,
+      "mount_count": 24,
+      "mountinfo_sha256": "a51ea7cb833595e3d235b154b42bede3983f2fdc5d09731fba0cb00b799e2ae0",
+      "shared_master_propagate_from_absent": true
+    },
+    "return": 0
+  },
+  "qualification_claimed": false,
+  "real_orders_sent": 0,
+  "resources": {
+    "control_bound": {
+      "components": {
+        "calibration_receipt_bytes": 8388608,
+        "carrier_authenticated_capture_bytes": 134217728,
+        "carrier_terminal_controls_bytes": 4194304,
+        "decoded_original_raw_bytes": 25165824,
+        "directory_and_file_rounding_bytes": 4456448,
+        "internal_authenticated_capture_bytes": 134217728,
+        "original_worker_log_bytes": 41943040,
+        "root_request_marker_fin_bytes": 6291456,
+        "two_capture_manifests_bytes": 8388608
+      },
+      "future_capture_copies_included": 2,
+      "max_raw_files": 256,
+      "premature_cleanup_credit_bytes": 0,
+      "schema": "porota.rc6.capacity-diagnostic-control-bound.v1",
+      "total_bytes": 367263744
+    },
+    "limits": {
+      "backing_image_bytes": 5368709120,
+      "project_hard_limit_bytes": 536870912,
+      "residual_reserve_bytes": 4294967296
+    },
+    "native_peak_rss_bytes": 27602944,
+    "native_wall_seconds": 0.20084093299999495,
+    "outer_after_cleanup": {
+      "available_bytes": 91698917376,
+      "device": 66305,
+      "fragment_bytes": 4096,
+      "free_inodes": 18423030,
+      "inode": 9179273,
+      "measured_monotonic_ns": 47269969871,
+      "mount_id": 27,
+      "path": "/home/runner/r6-04S80RNJSx6tlNEmxs1Vbw",
+      "total_inodes": 19529728
+    },
+    "outer_after_image": {
+      "available_bytes": 86330220544,
+      "device": 66305,
+      "fragment_bytes": 4096,
+      "free_inodes": 18423032,
+      "inode": 9179273,
+      "measured_monotonic_ns": 46781038593,
+      "mount_id": 27,
+      "path": "/home/runner/r6-04S80RNJSx6tlNEmxs1Vbw",
+      "total_inodes": 19529728
+    },
+    "outer_before": {
+      "available_bytes": 91698946048,
+      "device": 66305,
+      "fragment_bytes": 4096,
+      "free_inodes": 18423036,
+      "inode": 9179273,
+      "measured_monotonic_ns": 46711642542,
+      "mount_id": 27,
+      "path": "/home/runner/r6-04S80RNJSx6tlNEmxs1Vbw",
+      "total_inodes": 19529728
+    }
+  },
+  "run_id": 37830339583,
+  "schema": "porota.rc6.capacity-error-examination.v1",
+  "source_sha": "7c4abff319bdc9c3958141925967c0cb8def7149",
+  "source_tree": "00ecd79e7bd3533e69be8be26213ad63a6fdc686",
+  "verified_distinctions": {
+    "actual_project_quota": "NOT_REACHED",
+    "autoclear_loop_absent": true,
+    "capacity": "GREEN",
+    "custody": "GREEN",
+    "missing_kernel_quota_format_as_cause": "HIPOTESIS_NO_VERIFICADA",
+    "mkfs": "GREEN",
+    "mount_ext4_project_quota": "RED",
+    "nonroot_escapes_and_seccomp": "NOT_REACHED",
+    "owned_fin_and_scoped_cleanup": "GREEN",
+    "permissions_as_cause": "NO_VERIFICADO",
+    "private_mount_propagation": "GREEN",
+    "privilege_drop": "NOT_REACHED",
+    "readonly_recursive": "GREEN",
+    "runner_unsupported": "NO_VERIFICADO",
+    "source_unchanged": true
+  }
+}

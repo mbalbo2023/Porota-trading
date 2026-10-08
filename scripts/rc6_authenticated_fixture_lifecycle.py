@@ -266,13 +266,14 @@ def validate_consumer_receipt(receipt: dict, *, candidate_sha: str, candidate_tr
 
 def execute_owned(namespace: GeneratedNamespace, command, *, cwd: Path, environ: dict,
                   log_relative: str = "producer-native.log", timeout_seconds: int = 5400,
-                  fin_label: str | None = None):
+                  fin_label: str | None = None, progress=None):
     """The unchanged native supervisor creates the only accepted live FIN token."""
     authenticate(namespace)
     custody.require(type(timeout_seconds) is int and 1 <= timeout_seconds <= 21600,
                     "FIXTURE_NATIVE_MANAGEMENT_BOUND_REQUIRED")
     custody.require(type(command) is list and command and all(type(x) is str for x in command),
                     "FIXTURE_NATIVE_COMMAND_INVALID")
+    custody.require(progress is None or callable(progress), "FIXTURE_NATIVE_PROGRESS_CALLBACK_REQUIRED")
     _relative(log_relative)
     history = _FIN_HISTORIES.setdefault(namespace.nonce, {})
     if fin_label is not None:
@@ -290,7 +291,7 @@ def execute_owned(namespace: GeneratedNamespace, command, *, cwd: Path, environ:
     manager = runpy.run_path(str(DRIVER))
     initial = _fresh_own_kernel(manager)
     kernel = manager["managed_native_child"](command, Path(cwd), namespace.path / log_relative,
-        dict(environ), timeout_seconds, terminate_grace=2, progress_poll=5)
+        dict(environ), timeout_seconds, terminate_grace=2, progress_poll=5, progress=progress)
     custody.require(manager["managed_custody_closed"](kernel), "FIXTURE_ACTUAL_OWNED_FIN_NOT_CLOSED")
     final = _fresh_own_kernel(manager)
     custody.require(initial["kernel_echild_verified"] is True and final["kernel_echild_verified"] is True

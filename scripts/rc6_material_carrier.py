@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 from scripts import rc6_architectural_gates as architectural
 from scripts import rc6_heavy_test_preflight as capacity
 from scripts import rc6_authenticated_fixture_lifecycle as fixture_lifecycle
+from scripts import rc6_owned_gate_lease as gate_lease
 
 REPO='mbalbo2023/Porota-trading';REPO_ID=1338680554
 ORIGIN='https://github.com/'+REPO+'.git'
@@ -154,6 +155,75 @@ def tooling_capacity(admission_path,repo,environ):
         'tooling_action_launched':False,'real_orders_sent':0})
     return run.capacity_records
 
+def diagnostic_issuer_environment(admission_path,environ=None):
+    """API credentials reach only the NONROOT issuer, never a Git command."""
+    environ=os.environ if environ is None else environ
+    token=environ.get('GH_TOKEN') or environ.get('GITHUB_TOKEN')
+    need(type(token) is str and bool(token),'DIAGNOSTIC_ISSUER_READONLY_API_TOKEN_REQUIRED')
+    result={key:value for key,value in environ.items()
+        if key.startswith(('GITHUB_','RUNNER_')) and key!='GITHUB_TOKEN'}
+    result.update(GH_TOKEN=token,RC6_CALIBRATION_ADMISSION_JSON=str(admission_path),
+        GIT_TERMINAL_PROMPT='0',GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL='/dev/null')
+    need('RC6_CALIBRATION_READONLY_GIT_TOKEN' not in result and 'RC6_READONLY_GIT_TOKEN' not in result,
+        'DIAGNOSTIC_PUBLIC_SOURCE_GIT_CREDENTIAL_FORBIDDEN')
+    return result
+
+def validate_diagnostic_terminal(terminal,authority,binding,outer_kernel,*,prerequisite_raw=None):
+    """An early RED has a real outer FIN and deliberately has no inner FIN."""
+    mode='capability' if authority['gate']=='capacity-probe' else 'bootstrap'
+    need(gate_lease.native.managed_custody_closed(outer_kernel)
+        and outer_kernel.get('launcher_management_deadline_seconds')==(600 if mode=='capability' else 11400)
+        and outer_kernel.get('owned_cleanup_management_bound_seconds')==5,
+        'DIAGNOSTIC_ACTUAL_OUTER_FIN_REQUIRED')
+    need(type(terminal) is dict and terminal.get('schema')=='porota.rc6.capacity-calibration.v1'
+        and terminal.get('source_sha')==authority['source_sha'] and terminal.get('source_tree')==authority['source_tree']
+        and terminal.get('read_contract_sha256')==authority['read_contract_sha256']
+        and terminal.get('mode')==mode and terminal.get('binding')==binding
+        and terminal.get('limits')=={key:authority['scope'][key] for key in
+            ('backing_image_bytes','project_hard_limit_bytes','residual_reserve_bytes')}
+        and terminal.get('qualification_claimed') is False and terminal.get('G0_G8_qualification_claimed') is False
+        and terminal.get('source_unchanged') is True and terminal.get('payload_upload_safe') is True
+        and terminal.get('real_orders_sent')==0 and type(terminal.get('real_orders_sent')) is int
+        and terminal.get('real_routes')=='NOT_CALLED' and terminal.get('ppi_watch')=='UNTOUCHED'
+        and terminal.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and 'preserved_owned_namespace' not in terminal,
+        'DIAGNOSTIC_PRODUCER_RECEIPT_SOURCE_SCOPE_REBOUND')
+    if terminal.get('generation')=='NOT_STARTED':
+        prerequisites=terminal.get('kernel_prerequisites',{})
+        signal_custody=terminal.get('privileged_signal_custody',{})
+        need(terminal.get('status')=='BLOQUEADO' and terminal.get('inner_namespace_created') is False
+            and terminal.get('inner_generation_operations')=={'create_namespace':'NOT_CALLED',
+                'image_allocation':'NOT_CALLED','root_worker_launch':'NOT_CALLED'}
+            and terminal.get('actual_capability_proved') is False
+            and terminal.get('cleanup')=={'status':'NOT_STARTED','namespace_removed':False,'actual_inner_FIN_claimed':False}
+            and terminal.get('required_raw')==[] and terminal.get('issuer_lease') is None
+            and terminal.get('reason')=='CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED'
+            and signal_custody=={'status':'NO_VERIFICADO','proved':False,'privileged_launch_authorized':False}
+            and signal_custody.get('proved') is False and signal_custody.get('privileged_launch_authorized') is False
+            and prerequisites.get('schema')=='porota.rc6.readonly-kernel-quota-prerequisites.v1'
+            and prerequisites.get('status') in ('NO_VERIFICADO','BLOQUEADO','PREREQUISITES_PRESENT')
+            and prerequisites.get('actual_capability_proved') is False
+            and prerequisites.get('qualification_claimed') is False
+            and prerequisites.get('module_loading_attempted') is False
+            and not any(key in terminal for key in ('kernel','worker','root_request_sha256','loop_birth_sha256',
+                'loop_finalization','capture_manifest_sha256','capability_checks')),
+            'DIAGNOSTIC_NOT_STARTED_CANNOT_CLAIM_INNER_FIN_OR_CLEANUP')
+        reference=terminal.get('kernel_prerequisites_ref')
+        need(type(prerequisite_raw) is bytes and type(reference) is dict
+            and reference.get('path')=='kernel-prerequisites.json'
+            and digest(prerequisite_raw)==reference.get('sha256')
+            and document(prerequisite_raw)==prerequisites,'DIAGNOSTIC_NOT_STARTED_PREREQUISITE_RAW_REBOUND')
+        return {'generation':'NOT_STARTED','actual_outer_fin_closed':True,'actual_inner_fin_claimed':False,
+            'inner_cleanup_claimed':False,'payload_upload_safe':True,'qualification_claimed':False}
+    need(terminal.get('generation')=='STARTED' and terminal.get('inner_namespace_created') is True
+        and terminal.get('cleanup',{}).get('namespace_removed') is True
+        and gate_lease.native.managed_custody_closed(terminal.get('kernel',{}))
+        and terminal['kernel'].get('launcher_management_deadline_seconds')==(300 if mode=='capability' else 10800)
+        and terminal['kernel'].get('owned_cleanup_management_bound_seconds')==5
+        and terminal.get('loop_finalization',{}).get('original_autoclear_loop_absent') is True,
+        'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
+    return {'generation':'STARTED','actual_outer_fin_closed':True,'actual_inner_fin_claimed':True,
+        'inner_cleanup_claimed':True,'payload_upload_safe':True,'qualification_claimed':False}
+
 def diagnostic_main(argv=None):
     """Isolated quota diagnosis is never a candidate gate or a product claim."""
     parser=argparse.ArgumentParser();parser.add_argument('--diagnostic-admission-json',type=Path,required=True)
@@ -185,12 +255,8 @@ def diagnostic_main(argv=None):
     command=[sys.executable,'-I','-B',str(repo/producer_pin['path']),'--mode',mode,'--source-root',str(repo),
         '--source-sha',authority['source_sha'],'--source-tree',authority['source_tree'],
         '--namespace-receipt',str(claim_path),'--output',str(output),'--binding-json',str(binding_path)]
-    environment={key:value for key,value in os.environ.items() if key.startswith(('GITHUB_','RUNNER_'))}
-    environment['RC6_CALIBRATION_ADMISSION_JSON']=str(controls/'admission.json')
+    environment=diagnostic_issuer_environment(controls/'admission.json')
     if mode=='bootstrap':
-        token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
-        need(bool(token),'DIAGNOSTIC_SCOPED_READONLY_GIT_TOKEN_REQUIRED')
-        environment['RC6_CALIBRATION_READONLY_GIT_TOKEN']=token
         evidence=architectural.verify_capacity_capability_artifact(authority['capability_prerequisite'],
             source_sha=authority['source_sha'],source_tree=authority['source_tree'],
             read_contract_sha256=authority['read_contract_sha256'],evidence_root=namespace.path/'capability-artifact')
@@ -207,13 +273,19 @@ def diagnostic_main(argv=None):
     try:
         native=run(command,cwd=repo,label='isolated-'+authority['gate'],limit=600 if mode=='capability' else 11400,
             env=environment,namespace=namespace)
+        fresh=controller.admit_diagnostic(source_sha=authority['source_sha'],source_tree=authority['source_tree'],
+            launch_receipt_url=authority['launch_receipt_url'],owner_session=authority['owner_session'],gate=authority['gate'])
+        need(controller.diagnostic_control_binding(fresh)==controller.diagnostic_control_binding(authority),
+            'DIAGNOSTIC_SOURCE_OR_AUTHORITY_REBOUND_AFTER_OUTER_FIN')
+        save(controls/'after-outer-fin-admission.json',fresh)
         terminal=document(read(output/'calibration.json'))
-        need(terminal.get('schema')=='porota.rc6.capacity-calibration.v1'
-            and terminal.get('source_sha')==authority['source_sha'] and terminal.get('source_tree')==authority['source_tree']
-            and terminal.get('mode')==mode and terminal.get('binding')==binding
-            and terminal.get('qualification_claimed') is False,'DIAGNOSTIC_PRODUCER_RECEIPT_SOURCE_SCOPE_REBOUND')
-        need(terminal.get('payload_upload_safe') is True and terminal.get('cleanup',{}).get('namespace_removed') is True
-            and 'preserved_owned_namespace' not in terminal,'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
+        prerequisite_raw=read(output/'kernel-prerequisites.json') if terminal.get('generation')=='NOT_STARTED' else None
+        terminal_custody=validate_diagnostic_terminal(terminal,authority,binding,native['kernel'],
+            prerequisite_raw=prerequisite_raw)
+        need(terminal_custody.get('actual_outer_fin_closed') is True
+            and terminal_custody.get('payload_upload_safe') is True
+            and terminal_custody.get('qualification_claimed') is False,
+            'DIAGNOSTIC_INNER_LOOP_OR_NAMESPACE_UNKNOWN_OUTER_CLEANUP_VETO')
         required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.rglob('*')) if path.is_file()]
         required+=['isolated-'+authority['gate']+'.native.log']
         payload=Path(args.diagnostic_admission_json).parent/'diagnostic-payload';payload.mkdir(mode=0o700)
@@ -229,6 +301,7 @@ def diagnostic_main(argv=None):
         save(payload/'diagnostic-result.json',{'schema':'porota.rc6.capacity-diagnostic-result.v1',
             'status':'GREEN_DIAGNOSTIC_ONLY' if code==0 else 'BLOCKED','source_sha':authority['source_sha'],
             'source_tree':authority['source_tree'],'gate':authority['gate'],'producer_receipt':terminal,
+            'producer_custody':terminal_custody,
             'producer_receipt_ref':captured_ref('diagnostic/calibration.json'),
             'outer_native_fin_ref':captured_ref(fin_name),
             'capture_manifest_ref':{'path':'sealed/manifest.json','sha256':captured.manifest_sha256},
@@ -343,15 +416,23 @@ def authority(a):
         'workflow_path':'.github/workflows/rc6-unified-candidate-tests.yml','workflow_run_id':os.environ['GITHUB_RUN_ID'],
         'workflow_run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
 
+class OwnedLeaseStop(ValueError):
+    """Control RED after actual original FIN, never a native GREEN waiver."""
+
 class OwnedRunner:
     def __init__(self,manager,control_root):
         self.manager=manager;self.control=control_root;self.raw=control_root.parent/'command-raw'
         self.raw.mkdir(mode=0o700);self.unknown=False;self.closed_logs=[];self.fins={};self.sealed_groups=[]
         self.capacity_records=[];self.pending_capacity=[];self.command_labels=[]
+        self.lease_context=None;self.lease_records={};self.lease_stop=None;self.lease_readmit=None
     def __call__(self,argv,*,cwd,label,limit=300,env=None,namespace=None):
         need(re.fullmatch('[a-zA-Z0-9_.-]+',label),'LITERAL_COMMAND_LABEL_REQUIRED')
         need(type(limit) in (int,float) and math.isfinite(limit) and 0<limit<=21600,'DECLARED_FINITE_COMMAND_BOUND_REQUIRED')
         self.manager['pre_capture_kernel_state']();log=self.raw/(label+'.log')
+        monitor=None
+        if self.lease_context is not None:
+            monitor=gate_lease.GateLeaseMonitor(self.control,**self.lease_context)
+            monitor.prelaunch(label)
         launch_ns=time.time_ns();proofs=self.pending_capacity;self.pending_capacity=[]
         need(all(0<=launch_ns-item['measured_at_unix_ns']<=60*10**9 for item in proofs),
             'PRODUCER_CAPACITY_PROOF_STALE_BEFORE_ACTUAL_LAUNCH')
@@ -360,6 +441,7 @@ class OwnedRunner:
             'intent_recorded_unix_ns':launch_ns,'capacity_launch_proofs':[item['label'] for item in proofs]})
         last=[0.0]
         def progress(stage,pid,entered,deadline,fd):
+            if monitor is not None:monitor.progress(stage,pid,entered,deadline,fd)
             now=time.monotonic()
             if stage=='started' or now-last[0]>=40:
                 last[0]=now;print(json.dumps({'label':label,'stage':stage,'actual_pid':pid,
@@ -370,12 +452,21 @@ class OwnedRunner:
         else:
             native_log=label+'.native.log'
             kernel,fin=fixture_lifecycle.execute_owned(namespace,argv,cwd=cwd,environ=clean_env(env),
-                log_relative=native_log,timeout_seconds=limit,fin_label=label)
+                log_relative=native_log,timeout_seconds=limit,fin_label=label,progress=progress)
             self.fins[namespace.nonce]=fin
             log=namespace.path/native_log
         save(self.control/(label+'.kernel.json'),kernel)
         self.command_labels.append(label)
         need(self.manager['managed_custody_closed'](kernel),'COMMAND_FIN_UNKNOWN_PAYLOAD_VETO')
+        if monitor is not None:
+            lease=monitor.after_fin(kernel,readmit=(lambda:self.lease_readmit(label)) if self.lease_readmit else None)
+            self.lease_records[label]={'path':'controls/'+monitor.final_path.name,
+                'sha256':digest(canonical(lease))}
+            if lease['status']!='GREEN':
+                self.unknown=False;self.closed_logs.append(log)
+                self.lease_stop={'namespace':namespace,'label':label,'command':argv,
+                    'kernel':kernel,'lease':lease,'log':log}
+                raise OwnedLeaseStop('OWNED_GATE_LEASE_RED_AFTER_ACTUAL_FIN')
         need(not kernel['timed_out'] and not kernel['supervisor_errors'] and not kernel['owned_group_signal_observations']
             and not kernel['kernel_wait4_zero_observed_irreversible_red'] and not kernel['late_observed_main_reap_irreversible_red']
             and not kernel['residual_descendants_observed']
@@ -402,7 +493,28 @@ def readmit_automatic_pr(a,run,stage):
         launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
     a.capacity_peaks=row['capacity_peaks'];a.cheap_files=row['cheap_files'];a.prerequisites_manifest=row['prerequisites_manifest']
     save(run.control/('automatic-pr-'+stage+'.json'),row)
+    run.lease_context={key:row[key] for key in ('source_sha','source_tree','owner_session','gate','launch_receipt_url')}
+    def after_fin(label):
+        fresh=controller['admit'](source_sha=a.source_sha,source_tree=a.source_tree,
+            launch_receipt_url=a.launch_receipt_url,owner_session=a.owner_session,gate=a.gate)
+        need(fresh['launch_body_sha256']==row['launch_body_sha256'],'OWNED_GATE_IMMUTABLE_AUTHORITY_EDITED')
+        save(run.control/('automatic-pr-'+label+'-after-fin.json'),fresh)
+    run.lease_readmit=after_fin
     return row
+
+def owned_lease_evidence(a,run,root,label,required_labels):
+    need(required_labels and all(name in run.lease_records for name in required_labels),
+        'OWNED_GATE_ACTUAL_LEASE_MONITOR_REQUIRED')
+    commands=[]
+    for name in required_labels:
+        path=run.control/(name+'.kernel.json')
+        commands.append({'label':name,'lease':run.lease_records[name],
+            'kernel':{'path':'controls/'+path.name,'sha256':digest(read(path))}})
+    value={'schema':'porota.rc6.owned-gate-lease-index.v1','source_sha':a.source_sha,'source_tree':a.source_tree,
+        'run_id':int(os.environ['GITHUB_RUN_ID']),'run_attempt':int(os.environ['GITHUB_RUN_ATTEMPT']),
+        'commands':commands,'object_prefix':'controls/'+gate_lease.OBJECT_PREFIX}
+    path=root/(label+'.ownership-index.json');save(path,value)
+    return {'path':'carrier/'+path.name,'sha256':digest(canonical(value))}
 
 def installed_env(a,run,root):
     interpreters={}
@@ -543,6 +655,7 @@ def static_admission(a,run,root,prepared,interpreters):
             'sha256':digest(read(run.control/'fullGit-bootstrap-to-qualified.json'))}}
     save(root/'G0.capacity-index.json',capacity_index)
     evidence['capacity_index']={'path':'carrier/G0.capacity-index.json','sha256':digest(read(root/'G0.capacity-index.json'))}
+    evidence['ownership_index']=owned_lease_evidence(a,run,root,'G0',list(run.command_labels))
     checks={name:True for name in ('ownership','inventory','closure_matrix','compile_import','paper_invariants',
         'ppi_watch_invariant','full_git_fsck','full_source','capacity_preflight')}
     row=architectural.receipt_base('G0',source_sha=a.source_sha,source_tree=a.source_tree,
@@ -647,6 +760,7 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
     checks={'native_test_green':code==0,'node_identity':identity,'full_source':code==0,
         'closure_matrix':code==0,'native_original_FIN_closed':True,'capacity_live':live['capacity']['status']=='GREEN',
         'authenticated_cleanup':cleanup['namespace_removed'] is True,'original_deferred_union_coverage':code==0}
+    native_evidence['ownership_index']=owned_lease_evidence(a,run,root,'G6.'+epoch,['fullGov'+epoch])
     receipt=architectural.receipt_base('G6.'+epoch,source_sha=a.source_sha,source_tree=a.source_tree,
         read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,checks=checks,
         native_exit_code=code,native_evidence=native_evidence,python_epoch=epoch,test_cases=counts['cases'],
@@ -778,6 +892,8 @@ def focal(a,run,root,prepared,interpreters):
             if not probe_green:
                 code=1;reason=reason or 'G1_ACTUAL_SCOPED_INFRASTRUCTURE_PROBE_MISSING_OR_BLOCKED'
         gate='G1.'+epoch if a.gate=='cheap' else ('G2' if epoch=='311' else 'G3')
+        native_evidence['ownership_index']=owned_lease_evidence(a,run,root,gate,
+            ['focal'+epoch+'-'+phase for phase in ('collection','execution') if phase in sealed_phases])
         checks={'native_test_green':code==0,'node_identity':identity,'source_unchanged':True,
             'capacity_live':all(receipt['capacity']['status']=='GREEN' for receipt in live),
             'authenticated_cleanup':all(cleanup['namespace_removed'] is True for cleanup in cleanups),
@@ -970,6 +1086,8 @@ def big_browser(a,run,root,prepared,interpreters):
             'capacity_live':live['capacity']['status']=='GREEN','authenticated_cleanup':cleanup['namespace_removed'] is True},
         native_evidence={'BIG':captured_reference(sealed,'raw-slow/harness-final.json'),
             'native_BIG':captured_reference(sealed,'raw-slow/native-big-result.json'),
+            'ownership_index':owned_lease_evidence(a,run,root,'G4',
+                ['canonical-BIG']+(['LARGE-browser'] if browser is not None else [])),
             **({'browser':captured_reference(sealed,'browser-raw/browser-gate.json')} if browser else {})},
         resources={'catalog':native.get('catalog_count'),'observations':native.get('observations_materialized'),
             'factual_paper_exits':native.get('factual_exits',{}).get('closed'),'hard_limit_seconds':90,
@@ -1027,7 +1145,8 @@ def horizon(a,run,root,prepared,interpreters):
             'capacity_live':live['capacity']['status']=='GREEN','authenticated_cleanup':cleanup['namespace_removed'] is True},
         required_material_gates=['retention','Horizon','browser'],
         native_evidence={'Horizon':captured_reference(sealed,'horizon-control/terminal.json'),
-            'native_Horizon':captured_reference(sealed,'native-raw/native-horizon-result.json')},
+            'native_Horizon':captured_reference(sealed,'native-raw/native-horizon-result.json'),
+            'ownership_index':owned_lease_evidence(a,run,root,'G5',['Horizon-original1201'])},
         cleanup_receipt=cleanup,source_unchanged=accepted)
     save(root/'G5.receipt.json',receipt)
     return code,{**report,'receipt':receipt,'raw_root':str(sealed)}
@@ -1054,6 +1173,35 @@ def stage_raw(a,run,root,prepared,report):
     # Exact small DRIVER controls only; never cache/assets/wheels/driver-env.
     driver=material/'browser-driver';groups.extend([('driver',driver),('driver-receipts',driver/'receipts'),('driver-logs',driver/'logs')])
     return module['bundle'](namespace=root,output_root=root/'supplementary-raw',groups=groups,files=[],
+        read=read,save_raw=save_raw,save=save,source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
+
+def preserve_closed_lease_stop(a,run,root):
+    """Logical ownership RED can preserve exact diagnostics after physical FIN.
+
+    No stop is converted into native GREEN. Only explicitly declared output
+    control directories are selected; no Source/fixture tree is traversed.
+    """
+    stop=run.lease_stop
+    need(stop is not None and not run.unknown and run.manager['managed_custody_closed'](stop['kernel']),
+        'OWNED_GATE_STOP_FIN_UNKNOWN_PAYLOAD_VETO')
+    namespace=stop['namespace']
+    if namespace is not None:
+        required=[stop['log'].relative_to(namespace.path).as_posix()]
+        command=stop['command']
+        for argument in ('--output-root','--control-root','--raw-root'):
+            if argument not in command:continue
+            target=Path(command[command.index(argument)+1])
+            need(target.is_absolute() and target.is_relative_to(namespace.path)
+                and not target.is_symlink(),'OWNED_GATE_STOP_OUTPUT_SCOPE_REBOUND')
+            if not target.is_dir():continue
+            required.extend(path.relative_to(namespace.path).as_posix() for path in sorted(target.iterdir())
+                if path.is_file() and path.suffix in ('.json','.xml','.log','.py'))
+            for phase in ('collection','execution'):
+                required.extend(phase_diagnostic_controls(namespace,target,phase))
+        seal_generated(a,run,namespace,root,'owned-lease-stop',sorted(set(required)))
+    module=runpy.run_path(str(a.repo_root/'scripts/rc6_material_raw.py'))
+    groups=[('controls',run.control),('commands',run.raw),*run.sealed_groups]
+    return module['bundle'](namespace=root,output_root=root/'closed-lease-red-raw',groups=groups,files=[],
         read=read,save_raw=save_raw,save=save,source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
 
 def main():
@@ -1133,6 +1281,17 @@ def main():
         reason=str(e).split(':',1)[0];reason=reason if re.fullmatch('[A-Z][A-Z0-9_]{0,191}',reason) else 'NON_LITERAL_CARRIER_FAILURE'
         save(controls/'error.json',{'status':'RED','class':type(e).__name__,'reason':reason,'gate':a.gate,
             'payload_upload_allowed':False,'original_RED_preserved':True,'real_orders_sent':0})
+        if isinstance(e,OwnedLeaseStop) and not run.unknown:
+            try:
+                staged=preserve_closed_lease_stop(a,run,root)
+                save(controls/'owned-lease-stop-preservation.json',{'status':'RED','physical_FIN_closed':True,
+                    'original_native_GREEN_claimed':False,'lossless_RAW':staged,'real_orders_sent':0})
+                if os.environ.get('GITHUB_OUTPUT'):
+                    with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+                        stream.write('safe_payload_upload=true\npayload_root='+staged['payload_root']+'\n')
+            except BaseException as preservation_error:
+                save(controls/'owned-lease-stop-preservation-blocked.json',{'status':'RED',
+                    'reason':type(preservation_error).__name__,'payload_upload_allowed':False,'real_orders_sent':0})
         print(json.dumps({'gate':a.gate,'status':'RED','reason':reason,'payload_upload_allowed':False}),flush=True)
     return code
 if __name__=='__main__':raise SystemExit(main())

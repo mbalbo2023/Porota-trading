@@ -65,6 +65,8 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_pytest_fixture_lifecycle.py', 'tests/test_rc6_archive_segment_reuse.py',
     'tests/test_rc6_source_schema_startup.py',
     'tests/test_rc6_capacity_calibration.py',
+    'tests/test_rc6_owned_gate_lease.py',
+    'tests/test_rc6_owner_receipts.py',
 })
 G1_HEAVY_FILES = frozenset({
     'tests/test_issue465_stress.py',
@@ -702,7 +704,49 @@ def verify_native_evidence(row, archive):
                 'horizon_complete','complete','acceptance_complete','code_source_unchanged','source_database_unchanged',
                 'import_graph_verified','source_index_and_tar_unchanged')),
             'G5_NATIVE_HORIZON_ACCEPTANCE_BYTES_REBOUND')
+    require('ownership_index' in captured, 'GATE_ACTUAL_LAUNCH_AND_CONTINUOUS_OWNERSHIP_REQUIRED')
+    verify_owned_gate_lease_index(document(captured['ownership_index']),row,archive)
     return captured
+
+
+def verify_owned_gate_lease_index(index,row,archive):
+    """Past leases are checked at actual launch/FIN; G7 current admission is separate."""
+    from scripts import rc6_owned_gate_lease as lease
+    require(type(index) is dict and index.get('schema')=='porota.rc6.owned-gate-lease-index.v1'
+        and index.get('source_sha')==row['source_sha'] and index.get('source_tree')==row['source_tree']
+        and index.get('run_id')==row['run_id'] and index.get('run_attempt')==row['run_attempt']==1
+        and index.get('object_prefix')=='controls/'+lease.OBJECT_PREFIX
+        and type(index.get('commands')) is list and index['commands'],
+        'GATE_HISTORICAL_OWNERSHIP_INDEX_SOURCE_RUN_REBOUND')
+    commands=index['commands'];labels=[command.get('label') for command in commands]
+    require(len(set(labels))==len(labels),'GATE_HISTORICAL_OWNERSHIP_DUPLICATE_COMMAND')
+    required=({'fullGov'+row['python_epoch']} if row['gate'].startswith('G6.') else
+        {'Horizon-original1201'} if row['gate']=='G5' else {'canonical-BIG','LARGE-browser'} if row['gate']=='G4' else
+        {'focal'+row['python_epoch']+'-collection','focal'+row['python_epoch']+'-execution'}
+        if row['gate'] in ('G1.311','G1.312','G2','G3') else {'G0-admission311','G0-admission312'})
+    require(required.issubset(labels),'GATE_HISTORICAL_OWNERSHIP_REQUIRED_NATIVE_COMMAND_MISSING')
+    def control(reference):
+        require(type(reference) is dict and type(reference.get('path')) is str
+            and reference['path'].startswith('controls/') and DIGEST.fullmatch(reference.get('sha256','')),
+            'GATE_HISTORICAL_OWNERSHIP_RAW_REFERENCE_REQUIRED')
+        raw=capture_member(archive,reference['path'])
+        require(hashlib.sha256(raw).hexdigest()==reference['sha256'],
+            'GATE_HISTORICAL_OWNERSHIP_CONTROL_BYTES_CHANGED')
+        return document(raw)
+    for command in commands:
+        receipt=control(command.get('lease'));kernel=control(command.get('kernel'))
+        context=receipt.get('context',{})
+        allowed=(('cheap',) if row['gate'] in ('G0','G1.311','G1.312') else
+            (next(key for key,value in ALIASES.items() if value==row['gate']),))
+        require(context.get('gate') in allowed,'GATE_HISTORICAL_OWNERSHIP_GATE_SCOPE_REBOUND')
+        require(stamp(row['started_utc'])<=stamp(receipt.get('launch_intent_utc'))
+            <=stamp(receipt.get('native_started_utc'))<=stamp(receipt.get('native_fin_utc'))
+            <=stamp(row['completed_utc']), 'GATE_HISTORICAL_OWNERSHIP_TIMES_OUTSIDE_NATIVE_RECEIPT')
+        lease.replay_lease_evidence(receipt,
+            read_object=lambda identifier:capture_member(archive,index['object_prefix']+identifier+'.json'),
+            kernel=kernel,source_sha=row['source_sha'],source_tree=row['source_tree'],
+            run_id=row['run_id'],run_attempt=row['run_attempt'],expected_label=command['label'])
+    return {'historical_launch_and_lease_union_verified':True,'current_G7_owner_checked_separately':True}
 
 
 def finalization_closed(row):
@@ -978,7 +1022,161 @@ def verify_capacity_kernel_probe(receipt,preserved):
         and worker.get('outside_mounts_readonly_verified') is True
         and worker.get('absolute_enforced_project_bound_bytes')==receipt['limits']['project_hard_limit_bytes'],
         'CAPABILITY_ACTUAL_BACKING_PROJECT_QUOTA_READBACK_MISSING')
+    verify_capacity_inner_controls(receipt,preserved)
     return {'status':'GREEN_DIAGNOSTIC_RAW_ONLY','qualification_claimed':False}
+
+def verify_capacity_inner_controls(receipt,preserved):
+    """Replay sealed birth/request/worker/lease and physical quota observations."""
+    from scripts import rc6_capacity_calibration as calibration
+    from scripts import rc6_owned_gate_lease as lease
+    from scripts.rc6_controlled_native_child_manager import managed_phase_green
+    require(receipt.get('generation')=='STARTED' and receipt.get('inner_namespace_created') is True
+        and receipt.get('actual_capability_proved') is True,'CAPABILITY_NOT_STARTED_IS_NOT_A_KERNEL_PROOF')
+    manifest_raw=preserved.get('diagnostic/sealed-controls/manifest.json')
+    require(type(manifest_raw) is bytes and hashlib.sha256(manifest_raw).hexdigest()==receipt.get('capture_manifest_sha256'),
+        'CAPABILITY_ORIGINAL_INNER_CAPTURE_MANIFEST_CHANGED')
+    manifest=document(manifest_raw);kernel=receipt.get('kernel',{})
+    cleanup=receipt.get('cleanup',{})
+    require(manifest.get('schema')=='porota.rc6.generated-fixture-required-capture.v1'
+        and manifest.get('binding')==receipt.get('binding') and manifest.get('actual_owned_fin_closed') is True
+        and manifest.get('phase_green') is True and manifest.get('kernel_sha256')==lease.digest(lease.wire(kernel))
+        and managed_phase_green(kernel) and kernel.get('launcher_management_deadline_seconds')==300
+        and kernel.get('owned_cleanup_management_bound_seconds')==5
+        and cleanup.get('namespace_removed') is True and cleanup.get('actual_owned_fin_closed') is True
+        and cleanup.get('phase_green') is True and cleanup.get('binding')==receipt.get('binding')
+        and cleanup.get('capture_manifest_sha256')==receipt.get('capture_manifest_sha256')
+        and cleanup.get('foreign_paths_removed')==0 and cleanup.get('runtime_paths_authorized') is False,
+        'CAPABILITY_ORIGINAL_INNER_FIN_NOT_VERIFIED')
+    controls={};identities={}
+    require(type(manifest.get('files')) is list and bool(manifest['files']), 'CAPABILITY_INNER_CAPTURE_FILES_REQUIRED')
+    for entry in manifest['files']:
+        require(type(entry) is dict, 'CAPABILITY_INNER_CAPTURE_ENTRY_REQUIRED')
+        name=entry.get('relative_source');member=entry.get('capture_file')
+        require(type(name) is str and name not in controls and re.fullmatch('[0-9]{4,}\\.raw',member or ''),
+            'CAPABILITY_INNER_CAPTURE_DUPLICATE_OR_INVALID')
+        raw=preserved.get('diagnostic/sealed-controls/'+member)
+        require(type(raw) is bytes and len(raw)==entry.get('bytes')
+            and hashlib.sha256(raw).hexdigest()==entry.get('sha256'), 'CAPABILITY_INNER_CAPTURE_BYTES_CHANGED')
+        controls[name]=raw;identities[name]=entry.get('source_identity')
+    require(all(name in controls for name in ('root-request.json','loop-birth.json','producer-native.log',
+        'producer-owned-fin-quota-diagnosis.json')), 'CAPABILITY_BIRTH_REQUEST_AND_NATIVE_CONTROLS_REQUIRED')
+    request_raw=controls['root-request.json'];request=document(request_raw);birth_raw=controls['loop-birth.json']
+    request_sha=hashlib.sha256(request_raw).hexdigest();birth=document(birth_raw);worker=receipt.get('worker',{})
+    root_fin=document(controls['producer-owned-fin-quota-diagnosis.json'])
+    worker_wire=document(controls['producer-native.log'])
+    require(request_sha==receipt.get('root_request_sha256') and request.get('source_sha')==receipt.get('source_sha')
+        and request.get('source_tree')==receipt.get('source_tree') and request.get('binding')==receipt.get('binding')
+        and request.get('limits')==receipt.get('limits') and request.get('code_hashes')==receipt.get('code_hashes')
+        and manifest.get('namespace_nonce')==request.get('namespace_receipt',{}).get('namespace_nonce')
+        and root_fin.get('schema')=='porota.rc6.generated-fixture-owned-fin.v1'
+        and root_fin.get('binding')==receipt.get('binding') and root_fin.get('namespace_nonce')==manifest.get('namespace_nonce')
+        and root_fin.get('manager_sha256')=='55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8'
+        and root_fin.get('actual_owned_fin_closed') is True and root_fin.get('phase_green') is True
+        and root_fin.get('global_or_other_producer_FIN_claimed') is False
+        and root_fin.get('kernel')==kernel and worker_wire.get('schema')=='porota.rc6.capacity-worker.v1'
+        and worker_wire.get('request_sha256')==request_sha and type(worker_wire.get('report')) is dict
+        and {key:value for key,value in worker_wire['report'].items() if key!='raw_files'}==worker,
+        'CAPABILITY_ORIGINAL_ROOT_REQUEST_WORKER_OR_FIN_REBOUND')
+    require(hashlib.sha256(birth_raw).hexdigest()==receipt.get('loop_birth_sha256')
+        ==worker.get('loop_birth_control',{}).get('sha256')
+        and worker['loop_birth_control'].get('identity')==identities['loop-birth.json'],
+        'CAPABILITY_ORIGINAL_LOOP_BIRTH_CONTROL_REBOUND')
+    try:
+        loop=calibration.validate_loop_birth(birth,request,request_sha)
+    except (ValueError,KeyError,TypeError) as error:
+        raise ValueError('CAPABILITY_LOOP_BIRTH_NATIVE_READBACK_INVALID') from error
+    require(loop==worker.get('loop') and worker.get('backing_origin')==loop.get('backing_origin')
+        and receipt.get('loop_finalization')=={'original_autoclear_loop_absent':True,'global_loop_cleanup_attempted':False},
+        'CAPABILITY_LOOP_ORIGINAL_BACKING_OR_FINALIZATION_REBOUND')
+    read_only=worker.get('readonly_operation',{});mount=worker.get('mount_operation',{})
+    root_namespace=birth['actor_mount_namespace_inode'];device='/dev/loop'+str(loop['number'])
+    require(read_only.get('operation')=='mount_setattr' and read_only.get('syscall_number')==442
+        and read_only.get('return')==0 and type(read_only.get('return')) is int and read_only.get('errno')==0
+        and type(read_only.get('errno')) is int
+        and read_only.get('flags')==0x8000 and read_only.get('path')=='/' and read_only.get('dirfd')==-100
+        and read_only.get('attributes')=={'set':1,'clear':0,'propagation':0,'userns_fd':0}
+        and read_only.get('attribute_size')==32 and read_only.get('actual_mount_namespace_inode')==root_namespace
+        and read_only.get('issuer_mount_namespace_inode')==birth['issuer_mount_namespace_inode']
+        and read_only.get('backing_origin')==worker['backing_origin']
+        and mount.get('operation')=='mount' and mount.get('return')==0 and type(mount.get('return')) is int
+        and mount.get('errno')==0 and type(mount.get('errno')) is int
+        and mount.get('filesystem_type')=='ext4' and mount.get('flags')==6
+        and mount.get('options')=='prjquota' and mount.get('device')==device
+        and mount.get('target')==request.get('mountpoint') and mount.get('actual_mount_namespace_inode')==root_namespace
+        and mount.get('backing_origin')==worker['backing_origin'], 'CAPABILITY_READONLY_OR_OWN_EXT4_NATIVE_OPERATION_RED')
+    fmt=worker.get('quota_format',{})
+    require(fmt.get('operation')=='quotactl/Q_GETFMT' and fmt.get('return')==0 and type(fmt.get('return')) is int
+        and fmt.get('errno')==0 and type(fmt.get('errno')) is int and fmt.get('format_id')==4 and fmt.get('quota_type')==2
+        and fmt.get('device')==device and fmt.get('project_id')==0
+        and fmt.get('command')==(0x800004<<8)|2 and fmt.get('actual_mount_namespace_inode')==root_namespace,
+        'CAPABILITY_KERNEL_PROJECT_QUOTA_FORMAT_NOT_READ_BACK')
+    superblock=worker.get('ext4_superblock',{})
+    try:
+        super_raw=__import__('base64').b64decode(superblock.get('raw_base64',''),validate=True)
+        decoded=calibration.decode_ext4_superblock(super_raw)
+    except (ValueError,TypeError) as error:
+        raise ValueError('CAPABILITY_EXT4_SUPERBLOCK_RAW_INVALID') from error
+    image=superblock.get('image_identity_after_nodiscard_mkfs',{})
+    require(all(superblock.get(key)==value for key,value in decoded.items())
+        and all(image.get(key)==request['image_identity'].get(key) for key in
+            ('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size'))
+        and image.get('st_blocks',0)*512>=receipt['limits']['backing_image_bytes'],
+        'CAPABILITY_EXT4_QUOTA_FEATURE_OR_BACKING_RESERVATION_REBOUND')
+    expected_project=1+int(request['namespace_receipt']['namespace_nonce'][:7],16)
+    for offset,quota in enumerate(worker.get('quotas',[])):
+        require(quota.get('project_id')==expected_project+offset, 'CAPABILITY_PROJECT_ID_QUOTA_REBOUND')
+        for key,name,command in (('native_operation','Q_GETQUOTA',0x800007),('set_native_operation','Q_SETQUOTA',0x800008)):
+            operation=quota.get(key,{})
+            require(operation.get('operation')=='quotactl/'+name and operation.get('return')==0
+                and type(operation.get('return')) is int and operation.get('errno')==0 and type(operation.get('errno')) is int
+                and operation.get('quota_type')==2 and operation.get('command')==(command<<8)|2
+                and operation.get('device')==device and operation.get('project_id')==expected_project+offset
+                and operation.get('actual_mount_namespace_inode')==root_namespace,
+                'CAPABILITY_ORIGINAL_SET_AND_GET_QUOTA_READBACK_REQUIRED')
+    require(worker.get('actual_own_fin_closed') is True and worker.get('required_raw_complete') is True,
+        'CAPABILITY_FIRST_FAILURE_RAW_OR_FIN_UNKNOWN')
+    for command in worker.get('commands',[]):
+        measured=command.get('capacity_before',{});physical=measured.get('physical',{});quota=measured.get('project_quota',{})
+        try:
+            calibration.require_physical_and_project_capacity(physical,quota,receipt['limits']['project_hard_limit_bytes'])
+        except (ValueError,KeyError,TypeError) as error:
+            raise ValueError('CAPABILITY_LIVE_PHYSICAL_CAPACITY_OR_PROJECT_BOUND_RED') from error
+        require(physical.get('path')==request['mountpoint'] and physical.get('total_bytes',0)<=receipt['limits']['backing_image_bytes']
+            and quota.get('measurement_method')=='KERNEL_PROJINHERIT_STATFS_PROJECTION'
+            and quota.get('root_initial_readback_unchanged') is True and quota.get('project_id')==expected_project
+            and quota.get('native_operation')==worker['quotas'][0]['native_operation']
+            and quota.get('live_projection',{}).get('total_bytes')==quota.get('hard_bytes')
+            and quota['live_projection'].get('total_inodes')==100000,
+            'CAPABILITY_PHYSICAL_AND_LIVE_PROJECT_QUOTA_CONFLATED')
+    issuer=receipt.get('issuer_lease');references=receipt.get('issuer_evidence_refs')
+    require(type(issuer) is dict and type(references) is list and bool(references),
+        'CAPABILITY_ACTUAL_ISSUER_MONITOR_RAW_REQUIRED')
+    seen=set();total=0
+    for reference in references:
+        require(type(reference) is dict and re.fullmatch('owned-lease-controls/[A-Za-z0-9_.-]+',reference.get('path',''))
+            and reference['path'] not in seen, 'CAPABILITY_ISSUER_CONTROL_REFERENCE_REBOUND')
+        raw=preserved.get('diagnostic/'+reference['path']);seen.add(reference['path'])
+        require(type(raw) is bytes and len(raw)==reference.get('bytes')
+            and hashlib.sha256(raw).hexdigest()==reference.get('sha256'), 'CAPABILITY_ISSUER_CONTROL_BYTES_CHANGED')
+        total+=len(raw)
+    require(total<=lease.MAX_EVIDENCE_BYTES and all('owned-lease-controls/'+name in seen for name in
+        ('owner-quota-diagnosis.json','prelaunch-full-admission.json','post-fin-full-admission.json')),
+        'CAPABILITY_FULL_SOURCE_ISSUER_BARRIERS_REQUIRED')
+    issuer_raw=preserved.get('diagnostic/owned-lease-controls/owner-quota-diagnosis.json')
+    require(type(issuer_raw) is bytes and document(issuer_raw)==issuer,'CAPABILITY_ACTUAL_ISSUER_MONITOR_RAW_REQUIRED')
+    from scripts import rc6_material_pr_admission as admission
+    for stage in ('prelaunch','post-fin'):
+        full=document(preserved['diagnostic/owned-lease-controls/'+stage+'-full-admission.json'])
+        require(admission.diagnostic_control_binding(full)==issuer.get('context',{}).get('diagnostic_binding')
+            and full.get('source_sha')==receipt['source_sha'] and full.get('source_tree')==receipt['source_tree']
+            and full.get('gate')=='capacity-probe','CAPABILITY_FULL_SOURCE_ISSUER_ADMISSION_REBOUND')
+    binding=receipt['binding'];attempt=binding.get('attempt_id','').split(':')
+    require(len(attempt)==2 and attempt[0].isdigit() and attempt[1]=='1', 'CAPABILITY_FIRST_ISSUER_RUN_REQUIRED')
+    lease.replay_lease_evidence(issuer,read_object=lambda identifier:preserved[
+        'diagnostic/owned-lease-controls/'+lease.OBJECT_PREFIX+identifier+'.json'],kernel=kernel,
+        source_sha=receipt['source_sha'],source_tree=receipt['source_tree'],run_id=int(attempt[0]),run_attempt=1,
+        expected_label='quota-diagnosis')
+    return {'original_inner_controls_replayed':True,'qualification_claimed':False}
 
 def verify_capacity_probe_observations(probe,privilege):
     import errno
@@ -986,14 +1184,24 @@ def verify_capacity_probe_observations(probe,privilege):
         and probe.get('source_financial_code_called') is False and probe.get('project_attributes_unchanged') is True,
         'CAPABILITY_ACTUAL_POSITIVE_ERRNO_OBSERVATIONS_REQUIRED')
     checks=probe.get('checks',{})
-    for label in ('project_id_change','inheritance_clear','setflags','quota_mutation'):
-        require(checks.get(label,{}).get('errno')==errno.EPERM and checks[label].get('denied') is True,
+    for label in ('project_id_change','inheritance_clear','setflags','quota_mutation',
+        'high32_project_id_change','high32_setflags','high32_prctl'):
+        require(checks.get(label,{}).get('errno')==errno.EPERM
+            and type(checks[label].get('errno')) is int and checks[label].get('denied') is True,
             'CAPABILITY_PROJECT_OR_QUOTA_ESCAPE_NOT_REAL_EPERM')
+        if label.startswith('high32_'):
+            require(checks[label].get('return')==-1 and type(checks[label].get('return')) is int,
+                'CAPABILITY_LOW32_SYSCALL_COUNTEREXAMPLE_NOT_REAL_DENIAL')
     require(checks.get('edquot',{}).get('errno')==errno.EDQUOT
         and checks['edquot'].get('actual_positive') is True and checks['edquot'].get('probe_limit_bytes')==1024**2
         and checks.get('outside_write',{}).get('errno')==errno.EROFS and checks['outside_write'].get('readonly') is True
         and checks.get('supervisor_fd_escape',{}).get('errno')==errno.EACCES
-        and checks['supervisor_fd_escape'].get('denied') is True,'CAPABILITY_EDQUOT_OR_SAME_UID_ESCAPE_NOT_REAL')
+        and checks['supervisor_fd_escape'].get('denied') is True
+        and checks.get('original_issuer_root_escape',{}).get('errno')==errno.EACCES
+        and checks['original_issuer_root_escape'].get('denied') is True
+        and checks['original_issuer_root_escape'].get('operation')=='open_own_namespace_through_original_issuer_root'
+        and positive(checks['original_issuer_root_escape'].get('issuer_pid')),
+        'CAPABILITY_EDQUOT_OR_SAME_UID_ESCAPE_NOT_REAL')
     require(privilege.get('uid')==probe['same_uid'] and privilege.get('capabilities_zero') is True
         and privilege.get('no_new_privileges') is True and privilege.get('seccomp_mode')==2
         and positive(privilege.get('mount_namespace_inode')),'CAPABILITY_ACTUAL_PRIVILEGE_DROP_OR_SECCOMP_NOT_VERIFIED')
