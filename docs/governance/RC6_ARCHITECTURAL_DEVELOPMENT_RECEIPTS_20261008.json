@@ -48,9 +48,9 @@
       "sha256": "1673bf1a1c52468ef9664f327960e1cc1c361ccae209fd376f7ed469a16ebeaa"
     },
     {
-      "bytes": 64528,
+      "bytes": 74256,
       "path": "scripts/rc6_capacity_calibration.py",
-      "sha256": "db7d10c6c6f6732c6e10a389724a6776943d2a8803db02e4be77391456ae89bf"
+      "sha256": "bc2245a33984503611732313a2db2f2dd2d728d1000286bc142035407d31fc4c"
     },
     {
       "bytes": 85987,
@@ -83,9 +83,9 @@
       "sha256": "88c8c3e120bb7ac0aedf642e85e18b886e830855ef18187c398d92df0c512f2d"
     },
     {
-      "bytes": 20572,
+      "bytes": 30078,
       "path": "tests/test_rc6_capacity_calibration.py",
-      "sha256": "1de2587307948f4b70c0fca9e610eead9e5c72fb9e9372d383a07c1a8b1593db"
+      "sha256": "9e177ea9c8de3b63bd2bc63c3a0554d897e3eb3d9525cf39905084421a503255"
     },
     {
       "bytes": 21958,
@@ -289,8 +289,45 @@
       "name": "capacity_quota_negative_guards",
       "qualification_claimed": false,
       "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
+    },
+    {
+      "actual_native_capability_proved": false,
+      "dual_tests": [
+        {
+          "collected": 85,
+          "collection_sha256": "24b8ccce4e1cf79f6e8514c2343f1bdc7d01fd1dbe68a805b11bba2d89108f9b",
+          "errors": 0,
+          "failures": 0,
+          "identity_equal": true,
+          "junit_cases": 85,
+          "junit_sha256": "fab33e87358f818d02ec7b35eb8a70095e14036296f5ff48fcdbdf9e6ce554a9",
+          "python": "311",
+          "seconds": 0.616,
+          "skips": 0
+        },
+        {
+          "collected": 85,
+          "collection_sha256": "24b8ccce4e1cf79f6e8514c2343f1bdc7d01fd1dbe68a805b11bba2d89108f9b",
+          "errors": 0,
+          "failures": 0,
+          "identity_equal": true,
+          "junit_cases": 85,
+          "junit_sha256": "e363be67244a5eaad2e3b11993a139c895cb9e0e83ecf5f3a2ff00627eaf37cc",
+          "python": "312",
+          "seconds": 0.772,
+          "skips": 0
+        }
+      ],
+      "evidence_origin": "DEVELOPMENT_LOCAL_FILE_HASH_BOUND",
+      "historical_errno": "NOT_PRESERVED",
+      "manifest_name": "rc6-capacity-calibration-cheap-handoff-v4.json",
+      "manifest_sha256": "8f00ecbeb05e663699625853a98818ce478be92cf17e1a7af6ec05d5c81c2d52",
+      "name": "capacity_original_mount_backing_fix",
+      "qualification_claimed": false,
+      "raw_durability": "LOCAL_ONLY_NOT_ACTIONS_ARTIFACT"
     }
   ],
+  "excluded_unpublished_development_scope": "Long-gate monitor/admission/carrier/adapter/verifier under independent cheap regression; intentionally excluded from this checkpoint.",
   "final_candidate_eligible": false,
   "gates": {
     "G0": "BLOCKED_CAPACITY_PROOF",
@@ -303,8 +340,18 @@
     "G7": "NOT_STARTED_PREDECESSORS_BLOCKED",
     "G8": "NOT_STARTED_PREDECESSORS_BLOCKED"
   },
-  "parent_checkpoint_sha": "239d414a002c985d6544c42931a34576244ff093",
-  "parent_checkpoint_tree": "8a3647f88d7cca3906d3f61310efd74bd908ed1d",
+  "parent_checkpoint_sha": "6c02649859d7f4fa3260c2d5910ff8e57e97307e",
+  "parent_checkpoint_tree": "2b9c6b2d284b603fccff4999494567800aea3857",
+  "persisted_capacity_failure": {
+    "actual_FIN_and_own_cleanup_verified": true,
+    "artifact_id": 11570003188,
+    "artifact_zip_sha256": "3baf5f468bde1f4abd0b2617a9fea3a93303fc953a8ca9164b8f47404f398b8c",
+    "compact_rca_path": "docs/governance/RC6_CAPACITY_PROBE_RCA_37823993377.json",
+    "errno": "NOT_PRESERVED",
+    "first_failed_operation": "namespace-local recursive readonly mount",
+    "qualification_claimed": false,
+    "run_id": 37823993377
+  },
   "post_proof_nonsemantic_edits": [
     "Removed one trailing blank line in startup test after staged Git whitespace guard.",
     "Corrected workflow comment to identify draft PR events rather than push."

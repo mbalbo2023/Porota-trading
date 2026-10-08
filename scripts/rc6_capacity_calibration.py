@@ -71,6 +71,12 @@ def need(condition, reason):
         raise ValueError(reason)
 
 
+class CalibrationOperationError(ValueError):
+    def __init__(self, reason, details):
+        super().__init__(reason)
+        self.details = details
+
+
 def wire(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
 
@@ -353,11 +359,12 @@ class LoopConfig(ctypes.Structure):
                 ("info", LoopInfo), ("reserved", ctypes.c_uint64 * 8)]
 
 
-def configure_loop(image, *, expected_identity=None):
-    control = os.open("/dev/loop-control", os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
-    image_fd = os.open(image, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
-    loop_fd = None
+def configure_loop(image, *, expected_identity=None, owned_image_fd=None, backing_origin=None):
+    control, image_fd, loop_fd = None, owned_image_fd, None
     try:
+        control = os.open("/dev/loop-control", os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+        if image_fd is None:
+            image_fd = os.open(image, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
         if expected_identity is not None:
             need(identity(os.fstat(image_fd)) == expected_identity and os.fstat(image_fd).st_nlink == 1,
                  "CALIBRATION_HELD_IMAGE_IDENTITY_REBOUND")
@@ -375,14 +382,17 @@ def configure_loop(image, *, expected_identity=None):
         need(actual.device == expected.st_dev and actual.inode == expected.st_ino and actual.flags & 4,
              "CALIBRATION_LOOP_BACKING_IDENTITY_CHANGED")
         result = str(path), {"number": number, "backing_device": actual.device,
-                            "backing_inode": actual.inode, "autoclear": True}, loop_fd
+                            "backing_inode": actual.inode, "autoclear": True,
+                            "backing_origin": backing_origin}, loop_fd
         loop_fd = None  # Ownership transfers until the own mount holds AUTOCLEAR.
         return result
     finally:
         if loop_fd is not None:
             os.close(loop_fd)
-        os.close(control)
-        os.close(image_fd)
+        if control is not None:
+            os.close(control)
+        if image_fd is not None:
+            os.close(image_fd)
 
 
 def set_project(path, project_id):
@@ -419,15 +429,28 @@ def set_quota(device, project_id, hard_bytes):
             "kernel_readback": True}
 
 
-def mount_all_readonly():
+def mount_all_readonly(*, backing_origin=None, issuer_namespace_inode=None):
     # MOUNT_ATTR_RDONLY modifies namespace-local mounts, never a shared
     # superblock's SB_RDONLY. A generic mount -o remount,ro is forbidden here.
     class MountAttr(ctypes.Structure):
         _fields_ = [(x, ctypes.c_uint64) for x in ("set", "clear", "propagation", "userns_fd")]
     libc = ctypes.CDLL(None, use_errno=True)
     value = MountAttr(1, 0, 0, 0)
-    need(platform.machine() == "x86_64" and libc.syscall(442, -100, b"/", 0x8000, ctypes.byref(value), ctypes.sizeof(value)) == 0,
-         "CALIBRATION_RECURSIVE_PRIVATE_READONLY_REQUIRED")
+    need(platform.machine() == "x86_64", "CALIBRATION_NATIVE_MOUNT_SYSCALL_ARCH_REQUIRED")
+    mountinfo = Path("/proc/self/mountinfo").read_text()
+    metadata = {"operation": "mount_setattr", "syscall_number": 442, "dirfd": -100, "path": "/",
+                "flags": 0x8000, "attributes": {"set": 1, "clear": 0, "propagation": 0, "userns_fd": 0},
+                "attribute_size": ctypes.sizeof(value), "kernel_release": platform.release(),
+                "actual_mount_namespace_inode": os.stat("/proc/self/ns/mnt").st_ino,
+                "issuer_mount_namespace_inode": issuer_namespace_inode,
+                "mountinfo_before_sha256": digest(mountinfo.encode()), "backing_origin": backing_origin}
+    ctypes.set_errno(0)
+    returned = libc.syscall(442, -100, b"/", 0x8000, ctypes.byref(value), ctypes.sizeof(value))
+    actual_errno = ctypes.get_errno()  # Save immediately, before any metadata IO.
+    metadata.update({"return": returned, "errno": actual_errno, "errno_name": errno.errorcode.get(actual_errno, "UNKNOWN")})
+    if returned != 0:
+        raise CalibrationOperationError("CALIBRATION_RECURSIVE_PRIVATE_READONLY_REQUIRED", metadata)
+    return metadata
 
 
 def validate_private_mountinfo(text):
@@ -462,7 +485,7 @@ def private_mount_preflight(parent_namespace_inode):
 
 def setup_command(argv):
     result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, timeout=300)
-    need(len(result.stdout) <= MIB and result.returncode == 0, "CALIBRATION_OWN_SETUP_COMMAND_FAILED")
+    need(len(result.stdout) <= MIB, "CALIBRATION_OWN_SETUP_LOG_LIMIT")
     try:
         os.waitid(os.P_ALL, 0, os.WNOHANG | os.WNOWAIT | os.WEXITED)
     except ChildProcessError as error:
@@ -470,7 +493,15 @@ def setup_command(argv):
     else:
         raise ValueError("CALIBRATION_SETUP_CHILD_UNKNOWN")
     return {"argv": argv, "returncode": result.returncode, "raw_sha256": digest(result.stdout),
-            "raw_base64": base64.b64encode(result.stdout).decode()}
+            "raw_base64": base64.b64encode(result.stdout).decode(), "actual_setup_waited_echild": True}
+
+
+def run_setup(request, argv):
+    record = setup_command(argv)
+    request.setdefault("setup_commands", []).append(record)
+    if record["returncode"] != 0:
+        raise CalibrationOperationError("CALIBRATION_OWN_SETUP_COMMAND_FAILED", record)
+    return record
 
 
 def validate_root_request(request):
@@ -515,6 +546,12 @@ def validate_root_request(request):
          and binding["runner_class"] == "github-hosted/ubuntu-24.04", "CALIBRATION_ROOT_BINDING_REBOUND")
     need(Path(request["image"]) == root / "image.ext4" and Path(request["mountpoint"]) == root / "mount",
          "CALIBRATION_ROOT_FOREIGN_RESOURCE_VETO")
+    issuer_kernel_identity(request)
+    return root
+
+
+def issuer_kernel_identity(request):
+    """Authenticate the real ancestor before borrowing its original mount."""
     issuer = request.get("issuer")
     need(type(issuer) is dict and type(issuer.get("pid")) is int and issuer["pid"] > 0
          and issuer.get("boot_id") == Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -532,13 +569,99 @@ def validate_root_request(request):
     status = dict(line.split(":", 1) for line in Path("/proc/" + str(pid) + "/status").read_text().splitlines() if ":" in line)
     birth = Path("/proc/" + str(pid) + "/stat").read_text().rsplit(")", 1)[1].split()[19]
     need([int(x) for x in status["Uid"].split()] == [request["owner_uid"]] * 4
+         and [int(x) for x in status["Gid"].split()] == [request["owner_gid"]] * 4
          and birth == issuer.get("start_ticks")
          and os.stat("/proc/" + str(pid) + "/ns/mnt").st_ino == request.get("mount_namespace_inode"),
          "CALIBRATION_ISSUER_KERNEL_IDENTITY_CHANGED")
-    return root
+    return {"pid": pid, "start_ticks": birth, "boot_id": issuer["boot_id"],
+            "uids": [int(x) for x in status["Uid"].split()],
+            "gids": [int(x) for x in status["Gid"].split()],
+            "mount_namespace_inode": request["mount_namespace_inode"]}
+
+
+def descriptor_mount_id(fd):
+    rows = Path("/proc/self/fdinfo/" + str(fd)).read_text().splitlines()
+    values = [int(row.split(":", 1)[1]) for row in rows if row.startswith("mnt_id:")]
+    need(len(values) == 1 and values[0] > 0, "CALIBRATION_HELD_MOUNT_ID_REQUIRED")
+    return values[0]
+
+
+def open_image_on_issuer_mount(request):
+    """Only this authenticated proc root magic link may cross namespaces.
+
+    Every ordinary component below that root uses a pinned NOFOLLOW dirfd.
+    The loop's writable backing reference must belong to the issuer's original
+    mount, rather than the cloned mount that will become read-only.
+    """
+    root = validate_root_request(request)
+    issuer_before = issuer_kernel_identity(request)
+    claim = request["namespace_receipt"]
+    held, image_fd, marker_fd = [], None, None
+    try:
+        directory = os.open("/proc/" + str(issuer_before["pid"]) + "/root",
+                            os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+        held.append(directory)
+        for component in root.parts[1:]:
+            directory = os.open(component, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                dir_fd=directory)
+            held.append(directory)
+        details = os.fstat(directory)
+        need([details.st_dev, details.st_ino, details.st_uid, details.st_gid, stat.S_IMODE(details.st_mode)]
+             == claim["identity"] and descriptor_mount_id(directory) == claim["mount_id"],
+             "CALIBRATION_ISSUER_ORIGINAL_DIRECTORY_REBOUND")
+        marker_name = ".porota-generated-fixture-owner.json"
+        marker_fd = os.open(marker_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
+                            dir_fd=directory)
+        before = os.fstat(marker_fd)
+        need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= MIB
+             and before.st_uid == request["owner_uid"] and before.st_gid == request["owner_gid"]
+             and stat.S_IMODE(before.st_mode) == 0o600, "CALIBRATION_ISSUER_ORIGINAL_MARKER_CUSTODY_REQUIRED")
+        marker_raw = b""
+        while len(marker_raw) <= MIB:
+            chunk = os.read(marker_fd, min(65536, MIB + 1 - len(marker_raw)))
+            if not chunk:
+                break
+            marker_raw += chunk
+        marker = decode(marker_raw)
+        need(len(marker_raw) <= MIB and digest(marker_raw) == claim["marker_sha256"]
+             and marker.get("namespace_nonce") == claim["namespace_nonce"]
+             and marker.get("binding") == claim["binding"] and marker.get("mount_id") == claim["mount_id"]
+             and identity(before) == identity(os.fstat(marker_fd))
+             == identity(os.stat(marker_name, dir_fd=directory, follow_symlinks=False))
+             == identity((root / marker_name).lstat()), "CALIBRATION_ISSUER_ORIGINAL_MARKER_CHANGED")
+        image_fd = os.open("image.ext4", os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NOATIME,
+                           dir_fd=directory)
+        image_before = os.fstat(image_fd)
+        image_mount = descriptor_mount_id(image_fd)
+        need(stat.S_ISREG(image_before.st_mode) and image_before.st_nlink == 1
+             and image_before.st_uid == request["owner_uid"] and image_before.st_gid == request["owner_gid"]
+             and stat.S_IMODE(image_before.st_mode) == 0o600
+             and image_before.st_size == request["limits"]["backing_image_bytes"]
+             and identity(image_before) == request["image_identity"]
+             == identity(os.stat("image.ext4", dir_fd=directory, follow_symlinks=False))
+             == identity(Path(request["image"]).lstat()) and image_mount == claim["mount_id"],
+             "CALIBRATION_ISSUER_ORIGINAL_IMAGE_REBOUND")
+        need(validate_root_request(request) == root and issuer_kernel_identity(request) == issuer_before
+             and identity(os.fstat(image_fd)) == request["image_identity"],
+             "CALIBRATION_ISSUER_CHANGED_DURING_OPEN")
+        origin = {"schema": "porota.rc6.original-issuer-backing.v1", "issuer": issuer_before,
+                  "original_mount_id": image_mount, "original_directory_identity": claim["identity"],
+                  "image_identity": request["image_identity"], "namespace_nonce": claim["namespace_nonce"],
+                  "marker_sha256": claim["marker_sha256"], "marker_identity": identity(before),
+                  "ordinary_components_nofollow": True, "issuer_revalidated_before_after": True}
+        result, image_fd = image_fd, None
+        return result, origin
+    finally:
+        if image_fd is not None:
+            os.close(image_fd)
+        if marker_fd is not None:
+            os.close(marker_fd)
+        for descriptor in reversed(held):
+            os.close(descriptor)
 
 
 def root_setup(request):
+    request["setup_stage"] = "authenticate_root_request"
     validate_root_request(request)
     need(os.getuid() == os.geteuid() == 0 and request["owner_uid"] > 0
          and request["mount_namespace_inode"] != os.stat("/proc/self/ns/mnt").st_ino,
@@ -564,19 +687,29 @@ def root_setup(request):
                               "show", request["source_sha"] + ":" + member],
                              env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"}, capture_output=True, check=True, timeout=60)
         need(digest(row.stdout) == expected, "CALIBRATION_ROOT_PUBLISHED_PROGRAM_REBOUND")
-    device, loop, hold = configure_loop(image, expected_identity=request["image_identity"])
+    request["setup_stage"] = "open_original_issuer_backing"
+    backing_fd, backing_origin = open_image_on_issuer_mount(request)
+    request["backing_origin"] = backing_origin
+    request["setup_stage"] = "configure_own_autoclear_loop"
+    device, loop, hold = configure_loop(image, expected_identity=request["image_identity"],
+                                        owned_image_fd=backing_fd, backing_origin=backing_origin)
     request["loop"] = loop
     try:
-        setup = [setup_command(["mkfs.ext4", "-q", "-F", "-m", "0", "-O", "project,quota",
-                               "-E", "lazy_itable_init=0,lazy_journal_init=0", device])]
-        mount_all_readonly()
+        request["setup_commands"] = []
+        request["setup_stage"] = "mkfs_own_ext4"
+        run_setup(request, ["mkfs.ext4", "-q", "-F", "-m", "0", "-O", "project,quota",
+                            "-E", "lazy_itable_init=0,lazy_journal_init=0", device])
+        request["setup_stage"] = "mount_setattr_private_readonly"
+        request["readonly_operation"] = mount_all_readonly(backing_origin=backing_origin,
+                                    issuer_namespace_inode=request["mount_namespace_inode"])
         actual_image = image.lstat()
         need(actual_image.st_dev == request["image_identity"]["st_dev"]
              and actual_image.st_ino == request["image_identity"]["st_ino"]
              and actual_image.st_nlink == 1 and actual_image.st_uid == request["owner_uid"]
              and stat.S_IMODE(actual_image.st_mode) == 0o600
              and actual_image.st_size == limits["backing_image_bytes"], "CALIBRATION_IMAGE_ALIAS_OR_REBOUND")
-        setup.append(setup_command(["mount", "-t", "ext4", "-o", "prjquota,nodev,nosuid", device, str(mountpoint)]))
+        request["setup_stage"] = "mount_own_ext4"
+        run_setup(request, ["mount", "-t", "ext4", "-o", "prjquota,nodev,nosuid", device, str(mountpoint)])
         os.chmod(mountpoint, 0o555)
         project, probe = mountpoint / "project", mountpoint / "edquot-probe"
         project.mkdir(mode=0o700)
@@ -590,7 +723,7 @@ def root_setup(request):
         inner = filesystem(project)
         require_capacity(inner, limits["project_hard_limit_bytes"], control_bytes=MIB)
         request.update(project=str(project), probe=str(probe), loop=loop, quotas=quotas,
-                       inner_before=inner, setup_commands=setup)
+                       inner_before=inner)
         mounts = []
         for line in Path("/proc/self/mountinfo").read_text().splitlines():
             fields = line.split()
@@ -617,11 +750,30 @@ def root_setup(request):
                 os.close(int(name))
             except OSError as error:
                 need(error.errno == errno.EBADF, "CALIBRATION_PRIVILEGED_FD_CLOSE_FAILED")
+    request["setup_stage"] = "drop_privileges"
     request["privilege"] = drop_privileges(request["owner_uid"], request["owner_gid"])
+    request["setup_stage"] = "nonroot_ready"
     return request
 
 
-def quota_probe(project, probe, outside, supervisor_pid):
+def issuer_root_escape_probe(issuer_pid, outside):
+    need(type(issuer_pid) is int and issuer_pid > 0 and issuer_pid != os.getpid()
+         and Path(outside).is_absolute(), "CALIBRATION_ORIGINAL_ISSUER_PROBE_BINDING_REQUIRED")
+    # The only attempted write is a fresh file in our own authenticated image
+    # namespace. No issuer/foreign payload is read or a foreign path pruned.
+    target = "/proc/" + str(issuer_pid) + "/root" + str(Path(outside)) + "/issuer-escape-must-not-exist"
+    try:
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    except OSError as error:
+        need(error.errno == errno.EACCES, "CALIBRATION_ORIGINAL_ISSUER_ROOT_NOT_PROTECTED")
+        return {"errno": error.errno, "denied": True, "issuer_pid": issuer_pid,
+                "operation": "open_own_namespace_through_original_issuer_root"}
+    else:
+        os.close(descriptor)
+        raise ValueError("CALIBRATION_ORIGINAL_ISSUER_ROOT_ESCAPE")
+
+
+def quota_probe(project, probe, outside, supervisor_pid, issuer_pid):
     need(os.getuid() == os.geteuid() > 0, "CALIBRATION_NONROOT_PROBE_REQUIRED")
     observed = {}
     fd = os.open(project, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -677,6 +829,7 @@ def quota_probe(project, probe, outside, supervisor_pid):
     else:
         os.close(descriptor)
         raise ValueError("CALIBRATION_OUTSIDE_CONTROL_FD_ESCAPE")
+    observed["original_issuer_root_escape"] = issuer_root_escape_probe(issuer_pid, outside)
     quota = Dqblk()
     libc = ctypes.CDLL(None, use_errno=True)
     need(libc.quotactl((Q_SETQUOTA << 8) | PRJQUOTA, b"/dev/quota-probe-denied", projid, ctypes.byref(quota)) == -1
@@ -871,7 +1024,7 @@ def nonroot_worker(request):
         return records[-1]
     probe = run([sys.executable, "-I", "-B", str(source / "scripts/rc6_capacity_calibration.py"), "--probe-child",
                  "--project", str(project), "--probe", request["probe"], "--outside", request["namespace_receipt"]["path"],
-                 "--supervisor-pid", str(os.getpid())],
+                 "--supervisor-pid", str(os.getpid()), "--issuer-pid", str(request["issuer"]["pid"])],
                 "capability", 60)
     positive = decode(read(probe["log"]))
     need(positive.get("actual_positive") is True, "CALIBRATION_REAL_CAPABILITY_NOT_PROVED")
@@ -889,6 +1042,8 @@ def nonroot_worker(request):
             "privilege": request["privilege"], "loop": request["loop"], "quotas": request["quotas"],
             "inner_before": request["inner_before"], "inner_after": filesystem(project),
             "setup_commands": request["setup_commands"], "source_sha": request["source_sha"],
+            "backing_origin": request["backing_origin"], "readonly_operation": request["readonly_operation"],
+            "setup_stage": request["setup_stage"],
             "private_mount_preflight": request["private_mount_preflight"],
             "source_tree": request["source_tree"], "final_own_kernel": final_kernel,
             "commands": records, "samples": samples,
@@ -907,8 +1062,14 @@ def root_worker(request_path):
         report = nonroot_worker(prepared)
     except BaseException as error:
         report = {"status": "BLOQUEADO", "actual_capability_proved": False,
-                  "reason": str(error).split(":", 1)[0], "class": type(error).__name__,
-                  "qualification_claimed": False, "loop": request.get("loop")}
+                  "reason": "CALIBRATION_NATIVE_OSERROR" if isinstance(error, OSError) else str(error).split(":", 1)[0],
+                  "class": type(error).__name__, "qualification_claimed": False, "loop": request.get("loop"),
+                  "setup_stage": request.get("setup_stage"), "setup_commands": request.get("setup_commands", []),
+                  "private_mount_preflight": request.get("private_mount_preflight"),
+                  "backing_origin": request.get("backing_origin"),
+                  "readonly_operation": request.get("readonly_operation"),
+                  "operation_failure": getattr(error, "details", None),
+                  "oserror_errno": error.errno if isinstance(error, OSError) else None}
     need(len(wire({k: v for k, v in report.items() if k != "raw_files"})) <= 4 * MIB,
          "CALIBRATION_WORKER_CONTROL_METADATA_LIMIT")
     raw = wire({"schema": "porota.rc6.capacity-worker.v1", "request_sha256": digest(request_raw),
@@ -1063,6 +1224,7 @@ def cli():
     p.add_argument("--probe", type=Path)
     p.add_argument("--outside", type=Path)
     p.add_argument("--supervisor-pid", type=int)
+    p.add_argument("--issuer-pid", type=int)
     p.add_argument("--mode", choices=("capability", "bootstrap"))
     p.add_argument("--source-root", type=Path)
     p.add_argument("--source-sha")
@@ -1079,7 +1241,7 @@ def cli():
         return root_worker(a.root_worker)
     if a.probe_child:
         need(a.project and a.probe and a.outside, "CALIBRATION_NATIVE_PROBE_PATHS_REQUIRED")
-        print(wire(quota_probe(a.project, a.probe, a.outside, a.supervisor_pid)).decode().strip(), flush=True)
+        print(wire(quota_probe(a.project, a.probe, a.outside, a.supervisor_pid, a.issuer_pid)).decode().strip(), flush=True)
         return 0
     need(a.mode and a.source_root and a.source_sha and a.source_tree and a.namespace_receipt and a.output and a.binding_json,
          "CALIBRATION_EXPLICIT_CLI_BINDING_REQUIRED")

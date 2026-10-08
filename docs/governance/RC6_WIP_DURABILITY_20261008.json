@@ -42,6 +42,29 @@
     "source_workflow_count": 166,
     "trigger_audit_sha256": "e10305fed3365a3a281d14dd4d5a64efd68c612b69369423458af599ecb069e1"
   },
+  "checkpoint3": {
+    "default_sha": "183a0be3f6c443d8fab48b1c0f52dcc80b1b88d1",
+    "default_workflow_count": 6,
+    "indirect_events": [],
+    "matching_push_workflows": [],
+    "no_auto_heavy_predeploy_deploy": true,
+    "parent_sha": "6c02649859d7f4fa3260c2d5910ff8e57e97307e",
+    "partial_worktree_monitor_not_included": true,
+    "pr476_head_changed": false,
+    "registered_workflow_count": 1013,
+    "reviewed_staged_changed_paths": [
+      "docs/governance/RC6_ARCHITECTURAL_DEVELOPMENT_RECEIPTS_20261008.json",
+      "docs/governance/RC6_ARCHITECTURAL_RCA_20261008.md",
+      "docs/governance/RC6_CAPACITY_PROBE_RCA_37823993377.json",
+      "docs/governance/RC6_ERROR_REGISTRY.md",
+      "docs/governance/RC6_WIP_DURABILITY_20261008.json",
+      "scripts/rc6_capacity_calibration.py",
+      "tests/test_rc6_capacity_calibration.py"
+    ],
+    "source_status": "WIP_NOT_QUALIFIED",
+    "source_workflow_count": 166,
+    "trigger_audit_sha256": "1925ac752a69c67af6a9b675174223f988e57623035354b270093632e8a5db5b"
+  },
   "default_branch_sha": "183a0be3f6c443d8fab48b1c0f52dcc80b1b88d1",
   "default_trigger_audit_sha256": "fdcef05a225f36e0764b958fde4bf9297db88573e83fc249c9683fbf15444fc2",
   "default_workflow_count": 6,

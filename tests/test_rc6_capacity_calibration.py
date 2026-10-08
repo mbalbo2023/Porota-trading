@@ -406,3 +406,171 @@ def test_control_plan_and_guards_claim_no_qualification_or_financial_tick():
     assert c.MAX_ENTRIES == 100000 and c.CONTROLS == 128 * c.MIB
     assert c.RESERVE == 4 * c.GIB
     assert "wait4" not in plan["denied_syscalls"]
+
+
+@pytest.mark.parametrize("saved_errno", [errno.EBUSY, errno.EPERM, errno.ENOSYS])
+def test_readonly_syscall_failure_preserves_discriminating_native_metadata(monkeypatch, saved_errno):
+    calls = []
+    def syscall(*args):
+        calls.append(args)
+        ctypes.set_errno(saved_errno)
+        return -1
+    monkeypatch.setattr(c.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(syscall=syscall))
+    monkeypatch.setattr(c.platform, "machine", lambda: "x86_64")
+    origin = {"original_mount_id": 37, "schema": "UNIT_METADATA_ONLY"}
+    with pytest.raises(c.CalibrationOperationError, match="CALIBRATION_RECURSIVE_PRIVATE_READONLY_REQUIRED") as error:
+        c.mount_all_readonly(backing_origin=origin, issuer_namespace_inode=99)
+    details = error.value.details
+    assert details["operation"] == "mount_setattr" and details["syscall_number"] == 442
+    assert details["return"] == -1 and details["errno"] == saved_errno
+    assert details["errno_name"] == errno.errorcode[saved_errno]
+    assert details["flags"] == 0x8000 and details["attributes"]["set"] == 1 and details["attribute_size"] == 32
+    assert details["issuer_mount_namespace_inode"] == 99 and details["backing_origin"] == origin
+    assert details["actual_mount_namespace_inode"] == c.os.stat("/proc/self/ns/mnt").st_ino
+    assert details["mountinfo_before_sha256"] and len(calls) == 1
+    assert calls[0][:4] == (442, -100, b"/", 0x8000)
+
+
+def test_readonly_success_decoder_clears_stale_errno_without_native_claim(monkeypatch):
+    ctypes.set_errno(errno.EBUSY)
+    monkeypatch.setattr(c.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(c.ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(syscall=lambda *args: 0))
+    record = c.mount_all_readonly()
+    assert record["return"] == 0 and record["errno"] == 0
+    assert "actual_capability_proved" not in record
+
+
+def test_transferred_original_image_fd_closes_when_loop_control_open_fails(monkeypatch):
+    closed = []
+    def open_(*args, **kwargs):
+        raise OSError(errno.EACCES, "UNIT_CONTROL_VETO")
+    monkeypatch.setattr(c.os, "open", open_)
+    monkeypatch.setattr(c.os, "close", closed.append)
+    with pytest.raises(OSError) as error:
+        c.configure_loop(Path("/UNIT_ONLY/image.ext4"), owned_image_fd=82)
+    assert error.value.errno == errno.EACCES and closed == [82]
+
+
+@pytest.mark.parametrize("returncode", [0, 7])
+def test_setup_returncode_preserves_real_waited_echild_control_before_red(monkeypatch, returncode):
+    monkeypatch.setattr(c.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=returncode, stdout=b"UNIT_SETUP_RAW"))
+    def exhausted(*args):
+        raise ChildProcessError(errno.ECHILD, "UNIT_ONLY_ECHILD_DECODER")
+    monkeypatch.setattr(c.os, "waitid", exhausted)
+    request = {}
+    if returncode:
+        with pytest.raises(c.CalibrationOperationError, match="CALIBRATION_OWN_SETUP_COMMAND_FAILED"):
+            c.run_setup(request, ["UNIT_NO_COMMAND_EXECUTED"])
+    else:
+        c.run_setup(request, ["UNIT_NO_COMMAND_EXECUTED"])
+    row, = request["setup_commands"]
+    assert row["returncode"] == returncode and row["actual_setup_waited_echild"] is True
+    assert row["raw_sha256"] == c.digest(b"UNIT_SETUP_RAW")
+
+
+def test_pending_setup_child_cannot_be_recorded_as_closed(monkeypatch):
+    monkeypatch.setattr(c.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=b""))
+    monkeypatch.setattr(c.os, "waitid", lambda *args: None)
+    request = {}
+    with pytest.raises(ValueError, match="CALIBRATION_SETUP_CHILD_UNKNOWN"):
+        c.run_setup(request, ["UNIT_NO_COMMAND_EXECUTED"])
+    assert request.get("setup_commands", []) == []
+
+
+@pytest.mark.parametrize("denied_errno", [errno.EACCES, errno.EROFS, errno.ENOENT])
+def test_original_issuer_root_probe_requires_actual_eacces_not_path_absence(monkeypatch, denied_errno):
+    calls = []
+    def open_(path, flags, mode):
+        calls.append((path, flags, mode))
+        raise OSError(denied_errno, "UNIT_ONLY_NO_NATIVE_PROBE")
+    monkeypatch.setattr(c.os, "open", open_)
+    issuer = c.os.getpid() + 1000
+    if denied_errno == errno.EACCES:
+        row = c.issuer_root_escape_probe(issuer, Path("/UNIT_OWN_NAMESPACE"))
+        assert row["errno"] == errno.EACCES and row["denied"] is True
+    else:
+        with pytest.raises(ValueError, match="CALIBRATION_ORIGINAL_ISSUER_ROOT_NOT_PROTECTED"):
+            c.issuer_root_escape_probe(issuer, Path("/UNIT_OWN_NAMESPACE"))
+    assert calls[0][0] == "/proc/" + str(issuer) + "/root/UNIT_OWN_NAMESPACE/issuer-escape-must-not-exist"
+    assert calls[0][1] & c.os.O_EXCL and calls[0][1] & c.os.O_NOFOLLOW
+
+
+def test_original_issuer_root_success_is_escape_and_preserves_its_scope(monkeypatch):
+    closed = []
+    monkeypatch.setattr(c.os, "open", lambda *args: 91)
+    monkeypatch.setattr(c.os, "close", closed.append)
+    with pytest.raises(ValueError, match="CALIBRATION_ORIGINAL_ISSUER_ROOT_ESCAPE"):
+        c.issuer_root_escape_probe(c.os.getpid() + 1000, Path("/UNIT_OWN_NAMESPACE"))
+    assert closed == [91]
+
+
+@pytest.mark.parametrize("changed", ["mount_id", "namespace_nonce", "st_blocks", "issuer_birth"])
+def test_original_mount_opener_negative_binding_closes_every_descriptor(monkeypatch, changed):
+    # Auth is isolated exclusively to reach four RED branches. These synthetic
+    # kernel/stat rows never produce a positive custody or namespace claim.
+    root = Path("/UNIT_ONLY/r6-UNIT")
+    binding = {"unit_only": True}
+    marker = {"namespace_nonce": "1" * 32, "binding": binding, "mount_id": 37}
+    raw = c.wire(marker)
+    def metadata(mode, inode, size):
+        return SimpleNamespace(st_dev=27, st_ino=inode, st_uid=1001, st_gid=1001, st_mode=mode,
+            st_nlink=1, st_size=size, st_blocks=8, st_atime_ns=1, st_mtime_ns=2, st_ctime_ns=3)
+    directory = metadata(stat.S_IFDIR | 0o700, 80, 4096)
+    marker_stat = metadata(stat.S_IFREG | 0o600, 81, len(raw))
+    image_stat = metadata(stat.S_IFREG | 0o600, 82, 5 * c.GIB)
+    request = {"namespace_receipt": {"identity": [27, 80, 1001, 1001, 0o700], "mount_id": 37,
+                "marker_sha256": c.digest(raw), "namespace_nonce": "1" * 32, "binding": binding},
+                "owner_uid": 1001, "owner_gid": 1001, "limits": c.limits_for("capability"),
+                "image": str(root / "image.ext4"), "image_identity": c.identity(image_stat)}
+    births = iter(({"pid": 123, "start_ticks": "1"}, {"pid": 123, "start_ticks": "2" if changed == "issuer_birth" else "1"}))
+    monkeypatch.setattr(c, "validate_root_request", lambda _: root)
+    monkeypatch.setattr(c, "issuer_kernel_identity", lambda _: next(births))
+    opened, closed = [], []
+    def open_(path, flags, *args, **kwargs):
+        descriptor = 101 + len(opened)
+        opened.append((str(path), flags, kwargs.get("dir_fd"), descriptor))
+        return descriptor
+    monkeypatch.setattr(c.os, "open", open_)
+    monkeypatch.setattr(c.os, "close", closed.append)
+    monkeypatch.setattr(c, "descriptor_mount_id", lambda _: 38 if changed == "mount_id" else 37)
+    def fstat(fd):
+        if fd < 104:
+            return directory
+        if fd == 104:
+            return marker_stat
+        result = copy.copy(image_stat)
+        if changed == "st_blocks":
+            result.st_blocks += 8
+        return result
+    monkeypatch.setattr(c.os, "fstat", fstat)
+    chunks = iter((raw, b""))
+    if changed == "namespace_nonce":
+        chunks = iter((c.wire({**marker, "namespace_nonce": "2" * 32}), b""))
+    monkeypatch.setattr(c.os, "read", lambda *args: next(chunks))
+    original_stat = c.os.stat
+    monkeypatch.setattr(c.os, "stat", lambda path, **kwargs: marker_stat if path == ".porota-generated-fixture-owner.json"
+                        else image_stat if path == "image.ext4" else original_stat(path, **kwargs))
+    monkeypatch.setattr(c.Path, "lstat", lambda path: marker_stat if path.name == ".porota-generated-fixture-owner.json" else image_stat)
+    with pytest.raises(ValueError, match="CALIBRATION_ISSUER_"):
+        c.open_image_on_issuer_mount(request)
+    assert sorted(closed) == sorted(row[3] for row in opened)
+    assert opened[0][0] == "/proc/123/root" and opened[0][2] is None
+    assert all(row[1] & c.os.O_NOFOLLOW for row in opened[1:])
+    assert not any("setns" in row[0] or "mount" in row[0] for row in opened)
+
+
+def test_worker_red_retains_completed_setup_controls_and_operation_errno(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "request.json"
+    c.publish(path, {"unit_only": "NEGATIVE_DECODER"})
+    failure = {"operation": "mount_setattr", "return": -1, "errno": errno.EBUSY,
+               "actual_mount_namespace_inode": 21, "backing_origin": {"original_mount_id": 37}}
+    setup = {"returncode": 0, "actual_setup_waited_echild": True, "raw_sha256": c.digest(b"UNIT_SETUP_RAW")}
+    def red(request):
+        request.update(setup_stage="mount_setattr_private_readonly", setup_commands=[setup], backing_origin=failure["backing_origin"])
+        raise c.CalibrationOperationError("CALIBRATION_RECURSIVE_PRIVATE_READONLY_REQUIRED", failure)
+    monkeypatch.setattr(c, "root_setup", red)
+    assert c.root_worker(path) == 1
+    row = c.decode(capsys.readouterr().out.encode())["report"]
+    assert row["status"] == "BLOQUEADO" and row["actual_capability_proved"] is False
+    assert row["operation_failure"] == failure and row["setup_commands"] == [setup]
+    assert row["setup_stage"] == "mount_setattr_private_readonly" and row["qualification_claimed"] is False

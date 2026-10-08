@@ -379,7 +379,65 @@ continuous ownership monitoring and final readmission. Root heartbeats do not
 replace that programmatic proof. This blocks promotion before long material
 gates; coverage of the entire long run is not claimed.
 
-## Qualification boundary
+## First native capacity diagnostic: RED with original evidence
+
+WIP `6c02649859d7f4fa3260c2d5910ff8e57e97307e`, tree
+`2b9c6b2d284b603fccff4999494567800aea3857`, was published without moving PR476.
+The explicitly scoped capacity-only run37823993377 attempt1 admitted exact
+Source/owner/ops controls and then failed. All13 JSON members across original
+artifacts11570003188,11571100388 and11570292861 were recovered and examined;
+API/ZIP SHA256, CRC, capture manifests and member hashes matched. Original RAW
+stays in those Actions artifacts, with a compact index in
+`RC6_CAPACITY_PROBE_RCA_37823993377.json`.
+
+First verifiable failure: the namespace-local recursive read-only mount operation,
+`CALIBRATION_RECURSIVE_PRIVATE_READONLY_REQUIRED`. The error wrapper omitted
+syscall return/errno. Permission denial, unsupported kernel capability and EBUSY
+cannot be distinguished from that historical receipt. Capacity admission passed;
+physical quota and NONROOT escape probes were not reached. No custody rebound
+was observed. The configured own loop demonstrates progression past private
+preflight in the pinned program, but detailed private metadata was not preserved
+on RED and is not substituted by a parser PASS.
+
+Native root-helper FIN/ECHILD, absence of group/descendants, own loop AUTOCLEAR
+absence, Source unchanged and authenticated inner/outer cleanup were preserved.
+Foreign deletions were zero. Observed helper peak RSS27,004,928B and wall0.200878s
+are diagnostic resources, not BIG qualification. Outer ext4 free bytes were
+91,698,995,200 before the5GiB image,86,330,269,696 afterwards; the367,263,744B
+control bound and additional4GiB reserve were admitted. Thus this failure is not
+evidence of ENOSPC or quota exhaustion.
+
+The concrete code-level hypothesis is that the loop retains a writable backing
+file opened on the private clone, preventing that mount from becoming read-only.
+It remains a hypothesis because historical errno is absent. The scoped fix under
+development borrows only the authenticated own image FD from the issuer's original
+mount, validates issuer/kernel identity and backing mount/inode, closes every
+privileged FD before NONROOT, and preserves namespace-local RO and escape guards.
+Kernel return/errno and completed setup receipts must survive any next RED.
+The runner is not labelled unsupported without discriminating native evidence.
+No identical-SHA rerun is permitted; a new published WIP SHA/tree and dual cheap
+regression evidence must precede any further capacity diagnosis. G0/G1 qualification,
+Horizon/BIG/fullGov/Predeploy/deploy remain blocked.
+
+The scoped backing-FD fix is now developed and cheap-tested. Only the own image
+is opened through the authenticated issuer proc-root link; every ordinary path
+component is held with NOFOLLOW. Issuer PID/birth/boot/UID/GID/namespace are
+validated before and after, and marker/nonce/original mount plus all11 image
+identity fields must match. The loop consumes that original-mount FD, and all
+privileged descriptors close before NONROOT. Kernel syscall442 return/errno,
+kernel release, namespaces, backing origin and completed setup commands/ECHILD
+survive RED. The genuine NONROOT probe must deny issuer-root escape with EACCES.
+85 exact collected/JUnit cases passed on both3.11 and3.12 without failures,
+errors or skips. Handoff SHA256:
+`8f00ecbeb05e663699625853a98818ce478be92cf17e1a7af6ec05d5c81c2d52`.
+Script/test SHA256:
+`bc2245a33984503611732313a2db2f2dd2d728d1000286bc142035407d31fc4c` /
+`9e177ea9c8de3b63bd2bc63c3a0554d897e3eb3d9525cf39905084421a503255`.
+These are file-hash development proofs. The next WIP checkpoint excludes the
+unfinished long-gate monitor; neither native capability nor G0/G1 is approved
+by this publication. Historical errno and the EBUSY hypothesis remain unverified.
+
+## Required final qualification
 
 Required order for one frozen SHA/tree: G0 -> G1.311/G1.312 -> G2focal311 ->
 G3focal312 -> G4BIG -> G5required material -> G6full governed -> G7Predeploy /
