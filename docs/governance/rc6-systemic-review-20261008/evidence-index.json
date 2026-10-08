@@ -1,0 +1,380 @@
+{
+  "additional_readonly_adenda": [
+    6070346133,
+    6070350206
+  ],
+  "artifact_members_index_sha256": "8f5d00d424f7e1fcf1fd5948f54e0e033d63a19fea496b9b0d58d26440b521cb",
+  "artifacts": [
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11506363002",
+      "artifact_id": 11506363002,
+      "bytes": 1722057,
+      "crc": "PASS",
+      "expires_at": "2026-10-14T19:37:34Z",
+      "member_count": 33,
+      "name": "porota-predeploy-v2-dfc240a478cf08e0c6a9b0ba1b760307b09a9565-run-37674493598-attempt-1",
+      "run_id": 37674493598,
+      "sha256": "8ad80f710a6ec9ef3ee26c073e9a8e48a85c629a58d9e1e44ce9759515ae5920",
+      "source_sha": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11506983141",
+      "artifact_id": 11506983141,
+      "bytes": 3874,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T19:38:42Z",
+      "member_count": 1,
+      "name": "rc6-supplementary-pr-admission-focal-dfc240a478cf08e0c6a9b0ba1b760307b09a9565-37674493603-1",
+      "run_id": 37674493603,
+      "sha256": "b3c3843a0eb38dc1e64500b94d812572197a4e4d3d17d0c3a14c3991defce348",
+      "source_sha": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11506797953",
+      "artifact_id": 11506797953,
+      "bytes": 40247,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T19:38:43Z",
+      "member_count": 29,
+      "name": "rc6-supplementary-pr-controls-focal-dfc240a478cf08e0c6a9b0ba1b760307b09a9565-37674493603-1",
+      "run_id": 37674493603,
+      "sha256": "beb504e95c68f8a920e2630b1e525c35806ba9528c53f6138b472f87c2962e35",
+      "source_sha": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11570003188",
+      "artifact_id": 11570003188,
+      "bytes": 16254,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T18:24:41Z",
+      "member_count": 11,
+      "name": "rc6-capacity-diagnostic-6c02649859d7f4fa3260c2d5910ff8e57e97307e-capacity-probe-37823993377-1",
+      "run_id": 37823993377,
+      "sha256": "3baf5f468bde1f4abd0b2617a9fea3a93303fc953a8ca9164b8f47404f398b8c",
+      "source_sha": "6c02649859d7f4fa3260c2d5910ff8e57e97307e"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11571100388",
+      "artifact_id": 11571100388,
+      "bytes": 5154,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T18:24:40Z",
+      "member_count": 1,
+      "name": "rc6-admission-6c02649859d7f4fa3260c2d5910ff8e57e97307e-capacity-probe-37823993377-1",
+      "run_id": 37823993377,
+      "sha256": "23edf58920b807c6e292ee8d242865de1653ca3b8e933e576d7aea79cdb9a584",
+      "source_sha": "6c02649859d7f4fa3260c2d5910ff8e57e97307e"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11570292861",
+      "artifact_id": 11570292861,
+      "bytes": 5154,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T18:24:40Z",
+      "member_count": 1,
+      "name": "rc6-capacity-controls-6c02649859d7f4fa3260c2d5910ff8e57e97307e-capacity-probe-37823993377-1",
+      "run_id": 37823993377,
+      "sha256": "23edf58920b807c6e292ee8d242865de1653ca3b8e933e576d7aea79cdb9a584",
+      "source_sha": "6c02649859d7f4fa3260c2d5910ff8e57e97307e"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11573037197",
+      "artifact_id": 11573037197,
+      "bytes": 19885,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T19:14:08Z",
+      "member_count": 11,
+      "name": "rc6-capacity-diagnostic-7c4abff319bdc9c3958141925967c0cb8def7149-capacity-probe-37830339583-1",
+      "run_id": 37830339583,
+      "sha256": "443a5208001c6512436ef55b8cd1eff27c1ff2b924a764b2e35f70509407dfe9",
+      "source_sha": "7c4abff319bdc9c3958141925967c0cb8def7149"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11573535653",
+      "artifact_id": 11573535653,
+      "bytes": 5234,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T19:14:07Z",
+      "member_count": 1,
+      "name": "rc6-capacity-controls-7c4abff319bdc9c3958141925967c0cb8def7149-capacity-probe-37830339583-1",
+      "run_id": 37830339583,
+      "sha256": "c0f9351553b493c2c6859ff6851c0b6296134ea78272b2d75539818351b0ba52",
+      "source_sha": "7c4abff319bdc9c3958141925967c0cb8def7149"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11572813070",
+      "artifact_id": 11572813070,
+      "bytes": 5234,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T19:14:06Z",
+      "member_count": 1,
+      "name": "rc6-admission-7c4abff319bdc9c3958141925967c0cb8def7149-capacity-probe-37830339583-1",
+      "run_id": 37830339583,
+      "sha256": "c0f9351553b493c2c6859ff6851c0b6296134ea78272b2d75539818351b0ba52",
+      "source_sha": "7c4abff319bdc9c3958141925967c0cb8def7149"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11579856009",
+      "artifact_id": 11579856009,
+      "bytes": 5436,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T21:13:15Z",
+      "member_count": 1,
+      "name": "rc6-capacity-controls-7224ca0aff1f822032163435e7296456f2fe2334-capacity-probe-37845108215-1",
+      "run_id": 37845108215,
+      "sha256": "0cf5bdb5f835e8a2bc8befa83f14513cd6538f5b5da640fb690fbbf93fc2f824",
+      "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11579900998",
+      "artifact_id": 11579900998,
+      "bytes": 5436,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T21:13:14Z",
+      "member_count": 1,
+      "name": "rc6-admission-7224ca0aff1f822032163435e7296456f2fe2334-capacity-probe-37845108215-1",
+      "run_id": 37845108215,
+      "sha256": "0cf5bdb5f835e8a2bc8befa83f14513cd6538f5b5da640fb690fbbf93fc2f824",
+      "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11579491712",
+      "artifact_id": 11579491712,
+      "bytes": 20192,
+      "crc": "PASS",
+      "expires_at": "2026-10-22T21:13:16Z",
+      "member_count": 8,
+      "name": "rc6-capacity-diagnostic-7224ca0aff1f822032163435e7296456f2fe2334-capacity-probe-37845108215-1",
+      "run_id": 37845108215,
+      "sha256": "1d29f067327edeb292a625019a951c1e10a123377b397a17575cc72e38450981",
+      "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11503036646",
+      "artifact_id": 11503036646,
+      "bytes": 28700,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T18:22:41Z",
+      "member_count": 28,
+      "name": "rc6-supplementary-controls-af08c82ca211e74bb4e5c00d9010af21313814a9-Horizon-37633310327-1",
+      "run_id": 37633310327,
+      "sha256": "2c69119b2637c0ccc11beeb661889612f1201863f838a29a9d0bc323e946aa81",
+      "source_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11502637203",
+      "artifact_id": 11502637203,
+      "bytes": 5894344,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T18:22:42Z",
+      "member_count": 884,
+      "name": "rc6-supplementary-raw-af08c82ca211e74bb4e5c00d9010af21313814a9-Horizon-37633310327-1",
+      "run_id": 37633310327,
+      "sha256": "5738a959b1483e46125b2a44a3b536067d6f5bf87b01cde68888c218023f0bb2",
+      "source_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11492865414",
+      "artifact_id": 11492865414,
+      "bytes": 16255,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T14:54:59Z",
+      "member_count": 23,
+      "name": "rc6-supplementary-controls-af08c82ca211e74bb4e5c00d9010af21313814a9-full-gov312-37633249899-1",
+      "run_id": 37633249899,
+      "sha256": "a6327bba3103d5f83265924d8ed07ef36181b12b3aa08d7ea38596581ce1f56a",
+      "source_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9"
+    },
+    {
+      "api_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/actions/artifacts/11492830480",
+      "artifact_id": 11492830480,
+      "bytes": 11022796,
+      "crc": "PASS",
+      "expires_at": "2026-10-21T14:55:01Z",
+      "member_count": 1000,
+      "name": "rc6-supplementary-raw-af08c82ca211e74bb4e5c00d9010af21313814a9-full-gov312-37633249899-1",
+      "run_id": 37633249899,
+      "sha256": "ca27bfe06af3ea830de1e2e2e1c7fa333895745602507c0dd6292c9b2c8689b4",
+      "source_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9"
+    }
+  ],
+  "code_source_sha": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+  "code_source_tree": "7054a76efc0a22e56605af435f0b4502474783ad",
+  "deployable_artifact_produced_or_verified": false,
+  "expiry_is_not_durable_custody": true,
+  "issues": [
+    {
+      "body_sha256": "77cb060d2de1266f3bdb7206a2555a8e6feca5df21b891fa4ea75e615832ae70",
+      "comments_recovered_initially": 0,
+      "number": 468
+    },
+    {
+      "body_sha256": "0f9c776c353440dbcb934585bf80ca866bdac85e2cd231e7d5fe4721567340a3",
+      "comments_recovered_initially": 0,
+      "number": 469
+    },
+    {
+      "body_sha256": "f1e68a0f5f7ad21af654662a8695144d4bd03159e8930d8833c325b1143c5426",
+      "comments_recovered_initially": 302,
+      "number": 471
+    },
+    {
+      "body_sha256": "91ba8e4bdcadcf33cbc93a73eab6e4652718435eecb61b24ca2f46b11cd71787",
+      "comments_recovered_initially": 247,
+      "number": 473
+    }
+  ],
+  "logs": [
+    {
+      "bytes": 33430,
+      "run_id": 37830339583,
+      "sha256": "57bac0a1fb0fccdac7672d40ef73c7fea8654fe26fac5d50a765d009c35b1dc4"
+    },
+    {
+      "bytes": 169894,
+      "run_id": 37674493603,
+      "sha256": "c13cfaed65a9ccf89fc04f95b73982c3c23c081653241e3bd4acb8ab7f23c165"
+    },
+    {
+      "bytes": 33042,
+      "run_id": 37823993377,
+      "sha256": "922fda7cb9d76d6feee6ef7c0c299d7b406895f180da196ca626267742524ca5"
+    },
+    {
+      "bytes": 239607,
+      "run_id": 37674493598,
+      "sha256": "54c7562b14c11061835e70a818cbc31390bc3fba8cc5921375fd34cfe883da33"
+    },
+    {
+      "bytes": 37358,
+      "run_id": 37845108215,
+      "sha256": "11acce45372498f90f830d06d66e9503f13653590d10085375ebb08106c5bd3f"
+    }
+  ],
+  "member_total": 2034,
+  "method": "Connector Actions ZIPs; API digest and size joined; complete CRC and member SHA256 inspection; no payload republication",
+  "nested_manifests": [
+    {
+      "artifact_id": 11570003188,
+      "checked_bytes": 21039,
+      "checked_files": 9,
+      "inner_FIN_not_inferred": true,
+      "manifest_sha256": "9379a66edca7943a18f664e655c9f214a7348de1a2f2a8bf691534cbd2cabf6c",
+      "phase_green": false,
+      "physical_outer_FIN": true
+    },
+    {
+      "artifact_id": 11573037197,
+      "checked_bytes": 31772,
+      "checked_files": 9,
+      "inner_FIN_not_inferred": true,
+      "manifest_sha256": "72b927bd23a8270220e750a6e8e4003a27a9a65dc9b03a466b9784b78912c390",
+      "phase_green": false,
+      "physical_outer_FIN": true
+    },
+    {
+      "artifact_id": 11579491712,
+      "checked_bytes": 52605,
+      "checked_files": 6,
+      "inner_FIN_not_inferred": true,
+      "manifest_sha256": "2747bae4105c94f515c50c026841c7a3587f012a9214e4c6c865d99359f98e24",
+      "phase_green": false,
+      "physical_outer_FIN": true
+    }
+  ],
+  "repository": "mbalbo2023/Porota-trading",
+  "source_file_hashes": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8755546b3fcdabde6105ea6576f49d6b01ef13fcc8d0d1063956698bff3e679b"
+    },
+    {
+      "path": "ops/policy/porota-policy.yaml",
+      "sha256": "68220ce51bb6166e9ceef4b75f9a25a4f9e1f13d7dbb2764e6b9ffd67fc4adf6"
+    },
+    {
+      "path": "ops/policy/test-policy.yaml",
+      "sha256": "1fe33e6137bc0a6769ce390d0c4fbf584624bbec36d97254bf54ab85cc75a7e9"
+    },
+    {
+      "path": "ops/policy/rc6-supply-chain-v1.json",
+      "sha256": "b6a15a733c8c897e6c23fe961570a6e89944d3f1a8fab291c9a4dcc3a1527462"
+    },
+    {
+      "path": "ops/policy/rc6-heavy-test-governance-v1.json",
+      "sha256": "34b4aed61ab99df7877d1e1363495459dfdc6abb6e41f56c0dcf54da2a89c8cf"
+    },
+    {
+      "path": "docs/governance/RC6_ARCHITECTURAL_RCA_20261008.md",
+      "sha256": "67f24d8c14c051d33f0946d0220fbc4df8933f54d40980deef01dfef3fa97603"
+    },
+    {
+      "path": "docs/governance/RC6_ERROR_REGISTRY.md",
+      "sha256": "5bec9a104c86e2eb2f0a42eba50af40426d1ecd70d72f07e87d953f1401b8c20"
+    },
+    {
+      "path": "docs/governance/RC6_HORIZON_CAPACITY_ASSESSMENT_20261008.json",
+      "sha256": "9c9251fed2bb62a1e8330ff98f1ee56d8aba8067104b706262221e93ecb93817"
+    },
+    {
+      "path": "rc6_shadow_runtime/source_reads.py",
+      "sha256": "9e358bf5ca9e6c46b5c7d2725f8c0b4e8f71deda3d86658a7777bf7da3f64165"
+    },
+    {
+      "path": "rc6_shadow_runtime/worker.py",
+      "sha256": "098c3187e14100962b91946376beb0d939ae7688c27bd55c16ded028a4734fae"
+    },
+    {
+      "path": "rc6_shadow_runtime/projection.py",
+      "sha256": "a34fe0b34330a0243fce8aef97a58c3247ed339032f0d605a9cc8a562b2e1b07"
+    },
+    {
+      "path": "rc6_shadow_runtime/archive_components.py",
+      "sha256": "04a697703b8a8a8f31e9a01f6ab8d21a9cc622d29673809def4706b7d5c6b181"
+    },
+    {
+      "path": "rc6_shadow_runtime/retention.py",
+      "sha256": "e2e152f63da55cbcc2873e2239b332afd85edc384f79b38bcdab963280fd15cc"
+    },
+    {
+      "path": "rc6_shadow_runtime/exact_binary_storage.py",
+      "sha256": "db041ad54f7421a0a1bab64c334a58c706b6099c4526c4166e9b9d9fc4878a73"
+    },
+    {
+      "path": "scripts/rc6_capacity_calibration.py",
+      "sha256": "df1603a02cc17e55ded27091a7ade705db7bd7d60f62aede24be4f144df877d1"
+    },
+    {
+      "path": "scripts/rc6_architectural_gates.py",
+      "sha256": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314"
+    },
+    {
+      "path": "scripts/rc6_material_carrier.py",
+      "sha256": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797"
+    },
+    {
+      "path": "scripts/rc6_material_pr_admission.py",
+      "sha256": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c"
+    },
+    {
+      "path": "scripts/porota_artifact_provenance.py",
+      "sha256": "266ce536cb98bba30bba9fb3f78cbd60f51bbe606d346ef4b3f9529e3f5c9a54"
+    },
+    {
+      "path": ".dockerignore",
+      "sha256": "6df512e47abc5fdfa399579db7821877255021efb9c2b738e71b4e6565b279dd"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "7267932d5262e8da3f7c05b3b834fad242e0e2e286d1c03a68fde62475bc63a3"
+    },
+    {
+      "path": "tests/test_rc6_capacity_calibration.py",
+      "sha256": "4dcde18d3bab42dadc35918549b0178f557f6080e749a8a53730700bd1782ecd"
+    },
+    {
+      "path": "tests/test_rc6_horizon_model_admission.py",
+      "sha256": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "actual_Docker_or_deploy_image_inspected": false,
+  "added_lines": 1400512,
+  "base_sha": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+  "classification_is_path_heuristic_not_deletion_authority": true,
+  "complete_inventory_sha256": "2d03f7486b35c14c6a5b287ff568632d87097e81252ef0aa40ba90ea22e65375",
+  "counts_by_provisional_role": {
+    "BINARY": 243,
+    "CODE_OR_ASSET": 153,
+    "GENERATED_RAW_OR_CAPTURED_SOURCE": 928,
+    "GOVERNANCE": 357,
+    "INDEX_MANIFEST_CANDIDATE": 1132,
+    "REPRODUCIBLE_FIXTURE_CANDIDATE": 157,
+    "TEST_SOURCE": 157
+  },
+  "deleted_lines": 2158,
+  "evidence_origin_and_replay_dependency_graph_complete": false,
+  "git_diff_paths": 3127,
+  "github_pr476_changed_files": 3127,
+  "head_bytes_by_provisional_role": {
+    "BINARY": 30133717,
+    "CODE_OR_ASSET": 3493242,
+    "GENERATED_RAW_OR_CAPTURED_SOURCE": 272260885,
+    "GOVERNANCE": 4299090,
+    "INDEX_MANIFEST_CANDIDATE": 63183286,
+    "REPRODUCIBLE_FIXTURE_CANDIDATE": 1944470,
+    "TEST_SOURCE": 2853019
+  },
+  "inventory_common_columns": {
+    "custody": "GIT_AT_dfc240a478cf08e0c6a9b0ba1b760307b09a9565",
+    "dependency_closure": "NO_VERIFICADO",
+    "retention": "PRESERVE_PENDING_VERIFIED_DESTINATION_AND_DEPENDENCIES",
+    "unique_irreplaceable_evidence": "NO_VERIFICADO_PER_PATH"
+  },
+  "local_git_measurement_is_Actions_peak": false,
+  "local_shallow_git_bytes_before_additional_fetch": 224987086,
+  "pr476_head_sha": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565",
+  "runtime_mapping_from_versioned_code_only": [
+    {
+      "bundle_eligible_files": 0,
+      "docker_context_included_bytes_by_native_matcher": 0,
+      "docker_context_included_files_by_native_matcher": 0,
+      "files": 2819,
+      "logical_bytes": 365477187,
+      "prefix": "docs/"
+    },
+    {
+      "bundle_eligible_files": 7,
+      "docker_context_included_bytes_by_native_matcher": 4668268,
+      "docker_context_included_files_by_native_matcher": 7,
+      "files": 7,
+      "logical_bytes": 4668268,
+      "prefix": "notes/"
+    },
+    {
+      "bundle_eligible_files": 29,
+      "docker_context_included_bytes_by_native_matcher": 1990099,
+      "docker_context_included_files_by_native_matcher": 29,
+      "files": 29,
+      "logical_bytes": 1990099,
+      "prefix": "rc6_audit_evidence/"
+    }
+  ],
+  "unique_irreplaceable_status": "NO_VERIFICADO_PER_PATH",
+  "wip_tree_logical_bytes": 385742505,
+  "wip_tree_regular_files": 4084,
+  "wip_unique_blob_logical_bytes": 326575805
+}
