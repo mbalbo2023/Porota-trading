@@ -1,0 +1,160 @@
+{
+  "DEPLOY_OWNER": "NOT_ACQUIRED",
+  "PPI_Watch": "UNCHANGED",
+  "actual_inner_FIN_claimed": false,
+  "actual_outer_FIN": true,
+  "actual_outer_cleanup": true,
+  "all_original_members": [
+    {
+      "artifact_id": 11579491712,
+      "bytes": 14731,
+      "name": "diagnostic-result.json",
+      "parsed_as": "JSON",
+      "sha256": "5fbc7359ff5a1b2a36a0f04902f7277f2aec7cc43812472efc48afd24249d95e"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 12032,
+      "name": "sealed/0001.raw",
+      "parsed_as": "JSON",
+      "sha256": "d5b7b6f3413c617075c4404e504d130a39a51f96e42c08bcaa242141955a941f"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 746,
+      "name": "sealed/0000.raw",
+      "parsed_as": "JSON",
+      "sha256": "36809be2f3fef1ced9c961fa0be8da3966d4923c826f48e5dc38cd9358fc6477"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 8252,
+      "name": "sealed/0002.raw",
+      "parsed_as": "JSON",
+      "sha256": "59479072214565cf74755648ac5fb04899bb2949403d985927021df60e23b754"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 25838,
+      "name": "sealed/0003.raw",
+      "parsed_as": "JSON",
+      "sha256": "faf400cbfb35946bd641c508957341fb03107bb1cb8c7bb1aa4a07ff447b10d0"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 2853,
+      "name": "sealed/0004.raw",
+      "parsed_as": "JSONL",
+      "sha256": "92aabf8778af2680bed81097da33182161f52a35678e4f739f0c9d862694bb4f"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 2884,
+      "name": "sealed/0005.raw",
+      "parsed_as": "JSON",
+      "sha256": "b93a7d3f0c2060f53ab508e44663ea143a33ec828a5cd909bcd7380c603eea99"
+    },
+    {
+      "artifact_id": 11579491712,
+      "bytes": 2355,
+      "name": "sealed/manifest.json",
+      "parsed_as": "JSON",
+      "sha256": "2747bae4105c94f515c50c026841c7a3587f012a9214e4c6c865d99359f98e24"
+    },
+    {
+      "artifact_id": 11579856009,
+      "bytes": 25580,
+      "name": "admission.json",
+      "parsed_as": "JSON",
+      "sha256": "9681591b95da5592742ab76463d4ad40131bd26b066e6c8d6e71be6464e658ac"
+    },
+    {
+      "artifact_id": 11579900998,
+      "bytes": 25580,
+      "name": "admission.json",
+      "parsed_as": "JSON",
+      "sha256": "9681591b95da5592742ab76463d4ad40131bd26b066e6c8d6e71be6464e658ac"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 11579491712,
+      "zip_bytes": 20192,
+      "zip_sha256": "1d29f067327edeb292a625019a951c1e10a123377b397a17575cc72e38450981"
+    },
+    {
+      "id": 11579856009,
+      "zip_bytes": 5436,
+      "zip_sha256": "0cf5bdb5f835e8a2bc8befa83f14513cd6538f5b5da640fb690fbbf93fc2f824"
+    },
+    {
+      "id": 11579900998,
+      "zip_bytes": 5436,
+      "zip_sha256": "0cf5bdb5f835e8a2bc8befa83f14513cd6538f5b5da640fb690fbbf93fc2f824"
+    }
+  ],
+  "attempt": 1,
+  "author_receipt": 6069110850,
+  "canonical_raw": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37845108215",
+  "capacity_state": "BLOQUEADO",
+  "complete_examination_sha256": "f0de38ea5275a693f97362c3430d15db4be69ef0df1f23e23be97a00cb17619f",
+  "distinctions": {
+    "cleanup": "OUTER_AUTHENTIC_NAMESPACE_ONLY; NO_INNER_CLEANUP_CLAIM",
+    "current_terminal": "AUTHENTIC_NOT_STARTED_BLOCKED",
+    "custody": "OUTER_ACTUAL_FIN_ONLY; ROOT_CUSTODY_NO_VERIFICADO",
+    "kernel": "QUOTA_MODULE_READINESS_BLOCKED_NOT_UNSUPPORTED",
+    "mount_propagation": "NOT_CALLED_THIS_RUN; PREVIOUS_RUN_VERIFIED_PRIVATE",
+    "permissions": "NO_ROOT_EPERM_OBSERVED",
+    "physical_capacity_exhaustion": "NOT_OBSERVED",
+    "physical_quota": "NOT_CALLED"
+  },
+  "financial_tick_executed": false,
+  "first_terminal_reason": "CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED",
+  "foreign_paths_removed": 0,
+  "free_bytes_after_cleanup": 91698618368,
+  "free_bytes_before_cleanup": 91698458624,
+  "inner_operations": {
+    "create_namespace": "NOT_CALLED",
+    "image_allocation": "NOT_CALLED",
+    "root_worker_launch": "NOT_CALLED"
+  },
+  "job_id": 113543922873,
+  "kernel": "6.17.0-1022-azure",
+  "kernel_raw_sha256": "59479072214565cf74755648ac5fb04899bb2949403d985927021df60e23b754",
+  "kernel_unsupported_claimed": false,
+  "member_index_sha256": "a1bcf0861f31f759524003045108a8f3c22fc9ca7a4a62d5ed6d5347682b7206",
+  "native_fin_cleanup_seconds": 0.00011082700000031309,
+  "native_peak_rss_bytes": 289103872,
+  "native_wall_seconds": 10.611964944999997,
+  "next_privileged_test_authorized": false,
+  "no_identical_rerun": true,
+  "owned_allocated_bytes": 159744,
+  "qualification": false,
+  "quota_module_global_absence_proved": false,
+  "quota_v2_already_live": false,
+  "real_orders_sent": 0,
+  "retained_entries": 17,
+  "run_id": 37845108215,
+  "schema": "porota.rc6.capacity-readonly-examination.v1",
+  "sealed_bytes": 52605,
+  "searched_canonical_quota_module_paths_found": [],
+  "selected_config": {
+    "CONFIG_EXT4_FS": "y",
+    "CONFIG_QFMT_V2": "m",
+    "CONFIG_QUOTA": "y",
+    "CONFIG_QUOTACTL": "y"
+  },
+  "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+  "source_tree": "8420b9feba4577fadf79a2d125125810af787618",
+  "verified_members": 10,
+  "verified_programs": 9,
+  "workflow": "RC6 supplemental material evidence",
+  "workflow_conclusion": "failure",
+  "xfs_readonly_alternative": {
+    "CONFIG_XFS_FS": "m",
+    "CONFIG_XFS_QUOTA": "y",
+    "mkfs_xfs_present": true,
+    "mounted_or_selected": false,
+    "registered": false
+  }
+}

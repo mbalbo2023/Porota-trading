@@ -43,9 +43,9 @@
       "sha256": "d5bdf5fb64177c80febdb1e3bec6ddeb26d493bad659f483829d6d2e5d34186d"
     },
     {
-      "bytes": 96893,
+      "bytes": 98442,
       "path": "scripts/rc6_architectural_gates.py",
-      "sha256": "3c7495de86ab8c989c0d17062b05c3b9921846ea9c1eb1bb46f3f4f11d906175"
+      "sha256": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314"
     },
     {
       "bytes": 43610,
@@ -58,9 +58,9 @@
       "sha256": "df1603a02cc17e55ded27091a7ade705db7bd7d60f62aede24be4f144df877d1"
     },
     {
-      "bytes": 97634,
+      "bytes": 97769,
       "path": "scripts/rc6_material_carrier.py",
-      "sha256": "e2df352fd189165aa89b3b54e672d55f5fab6236a8c849f813747cfc4a405f98"
+      "sha256": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797"
     },
     {
       "bytes": 13196,
@@ -68,9 +68,9 @@
       "sha256": "3dd4c8c62f3678b389aab080cdcba31bb1412949c9db6641efefb584a860636b"
     },
     {
-      "bytes": 53623,
+      "bytes": 53757,
       "path": "scripts/rc6_material_pr_admission.py",
-      "sha256": "c02bf1815339f272ff1f53d8757ed9437ecdb6777fa24a26a3fc2aa67dab2f65"
+      "sha256": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c"
     },
     {
       "bytes": 33056,
@@ -101,6 +101,11 @@
       "bytes": 49116,
       "path": "tests/test_rc6_capacity_calibration.py",
       "sha256": "4dcde18d3bab42dadc35918549b0178f557f6080e749a8a53730700bd1782ecd"
+    },
+    {
+      "bytes": 3603,
+      "path": "tests/test_rc6_horizon_model_admission.py",
+      "sha256": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
     },
     {
       "bytes": 56572,
@@ -602,9 +607,64 @@
         "source_worktree_base_tree": "00ecd79e7bd3533e69be8be26213ad63a6fdc686",
         "status": "DESARROLLADO_UNCOMMITTED"
       }
+    },
+    {
+      "G0_G8_claimed": false,
+      "external_handoff_sha256": "10cf8f81868a5b06473e847a8be84c490f91d0ab0ec4288bed22991a2b3b0117",
+      "first_red_retained": {
+        "actions_executed": false,
+        "junit": {
+          "311": "aa6c2e05f441fe488c07e4da353977a8fe26f6a2aaf54986902148452da64791",
+          "312": "0ddd41b16971bc55a8698f2ccb0ed4a5fb7f06b835b4e2d23d6c81e6af39e535"
+        },
+        "reason": "new-test-wrong-api-interception-get-vs-api"
+      },
+      "name": "horizon_model_hard_admission_hold",
+      "qualification": false,
+      "results": [
+        {
+          "collection_exit": 0,
+          "collection_sha256": "1fdd4a3a44a6d4b2b9010bb4d3d691c52ff8a1f9be669934d3d4ce676014b0e5",
+          "epoch": "311",
+          "junit_sha256": "eab367b841d4d4e5dc55090f509295ff16abd5e164b0fbfa3f0a9933dd167bdf",
+          "nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
+          "tail": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 71%]\n........................................................................ [ 85%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n506 passed in 7.62s\n",
+          "test_exit": 0,
+          "unique_native_collected_and_junit_cases": 506
+        },
+        {
+          "collection_exit": 0,
+          "collection_sha256": "5ed4b754d5fca51becffb9386f98a1a1f20a61a4e9f7fd43b30e8be777f95463",
+          "epoch": "312",
+          "junit_sha256": "0a8a125a1fff772d378af973919b2d7a0b91e0b291396f92f2ffd69d51485c99",
+          "nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
+          "tail": "........................................................................ [ 14%]\n........................................................................ [ 28%]\n........................................................................ [ 42%]\n........................................................................ [ 56%]\n........................................................................ [ 71%]\n........................................................................ [ 85%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n506 passed in 7.55s\n",
+          "test_exit": 0,
+          "unique_native_collected_and_junit_cases": 506
+        }
+      ],
+      "schema": "rc6.horizon-model-hold.development-proof.v1",
+      "scope": "Local development proof only; no G1 Actions, material, artifact or runtime validation",
+      "source_parent_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+      "source_parent_tree": "8420b9feba4577fadf79a2d125125810af787618",
+      "source_pins": {
+        "scripts/rc6_architectural_gates.py": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314",
+        "scripts/rc6_material_carrier.py": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797",
+        "scripts/rc6_material_pr_admission.py": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c",
+        "tests/test_rc6_horizon_model_admission.py": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
+      },
+      "tests": [
+        "tests/test_rc6_owned_gate_lease.py",
+        "tests/test_rc6_architectural_gate_order.py",
+        "tests/test_deploy_v2_frozen_artifact_contract.py",
+        "tests/test_rc6_authenticated_fixture_lifecycle.py",
+        "tests/test_rc6_capacity_calibration.py",
+        "tests/test_rc6_owner_receipts.py",
+        "tests/test_rc6_horizon_model_admission.py"
+      ]
     }
   ],
-  "excluded_unpublished_development_scope": "Combined capacity, WIP issuer and receipt guards are hash-bound in this checkpoint. G0..G8 qualification, native privileged signal/quota capability, Horizon1202 and G7 daemon/tooling custody remain unproved.",
+  "excluded_unpublished_development_scope": "No G0..G8 qualification, genuine privileged signal/quota capability, Horizon1202 capacity, or G7 daemon/tooling custody has been established. All development code in this checkpoint is hash bound; local research RAW is not claimed as a GitHub artifact.",
   "final_candidate_eligible": false,
   "gates": {
     "G0": "BLOCKED_CAPACITY_PROOF",
@@ -617,20 +677,31 @@
     "G7": "NOT_STARTED_PREDECESSORS_BLOCKED",
     "G8": "NOT_STARTED_PREDECESSORS_BLOCKED"
   },
+  "horizon_model_hold": {
+    "admission_before_event_source_api": true,
+    "carrier_before_bootstrap_and_export": true,
+    "owner_env_claims_cannot_override": true,
+    "physical_global_bound_1202_proved": false,
+    "same_SHA_native_Horizon_G6_G7_still_required": true,
+    "status": "NO_VERIFICADO"
+  },
   "local_regression_summary": {
     "Actions_qualification": false,
     "capacity_cases_each_epoch": 129,
     "collected_equals_native_junit": true,
+    "combined_latest_corpus": true,
     "epochs": [
       "311",
       "312"
     ],
     "errors": 0,
     "failures": 0,
+    "horizon_admission_cases_each_epoch": 12,
+    "latest_exact_corpus_nodeids_sha256": "f9dc80abae6f6c681a42ec2a3d34b8157dbd1dd93a881f917c53b0f865563685",
     "owner_receipt_cases_each_epoch": 71,
-    "pipeline_cases_each_epoch": 293,
+    "pipeline_cases_each_epoch": 294,
     "skips": 0,
-    "unique_selected_cases_each_epoch": 493
+    "unique_selected_cases_each_epoch": 506
   },
   "owner_receipt_metadata_incident": {
     "guard_development_proof": {
@@ -687,8 +758,8 @@
     "retroactive_coverage_claimed": false,
     "valid_ownership_gap_disclosed": true
   },
-  "parent_checkpoint_sha": "7c4abff319bdc9c3958141925967c0cb8def7149",
-  "parent_checkpoint_tree": "00ecd79e7bd3533e69be8be26213ad63a6fdc686",
+  "parent_checkpoint_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+  "parent_checkpoint_tree": "8420b9feba4577fadf79a2d125125810af787618",
   "persisted_capacity_failure": {
     "actual_FIN_and_own_cleanup_verified": true,
     "artifact_id": 11570003188,
@@ -698,6 +769,14 @@
     "first_failed_operation": "namespace-local recursive readonly mount",
     "qualification_claimed": false,
     "run_id": 37823993377
+  },
+  "persisted_readonly_diagnostic": {
+    "compact_rca_path": "docs/governance/RC6_CAPACITY_PROBE_RCA_37845108215.json",
+    "compact_rca_sha256": "fb0177b69f7e99ea959924ff87fe5deb25f0d1f77223e7c62e1a16145eb76693",
+    "qualification": false,
+    "run_id": 37845108215,
+    "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+    "source_tree": "8420b9feba4577fadf79a2d125125810af787618"
   },
   "persisted_successor_capacity_failure": {
     "complete_examination_sha256": "9385c00924f36d39078bec09a5650acda34dc126074c10615a0e0081737e3c10",

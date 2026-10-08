@@ -526,6 +526,93 @@ passed in each local Python3.11/3.12. Next isolated inspection is read-only
 kernel metadata only. Physical quota capability, privileged signal custody
 and all G0..G8 qualification remain blocked until genuine native evidence.
 
+## Read-only successor inspection and rejected shortcuts
+
+Checkpoint7224ca0aff1f822032163435e7296456f2fe2334/tree
+8420b9feba4577fadf79a2d125125810af787618 was published before immutable
+authorization471/6069110850. Run37845108215 attempt1/job113543922873 stayed
+read-only on the standard Ubuntu24.04 runner. All ten original members
+(nine JSON and one21-event JSONL) from11579491712/11579856009/11579900998
+were examined, ZIP/API hashes and nested capture hashes checked, and nine
+programs joined to exact Git bytes. The compact index is
+`RC6_CAPACITY_PROBE_RCA_37845108215.json`; RAW stays in Actions.
+
+Kernel6.17.0-1022-azure declares CONFIG_QFMT_V2=m. quota_v2 was not observed
+live and no module was found in the four canonical paths inspected. This is
+a readiness blocker, not proof of global absence or an unsupported kernel.
+The prior util-linux “No such process” remains consistent with an unavailable
+quota format; its historical numeric errno and exact causal attribution remain
+NO_VERIFICADO. Metadata must not rewrite that historical result.
+
+Current first terminal reason is
+CALIBRATION_PRIVILEGED_SIGNAL_CUSTODY_UNVERIFIED. Inner namespace, image and
+ROOT actor were physically NOT_CALLED; no inner FIN or cleanup is asserted.
+Genuine outer Original FIN/ECHILD/PGID absence and subreaper restoration closed.
+Wall10.611964945s, peakRSS289,103,872B, sealed controls52,605B. Exclusive own
+cleanup removed17 entries/159,744B; free space91,698,458,624 ->91,698,618,368B;
+Source unchanged, foreign deletion0. Workflow FAILURE is the authentic blocked
+terminal; none of these observations qualifies G0/G1 or physical quota.
+
+Independent NONROOT offline research authenticated Ubuntu's exact
+linux-modules-extra-6.17.0-1022-azure=6.17.0-1022.22 package through signed
+InRelease/Packages and the official2018 signing fingerprint. Package51,005,632B,
+SHA25611efc255305b0895dbc28e3dcda633d414b86a285529c337062a2a34c45a1599.
+quota_tree and quota_v2 were selectively extracted with matching release
+vermagic and dependency. The kernel's actual symbol CRC/signing-key acceptance
+is unproved. No module was installed or loaded and no privileged operation was
+performed. Own capacity+4GiB/inodes and Original FIN were recorded. Two scratch
+decoder REDs were preserved and corrected offline without another acquisition.
+This local research is not canonical runner qualification. Its public source
+URLs/hashes and compact controls are indexed in
+`RC6_SIGNED_MODULE_AVAILABILITY_20261008.json`; local RAW is not claimed as a
+durable GitHub artifact.
+
+Source-grounded signal review shows that killpg success can mean delivery to
+only one member. Actual reaps/ECHILD/group absence remain mandatory. Merely
+retaining the invoking UID on entry to root_worker leaves earlier sudo/unshare
+startup and children unproved. sudo forwarding, nested ROOT managers and an
+unprovisioned CAP_KILL launcher do not close that bootstrap gap. Upstream source
+references do not prove correspondence with the runner's sudo ELF or Azure
+kernel patches, and no native ROOT EPERM has been observed. The immutable
+NO_VERIFICADO guard and byte-exact Original TERM2/FIN5 remain. The alternative
+contracts and their blockers are indexed in
+`RC6_PRIVILEGED_SIGNAL_CUSTODY_ASSESSMENT_20261008.json`.
+
+## Global Horizon model hold before the expensive producer
+
+Read-only analysis of authenticated historical seven-cut data found that
+20:01 ->20:01:30 changes all6000 compressed cohort BLOBs, while5980 retain the
+exact compressed body and change only their six-byte zlib header. Eight changed
+dictionary bytes alter its identity;513/989 SQLite pages change despite stable
+cohort cardinality. CAS matches exact compressed bytes, so semantic stability
+cannot justify reuse. The512MiB forecast also assumes bounded future envelopes
+and13 anchors, neither of which current code establishes. Independent storage
+can be selected at additional cuts; pack-level GC and dependencies forbid
+premature reclamation credit. No clock window, GC rule or dictionary is changed.
+
+The existing native G5/G6/G7 verifier still requires the complete original
+1201/1202 Horizon of the same SHA/tree before build. However, it did not prevent
+launching that expensive experiment while the predictive model remained open.
+This WIP now carries an immutable NO_VERIFICADO model hold: Horizon admission
+stops before event/API/Source reads, and the carrier stops before bootstrap,
+export or producer launch. Environment claims, a launch comment and the
+499,376,128B conditional forecast cannot override it. Closing the hold requires
+a corrective Source with a demonstrated global model; the native1202 result
+and exact artifact obligations remain separate. XOR is not promoted.
+
+The geometry-only comparison of existing COPY/LITERAL anchors suggests a
+possible opportunity but proves no physical benefit or CPU/memory bound.
+No new stride, codec or financial dictionary variant was executed or adopted.
+Inputs, assumptions and remaining proof are indexed in
+`RC6_HORIZON_CAPACITY_ASSESSMENT_20261008.json`.
+
+After fixing a new test's mistaken get-versus-api interception, the combined
+regression passed506 unique collected/native JUnit cases in each local
+Python3.11/3.12, with no failures/errors/skips. Both first RED XMLs remain
+hash-indexed. Negative entrypoint probes physically prevent event/API/Source,
+bootstrap and producer callbacks. These are development proofs, not G1 Actions.
+All G0..G8 qualification, BIG, fullGov, Predeploy and deploy remain blocked.
+
 ## Required final qualification
 
 Required order for one frozen SHA/tree: G0 -> G1.311/G1.312 -> G2focal311 ->

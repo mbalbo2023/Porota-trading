@@ -1,0 +1,241 @@
+{
+  "alternatives_rejected_for_current_candidate": [
+    {
+      "alternative": "Retain issuer UID only on entry to Python root_worker",
+      "reason": "Does not cover earlier sudo/unshare privileged startup or every setup child."
+    },
+    {
+      "alternative": "Depend on sudo signal forwarding",
+      "reason": "Execution route is unverified; forwarding cannot establish SIGKILL delivery to all actors or actual FIN5."
+    },
+    {
+      "alternative": "Nested ROOT Original manager with NONROOT outer issuer",
+      "reason": "Inner FIN is not outer FIN; issuer death/STOP can leave the privileged manager or other groups alive. PDEATH assumptions do not close startup races."
+    },
+    {
+      "alternative": "Grant CAP_KILL through a private launcher/filecap",
+      "reason": "Creating the privileged launcher through sudo reintroduces the unproved ROOT bootstrap. Ambient transfer and all backend capability drops require actual proof."
+    },
+    {
+      "alternative": "Grant capabilities to a shared Python/venv or change global sudoers",
+      "reason": "Broadens host/shared runtime authority and is outside the minimally scoped candidate design."
+    }
+  ],
+  "conclusion": "No current minimal startup chain proves that the NONROOT issuer can directly terminate and reap every pre-drop ROOT actor within unchanged Original TERM2/FIN5. Keep the immutable NOT_STARTED guard.",
+  "evidence": {
+    "linux_runtime_source_mapping": "Upstream v6.17 source contract reference; exact Azure patch source/binary equivalence is not claimed",
+    "metadata_run": {
+      "actual_inner_fin_claimed": false,
+      "actual_outer_namespace_removed": true,
+      "actual_root_signal_delivery_proved": false,
+      "artifact_id": 11579491712,
+      "generation": "NOT_STARTED",
+      "inner_generation_operations": {
+        "create_namespace": "NOT_CALLED",
+        "image_allocation": "NOT_CALLED",
+        "root_worker_launch": "NOT_CALLED"
+      },
+      "kernel_prerequisites_ref": {
+        "path": "kernel-prerequisites.json",
+        "sha256": "59479072214565cf74755648ac5fb04899bb2949403d985927021df60e23b754"
+      },
+      "kernel_prerequisites_status": "BLOQUEADO",
+      "kernel_release": "6.17.0-1022-azure",
+      "kernel_unsupported_claimed": false,
+      "local_zip": "/workspace/rc6-capacity-probe-run-37845108215/11579491712.zip",
+      "missing": [
+        "QFMT_VFS_V1_MODULE_NOT_ALREADY_LIVE"
+      ],
+      "module_loading_attempted": false,
+      "official_url": "https://github.com/mbalbo2023/Porota-trading/actions/runs/37845108215",
+      "original_outer_fin_closed": true,
+      "outer_native_fin_ref": {
+        "path": "sealed/0005.raw",
+        "sha256": "b93a7d3f0c2060f53ab508e44663ea143a33ec828a5cd909bcd7380c603eea99"
+      },
+      "outer_phase_green": false,
+      "outer_returncode": 1,
+      "privileged_signal_custody": {
+        "privileged_launch_authorized": false,
+        "proved": false,
+        "status": "NO_VERIFICADO"
+      },
+      "producer_receipt_ref": {
+        "path": "sealed/0001.raw",
+        "sha256": "d5b7b6f3413c617075c4404e504d130a39a51f96e42c08bcaa242141955a941f"
+      },
+      "root_EPERM_observed": false,
+      "run_id": 37845108215,
+      "status": "BLOCKED",
+      "zip_sha256": "1d29f067327edeb292a625019a951c1e10a123377b397a17575cc72e38450981"
+    },
+    "original_manager": {
+      "failed_phase_cleanup_seconds": 5,
+      "path": "scripts/rc6_controlled_native_child_manager.py",
+      "sha256": "55325b3108e175a42b87ebe544fd307fa45ffd29b6f7ab471443803ad9ba53b8",
+      "term_grace_seconds": 2,
+      "verified_current_file": true
+    },
+    "sudo_runtime_source_mapping": "NO_VERIFICADO: upstream reference below is not asserted to match the runner ELF or effective sudoers policy"
+  },
+  "external_development_index_sha256": "d0625f786730d2e21a1f0c5ec9d86605b1ea230916f3b3d3a559798cd5e66d9b",
+  "generated_at": "2026-10-08T21:34:48.182041+00:00",
+  "hypotheses_not_runtime_evidence": [
+    "An actor with real UID retained as issuer and effective UID ROOT can be credential-signalable; the present full startup tree has not proved that property.",
+    "The actual sudo execution route and PGID/SID coverage may differ from assumptions. No pre-drop ROOT chain was executed in the metadata run.",
+    "A dedicated NONROOT supervisor with effective CAP_KILL in the target user namespace could directly signal ROOT, but no authenticated grant/bootstrap or capability confinement proof is presently available.",
+    "An upstream conditional EPERM path is not a historical ROOT EPERM observation. The kernel is not declared unsupported."
+  ],
+  "official_dependency_sources": [
+    {
+      "claims": [
+        {
+          "claim": "Sender real/effective UID matching target real/saved UID, or CAP_KILL in target user namespace, supplies credential permission; other security hooks may still deny.",
+          "lines": "783-832"
+        },
+        {
+          "claim": "Process-group signalling can return success when at least one member accepts delivery. killpg SENT alone does not prove delivery to all ROOT members.",
+          "lines": "1429-1447"
+        }
+      ],
+      "commit": "e5f0a698b34ed76002dc5cff3804a61c80233a7a",
+      "official_url": "https://github.com/torvalds/linux/blob/e5f0a698b34ed76002dc5cff3804a61c80233a7a/kernel/signal.c",
+      "path": "kernel/signal.c",
+      "raw_url": "https://raw.githubusercontent.com/torvalds/linux/e5f0a698b34ed76002dc5cff3804a61c80233a7a/kernel/signal.c",
+      "repository": "torvalds/linux",
+      "source_sha256": "074166696c837c48ba5edc1fcefa4dd3e4b0736b2093545b0824a3f60f9c18e5"
+    },
+    {
+      "claims": [
+        {
+          "claim": "File capabilities or set-id changes clear ambient capabilities at exec. Normal Python exec does not retain prior effective CAP_KILL merely because its caller had it; ambient/file-capability transfer needs an explicit design.",
+          "lines": "909-998"
+        }
+      ],
+      "commit": "e5f0a698b34ed76002dc5cff3804a61c80233a7a",
+      "official_url": "https://github.com/torvalds/linux/blob/e5f0a698b34ed76002dc5cff3804a61c80233a7a/security/commoncap.c",
+      "path": "security/commoncap.c",
+      "raw_url": "https://raw.githubusercontent.com/torvalds/linux/e5f0a698b34ed76002dc5cff3804a61c80233a7a/security/commoncap.c",
+      "repository": "torvalds/linux",
+      "source_sha256": "29b61388bc205bdf27d83d323fb770be514c5e6743bebe4ce6ab0d9fc8549788"
+    },
+    {
+      "claims": [
+        {
+          "claim": "Command credentials are applied using setresuid(real,effective,effective).",
+          "lines": "201-205"
+        },
+        {
+          "claim": "Depending on policy/flags, sudo may exec the command directly instead of maintaining a forwarding process.",
+          "lines": "404-507"
+        }
+      ],
+      "commit": "fc9369cb442c8c5f6612d1831294569f1db75028",
+      "official_url": "https://github.com/sudo-project/sudo/blob/fc9369cb442c8c5f6612d1831294569f1db75028/src/exec.c",
+      "path": "src/exec.c",
+      "raw_url": "https://raw.githubusercontent.com/sudo-project/sudo/fc9369cb442c8c5f6612d1831294569f1db75028/src/exec.c",
+      "repository": "sudo-project/sudo",
+      "source_sha256": "f3eb6bca06fb176a19412319a6e695251bd7e6b49a90420a07c8b4f4902a3c88"
+    },
+    {
+      "claims": [
+        {
+          "claim": "The non-pty monitoring route forwards handled signals to its command PID. This route is not universal and cannot forward SIGKILL through a userspace handler.",
+          "lines": "118-199"
+        }
+      ],
+      "commit": "fc9369cb442c8c5f6612d1831294569f1db75028",
+      "official_url": "https://github.com/sudo-project/sudo/blob/fc9369cb442c8c5f6612d1831294569f1db75028/src/exec_nopty.c",
+      "path": "src/exec_nopty.c",
+      "raw_url": "https://raw.githubusercontent.com/sudo-project/sudo/fc9369cb442c8c5f6612d1831294569f1db75028/src/exec_nopty.c",
+      "repository": "sudo-project/sudo",
+      "source_sha256": "0f67e2545ed6a4edfaaaa7ff5f84acfa658351a2a897381972985e111b590a86"
+    },
+    {
+      "claims": [
+        {
+          "claim": "PERM_ROOT can set real/effective/saved UID all to ROOT during sudoers processing, so command-level UID retention alone does not establish continuous startup custody.",
+          "lines": "169-181"
+        }
+      ],
+      "commit": "fc9369cb442c8c5f6612d1831294569f1db75028",
+      "official_url": "https://github.com/sudo-project/sudo/blob/fc9369cb442c8c5f6612d1831294569f1db75028/plugins/sudoers/set_perms.c",
+      "path": "plugins/sudoers/set_perms.c",
+      "raw_url": "https://raw.githubusercontent.com/sudo-project/sudo/fc9369cb442c8c5f6612d1831294569f1db75028/plugins/sudoers/set_perms.c",
+      "repository": "sudo-project/sudo",
+      "source_sha256": "36a6a6c71ebee6a6e62407bac5edd2e4b8f2d067d5496471c4206ec7bb1b3061"
+    },
+    {
+      "claims": [
+        {
+          "claim": "stay_setuid supplies invoking-user real UID with target effective UID for command execution.",
+          "lines": "775-788"
+        }
+      ],
+      "commit": "fc9369cb442c8c5f6612d1831294569f1db75028",
+      "official_url": "https://github.com/sudo-project/sudo/blob/fc9369cb442c8c5f6612d1831294569f1db75028/plugins/sudoers/policy.c",
+      "path": "plugins/sudoers/policy.c",
+      "raw_url": "https://raw.githubusercontent.com/sudo-project/sudo/fc9369cb442c8c5f6612d1831294569f1db75028/plugins/sudoers/policy.c",
+      "repository": "sudo-project/sudo",
+      "source_sha256": "42a31524ce36be822de90aa0c7111b7b7bd09abc35998b969821bcee0df54eb7"
+    },
+    {
+      "claims": [
+        {
+          "claim": "stay_setuid is documented as off by default; actual runner policy is unverified.",
+          "lines": "4105-4126"
+        }
+      ],
+      "commit": "fc9369cb442c8c5f6612d1831294569f1db75028",
+      "official_url": "https://github.com/sudo-project/sudo/blob/fc9369cb442c8c5f6612d1831294569f1db75028/docs/sudoers.man.in",
+      "path": "docs/sudoers.man.in",
+      "raw_url": "https://raw.githubusercontent.com/sudo-project/sudo/fc9369cb442c8c5f6612d1831294569f1db75028/docs/sudoers.man.in",
+      "repository": "sudo-project/sudo",
+      "source_sha256": "c20bfd276a50e56c99810e139c1716b169d5ede88705e7c207ebee896e1e51c3"
+    }
+  ],
+  "permanent_guard_recommendations": [
+    "Keep privileged_signal_custody exactly NO_VERIFICADO/proved=false/privileged_launch_authorized=false until genuine full-tree evidence exists.",
+    "Readiness metadata, module availability and workflow success must not authorize ROOT or qualify capacity.",
+    "Preserve physical NOT_CALLED assertions for namespace creation, image allocation and root-worker launch on every unknown custody path.",
+    "Unknown FIN or live loop/mount custody must veto payload reads and outer cleanup; preserve controls without manufacturing inner FIN.",
+    "Test negative partial killpg delivery, UID-reset startup, escaped process group, missing capability grant and backend capability inheritance before any promotion."
+  ],
+  "privileged_signal_custody": "NO_VERIFICADO",
+  "qualification": {
+    "G0_G8_claimed": false,
+    "final_candidate_eligible": false,
+    "ppi_watch": "UNTOUCHED",
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "runtime_validated": false
+  },
+  "raw_transport_note": "Run37845108215 RAW is in Actions artifacts. Offline research RAW is local development evidence, never qualification; public signed-package/source URLs and hashes permit independent reacquisition. No local payload is claimed durable in Git.",
+  "repository": "mbalbo2023/Porota-trading",
+  "required_authority_and_proofs": {
+    "bootstrap": "A previously authenticated privileged entry mechanism whose complete startup is signalable by the issuer, or a previously authenticated dedicated CAP_KILL supervisor. Neither is established by current evidence.",
+    "capability_confinement": "No API/Git credentials to ROOT; no ambient/effective/permitted/inheritable CAP_KILL at backend entry; no shared interpreter/filecap changes.",
+    "fin": "Actual primary/adopted wait4 reaps, ECHILD, owned group absent and subreaper restoration within unchanged TERM2/FIN5. A self-timeout exit or wrapper boolean cannot credit signal delivery.",
+    "financial_effects": "None: no financial tick, workload reduction, promotion, deployment or runtime-validation claim.",
+    "finite_stop_cases": [
+      "STOP during startup",
+      "STOP before privilege drop",
+      "ROOT ignores TERM and receives genuine KILL",
+      "STOP with setup subprocess alive"
+    ],
+    "whole_tree": "Bind every actor and child by PID/birth, real/effective/saved UID, user namespace, PGID/SID and owned ancestry; demonstrate coverage of Original killpg without relying on partial-success SENT."
+  },
+  "schema": "porota.rc6.signal-custody-readonly-assessment.v1",
+  "scope": "READ_ONLY_RCA_ASSESSMENT_NO_CANDIDATE_CHANGES",
+  "source_sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+  "source_tree": "8420b9feba4577fadf79a2d125125810af787618",
+  "status": "BLOQUEADO",
+  "this_assessment_actions": {
+    "actions_dispatched": false,
+    "candidate_files_modified": false,
+    "commits_created": false,
+    "deploy_executed": false,
+    "privileged_probe_executed": false,
+    "tests_executed": false
+  }
+}

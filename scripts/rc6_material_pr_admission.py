@@ -513,6 +513,8 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
     require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
+    from scripts.rc6_architectural_gates import require_horizon_model_before_material
+    require_horizon_model_before_material(gate)
     event,event_custody=actual_event(gate)
     if os.environ['GITHUB_EVENT_NAME']=='pull_request':
         require(event['pull_request']['head']['sha']==source_sha,'EVENT_HEAD_SHA_REBOUND')

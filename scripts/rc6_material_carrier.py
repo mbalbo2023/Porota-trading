@@ -1109,6 +1109,7 @@ def file_sha(path):
     finally:os.close(fd)
 
 def horizon(a,run,root,prepared,interpreters):
+    architectural.require_horizon_model_before_material('Horizon')
     # Kept in a separate module so the original21600/30/5 lifecycle can be reviewed independently.
     started=architectural.utc()
     namespace,epoch,repo=exported(a,run,root,prepared,interpreters)
@@ -1212,7 +1213,9 @@ def main():
     p.add_argument('--require-pr-admission',action='store_true')
     p.add_argument('--python311',required=True);p.add_argument('--python312',required=True)
     p.add_argument('--gate',choices=('cheap','focal311','focal312','full-gov311','full-gov312','BIG-browser','Horizon'),required=True)
-    a=p.parse_args();os.umask(0o022);boot=bootstrap();a.repo_root=safe_path(a.repo_root)
+    a=p.parse_args()
+    architectural.require_horizon_model_before_material(a.gate)
+    os.umask(0o022);boot=bootstrap();a.repo_root=safe_path(a.repo_root)
     need(a.require_pr_admission,'EVERY_GATE_REQUIRES_FRESH_ORDERED_ADMISSION')
     need(os.environ.get('GITHUB_EVENT_NAME')!='pull_request' or a.gate=='cheap','PR_PUSH_MUST_NOT_LAUNCH_HEAVY_GATES')
     need(os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('GITHUB_REPOSITORY')==REPO

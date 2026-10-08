@@ -1,0 +1,220 @@
+{
+  "anchor_geometry": {
+    "anchor_bytes": 24,
+    "coverage_suffix_difference_bytes": 118278,
+    "historical_variant_search": {
+      "no_negative_global_history_claim": true,
+      "rejected_16page_CAS_partition_is_different_algorithm": true,
+      "searched": [
+        "Gitlog-all-S-MINIMUM_STRIDE",
+        "currentcodec",
+        "archiveg1artifacttree",
+        "repoaudits"
+      ],
+      "stride16_or_adaptive_proven_regression_found": false
+    },
+    "index_cap_unchanged": 262144,
+    "limitations": [
+      "The Adler collision cap4 can remove actual anchors.",
+      "COPY9-byte/LITERAL5-byte instruction costs and gzip entropy require accounting.",
+      "Index entries increase approximately fourfold for this captured file; CPU/RSS remain unmeasured.",
+      "Not an upper bound on all possible codec copies or compressed footprint.",
+      "Future file sizes, layouts and envelopes remain unproved."
+    ],
+    "method": "SQLite leaf-record physical offsets; arithmetic coverage of 24-byte windows on a grid inside unchanged blob[6:] only. No encoder/index variant invoked.",
+    "qualification_or_compressed_savings_claimed": false,
+    "stable_bodies": 5980,
+    "stable_body_bytes": 273506,
+    "strides": [
+      {
+        "anchored_stable_bodies": 2050,
+        "grid_entries": 63296,
+        "matching_suffix_bytes_from_first_anchor": 83947,
+        "stride": 64,
+        "unanchored_stable_bodies": 3930
+      },
+      {
+        "anchored_stable_bodies": 4496,
+        "grid_entries": 253183,
+        "matching_suffix_bytes_from_first_anchor": 202225,
+        "stride": 16,
+        "unanchored_stable_bodies": 1484
+      }
+    ]
+  },
+  "capture_binding": {
+    "historical_source_not_observed_source_qualification": true,
+    "owned_fin_closed": true,
+    "source_sha": "239d414a002c985d6544c42931a34576244ff093",
+    "source_tree": "8a3647f88d7cca3906d3f61310efd74bd908ed1d"
+  },
+  "causal_variables": {
+    "CAS": "CID hashes exact compressed component bytes; logical row equality is insufficient. Components bundle into immutable packs. Recipe pack references and controls also occupy physical blocks.",
+    "GC": "Nine-hour horizon plus one-hour recovery; authenticated pins and transitive bases; contiguous prefix expiry capped at128 generations. A whole pack remains when a kept recipe references it. No early expiry savings can be assumed.",
+    "anchors": "Sequence modulo32 or common depth32 forces independence. No previous, identical bytes, unavailable beneficial delta and independent winner permit additional anchors. Max depth32 bounds a chain, not anchor count or uniform savings.",
+    "dictionary": "The native dictionary samples planner/first cohorts. Clock and age changes alter exact zlib DICTID and SQLite bytes without cohort cardinality growth. Original bytes must remain unchanged.",
+    "metadata": "Per-cut generation UUID, clocks, hashes, watermarks, cross hashes, recipes and ACK wall clock can change even for fixed Source."
+  },
+  "dictid_churn_measured": {
+    "changed_blob_offsets": 138,
+    "changed_cohort_blobs": 6000,
+    "changed_dictionary_bytes": 8,
+    "changed_sqlite_pages": 513,
+    "cohort_rows_each": 6000,
+    "cuts_utc": [
+      "20:01:00",
+      "20:01:30"
+    ],
+    "dictionary_bytes_each": 29777,
+    "header_only_changed_cohort_blobs": 5980,
+    "previous_dictionary_sha256": "aadd0c557339fe3981172039779607ca9d96fe7c97371714a6301cd0867713f1",
+    "previous_raw": "0023.raw",
+    "projection_bytes_each": 4050944,
+    "same_decoded_cohort_tree_sha256": "ac5631aeb61ac5a9b5aff9b091f715b7a27bfff815b2a57b45907e335dff1f4c",
+    "scope": "Historical authenticated RAW observation, not a test of the current SHA.",
+    "target_dictionary_sha256": "da45c348d1cb508a99ed0ee5c7f98f15c26ee8c97e6f1b4404762347dc010e2e",
+    "target_raw": "0008.raw",
+    "total_sqlite_pages": 989
+  },
+  "external_development_index_sha256": "915abe3158747331cc2146e43e29df3335fbc54374bf24cbdbc7b314cdf21e1d",
+  "final_status": {
+    "RCA_global_capacity": "NO_VERIFICADO",
+    "artifact_validated": false,
+    "deployed": false,
+    "final_candidate_eligible": false,
+    "material_Horizon": "BLOQUEADO",
+    "runtime_validated": false
+  },
+  "global_model": {
+    "archive_limit_bytes": 536870912,
+    "arithmetic_only_not_capacity_proof": true,
+    "conditional_forecast_bytes": 499376128,
+    "conditional_headroom_bytes": 36675584,
+    "conditional_phase_counts": {
+      "CLOSED_anchor": 13,
+      "CLOSED_regular": 418,
+      "OPEN_anchor": 24,
+      "OPEN_regular": 746,
+      "PRE": 1
+    },
+    "known_bound": "Admission prevents accepted physical/logical inventory above 512 MiB; it does not prove successful completion of all 1202 original cuts.",
+    "original_executed_ticks_required": 1202,
+    "original_requested_ticks": 1201,
+    "simultaneous_control_reserve_bytes": 819200,
+    "status": "NO_VERIFICADO",
+    "unproved_assumptions": [
+      "future_original_publication_envelopes_size_and_entropy",
+      "uniform_minimum_savings_for_each_unobserved_cut",
+      "13_is_an_upper_bound_on_CLOSED_independent_anchor_count",
+      "constant_CAS_reuse_and_recipe_pack_layout",
+      "early_GC_or_partial_pack_reclamation"
+    ]
+  },
+  "guards_at_observed_source": {
+    "G6_G7_veto": "architectural_gates.py50-53 requires G5. Predeploy workflow39-53 validates ordered, exact G0..G6 before build. Omitting the forecast cannot bypass final governed promotion.",
+    "early_gap": "G0 checks static/fullSource and producer filesystem capacity, without a global archive closure proof. archive_components.py570-571 offers SQL XOR by default.",
+    "final_G5_veto": "architectural_gates.py691-706 requires exact source SHA/tree, original RAW1201 requested/1202 executed, FIN5 and all original native acceptance checks. Seven historical cuts cannot pass.",
+    "local_fail_closed_capacity": "retention.py175-181 checks physical and logical archive admission before growth/ACK; necessary but not a completion proof."
+  },
+  "inputs": [
+    {
+      "bytes": 9814,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/ARCHITECTURE_EXACT_CLOSE_FOLLOWUP_HANDOFF.json",
+      "sha256": "efa8a12009ac242296f13842394c744ef35e3f36941ff3d7667897e725e71311"
+    },
+    {
+      "bytes": 2281,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/ARCHIVE_EXACT_BOUNDARY_CONDITIONAL_FORECAST.json",
+      "sha256": "cbe690b2466930e1a8f5653bfdc22db813b13f086f1078d03567dbb3cd3212b5"
+    },
+    {
+      "bytes": 10041,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/ARCHIVE_GROWTH_RCA_MANIFEST.json",
+      "sha256": "a89318615d92b25bcd5e3f91ec194e50c7f1dfbe8560004c4c81d8b6eb766cf6"
+    },
+    {
+      "bytes": 7556,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/COPY_LITERAL_MEASUREMENT.json",
+      "sha256": "55e3ae5d20b8fe8bacffbea20dac0dc9f7454e3e363e14f2d669dba13d2cfb92"
+    },
+    {
+      "bytes": 13178,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/EXACT_BOUNDARY_FIXED_SEVEN_NATIVE_CAPTURE/manifest.json",
+      "sha256": "fa80612fb95cf9048be7e24432f3d88cd645538ec0bf4c8eb83c414f48140569"
+    },
+    {
+      "bytes": 4136960,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/EXACT_BOUNDARY_FIXED_SEVEN_NATIVE_CAPTURE/0018.raw",
+      "sha256": "53793d6b9a2b9d69394bab63ceb1ed33eaf089b9d8c54bbf216738ad1709b76d"
+    },
+    {
+      "bytes": 4050944,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/EXACT_BOUNDARY_FIXED_SEVEN_NATIVE_CAPTURE/0023.raw",
+      "sha256": "510dca63c4e86f4981db59a27039a24f98fb34207b4ee494092f56e8a2e5d782"
+    },
+    {
+      "bytes": 4050944,
+      "path": "/workspace/rc6-archive-g1-o6wv768s/EXACT_BOUNDARY_FIXED_SEVEN_NATIVE_CAPTURE/0008.raw",
+      "sha256": "dbc5012282f5618f15ef7d4126c97be53389b23a8d8edd4cce3fff15266e738d"
+    }
+  ],
+  "observed_source": {
+    "scope": "committed_source_inspection_not_qualification",
+    "sha": "7224ca0aff1f822032163435e7296456f2fe2334",
+    "tree": "8420b9feba4577fadf79a2d125125810af787618",
+    "worktree_clean_claimed": false
+  },
+  "ownership_reported": {
+    "lease_expires_utc": "2026-10-08T22:08:33Z",
+    "receipt_471": 6069710146,
+    "receipt_473": 6069710648
+  },
+  "raw_transport_note": "Run37845108215 RAW is in Actions artifacts. Offline research RAW is local development evidence, never qualification; public signed-package/source URLs and hashes permit independent reacquisition. No local payload is claimed durable in Git.",
+  "recommendation": "Maintain the explicit material Horizon hold and reject promotion of XOR until a valid global physical-footprint model of all original cuts is proved for corrective Source. No new codec, dictionary change, higher limits or forecast qualification. The geometric stride opportunity is diagnostic only.",
+  "recorded_utc": "2026-10-08T21:52:08.567709+00:00",
+  "repository": "mbalbo2023/Porota-trading",
+  "root_followup_observed_uncommitted": {
+    "bound_not_closed_by_hold": true,
+    "early_hold_added": true,
+    "entrypoints": "Admission before event API; carrier CLI before bootstrap; horizon before export/producer.",
+    "files": [
+      {
+        "bytes": 98442,
+        "path": "scripts/rc6_architectural_gates.py",
+        "sha256": "d6463b2c5c311e49be3fef6681ece8d8df47019ec288a3511b82cb850c2d7314"
+      },
+      {
+        "bytes": 53757,
+        "path": "scripts/rc6_material_pr_admission.py",
+        "sha256": "032ced16fc0ce4a6a7763dc02cfe13e8844354b5f0f95c9c06d9507c128fe76c"
+      },
+      {
+        "bytes": 97769,
+        "path": "scripts/rc6_material_carrier.py",
+        "sha256": "ff8e467a26d23558c1739def7a9ad1367afeaf11ea70363da58a92ffaa9b5797"
+      },
+      {
+        "bytes": 3603,
+        "path": "tests/test_rc6_horizon_model_admission.py",
+        "sha256": "4ad77cc98aa8ff7b11ad31e777c17cdecb7b68955ada52d1d4a509874d4aec96"
+      }
+    ],
+    "guard": "MappingProxyType HORIZON_MODEL_CLOSURE: NO_VERIFICADO, with global footprint, future envelopes and CAS/recipes/metadata/dependencies/anchors closure false.",
+    "hold_reason": "HORIZON_ALL1202_PHYSICAL_MODEL_NO_VERIFICADO_BEFORE_MATERIAL",
+    "remote_publication_or_source_newSHA_claimed": false,
+    "tests": "Root reported506 cheap native/JUnit GREEN for each Python3.11 and3.12. This assessment did not rerun tests."
+  },
+  "schema": "rc6.horizon-capacity-readonly-assessment.v1",
+  "scope": {
+    "DEPLOY_OWNER": "NOT_ACQUIRED",
+    "codec_variant_executed": false,
+    "mode": "PRODUCTION_PAPER / SIMULATION",
+    "new_producers_or_tests_or_actions": false,
+    "original_cuts_replayed": false,
+    "ppi_watch": "UNTOUCHED",
+    "read_only_code_and_capture_analysis": true,
+    "real_orders_sent": 0,
+    "real_routes": "NOT_CALLED",
+    "sole_write": "this_external_assessment_JSON"
+  }
+}

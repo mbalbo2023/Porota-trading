@@ -38,6 +38,16 @@ an identical blind rerun is not a fix.
 
 | ERR-RC6-036 | Preventive control review found the NONROOT issuer may lack signal permission over a sudo/unshare ROOT actor before UIDdrop. No native EPERM was observed and sudo forwarding cannot be inferred. | Keep original manager byte exact. Explicit immutable NO_VERIFICADO signal-custody guard stops before image, inner namespace and ROOT helper even when kernel metadata prerequisites are present. Next inspection is read-only kernel metadata only; no physical/privileged capacity diagnosis until genuine custody is proven. |129 exact cheap cases GREEN dual; positive signal custody unresolved, ROOT/physical capacity/G0..G8 blocked. No wrapper or fabricated FIN/cleanup. |
 
+| ERR-RC6-037 | Read-only review found seven-cut Horizon savings do not bound future1202 cost: compressed dictionary identities churn6000 cohort BLOBs, fallback can add anchors, and CAS/whole-pack GC cannot receive premature reuse/reclamation credit. The final native verifier blocks promotion, but early admission could still launch expensive Horizon before RCA model closure. | Immutable current-WIP NO_VERIFICADO global-model hold in admission before event/API/Source and in carrier before bootstrap/export/producer; no environment/comment/conditional-forecast override. Native complete same-SHA G5/G6/G7 remains mandatory. No new codec/dictionary/stride variant adopted. |506 combined unique collected/JUnit cases GREEN per local Python3.11/3.12; first new-test API interception RED preserved and corrected. G1 Actions, global512MiB bound and all material/promotion remain blocked. |
+
+Read-only run37845108215 preserves ERR-RC6-032/036 as unresolved: QFMT=m,
+not observed live and no file in the four inspected canonical locations is a
+readiness blocker, not unsupported-kernel/global-absence proof. Ubuntu's exact
+signed package and module format were inspected NONROOT offline; actual kernel
+acceptance and privileged bootstrap/custody are still NO_VERIFICADO. Its
+authentic NOT_STARTED result has genuine outer FIN/cleanup only. Compact indices
+record all ten original artifact members and reject invented inner FIN.
+
 Every closure receipt records UTC, owner/workstream, exact SHA/tree, first failed
 invariant, resources, code/guard paths, semantic invariants and verified artifact
 links/hashes. Raw evidence stays in Actions artifacts with compact reproducibility

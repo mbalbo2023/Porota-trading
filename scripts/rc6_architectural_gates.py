@@ -21,6 +21,7 @@ import stat
 import subprocess
 import time
 import sys
+from types import MappingProxyType
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -67,6 +68,7 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_capacity_calibration.py',
     'tests/test_rc6_owned_gate_lease.py',
     'tests/test_rc6_owner_receipts.py',
+    'tests/test_rc6_horizon_model_admission.py',
 })
 G1_HEAVY_FILES = frozenset({
     'tests/test_issue465_stress.py',
@@ -75,10 +77,39 @@ G1_HEAVY_FILES = frozenset({
 })
 G6_PRESERVED_HEAVY_FILES=G1_HEAVY_FILES
 
+# The seven exact CLOSED samples are development evidence, not a global
+# footprint bound for all 1202 original cuts. This WIP has no programmatically
+# established bound. Neither a launch comment nor an environment flag can
+# replace it or authorize the expensive experiment to discover it.
+HORIZON_MODEL_CLOSURE = MappingProxyType({
+    'status': 'NO_VERIFICADO',
+    'global_retained_footprint_proved': False,
+    'all_original_cuts': 1202,
+    'archive_limit_bytes': 512 * 1024**2,
+    'complete_CAS_recipes_metadata_dependencies_and_anchors': False,
+    'future_envelopes_proved': False,
+    'partial_samples_are_qualification': False,
+})
+
 
 def require(value, reason):
     if not value:
         raise ValueError(reason)
+
+
+def require_horizon_model_before_material(gate):
+    """Refuse the current WIP's expensive Horizon before any preparation.
+
+    Closing this hold requires a corrective Source with a demonstrated global
+    model. The existing full native Horizon and G6/G7 artifact requirements
+    remain independent requirements; this hold never grants their approval.
+    """
+    if ALIASES.get(gate, gate) == 'G5':
+        require(HORIZON_MODEL_CLOSURE['status'] == 'VERIFICADO'
+                and HORIZON_MODEL_CLOSURE['global_retained_footprint_proved'] is True
+                and HORIZON_MODEL_CLOSURE['future_envelopes_proved'] is True
+                and HORIZON_MODEL_CLOSURE['complete_CAS_recipes_metadata_dependencies_and_anchors'] is True,
+                'HORIZON_ALL1202_PHYSICAL_MODEL_NO_VERIFICADO_BEFORE_MATERIAL')
 
 
 def validate_g1_files(files):
