@@ -258,11 +258,41 @@ for key in ("PYTHONPATH", "PYTHONHOME"):
     environment.pop(key, None)
 environment.update(PYTHONDONTWRITEBYTECODE="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
     HYPOTHESIS_STORAGE_DIRECTORY=str(suite / "hypothesis"), RUNNER_TEMP=str(suite))
+progress_path = suite / "native-progress.json"
+progress_identity = None
+def actual_owned_progress(stage, pid, phase_entered, management_deadline, log_fd):
+    # This is the original manager's real callback ABI, not a Path passed as
+    # if it were callable. Record control metadata only in this fresh suite.
+    global progress_identity
+    assert stage in ("started", "poll") and type(pid) is int and pid > 0
+    assert suite.stat().st_uid == os.geteuid() and stat.S_IMODE(suite.stat().st_mode) == 0o700
+    if progress_identity is not None:
+        before_progress = os.lstat(progress_path)
+        assert stat.S_ISREG(before_progress.st_mode) and before_progress.st_nlink == 1
+        assert (before_progress.st_dev, before_progress.st_ino, before_progress.st_uid,
+                before_progress.st_gid, before_progress.st_mode) == progress_identity
+    temporary = suite / "native-progress-next.json"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w") as stream:
+        json.dump({"schema": "rc6.explicit-pytest-metadata-native-progress.v1", "stage": stage,
+            "actual_child_pid": pid, "phase_entered_monotonic": phase_entered,
+            "management_deadline_monotonic": management_deadline,
+            "native_log_bytes_observed_without_payload_read": os.fstat(log_fd).st_size,
+            "writer_pid": os.getpid(), "product_or_artifact_qualification_claimed": False}, stream)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    if progress_identity is None:
+        assert not os.path.lexists(progress_path)
+    os.replace(temporary, progress_path)
+    value = os.lstat(progress_path)
+    progress_identity = (value.st_dev, value.st_ino, value.st_uid, value.st_gid, value.st_mode)
+assert callable(actual_owned_progress)
 command = [sys.executable, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider",
            "--confcutdir", str(suite), "--basetemp", str(suite / "pytest-owned"),
            str(suite / "test_01_lease.py"), str(suite / "test_02_reuse.py")]
 kernel = manager["managed_native_child"](command, source_root, suite / "native-pytest.log", environment, 300,
-    terminate_grace=2, progress_poll=5, progress=suite / "native-progress.json")
+    terminate_grace=2, progress_poll=5, progress=actual_owned_progress)
 closed = all(kernel.get(key) is True for key in ("actual_child_reaped", "kernel_pre_popen_echild_verified",
     "process_group_absent_at_main_reap", "process_group_absent_after_reap", "owned_children_exhaustion_verified",
     "subreaper_activation_readback_verified", "subreaper_restore_attempted", "subreaper_restoration_readback_verified"))
@@ -302,6 +332,12 @@ def _actual_pytest_control(archive, tmp_path, case):
     kernel = json.loads(protected_bytes(owned))
     assert process.returncode == 0 and kernel["physical_fin_closed"] is True
     assert kernel["kernel_after"]["kernel_echild_verified"] is True
+    progress = json.loads(protected_bytes(suite / "native-progress.json"))
+    assert progress["schema"] == "rc6.explicit-pytest-metadata-native-progress.v1"
+    assert progress["actual_child_pid"] == kernel["kernel"]["pid"]
+    assert progress["writer_pid"] == kernel["kernel"]["supervisor_pid"]
+    assert progress["native_log_bytes_observed_without_payload_read"] >= 0
+    assert progress["product_or_artifact_qualification_claimed"] is False
     # No producer output is read until the actual same-PID supervisor proves FIN.
     terminal = json.loads(protected_bytes(suite / "child-terminal-control.json"))
     assert terminal["scope"] == "EXPLICIT_SYNTHETIC_METADATA_ONLY_NOT_PRODUCT_SOURCE_OR_KERNEL_FIN"

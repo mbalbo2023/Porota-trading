@@ -24,9 +24,10 @@ from rc6_dynamic_universe.routing import (
 )
 from rc6_dynamic_universe.sources import MARKETS, TERMS, SOURCE_ALIASES
 from .source_authority import VERSION as SOURCE_POLICY_VERSION, resolve_field
+from .read_contract import DEFAULT_READ_CONTRACT, query_budget_seconds
 
 MAX_ROWS = 20000
-QUERY_BUDGET_SECONDS = 0.5
+QUERY_BUDGET_SECONDS = DEFAULT_READ_CONTRACT.query_budget_seconds("families")
 QUOTE_TTL_SECONDS = 120
 IDENTITY_KEYS = ("ticker", "instrument_type", "market", "currency", "settlement")
 _ALIASES = {
@@ -198,8 +199,8 @@ def _field(name, rows, *, at, ttl=QUOTE_TTL_SECONDS, static=False, signed=False,
 def _read(database, at):
     from .source_reads import source_connection
     result = {"metadata": [], "quotes": [], "cash": [], "truncated": [], "errors": []}
-    deadline = monotonic()+QUERY_BUDGET_SECONDS
-    with source_connection(database, deadline=deadline) as (connection, _):
+    deadline = monotonic()+query_budget_seconds("families")
+    with source_connection(database, deadline=deadline, consumer="families") as (connection, _):
         connection.execute("PRAGMA query_only=ON")
         connection.execute("BEGIN")
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
@@ -691,7 +692,7 @@ def family_reports(database, *, as_of, catalog, sources=None):
             "option_observation_universe": {"status": "OBSERVE_ONLY", "selected": selected_options, "excluded": excluded_options,
                                             "selector": "UNDERLYING_EXPIRY_MONEYNESS_BOOK", "blind_round_robin": False},
             "evidence_read": {"database_effect": "READ_ONLY", "query_only": True, "source_rows": source_count,
-                              "row_limit": MAX_ROWS, "query_budget_seconds": QUERY_BUDGET_SECONDS,
+                              "row_limit": MAX_ROWS, "query_budget_seconds": query_budget_seconds("families"),
                               "truncated": data["truncated"], "errors": data["errors"]},
             "safety": {"mode": "SHADOW", "observer_mode": "PRODUCTION_PAPER", "real_orders_sent": 0,
                        "entry_authority": False, "real_order_routes": "NOT_CALLED", "lifecycle_mutations": 0}}

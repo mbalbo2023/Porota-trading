@@ -8,7 +8,6 @@ from dataclasses import asdict, dataclass
 from contextlib import ExitStack, closing
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-import gc
 import os
 import hashlib
 import json
@@ -29,6 +28,7 @@ from rc6_paper_family_lifecycle import FamilyPaperExecutor
 from rc6_shadow_runtime.persistence import read_committed_generation, shadow_evidence_root
 from rc6_shadow_runtime.worker import ShadowRuntime
 from tests.test_rc6_future_programming_complete import dlr
+from tests.rc6_fixture_sqlite import fixture_sqlite_writers
 
 AS_OF = datetime(2026, 10, 5, 16, tzinfo=timezone.utc)
 
@@ -204,17 +204,22 @@ class NativeFixture:
 
 
 def native_fixture(tmp_path, *, as_of=AS_OF, count=25, with_future=True, with_spot=True, multifamily=False, progress=None):
-    fixture = _build_native_fixture(tmp_path, as_of=as_of, count=count,
-                                    with_future=with_future, with_spot=with_spot, multifamily=multifamily, progress=progress)
-    # SQLite's transaction context commits but does not close a connection.
-    # Native writer UDFs may retain cycles until GC; finalize those writers
-    # before measuring read custody, so their last-close WAL checkpoint cannot
-    # run as a side effect of allocations during the subsequent render.
-    gc.collect()
-    return fixture
+    with fixture_sqlite_writers() as writers:
+        fixture = _build_native_fixture(tmp_path, as_of=as_of, count=count,
+            with_future=with_future, with_spot=with_spot, multifamily=multifamily,
+            progress=progress, writers=writers)
+        writers.quiesce()
+        return fixture
 
 
 def _health_seed(tmp_path):
+    with fixture_sqlite_writers() as writers:
+        result = _health_seed_writes(tmp_path)
+        writers.quiesce()
+        return result
+
+
+def _health_seed_writes(tmp_path):
     """Private native writer inputs; no SHADOW publication or clock override."""
     from bs_instrument_contracts import InstrumentContract
     from bu_instrument_catalog import normalize_record, persist
@@ -235,9 +240,6 @@ def _health_seed(tmp_path):
         store.add_quote(Quote(symbol, "ACCIONES", "A-24HS", Decimal(100), Decimal(100), Decimal("100.1"),
             Decimal(1000), Decimal(1000), at, currency="ARS", market="BYMA",
             metadata_source="OFFLINE_SYNTHETIC_CONTRACT", book_at=at, trade_at=at, last_kind="TRADE"))
-    # Finalize fixture writers before real spawn, as the normal fixture does;
-    # no GC policy changes occur in the child or measured health consumer.
-    gc.collect()
     return store, database, shadow_evidence_root(database)
 
 
@@ -287,7 +289,7 @@ def _multifamily_records(as_of, count):
             yield record
 
 
-def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, multifamily, progress=None):
+def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, multifamily, progress=None, writers=None):
     def observed(stage, **values):
         if progress is not None:
             progress(stage, **values)
@@ -299,7 +301,7 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
     observed("SCHEMA_END")
     start = as_of - timedelta(minutes=10)
     preopen = as_of.replace(hour=13, minute=20, second=0, microsecond=0)
-    with store.connect() as connection:
+    with closing(store.connect()) as connection, connection:
         observed("CATALOG_BEGIN")
         if multifamily:
             from bu_instrument_catalog import persist
@@ -325,6 +327,8 @@ def _build_native_fixture(tmp_path, *, as_of, count, with_future, with_spot, mul
     # constructs a .shadow fallback or publishes manually fabricated bundles.
     worker = ShadowRuntime.from_environment(path, source_roots=[])
     def tick(at):
+        if writers is not None:
+            writers.quiesce()
         observed("TICK_BEGIN", as_of=at.isoformat())
         report = worker.tick(at)
         if progress is not None:

@@ -27,7 +27,8 @@ SCHEMA = "rc6.runtime-entry-signals.v1"
 NATIVE_INPUT_SCHEMA = "rc6.native-entry-signal-input.v1"
 REGISTRY_SCHEMA = "rc6.entry-preregistration.v1"
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
-QUERY_SECONDS = .25
+from .read_contract import DEFAULT_READ_CONTRACT, query_budget_seconds
+QUERY_SECONDS = DEFAULT_READ_CONTRACT.query_budget_seconds("entry_signals")
 MAX_ROW_BYTES = 128 * 1024
 MAX_CHECKPOINT_BYTES = 16 * 1024**2
 MAX_ACTIVE = 512
@@ -113,7 +114,7 @@ def _position_row(connection, table, column, value):
 
 
 def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_limit=200,
-               join_positions=False):
+               join_positions=False, consumer="entry_signals"):
     """One bounded readonly WAL transaction; optional native ledger joins.
 
     Used by the funnel too so all consumers enforce the same source safety.
@@ -122,10 +123,12 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
     at = stamp(as_of)
     if isinstance(row_limit, bool) or not isinstance(row_limit, int) or not 1 <= row_limit <= 2000:
         raise ValueError("INVALID_PROSPECTIVE_READ_BUDGET")
+    if type(consumer) is not str or consumer not in ("entry_signals", "funnel"):
+        raise ValueError("UNKNOWN_SOURCE_QUERY_CONSUMER")
     from .source_reads import original_source_path, source_connection
-    deadline = monotonic() + QUERY_SECONDS
+    deadline = monotonic() + query_budget_seconds(consumer)
     path = original_source_path(database)
-    with source_connection(path, deadline=deadline) as (c, source_info):
+    with source_connection(path, deadline=deadline, consumer=consumer) as (c, source_info):
         key = digest([str(path), source_info.st_dev, source_info.st_ino])
         c.execute("PRAGMA query_only=ON")
         c.execute("PRAGMA busy_timeout=5")

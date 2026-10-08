@@ -218,3 +218,42 @@ The default branch still has a legacy PR check that asks for September checkpoin
 
 ## Accessibility invariant
 If a normal recurring operation requires the user to open a terminal, copy/paste shell commands, or manage GitHub manually, treat that as an automation defect to be fixed.
+
+## 13. RC6 architectural RCA and heavy producer admission
+
+Reconciled from PR #477 (five governance paths), with the authoritative 2026-10-08
+G0–G8 order. This section does not authorize deployment or acquire DEPLOY_OWNER.
+
+- Link recurring errors to `docs/governance/RC6_ERROR_REGISTRY.md`; retain the
+  chain ERROR → RCA → ARCHITECTURAL_FIX → GUARD → CHEAP_DUAL_TESTS → EVIDENCE.
+  Do not retry an identical SHA/configuration hoping for a different result.
+- Freeze one SHA/tree. G0 static/admission/fullGit/fullSource/capacity → G1 cheap
+  Python 3.11 and 3.12 → G2 focal311 → G3 focal312 → G4 BIG/material → G5 required
+  retention/Horizon/browser → G6 full governed → G7 Predeploy/build once → G8
+  exact artifact. Missing, stale, pending, unknown or RED evidence stops the
+  expensive successors. A push must not launch full Predeploy automatically.
+- Immediately before EACH heavy producer, measure its actual filesystem and
+  authenticate SHA/tree, workload fingerprint, producer, attempt, owner and
+  runner. Require a hash-linked comparable measured peak, or an authentic
+  observed allocated high-water plus an exact graph comparison and enumerated
+  verified bounds for every additional cost, then **4 GiB** separate reserve,
+  **at least 10%** free inodes and a live recheck, never a stale G0 receipt.
+  Preserve the original measurement's metric/count/origin; an observed closed
+  sample is not a continuously measured peak. Unknown components block launch.
+  Verify the exact Source/list/graph/model bytes and live filesystem allocation
+  unit/type; a checks object or hash-shaped string alone is not evidence.
+- Use exclusively created, marker-authenticated attempt namespaces. After actual
+  owned FIN, preserve required RAW/controls with verified hashes outside that
+  namespace before deleting only its own generated resources; measure bytes and
+  inodes before/after. Unknown FIN/custody/capture blocks cleanup. Never follow
+  aliases, prune globally, remove foreign evidence or touch runtime/PPI Watch.
+- Preserve BIG 12000 instruments/60000 observations, all five factual PAPER
+  exits, 90-second outer ceiling, RSS below 2 GiB, evidence at most 128 MiB and
+  complete retained count at most 100000. Qualification requires at most 75
+  seconds; an isolated 75–90-second PASS is diagnostic only. Do not loosen
+  workloads, assertions, scenarios or hard resource limits to obtain GREEN.
+- Record actual runner CPU/memory/filesystem/load. Promotion uses canonical
+  public `ubuntu-24.04`; a faster diagnostic runner alone is not qualification.
+- Git retains code/tests/policy/concise RCA and reproducibility indices. Preserve
+  bulk RAW as hash-verifiable Actions artifacts, without duplicating huge trees
+  into every candidate commit. Workflow success never means VALIDADO_RUNTIME.

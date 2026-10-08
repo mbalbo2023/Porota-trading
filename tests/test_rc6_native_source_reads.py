@@ -222,14 +222,25 @@ def test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_co
             yield connection
         finally:
             connection.close()
+    @contextmanager
+    def incumbent_source_scope(*_args, **_kwargs):
+        # This reference transport really opens Source SQLite and can create
+        # WAL/SHM. It is deliberately outside the current capture authority;
+        # only the unpatched successor below can qualify Source custody.
+        from types import SimpleNamespace
+        yield SimpleNamespace(receipt={"scope": "LEGACY_NOT_QUALIFICATION",
+            "source_unchanged": "NOT_CLAIMED", "primary_captures": "NOT_CLAIMED"})
     factory = ShadowRuntime.from_environment
     def incumbent_factory(cls, database, **kwargs):
         return factory(database, maximum_files=512, **kwargs)
     with external_disk_fixture(prefix=".rc6-incumbent-512-") as directory:
         with monkeypatch.context() as incumbent:
             incumbent.setattr(source_reads, "readonly_copy", incumbent_connection)
+            import rc6_shadow_runtime.worker as worker_module
+            incumbent.setattr(worker_module, "source_tick", incumbent_source_scope)
             incumbent.setattr(ShadowRuntime, "from_environment", classmethod(incumbent_factory))
             fixture = native_fixture(Path(directory), count=5)
+            assert fixture.worker.last_source_read_receipt["scope"] == "LEGACY_NOT_QUALIFICATION"
         anchor = fixture.store.connect()
         anchor.execute("SELECT count(*) FROM paper_positions").fetchone()
         try:
@@ -241,6 +252,10 @@ def test_incumbent_512_checkpoint_keeps_business_fingerprint_seed_cursors_and_co
             # Same-clock restart isolates transport equivalence from a new
             # observation, expiry or session transition.
             report = current.tick(fixture.as_of)
+            receipt = current.last_source_read_receipt
+            assert receipt["primary_captures"] == 1 and receipt["additional_captures"] == []
+            assert receipt["source_unchanged"] is True and receipt["cleanup_complete"] is True
+            assert receipt["read_contract_sha256"] == current.read_contract.fingerprint()
             from rc6_shadow_runtime.persistence import read_committed_generation
             after = read_committed_generation(fixture.root)["checkpoint"]
             assert report["checkpoint_reused"]

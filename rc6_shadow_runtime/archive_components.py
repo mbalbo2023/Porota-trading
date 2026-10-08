@@ -8,6 +8,7 @@ The owner supplies its archive/writer locks, quota admission and receipt chain.
 import base64
 import gzip
 import hashlib
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ import uuid
 import zlib
 
 from .exact_page_storage import encode_page_pack, decode_page_pack, inspect_page_pack
+from .exact_binary_storage import encode_binary_pack, decode_binary_pack, inspect_binary_pack
 
 
 RECIPE_SCHEMA = "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"
@@ -38,6 +40,7 @@ HEX = re.compile(r"[0-9a-f]{64}\Z")
 BASE_MEMBERS = frozenset({"manifest.json", "report.json.gz", "checkpoint.json.gz", "status.json"})
 MEMBERS = BASE_MEMBERS | {"projection.sqlite"}
 LEVEL = "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE"
+DEPENDENT_RECOVERIES = frozenset({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"})
 
 
 def sha(raw):
@@ -190,6 +193,58 @@ class ComponentArchive:
         self.owner, self.root = owner, owner.archive_root
         self.packs, self.recipes, self.projections = {}, {}, {}
 
+    def _binary_option(self, raw, previous, previous_depth, force_full, *, allow_xor=False):
+        """One bounded proposal; never a runtime flag or an admission bypass."""
+        return encode_binary_pack(raw, previous, previous_depth=previous_depth,
+                                  force_full=force_full, allow_xor=allow_xor)
+
+    def _common_dependency_depth(self, receipt):
+        """Conservative anchor bound from hash-authenticated recipe metadata.
+
+        This grants no payload/ACK/GC proof. Restoration and GC separately
+        reopen and authenticate the physical components. A common archive
+        chain can outlive either member's individual codec chain, so every
+        encoding proposal must anchor together before another edge reaches33.
+        """
+        from rc6_dynamic_universe.common import digest
+        depth, visited, current = 0, set(), receipt
+        while True:
+            recipe = self._recipe(current)
+            ident = recipe["generation_id"]
+            if ident in visited:
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
+            visited.add(ident)
+            bases = {}
+            for name in ("projection.sqlite", "checkpoint.json.gz"):
+                record = recipe["members"].get(name)
+                if record is None:
+                    continue
+                accepted = ({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"} if name == "projection.sqlite"
+                            else {"SOURCE_GZIP_FRAME_CONCAT", "EXACT_BINARY_PACK"})
+                if not isinstance(record, dict) or record.get("recovery") not in accepted:
+                    raise ValueError("RETENTION_RECIPE_RECOVERY_CODEC_INVALID")
+                member_depth = integer(record.get("dependency_depth", 0), 32)
+                if not member_depth:
+                    if any(record.get(key) is not None for key in ("base_generation_id", "base_receipt_digest")):
+                        raise ValueError("RETENTION_PAGE_INDEPENDENT_BASE_UNEXPECTED")
+                    continue
+                base, proof = record.get("base_generation_id"), record.get("base_receipt_digest")
+                if not isinstance(base, str) or ID.fullmatch(base) is None or not isinstance(proof, str) or HEX.fullmatch(proof) is None:
+                    raise ValueError("RETENTION_PAGE_DEPENDENCY_INVALID")
+                if base in bases and bases[base] != proof:
+                    raise ValueError("RETENTION_PAGE_DEPENDENCY_LINEAGE_INVALID")
+                bases[base] = proof
+            if not bases:
+                return depth
+            if len(bases) != 1 or depth >= 32:
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
+            base, expected = next(iter(bases.items()))
+            prior, _ = self.owner._read_control(self.root / (base + ".receipt.json"))
+            if (digest(prior) != expected or type(prior.get("receipt_sequence")) is not int
+                    or prior["receipt_sequence"] >= current["receipt_sequence"]):
+                raise ValueError("RETENTION_PAGE_DEPENDENCY_LINEAGE_INVALID")
+            current, depth = prior, depth + 1
+
     def _pack(self, name):
         match = PACK_NAME.fullmatch(name) if isinstance(name, str) else None
         if match is None:
@@ -299,7 +354,7 @@ class ComponentArchive:
 
     def _member(self, record, components, used, *, decode=True):
         expected = {"sha256", "bytes", "recovery", "references"}
-        if isinstance(record, dict) and record.get("recovery") == "EXACT_PAGE_PACK":
+        if isinstance(record, dict) and record.get("recovery") in DEPENDENT_RECOVERIES:
             expected |= {"pack_sha256", "dependency_depth", "base_generation_id", "base_receipt_digest"}
         if (not isinstance(record, dict) or set(record) != expected
                 or not isinstance(record.get("sha256"), str) or HEX.fullmatch(record["sha256"]) is None):
@@ -318,15 +373,18 @@ class ComponentArchive:
             if decode and record.get("recovery") == "STORED_GZIP_RAW":
                 part = inflate(part, maximum=size-total)
             total += len(part)
-            if total > (MAX_PACK_BYTES if record.get("recovery") == "EXACT_PAGE_PACK" else size):
+            if total > (MAX_PACK_BYTES if record.get("recovery") in DEPENDENT_RECOVERIES else size):
                 raise ValueError("RETENTION_RECIPE_MEMBER_EXPANSION_INVALID")
             output.append(part)
         source = b"".join(output)
-        if record.get("recovery") != "EXACT_PAGE_PACK" and (len(source) != size or sha(source) != record["sha256"]):
+        if record.get("recovery") not in DEPENDENT_RECOVERIES and (len(source) != size or sha(source) != record["sha256"]):
             raise ValueError("RETENTION_ARCHIVE_MEMBER_HASH_MISMATCH")
         return source
 
     def _projection(self, receipt, recipe, components, used, seen=()):
+        return self._original(receipt, recipe, components, used, "projection.sqlite", seen)
+
+    def _original(self, receipt, recipe, components, used, name, seen=()):
         # First verify the backwards chain, retaining only small receipts and
         # typed hash/depth metadata. Holding recursive frames retained as many
         # as 33 original 64-MiB images plus all encoded packs at once.
@@ -338,11 +396,20 @@ class ComponentArchive:
             if ident in visited or len(visited) > 32:
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
             visited.add(ident)
-            record = current_recipe["members"]["projection.sqlite"]
+            record = current_recipe["members"][name]
+            accepted = ({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"} if name == "projection.sqlite"
+                        else {"SOURCE_GZIP_FRAME_CONCAT", "EXACT_BINARY_PACK"})
+            if not isinstance(record, dict) or record.get("recovery") not in accepted:
+                raise ValueError("RETENTION_RECIPE_RECOVERY_CODEC_INVALID")
             pack = self._member(record, current_components, used if ident == target else set(), decode=False)
-            metadata = inspect_page_pack(pack, expected_pack_sha256=record.get("pack_sha256"),
-                expected_target_sha256=record["sha256"])
-            if metadata["dependency_depth"] != integer(record.get("dependency_depth"), 32):
+            recovery = record.get("recovery")
+            if recovery in DEPENDENT_RECOVERIES:
+                inspector = inspect_page_pack if recovery == "EXACT_PAGE_PACK" else inspect_binary_pack
+                metadata = inspector(pack, expected_pack_sha256=record.get("pack_sha256"),
+                    expected_target_sha256=record["sha256"])
+            else:
+                metadata = {"target_sha256": record["sha256"], "dependency_depth": 0}
+            if metadata["dependency_depth"] != integer(record.get("dependency_depth", 0), 32):
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
             chain.append((current, metadata))
             # Neither original images nor wire bytes survive a traversal step.
@@ -364,11 +431,11 @@ class ComponentArchive:
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_LINEAGE_INVALID")
             # The declared child depth must agree with every actual predecessor.
             next_recipe = self._recipe(prior)
-            base_record = next_recipe["members"].get("projection.sqlite")
+            base_record = next_recipe["members"].get(name)
             if (not isinstance(base_record, dict)
                     or base_record.get("sha256") != metadata["previous_sha256"]
-                    or type(base_record.get("dependency_depth")) is not int
-                    or base_record["dependency_depth"] + 1 != metadata["dependency_depth"]):
+                    or type(base_record.get("dependency_depth", 0)) is not int
+                    or base_record.get("dependency_depth", 0) + 1 != metadata["dependency_depth"]):
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
             current, current_recipe = prior, next_recipe
             current_components = self._indices(current_recipe)
@@ -381,14 +448,23 @@ class ComponentArchive:
             current_recipe = self._recipe(current)
             current_components = self._indices(current_recipe)
             ident = current_recipe["generation_id"]
-            record = current_recipe["members"]["projection.sqlite"]
+            record = current_recipe["members"][name]
             pack = self._member(record, current_components, used if ident == target else set(), decode=False)
-            metadata = inspect_page_pack(pack, expected_pack_sha256=record.get("pack_sha256"),
-                expected_target_sha256=record["sha256"])
+            recovery = record.get("recovery")
+            if recovery in DEPENDENT_RECOVERIES:
+                inspector = inspect_page_pack if recovery == "EXACT_PAGE_PACK" else inspect_binary_pack
+                metadata = inspector(pack, expected_pack_sha256=record.get("pack_sha256"),
+                    expected_target_sha256=record["sha256"])
+            else:
+                metadata = {"target_sha256": record["sha256"], "dependency_depth": 0}
             if metadata != expected:
                 raise ValueError("RETENTION_PAGE_DEPENDENCY_CHANGED")
-            source = decode_page_pack(pack, expected_pack_sha256=record["pack_sha256"],
-                expected_target_sha256=record["sha256"], previous_bytes=previous, previous_depth=depth)
+            if recovery in DEPENDENT_RECOVERIES:
+                decoder = decode_page_pack if recovery == "EXACT_PAGE_PACK" else decode_binary_pack
+                source = decoder(pack, expected_pack_sha256=record["pack_sha256"],
+                    expected_target_sha256=record["sha256"], previous_bytes=previous, previous_depth=depth)
+            else:
+                source = self._member(record, current_components, used if ident == target else set())
             if len(source) != record["bytes"]:
                 raise ValueError("RETENTION_PAGE_SOURCE_LENGTH_MISMATCH")
             previous, depth = source, metadata["dependency_depth"]
@@ -408,10 +484,13 @@ class ComponentArchive:
         components, used, restored = self._indices(recipe), set(), {}
         for name, record in members.items():
             expected = "EXACT_PAGE_PACK" if name == "projection.sqlite" else "SOURCE_GZIP_FRAME_CONCAT" if name.endswith(".gz") else "STORED_GZIP_RAW"
-            if not isinstance(record, dict) or record.get("recovery") != expected:
+            accepted = {expected, "EXACT_BINARY_PACK"} if name in {"projection.sqlite", "checkpoint.json.gz"} else {expected}
+            if not isinstance(record, dict) or record.get("recovery") not in accepted:
                 raise ValueError("RETENTION_RECIPE_RECOVERY_CODEC_INVALID")
             if name == "projection.sqlite":
                 restored[name], _ = self._projection(receipt, recipe, components, used)
+            elif record["recovery"] == "EXACT_BINARY_PACK":
+                restored[name], _ = self._original(receipt, recipe, components, used, name)
             else:
                 restored[name] = self._member(record, components, used)
         if used != set(range(len(components))):
@@ -455,72 +534,63 @@ class ComponentArchive:
                 raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
             unchanged()
             return preview
-        base_receipt, previous, previous_depth = None, None, 0
-        if "projection.sqlite" in original and head.get("generation_id"):
+        base_receipt, previous, previous_depth, checkpoint, checkpoint_depth, common_depth = None, None, 0, None, 0, 0
+        if head.get("generation_id"):
             prior, _ = self.owner._read_control(self.root / (head["generation_id"] + ".receipt.json"))
             if prior.get("schema") == ACK_SCHEMA:
                 prior_recipe = self._recipe(prior)
+                base_receipt = prior
+                common_depth = self._common_dependency_depth(prior)
                 if "projection.sqlite" in prior_recipe["members"]:
                     previous, previous_depth = self._projection(prior, prior_recipe, self._indices(prior_recipe), set())
-                    base_receipt = prior
+                if "checkpoint.json.gz" in prior_recipe["members"]:
+                    checkpoint, checkpoint_depth = self._original(prior, prior_recipe, self._indices(prior_recipe), set(), "checkpoint.json.gz")
         catalog = self._catalog()
-        components, component_ids, members, fresh = [], {}, {}, {}
-        def add(part):
-            cid = sha(part)
-            if cid not in component_ids:
-                component_ids[cid] = len(components); components.append(cid)
-                if cid in catalog:
-                    if self._component(cid, catalog[cid]) != part:
-                        raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
-                else:
-                    fresh[cid] = part
-            return component_ids[cid]
+        alternatives = {}
+        force_full = bool(manifest["sequence"] % 32 == 0) or common_depth == 32
+        def dependent_record(raw, recovery, packed, info):
+            from rc6_dynamic_universe.common import digest
+            return {"sha256": sha(raw), "bytes": len(raw), "recovery": recovery,
+                "pack_sha256": sha(packed), "dependency_depth": info["dependency_depth"],
+                "base_generation_id": base_receipt["generation_id"] if info["dependency_depth"] else None,
+                "base_receipt_digest": digest(base_receipt) if info["dependency_depth"] else None}
         for name, raw in original.items():
             record = {"sha256": sha(raw), "bytes": len(raw)}
             if name == "projection.sqlite":
                 page, info = encode_page_pack(raw, previous, previous_depth=previous_depth,
-                    force_full=bool(manifest["sequence"] % 32 == 0))
-                parts, record["recovery"] = (page,), "EXACT_PAGE_PACK"
-                from rc6_dynamic_universe.common import digest
-                record.update(pack_sha256=sha(page), dependency_depth=info["dependency_depth"],
-                    base_generation_id=base_receipt["generation_id"] if info["dependency_depth"] else None,
-                    base_receipt_digest=digest(base_receipt) if info["dependency_depth"] else None)
+                    force_full=force_full)
+                parts, record = (page,), dependent_record(raw, "EXACT_PAGE_PACK", page, info)
             elif name.endswith(".gz"):
                 parts, record["recovery"] = source_gzip_frames(raw), "SOURCE_GZIP_FRAME_CONCAT"
             else:
                 parts, record["recovery"] = (gzip.compress(raw, mtime=0, compresslevel=1),), "STORED_GZIP_RAW"
-            refs = [add(part) for part in parts]
-            record["references"] = _array(b"".join(struct.pack("!I", index) for index in refs), count=len(refs))
-            members[name] = record
-        if len(catalog) + len(fresh) > MAX_COMPONENTS:
-            raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
-        packed, new_name = None, None
-        if fresh:
-            cursor = PACK_HEADER.size + len(fresh) * PACK_RECORD.size
-            index, payloads = [], []
-            for ordinal, (cid, raw) in enumerate(fresh.items()):
-                index.append(PACK_RECORD.pack(bytes.fromhex(cid), cursor, len(raw))); payloads.append(raw); cursor += len(raw)
-            if cursor > MAX_PACK_BYTES:
-                raise ValueError("RETENTION_COMPONENT_PACK_CAPACITY_REACHED")
-            packed = PACK_HEADER.pack(PACK_MAGIC, len(fresh)) + b"".join(index) + b"".join(payloads)
-            new_name = sha(packed) + ".cas.pack"
-            for ordinal, cid in enumerate(fresh): catalog[cid] = new_name, ordinal
-        packs, pack_ids, rows = [], {}, []
-        for cid in components:
-            name, ordinal = catalog[cid]
-            if name not in pack_ids:
-                pack_ids[name] = len(packs); packs.append(name)
-            rows.append(COMPONENT_RECORD.pack(pack_ids[name], ordinal, bytes.fromhex(cid)))
-        recipe = {"schema": RECIPE_SCHEMA, "generation_id": ident, "sequence": manifest["sequence"],
-            "manifest_sha256": manifest_sha, "members": members, "packs": packs,
-            "components": _array(b"".join(rows), count=len(rows)),
-            "manifest_links": {key: manifest.get(key) for key in ("generation_id", "sequence", "previous_generation_id",
-                "previous_manifest_sha256", "as_of", "source_watermark", "source_audit_digest", "source_reports_digest", "role_headers")},
-            "verification_level": LEVEL, "custody": "LOCAL_PRIVATE_FSYNC_NOT_WORM"}
-        recipe_raw = canonical(recipe)
-        if len(recipe_raw) > MAX_RECIPE_BYTES:
-            raise ValueError("RETENTION_RECIPE_CAPACITY_REACHED")
-        recipe_wire = gzip.compress(recipe_raw, mtime=0, compresslevel=1)
+            alternatives[name] = [(parts, record)]
+            if name in {"projection.sqlite", "checkpoint.json.gz"}:
+                base, depth = (previous, previous_depth) if name == "projection.sqlite" else (checkpoint, checkpoint_depth)
+                proposal = self._binary_option(raw, base, depth, force_full,
+                                               allow_xor=name == "projection.sqlite")
+                if proposal is not None:
+                    binary, info = proposal
+                    alternatives[name].append(((binary,), dependent_record(raw, "EXACT_BINARY_PACK", binary, info)))
+        # Authenticate the catalog once; all alternatives reuse this same
+        # captured base. Sequential plans retain one winner, never four packs.
+        # The unchanged report frame layout is not a second codec experiment.
+        verified_reuse, selected, baseline_cost = {}, None, None
+        block = os.statvfs(self.root).f_frsize
+        if type(block) is not int or block <= 0:
+            raise ValueError("RETENTION_ARCHIVE_BLOCK_SIZE_INVALID")
+        for choices in product(*(range(len(options)) for options in alternatives.values())):
+            options = {name: alternatives[name][choice] for name, choice in zip(alternatives, choices)}
+            plan = self._plan(options, catalog, manifest, manifest_sha, verified_reuse)
+            recipe_wire, packed, new_name = plan
+            sizes = (len(recipe_wire), len(packed) if packed is not None else 0)
+            cost = (sum((size + block - 1) // block * block for size in sizes), sum(sizes))
+            if baseline_cost is None:
+                baseline_cost, selected, selected_cost = cost, plan, cost
+            elif (cost[0] <= baseline_cost[0] and cost[1] <= baseline_cost[1] and cost < selected_cost):
+                selected, selected_cost = plan, cost
+            del plan, packed, recipe_wire
+        recipe_wire, packed, new_name = selected
         # Exact new bytes plus simultaneous controls, rounded physical blocks.
         additions = (len(packed) if packed is not None else 0) + len(recipe_wire)
         self.owner._archive_inventory(additional_bytes=additions+4*65536, additional_files=6)
@@ -540,6 +610,58 @@ class ComponentArchive:
             raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
         unchanged()
         return preview
+
+    def _plan(self, options, catalog, manifest, manifest_sha, verified_reuse):
+        components, component_ids, members, fresh = [], {}, {}, {}
+        def add(part):
+            cid = sha(part)
+            if cid not in component_ids:
+                component_ids[cid] = len(components); components.append(cid)
+                if cid in catalog:
+                    if cid not in verified_reuse:
+                        verified_reuse[cid] = self._component(cid, catalog[cid])
+                    if verified_reuse[cid] != part:
+                        raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
+                else:
+                    fresh[cid] = part
+            elif cid in fresh and fresh[cid] != part:
+                raise ValueError("RETENTION_COMPONENT_HASH_COLLISION")
+            return component_ids[cid]
+        for name, (parts, descriptor) in options.items():
+            record = dict(descriptor)
+            refs = [add(part) for part in parts]
+            record["references"] = _array(b"".join(struct.pack("!I", index) for index in refs), count=len(refs))
+            members[name] = record
+        if len(catalog) + len(fresh) > MAX_COMPONENTS:
+            raise ValueError("RETENTION_COMPONENT_INDEX_CAPACITY_REACHED")
+        packed, new_name = None, None
+        if fresh:
+            cursor = PACK_HEADER.size + len(fresh) * PACK_RECORD.size
+            index, payloads = [], []
+            for ordinal, (cid, raw) in enumerate(fresh.items()):
+                index.append(PACK_RECORD.pack(bytes.fromhex(cid), cursor, len(raw))); payloads.append(raw); cursor += len(raw)
+            if cursor > MAX_PACK_BYTES:
+                raise ValueError("RETENTION_COMPONENT_PACK_CAPACITY_REACHED")
+            packed = PACK_HEADER.pack(PACK_MAGIC, len(fresh)) + b"".join(index) + b"".join(payloads)
+            new_name = sha(packed) + ".cas.pack"
+        locations = {cid: (new_name, ordinal) for ordinal, cid in enumerate(fresh)}
+        packs, pack_ids, rows = [], {}, []
+        for cid in components:
+            name, ordinal = locations[cid] if cid in locations else catalog[cid]
+            if name not in pack_ids:
+                pack_ids[name] = len(packs); packs.append(name)
+            rows.append(COMPONENT_RECORD.pack(pack_ids[name], ordinal, bytes.fromhex(cid)))
+        recipe = {"schema": RECIPE_SCHEMA, "generation_id": manifest["generation_id"], "sequence": manifest["sequence"],
+            "manifest_sha256": manifest_sha, "members": members, "packs": packs,
+            "components": _array(b"".join(rows), count=len(rows)),
+            "manifest_links": {key: manifest.get(key) for key in ("generation_id", "sequence", "previous_generation_id",
+                "previous_manifest_sha256", "as_of", "source_watermark", "source_audit_digest", "source_reports_digest", "role_headers")},
+            "verification_level": LEVEL, "custody": "LOCAL_PRIVATE_FSYNC_NOT_WORM"}
+        recipe_raw = canonical(recipe)
+        if len(recipe_raw) > MAX_RECIPE_BYTES:
+            raise ValueError("RETENTION_RECIPE_CAPACITY_REACHED")
+        recipe_wire = gzip.compress(recipe_raw, mtime=0, compresslevel=1)
+        return recipe_wire, packed, new_name
 
     def dependency_graph(self, receipts):
         """Verify recipe/CID metadata and page-chain depth before any GC plan.
@@ -563,20 +685,30 @@ class ComponentArchive:
             for cid, location in components:
                 self._component(cid, location)
             base, depth = None, 0
-            if "projection.sqlite" in recipe["members"]:
-                record = recipe["members"]["projection.sqlite"]
-                if not isinstance(record, dict) or record.get("recovery") != "EXACT_PAGE_PACK":
+            for member_name in ("projection.sqlite", "checkpoint.json.gz"):
+                if member_name not in recipe["members"]:
+                    continue
+                record = recipe["members"][member_name]
+                accepted = ({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"} if member_name == "projection.sqlite"
+                            else {"SOURCE_GZIP_FRAME_CONCAT", "EXACT_BINARY_PACK"})
+                if not isinstance(record, dict) or record.get("recovery") not in accepted:
                     raise ValueError("RETENTION_RECIPE_MEMBER_INVALID")
+                if record["recovery"] not in DEPENDENT_RECOVERIES:
+                    continue
                 page = self._member(record, components, set(), decode=False)
-                metadata = inspect_page_pack(page, expected_pack_sha256=record.get("pack_sha256"),
+                inspector = inspect_page_pack if record["recovery"] == "EXACT_PAGE_PACK" else inspect_binary_pack
+                metadata = inspector(page, expected_pack_sha256=record.get("pack_sha256"),
                     expected_target_sha256=record["sha256"])
-                depth = integer(record.get("dependency_depth"), 32)
-                if depth != metadata["dependency_depth"]:
+                member_depth = integer(record.get("dependency_depth"), 32)
+                if member_depth != metadata["dependency_depth"]:
                     raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
-                if depth:
-                    base = record.get("base_generation_id")
-                    if not isinstance(base, str) or ID.fullmatch(base) is None:
+                depth = max(depth, member_depth)
+                if member_depth:
+                    member_base = record.get("base_generation_id")
+                    if (not isinstance(member_base, str) or ID.fullmatch(member_base) is None
+                            or base is not None and base != member_base):
                         raise ValueError("RETENTION_PAGE_DEPENDENCY_INVALID")
+                    base = member_base
                     previous, _ = self.owner._read_control(self.root / (base + ".receipt.json"))
                     from rc6_dynamic_universe.common import digest
                     if (digest(previous) != record.get("base_receipt_digest")
@@ -585,9 +717,14 @@ class ComponentArchive:
                         raise ValueError("RETENTION_PAGE_DEPENDENCY_LINEAGE_INVALID")
                     prior = visit(previous)
                     prior_recipe = self._recipe(previous)
-                    if (prior["depth"]+1 != depth
-                            or prior_recipe["members"]["projection.sqlite"]["sha256"] != metadata["previous_sha256"]):
+                    prior_member = prior_recipe["members"].get(member_name)
+                    if (not isinstance(prior_member, dict)
+                            or integer(prior_member.get("dependency_depth", 0), 32) + 1 != member_depth
+                            or prior_member["sha256"] != metadata["previous_sha256"]):
                         raise ValueError("RETENTION_PAGE_DEPENDENCY_DEPTH_MISMATCH")
+                    depth = max(depth, prior["depth"] + 1)
+                    if depth > 32:
+                        raise ValueError("RETENTION_PAGE_DEPENDENCY_CYCLE_OR_DEPTH")
                 elif any(record.get(key) is not None for key in ("base_generation_id", "base_receipt_digest")):
                     raise ValueError("RETENTION_PAGE_INDEPENDENT_BASE_UNEXPECTED")
             node = {"base_generation_id": base, "depth": depth, "packs": tuple(recipe["packs"]),

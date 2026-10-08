@@ -8,6 +8,12 @@ from decimal import Decimal
 from contextvars import ContextVar
 from collections import Counter
 import sys
+import threading
+import builtins as _native_builtins
+import cProfile as _native_cprofile
+from operator import is_ as _native_is
+from builtins import all as _native_all, map as _native_map
+from builtins import type as _native_type, id as _native_id
 from types import FunctionType, GetSetDescriptorType
 
 from . import packed_storage as packed
@@ -27,8 +33,61 @@ MAX_ROLE_REFERENCES = 16000000
 _LEAVES = (type(None), bool, int, float, str)
 _CONTAINERS = (dict, list, tuple)
 _ROLE_TYPES = (*_CONTAINERS, *_LEAVES, Decimal)
+_NATIVE_ROLE_KIND_IDS = frozenset(_native_id(kind) for kind in _ROLE_TYPES) | {_native_id(Counter)}
 _COUNTER_METHODS = ("__getattribute__", "__iter__", "__len__", "__getitem__", "keys", "values", "items", "get")
 _COUNTER_DICTIONARY_DESCRIPTOR = type.__getattribute__(Counter, "__dict__").get("__dict__")
+_NATIVE_CPROFILE_TYPE = _native_cprofile.Profile
+_PUBLICATION_NATIVE_GLOBALS = globals()
+MAX_PUBLICATION_RECORD_BYTES = 8 * 1024**2
+MAX_PUBLICATION_RECORDS = 512
+
+
+class _PublicationRecords:
+    """Bounded immutable gzip results within one publication, never a proof.
+
+    Stored fields are native bytes/strings/integers. Every caller receives its
+    own dictionary, so mutating one encoded role cannot alter another result.
+    The encoder still checks every occurrence, marker and capacity limit.
+    """
+    __slots__ = ("entries", "bytes", "thread", "hits", "misses")
+
+    def __init__(self):
+        self.entries, self.bytes = {}, 0
+        self.thread = threading.get_ident()
+        self.hits = self.misses = 0
+
+    def record(self, raw, *, count=None):
+        operations = (packed._record, packed._compress, packed._sha, packed.gzip.compress,
+                      packed.base64.b64encode, packed.zlib.compress, packed.hashlib.sha256)
+        if (threading.get_ident() != self.thread or type(raw) is not bytes
+                or count is not None and type(count) is not int
+                or any(current is not prior for current, prior in
+                       zip(operations, packed._RECORD_NATIVE_OPERATIONS))
+                or any(getattr(operation, "__code__", None) is not code
+                       for operation, code in zip(operations, packed._RECORD_NATIVE_CODES))):
+            return packed._record(raw, count=count)
+        key = raw, count
+        stored = self.entries.get(key)
+        if stored is not None:
+            self.hits += 1
+            return dict(stored)
+        self.misses += 1
+        result = packed._record(raw, count=count)
+        # Avoid allocating a snapshot when even the raw key cannot fit. The
+        # output remains the original result when the optional cache is full.
+        if (len(self.entries) < MAX_PUBLICATION_RECORDS
+                and self.bytes + len(raw) + 1024 <= MAX_PUBLICATION_RECORD_BYTES):
+            stored = tuple(result.items())
+            size = (sys.getsizeof(key) + sys.getsizeof(raw) + sys.getsizeof(stored)
+                    + sum(sys.getsizeof(item) + sum(sys.getsizeof(part) for part in item)
+                          for item in stored) + 128)
+            # Reserve the entire bounded dict table before adding an entry;
+            # resizing cannot put the cache itself beyond its byte ceiling.
+            if self.bytes + size + MAX_PUBLICATION_RECORDS * 128 <= MAX_PUBLICATION_RECORD_BYTES:
+                before = sys.getsizeof(self.entries)
+                self.entries[key] = stored
+                self.bytes += size + sys.getsizeof(self.entries) - before
+        return result
 
 
 def _plain_counter(node):
@@ -48,6 +107,16 @@ def _plain_counter(node):
 
 
 def _constants():
+    if (packed._NativeCaptureBuffer is not packed._NATIVE_BUILDER_OPERATIONS[19]
+            or type(packed._NativeCaptureBuffer) is not type):
+        return None
+    for operation, defaults, keywords in packed._NATIVE_JSON_DEFAULTS:
+        current = operation.__kwdefaults__
+        if (operation.__defaults__ is not defaults
+                or current is not None and type(current) is not dict
+                or len(current or {}) != len(keywords)
+                or any((current or {}).get(name) is not value for name, value in keywords)):
+            return None
     result = (packed.PACK_TARGET, packed.MAX_BINDINGS, packed._FIELDS,
             packed._SMALL_ITEMS, packed._SMALL_STRING, packed._SMALL_INTEGER_BITS,
             packed._BINDING_SCALAR_ENTRIES, packed._BINDING_SCALAR_BYTES,
@@ -57,9 +126,11 @@ def _constants():
         return None
     builder_namespace = type.__getattribute__(packed._CaptureBuilder, "__dict__")
     buffer_namespace = type.__getattribute__(packed._CaptureBuffer, "__dict__")
+    native_buffer_namespace = type.__getattribute__(packed._NativeCaptureBuffer, "__dict__")
     operations = (packed._canonical, packed._root_volatile, packed._small_plain,
         *(builder_namespace.get(name) for name in ("_scalar", "_binding_scalar", "_named", "_append")),
-        *(buffer_namespace.get(name) for name in ("append", "bind", "boundary", "flush", "_room")))
+        *(buffer_namespace.get(name) for name in ("append", "bind", "boundary", "flush", "_room")),
+        *(native_buffer_namespace.get(name) for name in ("append", "bind")))
     if (type(packed._VOLATILE) is not type(packed._HEX)
             or any(type(operation) is not FunctionType for operation in operations)):
         return None
@@ -249,13 +320,16 @@ class _Snapshot:
                 _note_replay('MATCH_NODE_ALIAS_LENGTH')
                 return False
             if type(node) is dict:
-                if any(current is not prior for current, prior in zip(node, keys)):
+                # Both edge lists contain strong references to exact native
+                # containers/scalars. C iterators compare identity only; they
+                # never invoke user equality, hashing or data descriptors.
+                if not _native_all(_native_map(_native_is, node, keys)):
                     _note_replay('MATCH_KEY_IDENTITY')
                     return False
                 values = node.values()
             else:
                 values = node
-            if any(current is not prior for current, prior in zip(values, children)):
+            if not _native_all(_native_map(_native_is, values, children)):
                 _note_replay('MATCH_CHILD_IDENTITY')
                 return False
         _note_replay('MATCH_VALID')
@@ -384,6 +458,102 @@ class _SectionScope:
             _note_replay("ROLE_ACCEPTED_COUNTER_PRESENT")
         return True
 
+    def native_fast_path(self):
+        native = packed._NATIVE_BUILDER_OPERATIONS
+        # Authenticate builtin lookups before calling any of them during the
+        # decision. A foreign replacement belongs only to the original path.
+        for name, operation in packed._NATIVE_BUILDER_GLOBALS:
+            if (packed.__dict__.get(name, _native_builtins.__dict__.get(name)) is not operation
+                    or _PUBLICATION_NATIVE_GLOBALS.get(name, _native_builtins.__dict__.get(name)) is not operation):
+                return False
+        if (packed.json is not packed._NATIVE_JSON_MODULE
+                or packed.sys is not packed._NATIVE_SYS_MODULE
+                or packed._CaptureBuffer is not native[0] or packed._CaptureBuilder is not native[6]
+                or packed.json.JSONEncoder is not native[15] or packed._NativeCaptureBuffer is not native[19]
+                or packed.json.encoder is not native[22]
+                or packed._NATIVE_STRING_ENCODER is not native[23]
+                or packed.sys.getprofile is not native[24] or packed.sys.gettrace is not native[25]
+                or _constants() is None):
+            return False
+        # Static namespaces avoid executing a newly installed method descriptor
+        # merely to decide whether to take the unchanged public fallback.
+        buffer = type.__getattribute__(packed._CaptureBuffer, "__dict__")
+        builder = type.__getattribute__(packed._CaptureBuilder, "__dict__")
+        encoder = type.__getattribute__(packed.json.JSONEncoder, "__dict__")
+        if (len(encoder) != len(packed._NATIVE_JSON_ENCODER_NAMESPACE)
+                or any(encoder.get(name) is not original
+                       for name, original in packed._NATIVE_JSON_ENCODER_NAMESPACE)
+                or type.__getattribute__(packed.json.JSONEncoder, "__mro__")
+                   is not packed._NATIVE_JSON_ENCODER_MRO
+                or packed.sys.gettrace() is not None
+                or (packed.sys.getprofile() is not None
+                    and type(packed.sys.getprofile()) is not _NATIVE_CPROFILE_TYPE)
+                or any(packed.json.encoder.__dict__.get(name, _native_builtins.__dict__.get(name)) is not operation
+                       for name, operation in packed._NATIVE_BUILDER_GLOBALS
+                       if name in {"str", "isinstance"})):
+            return False
+        native_buffer = type.__getattribute__(packed._NativeCaptureBuffer, "__dict__")
+        scope = type.__getattribute__(_SectionScope, "__dict__")
+        if (scope.get("eligible_role") is not _SECTION_ROLE_CHECK
+                or _SECTION_ROLE_CHECK.__code__ is not _SECTION_ROLE_CHECK_CODE
+                or scope.get("native_callback_free_role") is not _SECTION_NATIVE_CHECK
+                or _SECTION_NATIVE_CHECK.__code__ is not _SECTION_NATIVE_CHECK_CODE):
+            return False
+        if (type(packed._CaptureBuffer) is not type or type(packed._NativeCaptureBuffer) is not type
+                or type.__getattribute__(packed._NativeCaptureBuffer, "__mro__")
+                   != (packed._NativeCaptureBuffer, packed._CaptureBuffer, object)
+                or any(name in native_buffer for name in
+                       ("__init__", "__new__", "__getattribute__", "__getattr__", "__setattr__", "__delattr__"))
+                or any(name in buffer for name in
+                       ("__new__", "__getattribute__", "__getattr__", "__setattr__", "__delattr__"))):
+            return False
+        operations = (packed._CaptureBuffer, *(buffer.get(name) for name in
+            ("__init__", "append", "bind", "_room", "flush")),
+            packed._CaptureBuilder, *(builder.get(name) for name in
+            ("_append", "_scalar", "_binding_scalar", "_named")),
+            packed._small_plain, packed._root_volatile,
+            packed._canonical, packed.json.dumps, packed.json.JSONEncoder,
+            *(encoder.get(name) for name in ("__init__", "encode", "iterencode")),
+            packed._NativeCaptureBuffer, *(native_buffer.get(name) for name in ("append", "bind")))
+        operations += (packed.json.encoder, packed.json.encoder.encode_basestring_ascii,
+                       packed.sys.getprofile, packed.sys.gettrace)
+        return (packed._ROOT_VOLATILE_NATIVE_TYPE is type
+                and packed._ROOT_VOLATILE_NATIVE_STR is str
+                and all(current is prior for current, prior in
+                        zip(operations, packed._NATIVE_BUILDER_OPERATIONS))
+                and all((operation.__code__ if type(operation) is FunctionType else None) is code for operation, code in
+                        zip(operations, packed._NATIVE_BUILDER_CODES)))
+
+    def native_callback_free_role(self, builder, value):
+        """Streaming type proof for room/names, independent of replay storage.
+
+        The existing replay caps still disable snapshots/plans unchanged. This
+        check retains no edges or per-node records and grants no admission,
+        digest, cache, Source or runtime authority. It consumes only the already
+        bounded builder graph; exact Counters keep their independent auth.
+        """
+        if _native_type(value) is not dict:
+            return False
+        for node in builder.objects.values():
+            kind = _native_type(node)
+            if kind is Counter:
+                if not _plain_counter(node):
+                    return False
+            elif kind is not dict and kind is not list and kind is not tuple:
+                return False
+            if kind is dict or kind is Counter:
+                if any(_native_type(key) is not str for key in node):
+                    return False
+                children = node.values()
+            else:
+                children = node
+            for child in children:
+                # A set of builtin integer identities cannot invoke a foreign
+                # class's equality/hash or metadata descriptors.
+                if _native_id(_native_type(child)) not in _NATIVE_ROLE_KIND_IDS:
+                    return False
+        return True
+
     def record_dependency(self, key, result):
         if self.trace is not None:
             self.trace.add(key, result)
@@ -404,7 +574,7 @@ class _SectionScope:
 
     def append(self, builder, value, name, buffer, *, root):
         if (self.closed or self.exhausted or self.busy or self.active_root is None or type(name) is not str
-                or type(buffer) is not packed._CaptureBuffer
+                or (type(buffer) is not packed._CaptureBuffer and type(buffer) is not packed._NativeCaptureBuffer)
                 or type(buffer.template) is not bytearray or type(buffer.literals) is not list
                 or type(buffer.result) is not list or any(type(raw) is not bytes for raw in buffer.literals)
                 or len(buffer.template) > MAX_FRAME_PREFIX_BYTES):
@@ -494,10 +664,20 @@ class _SectionScope:
         self.plans.clear(); self.candidates.clear(); self.disabled.clear()
 
 
+_SECTION_ROLE_CHECK = _SectionScope.eligible_role
+_SECTION_ROLE_CHECK_CODE = _SECTION_ROLE_CHECK.__code__
+_SECTION_NATIVE_CHECK = _SectionScope.native_callback_free_role
+_SECTION_NATIVE_CHECK_CODE = _SECTION_NATIVE_CHECK.__code__
+packed._NATIVE_PUBLICATION_SCOPE = _SectionScope
+packed._NATIVE_ROLE_AUTHORIZATION = _SectionScope.native_fast_path
+packed._NATIVE_ROLE_AUTHORIZATION_CODE = _SectionScope.native_fast_path.__code__
+
+
 def prepare_publication_storage(values, *, mutable, durable_limit, expansion_limit):
     """Preserve constructor/order/role proofs; accept no external reuse cache."""
     mutable = frozenset(mutable)
     scope, cache, shape_memo = _SectionScope(values, mutable), {}, {}
+    records = _PublicationRecords()
     prepared = {}
     try:
         for role, value in values.items():
@@ -510,6 +690,7 @@ def prepare_publication_storage(values, *, mutable, durable_limit, expansion_lim
                 packed.PreparedPackedStorage.__init__(instance, value, mutable=mutable,
                     durable_limit=durable_limit, expansion_limit=expansion_limit,
                     cache=cache, shape_memo=shape_memo)
+                instance._publication_records = records
                 prepared[role] = instance
             finally:
                 packed._PUBLICATION_CONSTRUCTION.reset(token)

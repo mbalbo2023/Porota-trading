@@ -8,7 +8,9 @@ ordinary CODE/directory atime observations are recorded without resets.
 No DATA is warmed, no retained fixture is removed and no resource cap changes.
 """
 from contextlib import contextmanager
+from dataclasses import dataclass
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -23,6 +25,46 @@ from tests.test_rc6_browser_product_ipc import complete_archive as _ipc_archive
 _FIELDS = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink",
            "st_size", "st_blocks", "st_atime_ns", "st_mtime_ns", "st_ctime_ns")
 _CODE_INPUTS = frozenset(("requirements.lock.txt", "requirements.build.lock.txt"))
+_ORIGINAL_PROVIDER = _ipc_archive.__wrapped__
+_ORIGINAL_PROVIDER_CODE = _ORIGINAL_PROVIDER.__code__
+_ORIGINAL_PROVIDER_SOURCE_SHA256 = "c53e68cd4e3d808bb2dfbd830f9df7540bd5a1e7f7f67999f7ac4836b2318bab"
+_CONSTRUCTION_AUTHORITY = object()
+
+
+@dataclass(frozen=True)
+class _OriginalConstruction:
+    authority: object
+    registration: object
+    source_triple: tuple
+    base_identity: tuple
+    root_identity: tuple
+    source_repository: Path
+    original_factory: dict
+    factory: object
+
+
+def _identity5(value):
+    return (value.st_dev, value.st_ino, value.st_uid, value.st_gid, value.st_mode)
+
+
+def _empty_owned_directory(path, *, private=False):
+    from scripts import porota_predeploy_cleanup as custody
+    anchor = _open_directory(Path(path).absolute())
+    readable = None
+    try:
+        info = os.fstat(anchor)
+        _require(info.st_uid == os.geteuid() and info.st_gid == os.getegid()
+                 and (not private or stat.S_IMODE(info.st_mode) == 0o700),
+                 "READONLY_SOURCE_FRESH_CONSTRUCTION_DIRECTORY_OWNER")
+        readable = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                           dir_fd=anchor)
+        _require(_all11(info) == _all11(os.fstat(readable)) and not os.listdir(readable),
+                 "READONLY_SOURCE_FRESH_CONSTRUCTION_DIRECTORY_NOT_EMPTY")
+        return _identity5(info), custody.mount_id(anchor)
+    finally:
+        if readable is not None:
+            os.close(readable)
+        os.close(anchor)
 
 
 def _require(value, reason):
@@ -83,6 +125,99 @@ class ArchiveRegistration:
     def __init__(self):
         self.pid, self.uid = os.getpid(), os.geteuid()
         self.ipc_roots, self.readonly_leases = [], []
+        self.original_constructions = []
+        self.consumed_constructions = []
+
+    def construct_original_source(self, tmp_path_factory):
+        """Observe a genuine EMPTY mktemp before the unchanged original producer.
+
+        The returned opaque single-use token authorizes a flush of only that
+        newly generated Source. An arbitrary Source tuple or JSON never does.
+        """
+        from scripts.rc6_pytest_fixture_lifecycle import require_original_factory_forwarder
+        self.context()
+        factory_witness = require_original_factory_forwarder(tmp_path_factory)
+        _require(_ipc_archive.__wrapped__ is _ORIGINAL_PROVIDER
+                 and _ORIGINAL_PROVIDER.__code__ is _ORIGINAL_PROVIDER_CODE
+                 and hashlib.sha256(inspect.getsource(_ORIGINAL_PROVIDER).encode()).hexdigest()
+                 == _ORIGINAL_PROVIDER_SOURCE_SHA256, "READONLY_SOURCE_ORIGINAL_PRODUCER_CHANGED")
+        repository = Path(_ORIGINAL_PROVIDER.__globals__["ROOT"]).absolute()
+        created = []
+
+        class ObservedOriginalFactory:
+            def mktemp(_self, *args, **kwargs):
+                path = tmp_path_factory.mktemp(*args, **kwargs)
+                identity, mount = _empty_owned_directory(path)
+                _require(len(created) == 0 and path != repository
+                         and not path.is_relative_to(repository) and not repository.is_relative_to(path),
+                         "READONLY_SOURCE_NEW_NAMESPACE_OVERLAPS_REPOSITORY")
+                created.append((Path(path).absolute(), identity, mount))
+                return path  # Exact original result and original arguments.
+
+        triple = _ORIGINAL_PROVIDER(ObservedOriginalFactory())
+        _require(type(triple) is tuple and len(triple) == 3 and len(created) == 1,
+                 "READONLY_SOURCE_ORIGINAL_CONSTRUCTION_RESULT_REQUIRED")
+        base, identity, mount = created[0]
+        root, index, _tree = triple
+        _require(Path(root).absolute() == base / "source" and Path(index).absolute() == base / "source.index.json",
+                 "READONLY_SOURCE_ORIGINAL_NAMESPACE_RESULT_REBOUND")
+        from scripts import porota_predeploy_cleanup as custody
+        anchor = _open_directory(base)
+        root_anchor = _open_directory(root)
+        try:
+            _require(_identity5(os.fstat(anchor)) == identity and custody.mount_id(anchor) == mount
+                     and custody.mount_id(root_anchor) == mount,
+                     "READONLY_SOURCE_ORIGINAL_CONSTRUCTION_NAMESPACE_REBOUND")
+            root_identity = _identity5(os.fstat(root_anchor))
+        finally:
+            os.close(root_anchor)
+            os.close(anchor)
+        token = _OriginalConstruction(_CONSTRUCTION_AUTHORITY, self, triple, identity, root_identity,
+                                      repository, factory_witness, tmp_path_factory)
+        self.original_constructions.append(token)
+        return triple, token
+
+    def claim_original_construction(self, token, triple, control_root, index_record):
+        from scripts.rc6_pytest_fixture_lifecycle import require_original_factory_forwarder
+        self.context()
+        _require(type(token) is _OriginalConstruction and token.authority is _CONSTRUCTION_AUTHORITY
+                 and token.registration is self and any(token is value for value in self.original_constructions)
+                 and not any(token is value for value in self.consumed_constructions)
+                 and tuple(triple) == token.source_triple and not self.readonly_leases,
+                 "READONLY_SOURCE_FRESH_SINGLE_USE_ORIGINAL_CONSTRUCTION_REQUIRED")
+        _require(require_original_factory_forwarder(token.factory) == token.original_factory,
+                 "READONLY_SOURCE_ORIGINAL_FACTORY_BINDING_CHANGED")
+        _empty_owned_directory(control_root, private=True)
+        root = Path(triple[0]).absolute()
+        controls = Path(control_root).absolute()
+        _require(controls != root.parent and controls != root and not controls.is_relative_to(root.parent)
+                 and not root.parent.is_relative_to(controls)
+                 and root != token.source_repository and not root.is_relative_to(token.source_repository),
+                 "READONLY_SOURCE_CONSTRUCTION_CONTROL_OR_REPOSITORY_OVERLAP")
+        base, anchor = _open_directory(root.parent), _open_directory(root)
+        readable = None
+        try:
+            readable = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                               dir_fd=base)
+            _require(_identity5(os.fstat(base)) == token.base_identity
+                     and _identity5(os.fstat(anchor)) == token.root_identity
+                     and set(os.listdir(readable)) == {"source", "source.tar", "source.commit.raw", "source.index.json"},
+                     "READONLY_SOURCE_ORIGINAL_CONSTRUCTION_LAYOUT_CHANGED")
+        finally:
+            if readable is not None:
+                os.close(readable)
+            os.close(anchor)
+            os.close(base)
+        binding = token.original_factory.get("binding")
+        if binding is not None:
+            _require(index_record["source_sha"] == binding["candidate_sha"]
+                     and index_record["source_tree"] == binding["candidate_tree"],
+                     "READONLY_SOURCE_ORIGINAL_CONSTRUCTION_CANDIDATE_REBOUND")
+        self.consumed_constructions.append(token)  # A RED attempt cannot reuse it.
+        return {"original_producer_source_sha256": _ORIGINAL_PROVIDER_SOURCE_SHA256,
+                "original_factory_empty_before_producer": True, "single_use_original_construction": True,
+                "base_identity": list(token.base_identity), "source_identity": list(token.root_identity),
+                "flush_authority_scope": "THIS_ORIGINAL_NEW_GENERATED_ARCHIVE_ONLY"}
 
     def context(self):
         _require(self.pid == os.getpid() and self.uid == os.getuid() == os.geteuid()
@@ -101,7 +236,7 @@ class ArchiveRegistration:
 
 
 class ReadonlyArchive:
-    def __init__(self, triple, registry, control_root):
+    def __init__(self, triple, registry, control_root, *, construction=None):
         self.triple, self.registry = triple, registry
         self.root, self.index, self.tree = triple
         self.root, self.index = Path(self.root), Path(self.index)
@@ -109,6 +244,7 @@ class ReadonlyArchive:
         self.pid, self.uid = os.getpid(), os.geteuid()
         self.state, self.active_owner, self.sequence = "READY", None, 0
         self.pending_lease = None
+        self.last_source_drift = None
         self.lock = Lock()
         registry.context()
         _require(self.index.parent == self.root.parent and self.index.name == "source.index.json",
@@ -133,7 +269,108 @@ class ReadonlyArchive:
             self.control_device = info.st_dev
         finally:
             os.close(control)
+        # Git's archive stdout and tar extraction may have dirty delayed extents
+        # even after their writers have closed. Freeze only after flushing this
+        # newly constructed, owned input. Never sync an existing lease to hide
+        # drift; st_blocks stays part of the unchanged Source10 guard.
+        if construction is None:
+            # Explicit metadata-fixture callers may exercise the unchanged
+            # Source10/11 guards. Their tuples confer no permission to sync a
+            # Source and cannot claim productive construction quiescence.
+            self.construction_quiescence = {"status": "BLOCKED_NO_ORIGINAL_CONSTRUCTION_AUTHORITY",
+                "files_fsynced_before_initial_snapshot": 0, "source_payload_bytes_read": 0,
+                "metadata_fields_removed_from_guard": [], "global_sync_performed": False,
+                "post_freeze_sync_or_stat_reset": False, "native_kernel_FIN_claimed": False}
+        else:
+            authority = registry.claim_original_construction(construction, triple, control_root, row)
+            self.construction_quiescence = self._settle_owned_construction()
+            self.construction_quiescence.update(status="OWN_ORIGINAL_CONSTRUCTION_SYNCED_BEFORE_FREEZE",
+                                                construction_authority=authority)
         self.initial = self._snapshot()
+
+    def _settle_owned_construction(self):
+        """Flush only creator-owned regular files/directories before first lease.
+
+        No Source payload read, atime reset, global sync or unowned target access
+        occurs. This does not assert producer/kernel FIN or fixture quota GREEN.
+        """
+        from scripts import porota_predeploy_cleanup as custody
+        root = _open_directory(self.root)
+        parent = _open_directory(self.root.parent)
+        flushed, allocation_changes = 0, []
+        try:
+            mount = custody.mount_id(root)
+            _require(custody.mount_id(parent) == mount, "READONLY_SOURCE_CONSTRUCTION_MOUNT_CHANGED")
+
+            def flush_file(base, name):
+                nonlocal flushed
+                parts = PurePosixPath(name).parts
+                anchor = os.dup(base)
+                descriptor = None
+                try:
+                    for part in parts[:-1]:
+                        child = os.open(part, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                        dir_fd=anchor)
+                        os.close(anchor)
+                        anchor = child
+                        details = os.fstat(anchor)
+                        _require(details.st_uid == self.uid and details.st_dev == self.control_device
+                                 and custody.mount_id(anchor) == mount, "READONLY_SOURCE_CONSTRUCTION_PARENT_CUSTODY")
+                    descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NOATIME |
+                                         os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=anchor)
+                    before = os.fstat(descriptor)
+                    _require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                             and before.st_uid == self.uid and before.st_dev == self.control_device
+                             and custody.mount_id(descriptor) == mount,
+                             "READONLY_SOURCE_CONSTRUCTION_FILE_CUSTODY")
+                    os.fsync(descriptor)
+                    after = os.fstat(descriptor)
+                    # Own flush may finish physical allocation. It may not
+                    # change identity, bytes length, permissions or timestamps.
+                    _require(all(getattr(before, field) == getattr(after, field)
+                                 for field in _FIELDS if field != "st_blocks")
+                             and _all11(after) == _all11(os.stat(parts[-1], dir_fd=anchor, follow_symlinks=False)),
+                             "READONLY_SOURCE_CHANGED_DURING_CONSTRUCTION_FLUSH")
+                    flushed += 1
+                    if before.st_blocks != after.st_blocks:
+                        allocation_changes.append({"member": name, "before_st_blocks": before.st_blocks,
+                                                   "after_st_blocks": after.st_blocks,
+                                                   "scope": "OWN_CONSTRUCTION_BEFORE_SOURCE_FREEZE"})
+                finally:
+                    if descriptor is not None:
+                        os.close(descriptor)
+                    os.close(anchor)
+
+            for name in self.paths:
+                flush_file(root, name)
+            for name in ("source.index.json", "source.tar", "source.commit.raw"):
+                flush_file(parent, name)
+            for name in sorted(self.directories, key=lambda value: value.count("/"), reverse=True):
+                directory = self.root if name == "." else self.root / name
+                anchor = _open_directory(directory)
+                readable = None
+                try:
+                    before = os.fstat(anchor)
+                    _require(before.st_uid == self.uid and before.st_dev == self.control_device
+                             and custody.mount_id(anchor) == mount, "READONLY_SOURCE_CONSTRUCTION_DIRECTORY_CUSTODY")
+                    readable = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NOATIME | os.O_CLOEXEC,
+                                       dir_fd=anchor)
+                    _require(_all11(os.fstat(readable)) == _all11(before), "READONLY_SOURCE_CONSTRUCTION_DIRECTORY_REBOUND")
+                    os.fsync(readable)
+                    _require(_all11(os.fstat(readable)) == _all11(before), "READONLY_SOURCE_CONSTRUCTION_DIRECTORY_CHANGED")
+                finally:
+                    if readable is not None:
+                        os.close(readable)
+                    os.close(anchor)
+        finally:
+            os.close(parent)
+            os.close(root)
+        return {"schema": "rc6.readonly-complete-source-construction-quiescence.v1",
+                "owner_pid": self.pid, "owner_uid": self.uid, "files_fsynced_before_initial_snapshot": flushed,
+                "allocation_changes_before_freeze": allocation_changes, "source_payload_bytes_read": 0,
+                "metadata_fields_removed_from_guard": [], "global_sync_performed": False,
+                "post_freeze_sync_or_stat_reset": False, "native_kernel_FIN_claimed": False,
+                "real_orders_sent": 0}
 
     def _context(self, required_state="READY"):
         try:
@@ -178,8 +415,17 @@ class ReadonlyArchive:
         _require(before.keys() == after.keys(), "READONLY_SOURCE_MEMBER_SET_CHANGED")
         observations = []
         for name in before:
-            _require(all(before[name][field] == after[name][field] for field in _FIELDS
-                         if field != "st_atime_ns"), "READONLY_SOURCE10_CHANGED")
+            changed = [field for field in _FIELDS if field != "st_atime_ns"
+                       and before[name][field] != after[name][field]]
+            if changed:
+                self.last_source_drift = {
+                    "schema": "rc6.readonly-source10-drift.v1",
+                    "member_name_sha256": hashlib.sha256(name.encode()).hexdigest(),
+                    "changed_fields": changed,
+                    "before_all11": before[name], "after_all11": after[name],
+                    "source_payload_bytes_read_for_diagnostic": 0,
+                    "fields_removed_or_reset": [], "classification": "IRREVERSIBLE_SOURCE10_RED"}
+                raise RuntimeError("READONLY_SOURCE10_CHANGED")
             if before[name]["st_atime_ns"] != after[name]["st_atime_ns"]:
                 code = name.startswith("source/") and (stat.S_ISDIR(before[name]["st_mode"])
                        or name.endswith(".py") or name[len("source/"):] in _CODE_INPUTS)
@@ -223,6 +469,7 @@ class ReadonlyArchive:
                    "owner_pid": self.pid, "owner_uid": self.uid, "sequence": self.sequence,
                    "source_sha": self.index_record["source_sha"], "source_tree": self.tree,
                    "complete_source_files": len(self.paths), "complete_source_directories": len(self.directories),
+                   "construction_quiescence": self.construction_quiescence,
                    "original_consumer_hash_blob_mode_and_FIN_guards_changed": False,
                    "retention_policy": "EXPLICIT_RETAINED_FOR_EPHEMERAL_RUNNER_TEARDOWN",
                    "fixture_root_removed": False, "native_gate_or_artifact_qualification_claimed": False,
@@ -244,6 +491,8 @@ class ReadonlyArchive:
             if row is not None:
                 row.update(status="UNKNOWN_OR_UNCLOSED", failure_class=type(error).__name__,
                            Source10_unchanged=None, Source11_unchanged=False)
+                if self.last_source_drift is not None:
+                    row["source10_drift"] = self.last_source_drift
                 self._publish(row)
             raise
         finally:
@@ -299,6 +548,8 @@ class ReadonlyArchive:
             self.state = "UNKNOWN_OR_UNCLOSED"
             row.update(status="UNKNOWN_OR_UNCLOSED", failure_class=type(error).__name__,
                        Source10_unchanged=None, Source11_unchanged=False)
+            if self.last_source_drift is not None:
+                row["source10_drift"] = self.last_source_drift
             self._publish(row)
             raise
 
@@ -310,9 +561,9 @@ def rc6_archive_registration():
 
 @pytest.fixture(scope="session")
 def rc6_readonly_complete_archive(tmp_path_factory, rc6_archive_registration):
-    triple = _ipc_archive.__wrapped__(tmp_path_factory)
+    triple, construction = rc6_archive_registration.construct_original_source(tmp_path_factory)
     controls = tmp_path_factory.mktemp("readonly-complete-source-controls")
-    return ReadonlyArchive(triple, rc6_archive_registration, controls)
+    return ReadonlyArchive(triple, rc6_archive_registration, controls, construction=construction)
 
 
 @pytest.hookimpl(hookwrapper=True)

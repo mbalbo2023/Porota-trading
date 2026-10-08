@@ -4,19 +4,22 @@ on:
   pull_request:
     branches:
       - deploy/rc6-pr69-isolated-20260915
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [ready_for_review]
 
 permissions:
   contents: read
   actions: read
+  issues: read
+  pull-requests: read
 
 concurrency:
   group: porota-predeploy-v2-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
+    if: github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.repository.id == 1338680554 && github.event.number == 476 && github.event.pull_request.draft == false && github.event.pull_request.head.ref == 'recovery/rc6-material-fix-forward-3091e93-20261006' && github.event.pull_request.head.repo.id == 1338680554
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -36,6 +39,27 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 verified2026-10-05
         with:
           python-version: "3.11.16"
+
+      - name: Require exact G0 through G6 native evidence before any Predeploy workspace or build
+        id: prerequisite_gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
+          CONTROL_ROOT="$RUNNER_TEMP/rc6-g7-owner-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VERIFIED="$RUNNER_TEMP/rc6-g7-verified-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          python -I -B scripts/rc6_material_pr_admission.py \
+            --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --gate predeploy --control-root "$CONTROL_ROOT"
+          python -I -B scripts/rc6_architectural_gates.py \
+            --source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE" --target-gate G7 \
+            --admission-json "$CONTROL_ROOT/admission.json" \
+            --evidence-root "$RUNNER_TEMP/rc6-g7-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --json-out "$VERIFIED"
+          echo "RC6_G7_VERIFIED_ADMISSION=$VERIFIED" >> "$GITHUB_ENV"
+          echo "RC6_G7_OWNER_ADMISSION=$CONTROL_ROOT/admission.json" >> "$GITHUB_ENV"
+          echo 'RC6_G7_ALL_PREDECESSOR_PAYLOADS=GREEN'
+          echo 'DEPLOY_OWNER=NOT_ACQUIRED'
+          echo 'PUSH_ALONE_AUTHORIZES_PREDEPLOY=false'
 
       - name: Initialize proven private runner workspace
         id: private_workspace
@@ -148,119 +172,53 @@ jobs:
             --repo-root . --candidate-sha "$CANDIDATE_SHA" \
             --out "${POROTA_PREDEPLOY_TMP}/porota-convergence-input-inventory.json" --fetch-source-refs
 
-      - name: Governed automatic test discovery and execution
+      - name: Governed automatic test discovery and execution - verify authenticated external G6
         shell: bash
         run: |
           set -Eeuo pipefail
           BOOTSTRAP_PYTHON="$(command -v python)"
           echo "POROTA_PREDEPLOY_BOOTSTRAP_PYTHON=$BOOTSTRAP_PYTHON" >> "$GITHUB_ENV"
+          mkdir -m 700 "${POROTA_PREDEPLOY_TMP}/bootstrap-temp"
+          export TMPDIR="${POROTA_PREDEPLOY_TMP}/bootstrap-temp"
+          export TMP="$TMPDIR" TEMP="$TMPDIR"
+          g7_bootstrap_capacity() {
+          "$BOOTSTRAP_PYTHON" - "$1" <<'PY_G7_BOOTSTRAP_CAPACITY'
+          import os
+          import sys
+          from pathlib import Path
+          from scripts.porota_predeploy_cleanup import read_file
+          from scripts.rc6_architectural_gates import document, predeploy_capacity_gate
+          raw,_=read_file(Path(os.environ['RC6_G7_OWNER_ADMISSION']),maximum=256*1024,mode=0o600)
+          predeploy_capacity_gate(document(raw),scope=Path(os.environ['POROTA_PREDEPLOY_OWNER']),
+              repo=Path.cwd(),environ=os.environ,stage=sys.argv[1])
+          print('POROTA_G7_ENVIRONMENT_CAPACITY_LIVE=GREEN')
+          PY_G7_BOOTSTRAP_CAPACITY
+          }
+          g7_bootstrap_capacity environment-bootstrap
           "$BOOTSTRAP_PYTHON" scripts/porota_predeploy_test_workspace.py create --scope "$POROTA_PREDEPLOY_OWNER"
-          export POROTA_PREDEPLOY_PYTEST_BASETEMP="${RUNNER_TEMP}/porota-pytest-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${POROTA_PREDEPLOY_OWNER_UUID}/pytest"
           export PATH="${POROTA_PREDEPLOY_TMP}/venv/bin:$PATH"
           echo "${POROTA_PREDEPLOY_TMP}/venv/bin" >> "$GITHUB_PATH"
-          python - <<'PY_VENV'
-          import sys
-          assert sys.prefix != sys.base_prefix, 'governed native imports require an actual private venv'
-          PY_VENV
-          export HYPOTHESIS_STORAGE_DIRECTORY="${POROTA_PREDEPLOY_TMP}/hypothesis"
-          export LOG_DIR="${POROTA_PREDEPLOY_TMP}/logs"
-          export TMPDIR="${POROTA_PREDEPLOY_TMP}/tmp"
-          mkdir -m 700 "$HYPOTHESIS_STORAGE_DIRECTORY" "$LOG_DIR" "$TMPDIR"
-          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements.build.lock.txt
-          python -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: \
+          g7_bootstrap_capacity locked-build
+          python -m pip install --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: -r requirements.build.lock.txt
+          g7_bootstrap_capacity locked-runtime
+          python -m pip install --disable-pip-version-check --no-cache-dir --require-hashes --only-binary=:all: \
             --no-binary=msgpack,ppi-client,signalrcoreppi,ta --no-build-isolation -r requirements.lock.txt
           python -m pip check
           python -m pip freeze --all > "${POROTA_PREDEPLOY_TMP}/porota-installed-dependencies.txt"
-          python - <<'PY'
+          python - <<'PY_EXTERNAL_GOV'
           import os
           from pathlib import Path
-          import yaml
-
-          policy = yaml.safe_load(Path('ops/policy/test-policy.yaml').read_text(encoding='utf-8'))
-          governance = policy['test_governance']
-          scope = policy['productive_scope']
-          assert governance['automatic_discovery_required'] is True
-          assert governance['manual_test_file_allowlist_as_primary_ci'] is False
-          assert scope['roots'] == ['.'], 'productive scope must discover from repository root'
-          exclusions = scope.get('exclusions', [])
-          args = list(scope['roots'])
-          evidence = []
-          for item in exclusions:
-              path = Path(item['path'])
-              successor = Path(item['successor'])
-              assert path.is_file(), f'excluded path missing: {path}'
-              assert successor.is_file(), f'exclusion successor missing: {successor}'
-              assert item.get('classification') and item.get('reason') and item.get('owner')
-              args.append(f'--ignore={path.as_posix()}')
-              evidence.append('|'.join((path.as_posix(), item['classification'], successor.as_posix())))
-          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-args.txt')).write_text('\n'.join(args) + '\n', encoding='utf-8')
-          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-exclusions.txt')).write_text('\n'.join(evidence) + ('\n' if evidence else ''), encoding='utf-8')
-          print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
-          PY
-          mapfile -t TEST_ARGS < "${POROTA_PREDEPLOY_TMP}/porota-test-args.txt"
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$BOOTSTRAP_PYTHON" scripts/porota_predeploy_test_workspace.py supervise-pytest --phase collection --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest --collect-only -q "${TEST_ARGS[@]}" -p no:cacheprovider
-          "$BOOTSTRAP_PYTHON" scripts/porota_predeploy_test_workspace.py require-owned-fin --phase collection --scope "$POROTA_PREDEPLOY_OWNER"
-          set +e
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$BOOTSTRAP_PYTHON" scripts/porota_predeploy_test_workspace.py supervise-pytest --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest -q "${TEST_ARGS[@]}" -p no:cacheprovider --basetemp="$POROTA_PREDEPLOY_PYTEST_BASETEMP" --junitxml="${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"
-          TEST_RC=$?
-          set -e
-          "$BOOTSTRAP_PYTHON" scripts/porota_predeploy_test_workspace.py require-owned-fin --scope "$POROTA_PREDEPLOY_OWNER"
-          TEST_RC="$TEST_RC" python - <<'PY'
-          import os
-          from pathlib import Path
-          import hashlib, json, os, re, subprocess, xml.etree.ElementTree as ET
-          from scripts.porota_artifact_provenance import verify_source_manifest
-
-          candidate_sha = os.environ['CANDIDATE_SHA']
-          candidate_tree = os.environ['CANDIDATE_TREE']
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == candidate_sha
-          assert subprocess.check_output(['git', 'rev-parse', candidate_sha + '^{tree}'], text=True).strip() == candidate_tree
-          verify_source_manifest(Path('.'), Path('POROTA_SOURCE_PROVENANCE.json'), candidate_sha, candidate_tree)
-          junit_bytes = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.xml')).read_bytes()
-
-          collection = Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-collection.txt')).read_text(encoding='utf-8')
-          discovered = sum(int(n) for n in re.findall(r': (\d+)$', collection, re.MULTILINE))
-          suite = ET.fromstring(junit_bytes).find('.//testsuite')
-          tests = int(suite.get('tests', 0))
-          failures = int(suite.get('failures', 0))
-          errors = int(suite.get('errors', 0))
-          skipped_nodes = [node for node in suite.iter('skipped')]
-          xfail = sum(node.get('type') == 'pytest.xfail' for node in skipped_nodes)
-          skipped = len(skipped_nodes) - xfail
-          exclusions = [line for line in Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-test-exclusions.txt')).read_text(encoding='utf-8').splitlines() if line]
-          result = {
-              'schema_version': 1,
-              'candidate_sha': candidate_sha,
-              'candidate_tree': candidate_tree,
-              'junit_sha256': hashlib.sha256(junit_bytes).hexdigest(),
-              'junit_bytes': len(junit_bytes),
-              'source_unchanged': True,
-              'scope': 'repository-root automatic pytest discovery',
-              'discovered': discovered,
-              'executed': tests,
-              'skipped': skipped,
-              'xfail': xfail,
-              'failures': failures,
-              'errors': errors,
-              'exclusions': exclusions,
-              'pytest_exit_code': int(os.environ['TEST_RC']),
-              'status': 'GREEN' if int(os.environ['TEST_RC']) == 0 and discovered == tests and discovered > 0 and not any((failures, errors, skipped, xfail)) else 'RED',
-          }
-          Path(os.path.join(os.environ["POROTA_PREDEPLOY_TMP"], 'porota-governed-tests.json')).write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-          print(f'POROTA_TEST_DISCOVERED={discovered}')
-          print(f'POROTA_TEST_EXECUTED={tests}')
-          print(f'POROTA_TEST_SKIPPED={skipped}')
-          print(f'POROTA_TEST_XFAIL={xfail}')
-          print(f'POROTA_TEST_FAILURES={failures}')
-          print(f'POROTA_TEST_ERRORS={errors}')
-          print(f'POROTA_TEST_EXCLUSIONS={len(exclusions)}')
-          print(f'POROTA_GOVERNED_TEST_STATUS={result["status"]}')
-          assert discovered > 0, 'automatic discovery returned zero tests'
-          assert discovered == tests, f'collected/executed mismatch: {discovered}!={tests}'
-          assert not any((failures, errors, skipped, xfail)), 'final governed suite requires zero failures/errors/skips/xfails'
-          PY
-          test "$TEST_RC" -eq 0
-          echo 'POROTA_GOVERNED_TESTS=GREEN'
+          from scripts.rc6_architectural_gates import document, import_verified_governed
+          verified=document(Path(os.environ['RC6_G7_VERIFIED_ADMISSION']).read_bytes())
+          assert verified['status']=='GREEN' and verified['target_gate']=='G7'
+          assert verified['source_sha']==os.environ['CANDIDATE_SHA']
+          assert verified['source_tree']==os.environ['CANDIDATE_TREE']
+          result=import_verified_governed(verified,output_root=Path(os.environ['POROTA_PREDEPLOY_TMP']),epoch='311')
+          print('POROTA_FULL_GOVERNED_NATIVE_ORIGIN=G6|run='+str(result['native_run_id'])+'|artifact='+str(result['artifact_id']))
+          print('POROTA_G7_SOURCE_SUITE_REEXECUTED=false')
+          print('POROTA_G7_PYTEST_FIN_CLAIMED=false')
+          print('POROTA_GOVERNED_TESTS=GREEN|origin=AUTHENTICATED_G6_NATIVE_PAYLOAD')
+          PY_EXTERNAL_GOV
 
       - name: Prove owned pytest post-read safety
         id: pytest_postread
@@ -375,6 +333,16 @@ jobs:
           python scripts/porota_artifact_provenance.py checkout \
             --repo-root . --source-manifest POROTA_SOURCE_PROVENANCE.json \
             --candidate-sha "$CANDIDATE_SHA" --tree-sha "$CANDIDATE_TREE" --verify-context
+          python - <<'PY_G7_BUILD_CAPACITY'
+          import os
+          from pathlib import Path
+          from scripts.porota_predeploy_cleanup import read_file
+          from scripts.rc6_architectural_gates import document, predeploy_capacity_gate
+          raw,_=read_file(Path(os.environ['RC6_G7_OWNER_ADMISSION']),maximum=256*1024,mode=0o600)
+          predeploy_capacity_gate(document(raw),scope=Path(os.environ['POROTA_PREDEPLOY_OWNER']),
+              repo=Path.cwd(),environ=os.environ,stage='build')
+          print('POROTA_G7_BUILD_CAPACITY_LIVE=GREEN')
+          PY_G7_BUILD_CAPACITY
           python scripts/porota_predeploy_cleanup.py begin-build --scope "$POROTA_PREDEPLOY_OWNER"
           docker build \
             --label "porota.commit=${CANDIDATE_SHA}" \
@@ -532,6 +500,16 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          python - <<'PY_G7_EXPORT_CAPACITY'
+          import os
+          from pathlib import Path
+          from scripts.porota_predeploy_cleanup import read_file
+          from scripts.rc6_architectural_gates import document, predeploy_capacity_gate
+          raw,_=read_file(Path(os.environ['RC6_G7_OWNER_ADMISSION']),maximum=256*1024,mode=0o600)
+          predeploy_capacity_gate(document(raw),scope=Path(os.environ['POROTA_PREDEPLOY_OWNER']),
+              repo=Path.cwd(),environ=os.environ,stage='artifact-export')
+          print('POROTA_G7_ARTIFACT_EXPORT_CAPACITY_LIVE=GREEN')
+          PY_G7_EXPORT_CAPACITY
           python scripts/porota_build_deploy_bundle_v2.py \
             --repo-root . \
             --output "${POROTA_PREDEPLOY_TMP}/porota-deploy-bundle-v2.tgz" \
@@ -634,6 +612,7 @@ jobs:
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-runtime-codec-smoke.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-governed-tests.xml
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-governed-tests.json
+            ${{ env.POROTA_PREDEPLOY_TMP }}/porota-external-governed-origin.json
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-test-collection.txt
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-test-exclusions.txt
             ${{ env.POROTA_PREDEPLOY_TMP }}/porota-test-workspace.json
@@ -763,7 +742,8 @@ jobs:
             echo '- Exact published ZIP replay and saved /app rootfs modes: GREEN'
             echo '- Downloaded primary loaded image and offline imports: GREEN'
             echo '- Bounded secondary receipts: EVIDENCE ONLY; primary remains sole promotable artifact'
-            echo '- Full governed suite: GREEN (see porota-governed-tests.json)'
+            echo '- Full governed suite: GREEN from authenticated G6 same-SHA native artifact; source suite not reexecuted in G7'
+            echo '- G7 pytest producer witness: NO_PYTEST_LAUNCH_ATTEMPTED; external G6 FIN separately verified'
             echo '- Negative fail-closed fixtures: GREEN'
             echo '- PAPER safety source gate: GREEN'
             echo '- Local cleanup: GREEN (UUID/run/ImageID ownership verified; measured filesystem deltas in job log)'

@@ -53,6 +53,40 @@ class StressImportProofLimit(AssertionError):
         super().__init__("NATIVE_IMPORT_PROVENANCE_NOT_VERIFIED")
 
 
+class _NestedPhaseTimings:
+    """Measure native nested work without summing a child twice.
+
+    Each elapsed_seconds remains the incumbent inclusive measurement. Only
+    exclusive_elapsed_seconds across siblings can be added. These are
+    observations, never added allowances or changes to the outer deadline.
+    """
+    def __init__(self):
+        self._threads = threading.local()
+
+    def start(self):
+        stack = getattr(self._threads, "stack", None)
+        if stack is None:
+            stack = self._threads.stack = []
+        frame = [time.monotonic(), time.process_time(), 0.0, 0.0]
+        stack.append(frame)
+        return frame
+
+    def finish(self, frame, metrics):
+        wall, cpu = time.monotonic() - frame[0], time.process_time() - frame[1]
+        stack = self._threads.stack
+        if not stack or stack[-1] is not frame:
+            raise RuntimeError("NATIVE_PHASE_TIMING_SCOPE_MISMATCH")
+        stack.pop()
+        metrics["elapsed_seconds"] += wall
+        metrics["cpu_seconds"] += cpu
+        metrics["exclusive_elapsed_seconds"] = metrics.get("exclusive_elapsed_seconds", 0.0) + max(0.0, wall - frame[2])
+        metrics["exclusive_cpu_seconds"] = metrics.get("exclusive_cpu_seconds", 0.0) + max(0.0, cpu - frame[3])
+        metrics["timing_scope"] = "INCLUSIVE_PARENT_CONTAINS_CHILD; EXCLUSIVE_EXCLUDES_OBSERVED_CHILDREN"
+        if stack:
+            stack[-1][2] += wall
+            stack[-1][3] += cpu
+
+
 def _require_reaped_shadow_producer(child):
     """Veto payload postreads until the owned stress worker is actually reaped."""
     if child.is_alive() or type(child.exitcode) is not int:
@@ -147,37 +181,39 @@ def fixture_database(path, *, catalog_count, observations_per_identity=5):
         raise ValueError("SYNTHETIC_NEW_SOURCE_REQUIRED")
     if not 1 <= observations_per_identity <= 10:
         raise ValueError("SYNTHETIC_OBSERVATION_BOUNDS")
-    store = PaperStore(str(path))
-    _support_schema(store)
-    init_schema(store)
-    with closing(store.connect()) as c, c:
-        c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (
-            (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS", "SYNTHETIC",
-             "fixture", PRE.isoformat(), "issue465", "AVAILABLE", "READY_PAPER_SPOT", "{}")
-            for i in range(catalog_count)))
-        c.executemany("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)", (
-            (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
-             (AT-timedelta(seconds=30*j)).isoformat(), str(100+j/100), "10",
-             (AT-timedelta(seconds=30*j)).isoformat(), (AT-timedelta(seconds=30*j)).isoformat(),
-             "PPI_MARKETDATA_INTRADAY")
-            for i in range(catalog_count) for j in range(observations_per_identity)))
-        c.executemany("INSERT INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
-            (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
-             "CONFIRMED_INTERVAL_VOLUME", 2, 5, 0, 1, AT.isoformat(), AT.isoformat(), "synthetic")
-            for i in range(catalog_count)))
-        # Five open positions keep critical priority represented in the planner.
-        # This source is observation-only; executable factual exits use another DB.
-        c.executemany("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,
-            asset_class,settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,
-            opened_at,features_json,currency,market) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
-            (f"synthetic-open-{i}", "SYNTHETIC", "issue465", f"S{i:05d}", "ACCIONES", "A-24HS",
-             "OPEN", "1", "100", ".1", "98", "105", PRE.isoformat(), "{}", "ARS", "BYMA")
-            for i in range(min(5, catalog_count))))
-    # No delayed fixture checkpoint can be attributed to the read-only consumer.
-    import gc
-    gc.collect()
-    with closing(sqlite3.connect(path)) as c, c:
-        c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    from tests.rc6_fixture_sqlite import fixture_sqlite_writers
+    with fixture_sqlite_writers() as writers:
+        store = PaperStore(str(path))
+        _support_schema(store)
+        init_schema(store)
+        with closing(store.connect()) as c, c:
+            c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (
+                (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS", "SYNTHETIC",
+                 "fixture", PRE.isoformat(), "issue465", "AVAILABLE", "READY_PAPER_SPOT", "{}")
+                for i in range(catalog_count)))
+            c.executemany("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)", (
+                (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
+                 (AT-timedelta(seconds=30*j)).isoformat(), str(100+j/100), "10",
+                 (AT-timedelta(seconds=30*j)).isoformat(), (AT-timedelta(seconds=30*j)).isoformat(),
+                 "PPI_MARKETDATA_INTRADAY")
+                for i in range(catalog_count) for j in range(observations_per_identity)))
+            c.executemany("INSERT INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                (f"S{i:05d}", "ACCIONES", "BYMA", "ARS", "A-24HS",
+                 "CONFIRMED_INTERVAL_VOLUME", 2, 5, 0, 1, AT.isoformat(), AT.isoformat(), "synthetic")
+                for i in range(catalog_count)))
+            # Five open positions keep critical priority represented in the planner.
+            # This source is observation-only; executable factual exits use another DB.
+            c.executemany("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,
+                asset_class,settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,
+                opened_at,features_json,currency,market) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                (f"synthetic-open-{i}", "SYNTHETIC", "issue465", f"S{i:05d}", "ACCIONES", "A-24HS",
+                 "OPEN", "1", "100", ".1", "98", "105", PRE.isoformat(), "{}", "ARS", "BYMA")
+                for i in range(min(5, catalog_count))))
+        # Close every committed schema/bulk writer before Source inventory.
+        writers.quiesce()
+        with closing(sqlite3.connect(path)) as c, c:
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writers.quiesce()
     return store
 
 
@@ -672,6 +708,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
         faulthandler.dump_traceback_later(10, repeat=True, file=stack_stream)
     phases = []
     handlers = {}
+    phase_timings = _NestedPhaseTimings()
+    source_read_receipts = []
     storage_observation_errors = []
     storage_replay_observation = {"healthy": True, "constructor_closes": 0, "report_puts_returned": 0}
     storage_capture_sampling = {"sample_count": 0, "healthy": True, "reporting_healthy": True}
@@ -682,7 +720,9 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
         original = getattr(module, function_name)
         def measured(*args, _name=module_name, _original=original, **kwargs):
             wall, process = time.monotonic(), time.process_time()
-            handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})["calls"] += 1
+            metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
+            metrics["calls"] += 1
+            timing_frame = phase_timings.start()
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             try:
@@ -702,8 +742,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
                         frame = frame.tb_next
                 raise
             finally:
-                handlers[_name]["elapsed_seconds"] += time.monotonic()-wall
-                handlers[_name]["cpu_seconds"] += time.process_time()-process
+                phase_timings.finish(timing_frame, metrics)
         setattr(module, function_name, measured)
     for owner, method, name in (
             (worker_module, "run_shadow", "native_orchestrator"),
@@ -718,6 +757,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             wall, process = time.monotonic(), time.process_time()
             metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
             metrics["calls"] += 1
+            timing_frame = phase_timings.start()
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             observation = (_storage_constructor_observation(queue, metrics["calls"], cpu,
@@ -733,8 +773,7 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
                     metrics.setdefault("restored_sequences", []).append(value["pointer"]["sequence"])
                 return value
             finally:
-                metrics["elapsed_seconds"] += time.monotonic()-wall
-                metrics["cpu_seconds"] += time.process_time()-process
+                phase_timings.finish(timing_frame, metrics)
                 metrics["peak_rss_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
                 queue.put({"_probe_event": "PROGRESS", "handler_resources": handlers.copy(),
                     "phases": phases.copy(), "elapsed_seconds": time.monotonic()-begin,
@@ -747,12 +786,12 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             wall, process = time.monotonic(), time.process_time()
             metrics = handlers.setdefault(_name, {"calls": 0, "elapsed_seconds": 0., "cpu_seconds": 0.})
             metrics["calls"] += 1
+            timing_frame = phase_timings.start()
             queue.put({"_probe_event": "ENTER", "handler_name": _name,
                 "entered_at_monotonic": wall, "child_cpu_seconds": process-cpu})
             try: return _original(*args, **kwargs)
             finally:
-                metrics["elapsed_seconds"] += time.monotonic()-wall
-                metrics["cpu_seconds"] += time.process_time()-process
+                phase_timings.finish(timing_frame, metrics)
                 queue.put({"_probe_event": "PROGRESS", "handler_resources": handlers.copy(),
                     "phases": phases.copy(), "elapsed_seconds": time.monotonic()-begin,
                     "cpu_seconds": time.process_time()-cpu,
@@ -789,7 +828,10 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
     else:
         started.set()
     try:
-        data = read_runtime(database, as_of=AT, row_limit=20000, query_budget_seconds=2)
+        from rc6_shadow_runtime.source_reads import source_tick
+        with source_tick(database) as preliminary_capture:
+            data = read_runtime(database, as_of=AT, row_limit=20000)
+        source_read_receipts.append({"phase": "BOUNDED_READ", "receipt": preliminary_capture.receipt})
         observation_count = len(data["observations"])
         catalog_count = len(data["catalog"])
         observation_read_truncated = data["observation_read_truncated"]
@@ -803,10 +845,12 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
             worker = ShadowRuntime.from_environment(database, evidence_root=output, source_roots=[],
                                    maximum_bytes=maximum_bytes)
         report = worker.tick(PRE)
+        source_read_receipts.append({"phase": "PREOPEN", "receipt": worker.last_source_read_receipt})
         phases.append("PREOPEN_COMMITTED")
         del report
         gc.collect()
         report = worker.tick(AT)
+        source_read_receipts.append({"phase": "OPEN", "receipt": worker.last_source_read_receipt})
         phases.append("OPEN_CYCLE_COMPLETED")
         assert report["provider_requests"] == report["real_orders_sent"] == 0
         assert report["real_routes"] == "NOT_CALLED"
@@ -894,6 +938,8 @@ def _shadow_child_work(database,output,started,release,queue,slow_disk,maximum_b
     result.update(phases=phases, cycle_handled=True,
                   full_pipeline_exercised={"families", "lab", "entry_signals", "funnel"} <= set(handlers),
                   handler_resources=handlers,
+                  source_read_receipts=source_read_receipts,
+                  timing_semantics="INCLUSIVE_VALUES_NEST; ONLY_EXCLUSIVE_SIBLINGS_ARE_ADDITIVE",
                   elapsed_seconds=time.monotonic()-begin,
                   cpu_seconds=time.process_time()-cpu,
                   peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
@@ -943,7 +989,7 @@ def factual_exit_probe(path):
         assert len(verdicts) == 5 and all(v.state == "CLOSED" for v in verdicts), verdicts
         assert not store.open_positions()
         assert supervisor.tick(books) == []
-        with store.connect() as c:
+        with closing(store.connect()) as c, c:
             fills = c.execute("SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'").fetchone()[0]
             state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         assert fills == 5 and tuple(state) == ("PRODUCTION_PAPER", 0)

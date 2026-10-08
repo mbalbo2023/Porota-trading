@@ -419,7 +419,10 @@ def test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order
     secondary = locations["Upload small published-primary verification receipts"]
     cleaning = locations["Local cleanup"]
     summary = locations["Predeploy summary"]
-    assert initialized < freeze < build < primary < secondary < cleaning < summary
+    predecessors = locations["Require exact G0 through G6 native evidence before any Predeploy workspace or build"]
+    assert predecessors < initialized < freeze < build < primary < secondary < cleaning < summary
+    assert "--target-gate G7" in steps[predecessors]["run"]
+    assert "--gate predeploy" in steps[predecessors]["run"]
     assert job["env"]["IMAGE"] == "porota-predeploy-v2:${{ github.event.pull_request.head.sha }}"
     assert sum(step.get("run", "").count("docker build") for step in steps) == 1
     assert "begin-build" in steps[build]["run"] and "claim-image" in steps[build]["run"]
@@ -429,11 +432,13 @@ def test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order
         assert label in steps[build]["run"]
     assert all("/tmp/porota-" not in step.get("run", "") for step in steps)
     governed = next(step for step in steps
-                    if step["name"] == "Governed automatic test discovery and execution")
-    assert ('supervise-pytest --phase collection --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest --collect-only'
-            in governed["run"])
-    assert ('supervise-pytest --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest -q "${TEST_ARGS[@]}"'
-            in governed["run"])
+                    if step["name"] == "Governed automatic test discovery and execution - verify authenticated external G6")
+    assert 'import_verified_governed' in governed["run"]
+    assert "verified['source_sha']==os.environ['CANDIDATE_SHA']" in governed["run"]
+    assert "verified['source_tree']==os.environ['CANDIDATE_TREE']" in governed["run"]
+    assert 'supervise-pytest' not in governed["run"]
+    assert 'POROTA_G7_PYTEST_FIN_CLAIMED=false' in governed["run"]
+    assert 'POROTA_G7_SOURCE_SUITE_REEXECUTED=false' in governed["run"]
     assert "RUNNER_TEMP" not in steps[cleaning].get("env", {})
     assert "${{ env.POROTA_PREDEPLOY_TMP }}/porota-predeploy-evidence/" in steps[primary]["with"]["path"]
     assert steps[secondary]["with"]["path"].splitlines() == [
@@ -450,8 +455,9 @@ def test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order
     assert "POROTA_PREDEPLOY_V2=GREEN" in steps[summary]["run"]
     postread = next(step for step in steps if step["name"] == "Prove owned pytest post-read safety")
     assert postread["if"] == "always()" and postread["id"] == "pytest_postread"
-    assert governed["run"].index("require-owned-fin") < governed["run"].index("junit_bytes =")
-    assert governed["run"].index("require-owned-fin --phase collection") < governed["run"].index("-- python -m pytest -q")
+    assert 'safe-postread' in postread["run"]
+    assert 'NO_PYTEST_LAUNCH_ATTEMPTED' in steps[summary]["run"]
+    assert 'external G6 FIN separately verified' in steps[summary]["run"]
     assert steps[cleaning]["run"].index("require-owned-fin") < steps[cleaning]["run"].index("porota_predeploy_cleanup.py cleanup")
     assert steps[primary]["if"] == guarded_always
     controls = next(step for step in steps if step["name"] == "Upload only bounded owned pytest custody controls after unknown FIN")
@@ -463,6 +469,23 @@ def test_workflow_private_uuid_root_preserves_primary_tag_build_and_upload_order
 def workspace_environment(owned):
     return {'RUNNER_TEMP': str(owned['runner']), 'POROTA_PREDEPLOY_OWNER': str(owned['scope']),
             'POROTA_PREDEPLOY_OWNER_UUID': owned['control']['owner_uuid']}
+
+
+def test_unknown_predeploy_peak_blocks_build_before_docker_or_storage_mutation(owned,monkeypatch):
+    from scripts import rc6_architectural_gates as gates
+    monkeypatch.setattr(cleanup,'execution_context',lambda _repo,_env:CONTEXT)
+    authority={'status':'ADMITTED_NATIVE_NOT_STARTED','gate':'predeploy',
+        'source_sha':CONTEXT['candidate_sha'],'source_tree':CONTEXT['candidate_tree'],
+        'owner_session':'CODEX_RC6_ARCHITECTURAL_RCA_20261008_1205UTC','capacity_peaks':{}}
+    def forbidden(*_args,**_kwargs):
+        raise AssertionError('Unknown capacity must block before Docker probe or build')
+    monkeypatch.setattr(gates.subprocess,'check_output',forbidden)
+    before=sorted(path.relative_to(owned['root']).as_posix() for path in owned['root'].rglob('*'))
+    with pytest.raises(ValueError,match='KNOWN_COMPARABLE_PREDEPLOY_PEAK_REQUIRED'):
+        gates.predeploy_capacity_gate(authority,scope=owned['scope'],repo=owned['repo'],
+            environ=workspace_environment(owned),stage='build')
+    assert before==sorted(path.relative_to(owned['root']).as_posix() for path in owned['root'].rglob('*'))
+    assert owned['control']['build_phase']=='NOT_STARTED' and owned['docker'].images=={}
 
 
 def test_native_workspace_preserves_strict_guard_and_measures_retained_adversarial_fixtures(owned, monkeypatch):

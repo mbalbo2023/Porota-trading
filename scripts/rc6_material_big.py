@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import runpy
 import stat
 import sys
 
@@ -99,8 +100,11 @@ def original_families_budget(gov, source):
     module = ast.parse(wire)
     assignments = [node for node in module.body if isinstance(node, ast.Assign)
         and any(isinstance(target, ast.Name) and target.id == "QUERY_BUDGET_SECONDS" for target in node.targets)]
-    gov.require(len(assignments) == 1 and isinstance(assignments[0].value, ast.Constant)
-                and type(assignments[0].value.value) is float and assignments[0].value.value == 0.5,
+    contract_wire, _ = gov.capture(source/"rc6_shadow_runtime/read_contract.py")
+    contract = runpy.run_path(str(source/"rc6_shadow_runtime/read_contract.py"))["DEFAULT_READ_CONTRACT"]
+    gov.require(contract.query_budget_seconds("families") == 0.5
+                and len(assignments) == 1 and ast.dump(assignments[0].value) == ast.dump(
+                    ast.parse('DEFAULT_READ_CONTRACT.query_budget_seconds("families")', mode="eval").body),
                 "ORIGINAL_FAMILIES_PER_CAPTURE_POINT_FIVE_REQUIRED")
     functions = [node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "_read"]
     gov.require(len(functions) == 1, "PINNED_FAMILIES_READ_FUNCTION_REQUIRED")
@@ -108,17 +112,60 @@ def original_families_budget(gov, source):
     deadline = [node for node in function.body if isinstance(node, ast.Assign)
                 and any(isinstance(target, ast.Name) and target.id == "deadline" for target in node.targets)]
     gov.require(len(deadline) == 1 and ast.dump(deadline[0].value) == ast.dump(
-        ast.parse("monotonic()+QUERY_BUDGET_SECONDS", mode="eval").body),
+        ast.parse('monotonic()+query_budget_seconds("families")', mode="eval").body),
         "ORIGINAL_FAMILIES_CAPTURE_DEADLINE_REQUIRED")
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name) and node.func.id == "source_connection"]
     gov.require(len(calls) == 1 and any(keyword.arg == "deadline" and isinstance(keyword.value, ast.Name)
-                and keyword.value.id == "deadline" for keyword in calls[0].keywords),
+                and keyword.value.id == "deadline" for keyword in calls[0].keywords)
+                and any(keyword.arg == "consumer" and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value == "families" for keyword in calls[0].keywords),
                 "FAMILIES_CAPTURE_MUST_RECEIVE_ORIGINAL_DEADLINE")
     return {"source_file_sha256": hashlib.sha256(wire).hexdigest(), "query_budget_seconds": 0.5,
+        "productive_contract_source_sha256": hashlib.sha256(contract_wire).hexdigest(),
+        "productive_contract_sha256": contract.fingerprint(), "productive_contract": contract.document(),
         "read_function_line": function.lineno, "deadline_line": deadline[0].lineno,
-        "scope": "LITERAL_PINNED_PER_CAPTURE_DEADLINE; NATIVE_FULL_PIPELINE_AND_IMPORT_PROOF_REQUIRED",
+        "scope": "PINNED_PRODUCTIVE_QUERY_CONTRACT; CAPTURE_AND_VERIFICATION_HAVE_SEPARATE_BOUNDS",
         "family_reports_aggregate_is_not_point_five_gate": True}
+
+
+def source_capture_checks(shadow, contract):
+    rows = shadow.get("source_read_receipts")
+    complete = (type(rows) is list and len(rows) == 3
+        and [row.get("phase") for row in rows] == ["BOUNDED_READ", "PREOPEN", "OPEN"])
+    receipts = [row.get("receipt", {}) for row in rows] if complete else []
+    consumers = contract.document()
+    valid_consumers = bool(receipts) and all(type(receipt.get("query_consumers")) is list
+        and receipt["query_consumers"] and all(type(query) is dict
+            and query.get("shared_primary_capture") is True
+            and type(query.get("consumer")) is str
+            and query["consumer"] + "_query_seconds" in consumers
+            and bounded_number(query.get("query_seconds"),
+                consumers[query["consumer"] + "_query_seconds"])
+            for query in receipt["query_consumers"]) for receipt in receipts)
+    return {
+        "source_snapshot_single_capture_per_tick": complete and all(type(row.get("primary_captures")) is int
+            and row["primary_captures"] == 1 for row in receipts),
+        "productive_read_contract_used_in_every_tick": complete and all(
+            row.get("read_contract_sha256") == contract.fingerprint() for row in receipts),
+        "source_queries_obey_productive_budgets": valid_consumers,
+        "source_verified_and_cleaned_before_publication": complete and all(
+            row.get("source_unchanged") is True and row.get("cleanup_complete") is True
+            and row.get("private_image_guard") == "rc6.immutable-private-image.v1"
+            and row.get("private_image_unchanged") is True
+            and type(row.get("private_image_sha256")) is dict and row["private_image_sha256"]
+            and all(re.fullmatch(r"[0-9a-f]{64}", checksum) for checksum in row["private_image_sha256"].values())
+            and bounded_number(row.get("capture_seconds"), contract.capture_budget_seconds)
+            and bounded_number(row.get("verification_seconds"), contract.verification_budget_seconds)
+            and bounded_number(row.get("cleanup_seconds"), 5) for row in receipts),
+        "every_additional_capture_has_distinct_source_identity": complete and all(
+            type(row.get("additional_captures")) is list and all(
+                extra.get("reason") == "DISTINCT_SOURCE_IDENTITY"
+                and extra.get("source_path_sha256") != row.get("source_path_sha256")
+                and re.fullmatch(r"[0-9a-f]{64}", extra.get("source_path_sha256", ""))
+                and extra.get("source_unchanged") is True and extra.get("cleanup_complete") is True
+                and type(extra.get("scratch_admission")) is dict
+                for extra in row["additional_captures"]) for row in receipts)}
 
 
 def kernel_checks(kernel):
@@ -154,7 +201,8 @@ def native_checks(native, kernel, gov, args):
     finals = [node for node in shadow["probe_event_receipts"] if node["event"] == "FINAL"]
     handlers = shadow["handler_resources"]
     required_handlers = ("families", "lab", "entry_signals", "funnel")
-    return {
+    contract = runpy.run_path(str(args.epoch/"source/rc6_shadow_runtime/read_contract.py"))["DEFAULT_READ_CONTRACT"]
+    return {**source_capture_checks(shadow, contract),
         "actual_original_12000_and_60000": type(native["catalog_count"]) is int and native["catalog_count"] == 12000
             and type(native["observations_materialized"]) is int and native["observations_materialized"] == 60000,
         "native_original_required_gates_green": native["business_resource_complete"] is True
@@ -171,6 +219,9 @@ def native_checks(native, kernel, gov, args):
         "actual_original_native_cycle_90": native["cycle_deadline_seconds"] == 90
             and bounded_number(shadow["elapsed_seconds"], 90) and len(finals) == 1
             and bounded_number(finals[0]["received_at_monotonic"]-shadow["cycle_started_at_monotonic"], 90),
+        "qualification_headroom_at_most_75": bounded_number(shadow["elapsed_seconds"], 75)
+            and len(finals) == 1
+            and bounded_number(finals[0]["received_at_monotonic"]-shadow["cycle_started_at_monotonic"], 75),
         "original_native_quota_128mib_and_rss_strict_2gib": gates["maximum_evidence_bytes"] == 128*1024**2
             and type(gates["actual_evidence_bytes"]) is int and 0 <= gates["actual_evidence_bytes"] <= 128*1024**2
             and gates["maximum_rss_bytes"] == 2*1024**3 and type(gates["actual_rss_bytes"]) is int
@@ -304,7 +355,8 @@ def main(args):
     native_summary = None
     publish = lambda name, value: gov.publish(raw/name, gov.canonical(value))
     try:
-        namespace = gov.phase_namespace(source, raw, "execution")
+        claim = json.loads(os.environ["RC6_GOV_AUTHENTICATED_ROOT_JSON"])
+        namespace = gov.phase_namespace(source, raw, "execution", authenticated_binding=claim)
         publish("namespace.json", namespace)
         closure = gov.installed_closure(source)
         publish("parent-installed-closure.json", closure)
@@ -327,7 +379,9 @@ def main(args):
             "source_file_count": len(before["files"]), "supervisor_pid": os.getpid(), "command": command,
             "invocation": "DIRECT_NATIVE_PYTHON_CLI; NO_RUNPY_BOOTSTRAP_OVERLAY_OR_ALIAS_REBINDING",
             "original_gates": {"catalog": 12000, "observations": 60000, "cycle_seconds": 90,
-                "families_per_capture_seconds": 0.5, "maximum_evidence_bytes": 128*1024**2,
+                "families_query_seconds": 0.5, "qualification_seconds": 75,
+                "productive_read_contract_sha256": budget["productive_contract_sha256"],
+                "maximum_evidence_bytes": 128*1024**2,
                 "rss_strictly_less_than_bytes": 2*1024**3, "factual_paper_exits": 5,
                 "slow_fsync_release_seconds": 15, "native_child_finalization_seconds": 5},
             "outer_management_only_seconds": 300, "outer_management_changes_native90s": False,
@@ -335,11 +389,23 @@ def main(args):
             "stack_sampler": False, "real_orders_sent": 0, "runtime_validated": False, "artifact_validated": False}
         publish("launch.json", launch)
         print("BIG_NATIVE_LAUNCH="+json.dumps(launch, sort_keys=True), flush=True)
+        from scripts import rc6_heavy_test_preflight as capacity
+        binding = json.loads(os.environ["RC6_GOV_CAPACITY_BINDING_JSON"])
+        peak = json.loads(os.environ["RC6_GOV_COMPARABLE_PEAK_JSON"])
+        policy = capacity.load_policy(source/"ops/policy/rc6-heavy-test-governance-v1.json")
+        capacity_before = capacity.build_receipt(policy=policy, path=Path(claim["path"]),
+            expected_peak_bytes=capacity.envelope_allocated_bytes(peak), binding=binding, comparable_peak=peak)
+        publish("capacity-before-native.json", capacity_before)
+        capacity_live = capacity.validate_live_receipt(path=Path(claim["path"]),
+            receipt=capacity_before, binding=binding, policy=policy)
+        publish("capacity-live-native.json", capacity_live)
+        gov.require(capacity_live["capacity"]["status"] == "GREEN", "LIVE_CAPACITY_BLOCKED_BEFORE_NATIVE_BIG")
         # While this call is active, this parent reads no SOURCE, DATA, native
         # result or native.log. The actual tracked supervisor owns all children.
         kernel = gov.subprocess_phase(command, source, raw/"native.log", env, limit=300)
         publish("kernel-supervision.json", kernel)
         checks.update(kernel_checks(kernel))
+        checks["capacity_live_immediately_before_native_producer"] = True
         reads_allowed = all(value is True for name, value in kernel_checks(kernel).items()
             if name not in ("main_exit_zero", "actual_kernel_peak_rss_strictly_below_2gib"))
         gov.require(reads_allowed, "POST_FIN_READ_FORBIDDEN_WITHOUT_REAL_KERNEL_EXHAUSTION")

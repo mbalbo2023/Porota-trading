@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import runpy
 import signal
 import socket
 import stat
@@ -33,11 +34,29 @@ FIELDS = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink',
 STABLE_CODE_FIELDS = tuple(field for field in FIELDS if field != 'st_atime_ns')
 MAX_SOURCE_FILE = 128*1024**2
 MAX_SOURCE_MEMBERS = 50000
+RECORD_WRAPPER_MEMBER = ('docs/audits/convergence/evidence/controlled-successor-20261006/'
+    'checkpoint7-read-diagnostics/full-gov-prepared-only/governed_outer.py.source')
+RECORD_WRAPPER_SHA256 = '7fa1aae01b863695e43f1b4de0b862fb8757281ea5506d791107651c5d057bc4'
 
 
-def phase_namespace(root, output, phase):
+def fixture_lifecycle(root):
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts import rc6_authenticated_fixture_lifecycle
+    return rc6_authenticated_fixture_lifecycle
+
+
+def phase_namespace(root, output, phase, *, authenticated_binding=None):
     """Give collection and execution fresh external writable namespaces."""
     require(phase in ('collection', 'execution'), 'LITERAL_GOVERNED_PHASE_REQUIRED')
+    lifecycle = fixture_lifecycle(root)
+    require(type(authenticated_binding) is dict, 'AUTHENTICATED_GOVERNED_NAMESPACE_REQUIRED')
+    binding = authenticated_binding.get('binding', {})
+    authenticated_root = lifecycle.validate_consumer_receipt(authenticated_binding,
+        candidate_sha=binding.get('candidate_sha'), candidate_tree=binding.get('candidate_tree'))
+    require(output.is_relative_to(authenticated_root) and not authenticated_root.is_relative_to(root)
+            and not output.is_relative_to(root) and not root.is_relative_to(output),
+            'GOVERNED_OUTPUT_OUTSIDE_AUTHENTICATED_NAMESPACE')
     private = safe_path(output/(phase+'-private'))
     require(not private.exists() and not private.is_relative_to(root),
             'FRESH_EXTERNAL_PHASE_NAMESPACE_REQUIRED')
@@ -57,18 +76,13 @@ def phase_namespace(root, output, phase):
         'HIST_DB_PATH': str(legacy/'market_history.db'),
         'TESTING_LOG_PATH': str(legacy/'testing_trace.jsonl'),
         'DASHBOARD_SESSION_STORE': str(legacy/'dashboard_sessions.json')}
-    # multiprocessing's concrete AF_UNIX listener paths have a native length
-    # bound. Choose a fresh private sibling on this same filesystem, rather
-    # than moving fixtures onto tmpfs or hiding a path in the source tree.
-    for parent in reversed(output.parents):
-        attributes = parent.lstat()
-        if (stat.S_ISDIR(attributes.st_mode) and attributes.st_uid == os.geteuid()
-                and attributes.st_dev == output.lstat().st_dev
-                and not stat.S_IMODE(attributes.st_mode) & 0o022
-                and not parent.is_relative_to(root) and len(os.fsencode(parent)) <= 50):
-            paths['tmp'] = safe_path(tempfile.mkdtemp(prefix='rc6gov-', dir=parent))
-            break
-    require('tmp' in paths, 'SHORT_EXTERNAL_OWNED_SAME_FILESYSTEM_NAMESPACE_REQUIRED')
+    # AF_UNIX needs a short path, but choosing an arbitrary ancestor escaped
+    # custody and left fixtures outside the owner. Keep all 128 namespace bits
+    # in a compact base64 name; collection/execution borrow distinct children.
+    paths['tmp'] = safe_path(authenticated_root / ('c' if phase == 'collection' else 'e'))
+    require(len(os.fsencode(paths['tmp'])) <= 50 and not paths['tmp'].exists(),
+            'SHORT_AUTHENTICATED_SAME_FILESYSTEM_NAMESPACE_REQUIRED')
+    paths['tmp'].mkdir(mode=0o700)
     tmp_identity = paths['tmp'].lstat()
     require(tmp_identity.st_uid == os.geteuid() and stat.S_IMODE(tmp_identity.st_mode) == 0o700
             and tmp_identity.st_dev == output.lstat().st_dev,
@@ -86,6 +100,8 @@ def phase_namespace(root, output, phase):
             'legacy_persistence_owner_uid': legacy_identity.st_uid,
             'legacy_persistence_mode': stat.S_IMODE(legacy_identity.st_mode),
             'tmpdir_retained_for_diagnostics': True,
+            'authenticated_owner_namespace': authenticated_binding,
+            'tmpdir_outside_owner_namespace': False,
             'pytest_cache_provider_disabled': True, 'writable_source_exclusions_added': []}
 
 
@@ -569,6 +585,17 @@ def installed_closure(root):
             'installer_executed_by_this_runner': False, 'source_hash_lock_action_platform_audit': result}
 
 
+def original_record_custody(root):
+    """Use the hash-pinned original RECORD157 predicates without bootstrap."""
+    source = root / RECORD_WRAPPER_MEMBER
+    raw, _ = capture(source)
+    require(digest(raw) == RECORD_WRAPPER_SHA256, 'ORIGINAL_RECORD157_WRAPPER_SOURCE_CHANGED')
+    original = runpy.run_path(str(source))
+    require(callable(original.get('records157')) and callable(original.get('compare_records157')),
+            'ORIGINAL_RECORD157_PREDICATES_REQUIRED')
+    return original
+
+
 def approved_scope(root, sha):
     import yaml
     from scripts import rc6_convergence_provenance as verifier
@@ -852,19 +879,22 @@ def install_phase_audit(observations):
 
 def phase_child(args):
     root, output = safe_path(args.repo_root), safe_path(args.output_root)
-    namespace = phase_namespace(root, output, args.phase)
-    publish(output/(args.phase+'.namespace.json'), canonical(namespace))
-    capability = restrict_inet_creation()
-    publish(output/(args.phase+'.offline-capability.json'), canonical(capability))
-    infrastructure_initial = child_infrastructure_snapshot()
-    require(all(value is None for value in infrastructure_initial.values()),
-            'FRESH_PHASE_MULTIPROCESSING_INFRASTRUCTURE_REQUIRED')
+    # Source/closure/inventory must close BEFORE creating a fixture namespace.
+    # An invalid Source cannot authorize even a short TMPDIR construction.
     pin = source_pin(root, args.source_sha, args.source_tree)
     closure = installed_closure(root)
     runner_raw, _ = capture(__file__)
     launcher = json.loads(capture(output/'launch.json')[0])
     require(launcher['runner_sha256'] == digest(runner_raw), 'CHILD_RUNNER_CHANGED')
     test_args, exclusions, _inventory = approved_scope(root, args.source_sha)
+    namespace = phase_namespace(root, output, args.phase,
+                                authenticated_binding=launcher['authenticated_namespace_binding'])
+    publish(output/(args.phase+'.namespace.json'), canonical(namespace))
+    capability = restrict_inet_creation()
+    publish(output/(args.phase+'.offline-capability.json'), canonical(capability))
+    infrastructure_initial = child_infrastructure_snapshot()
+    require(all(value is None for value in infrastructure_initial.values()),
+            'FRESH_PHASE_MULTIPROCESSING_INFRASTRUCTURE_REQUIRED')
     observations = {'inet_socket_attempts': [], 'subprocess_executable_counts': {}, 'actual_product_imports': [],
                     'unexpected_product_imports': [], 'source_files': len(pin['files']),
                     'inet_socket_constructor_requests': []}
@@ -883,8 +913,12 @@ def phase_child(args):
         argv.append('--collect-only')
     else:
         argv.extend(['--junitxml='+str(output/'porota-governed-tests.xml')])
+    from scripts.rc6_pytest_fixture_lifecycle import FixtureLifecyclePlugin
+    fixture_lifecycle_plugin = FixtureLifecyclePlugin(launcher['authenticated_namespace_binding'],
+        output / (args.phase + '-fixture-lifecycle-controls'), candidate_sha=args.source_sha,
+        candidate_tree=args.source_tree)
     try:
-        rc = int(pytest.main(argv, plugins=[Observer()]))
+        rc = int(pytest.main(argv, plugins=[Observer(), fixture_lifecycle_plugin]))
     finally:
         finalization = finalize_child_infrastructure(infrastructure_initial)
         publish(output/(args.phase+'.child-finalization.json'), canonical(finalization))
@@ -895,6 +929,9 @@ def phase_child(args):
             and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False
             and finalization['wall_seconds'] <= 5 and not finalization['errors'],
             'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED')
+    fixture_lifecycle_plugin.retry_after_original_phase_finalization()
+    fixture_lifecycle_report = fixture_lifecycle_plugin.summary()
+    publish(output / (args.phase + '.fixture-lifecycle.json'), canonical(fixture_lifecycle_report))
     product_names = {Path(name).stem for name in pin['files'] if '/' not in name and name.endswith('.py')}
     product_names |= {name.split('/')[0] for name in pin['files']
                      if '/' in name and name.endswith('.py') and name.split('/')[0] not in ('tests', 'docs', '.github', '.agents')}
@@ -923,6 +960,7 @@ def phase_child(args):
         'source_before_index_sha256': digest(canonical(pin)), 'source_after_index_sha256': digest(canonical(after)),
         'observed_code_atime_changes': atime,
         'phase_namespace': namespace, 'offline_inet_creation_capability': capability,
+        'original_tmp_path_scoped_lifecycle': fixture_lifecycle_report,
         'child_infrastructure_finalization': finalization,
         **observations, 'inet_observation_scope': 'THIS_PYTEST_PYTHON_PROCESS_DNS_INET_SOCKET_AUDIT_AND_KNOWN_CLIENT_EXECUTABLES; NOT A KERNEL_NETWORK_NAMESPACE_OR TRANSITIVE_CHILD_NETWORK_ATTESTATION',
         'import_observation_scope': 'ACTUAL_PRODUCT_MODULES_PRESENT_AT_PHASE_EXIT; NESTED_NATIVE_GUARDS_BIND_THEIR_OWN_SOURCE'}
@@ -941,6 +979,18 @@ def main(args):
             ('DATA_DIR', 'DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_STORE')
             for name in os.environ), 'OPERATIONAL_ENVIRONMENT_FORBIDDEN')
     output.mkdir(mode=0o700)
+    lifecycle = fixture_lifecycle(root)
+    from scripts import rc6_heavy_test_preflight as capacity
+    require('RC6_GOV_AUTHENTICATED_ROOT_JSON' in os.environ
+            and 'RC6_GOV_COMPARABLE_PEAK_JSON' in os.environ,
+            'AUTHENTICATED_GOVERNED_CAPACITY_AND_NAMESPACE_REQUIRED')
+    authenticated_binding = capacity.custody.decode(os.environ['RC6_GOV_AUTHENTICATED_ROOT_JSON'])
+    owned_root = lifecycle.validate_consumer_receipt(authenticated_binding,
+        candidate_sha=args.source_sha, candidate_tree=args.source_tree)
+    require(output.is_relative_to(owned_root), 'GOVERNED_OUTPUT_OUTSIDE_AUTHENTICATED_NAMESPACE')
+    comparable_peak = capacity.custody.decode(os.environ['RC6_GOV_COMPARABLE_PEAK_JSON'])
+    capacity_binding = authenticated_binding['binding']
+    capacity_policy = capacity.load_policy()
     runner_raw, runner_stat = capture(__file__)
     publish(output/'external-runner.py', runner_raw)
     launcher = {'schema': 'rc6.frozen-governed-external-launch.v2', 'execution_id': uuid.uuid4().hex,
@@ -949,6 +999,7 @@ def main(args):
         'runner_stat_fields': runner_stat, 'scope': 'repository-root automatic pytest discovery',
         'phase_timeout_seconds': args.timeout_seconds, 'cache_provider_disabled': True,
         'plugin_autoload_disabled': True, 'phase_infrastructure_plugin': 'EXTERNAL_DECLARED_NODE_AND_OBSERVATION_RECORDER_ONLY'}
+    launcher['authenticated_namespace_binding'] = authenticated_binding
     env = {**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'PYTHONDONTWRITEBYTECODE': '1'}
     env.pop('PYTHONPATH', None)
     common = [sys.executable, '-I', '-B', str(safe_path(__file__)), '--repo-root', str(root),
@@ -957,6 +1008,9 @@ def main(args):
     try:
         before = source_pin(root, args.source_sha, args.source_tree)
         closure = installed_closure(root)
+        record_custody = original_record_custody(root)
+        records_before = record_custody['records157']()
+        publish(output/'installed-records-before.json', canonical(records_before))
         test_args, exclusions, inventory = approved_scope(root, args.source_sha)
         publish(output/'source-before.index.json', canonical(before))
         publish(output/'convergence-inventory.json', canonical(inventory))
@@ -969,6 +1023,14 @@ def main(args):
             phase_before = source_pin(root, args.source_sha, args.source_tree)
             compare_source(before, phase_before)
             publish(output/(phase+'.parent-source-before.index.json'), canonical(phase_before))
+            # This measured check is consumed immediately at the native launch,
+            # including execution after collection changed disk occupancy.
+            preflight = capacity.build_receipt(policy=capacity_policy, path=owned_root,
+                expected_peak_bytes=capacity.envelope_allocated_bytes(comparable_peak), binding=capacity_binding,
+                comparable_peak=comparable_peak)
+            live = capacity.validate_live_receipt(path=owned_root, receipt=preflight,
+                                                  binding=capacity_binding, policy=capacity_policy)
+            publish(output/(phase+'.capacity-live.json'), canonical(live))
             phases[phase] = subprocess_phase(common+['--phase', phase], root, output/(phase+'.log'), env, args.timeout_seconds)
             publish(output/(phase+'.kernel.json'), canonical(phases[phase]))
             require(phases[phase]['returncode'] == 0 and phases[phase]['timed_out'] is False,
@@ -1013,6 +1075,9 @@ def main(args):
         after = source_pin(root, args.source_sha, args.source_tree)
         publish(output/'source-after.index.json', canonical(after))
         atime = compare_source(before, after)
+        records_after = record_custody['records157']()
+        records_atime = record_custody['compare_records157'](records_before, records_after)
+        publish(output/'installed-records-after.json', canonical(records_after))
         require(all(not row['inet_socket_attempts'] and not row['unexpected_product_imports']
                     for row in (collect, execution)), 'GOVERNED_NETWORK_OR_PRODUCT_IMPORT_OBSERVATION_RED')
         proof = {'schema_version': 1, 'candidate_sha': args.source_sha, 'candidate_tree': args.source_tree,
@@ -1028,6 +1093,12 @@ def main(args):
             'physical_directories': len(before['physical_directories']), 'source_namespace_exact_before_each_phase_and_after': True,
             'git_metadata_exclusion': before['git_metadata'],
             'source_bytes_modes_blobs_unchanged': True, 'stable_code_custody_fields_unchanged': list(STABLE_CODE_FIELDS),
+            'Record157_bytes_versions_original10_equal_before_after': True,
+            'Record157_atime_observations': records_atime,
+            'Record157_original_predicates': {'path': RECORD_WRAPPER_MEMBER, 'sha256': RECORD_WRAPPER_SHA256,
+                'before_sha256': digest(canonical(records_before)), 'after_sha256': digest(canonical(records_after)),
+                'assertion_scope': 'ACTUAL_DIST_INFO_RECORD_BYTES_METADATA_AND_CUSTODY_ONLY',
+                'all_package_bytes_verified': False, 'wheel_bytes_authenticated': False},
             'observed_code_atime_changes': atime, 'all_eleven_code_stat_fields_unchanged_claimed': False,
             'all_source_database_stat_custody_claimed_by_this_driver': False,
             'native_data_custody': 'ASSERTED_BY_ACTUALLY_EXECUTED_NATIVE_GUARDS_NOT_REDEFINED_BY_GOV_DRIVER',

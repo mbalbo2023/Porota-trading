@@ -12,16 +12,22 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
+import sys
 import urllib.parse
 import urllib.request
+
+ROOT=Path(__file__).absolute().parents[1]
+if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 
 REPO='mbalbo2023/Porota-trading'
 REPO_ID=1338680554
 WORKSTREAM='WS-RC6-CONVERGENCE-468-469-470-20261005'
 BRANCH='recovery/rc6-material-fix-forward-3091e93-20261006'
 BASE='deploy/rc6-pr69-isolated-20260915'
+BASE_SHA='da697c6e6c2274579f9e4a112fabc4327475dd35'
 PR=476
-GATES=('focal','full-gov311','full-gov312','BIG-browser','Horizon')
+GATES=('cheap','focal311','focal312','BIG-browser','Horizon','full-gov311','full-gov312','predeploy')
 OPS='docs/automation/rc6-night-20261005/state.json'
 OPS_REF='ops/rc6-night-supervisor-20261005'
 CAP=1024*1024
@@ -33,7 +39,9 @@ FIELD_KEYS={'WORKSTREAM_ID','SESSION','SESSION_SUCCESSOR','WRITE_OWNER','INTEGRA
     'RECONCILIATION_RECEIPT_473','RECONCILIATION_USER_STOP_CONFIRMED',
     'RECONCILIATION_RECEIPT_471_SHA256','RECONCILIATION_RECEIPT_473_SHA256',
     'RECONCILED_OPS_STATE_SHA256','CANONICAL_GOV311_CUSTODY_RECEIPT_URL',
-    'SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'}
+    'SUPPLEMENTARY_GOV311_JUSTIFICATION_URL','PREREQUISITES_MANIFEST_JSON','CAPACITY_PEAKS_JSON',
+    'CHEAP_FILES_JSON','RC6_PREDEPLOY_G7_AUTHORIZATION','SOURCE_MANIFEST_SHA256',
+    'CAPACITY_COMPARISON_MANIFEST_JSON'}
 COMMENT_PAGES=50
 RUN_PAGES=10
 RECOVERY_OWNER='CODEX_RC6_CONTROLLED_RECOVERY_20261007_0015UTC'
@@ -43,7 +51,11 @@ RECONCILED_BLOB='d52b4090f53c1897b735a903581b44e107e57020'
 RECONCILED_RAW_SHA256='746551deb6f856c4000a1aea89d0e24cb371b4dc1c193e2c4b4f3f2d8842d0b7'
 RECONCILED_OLD_OWNER='CODEX_SUCCESSOR_RC6_20261006_1246UTC'
 USER_STOP_LITERAL='Martín autorizó esta recuperación/fix-forward y confirmó directamente en esta conversación que la sesión que tomó ownership como supervisor también quedó detenida.'
+SUCCESSOR_OWNER='CODEX_RC6_ARCHITECTURAL_RCA_20261008_1205UTC'
+SUCCESSOR_BODY_SHA256='3e172082018e88e7a255cc5ee9675898a1dd289f0b1abc98815a870c627504b6'
+SUCCESSOR_ANCHORS={471:(6059477308,'2026-10-08T12:06:09Z'),473:(6059477667,'2026-10-08T12:06:10Z')}
 STAT11=('st_dev','st_ino','st_uid','st_gid','st_mode','st_nlink','st_size','st_blocks','st_atime_ns','st_mtime_ns','st_ctime_ns')
+CAPACITY_COMPARISON_MANIFEST_SCHEMA='porota.rc6.capacity-comparison-manifest.v1'
 
 def require(ok,reason):
     if not ok:raise ValueError(reason)
@@ -65,6 +77,111 @@ def fields(body):
             require(item[1] not in result,'ADMISSION_DUPLICATE_RECEIPT_FIELD')
             result[item[1]]=item[2]
     return result
+
+def frozen_source_inventory(repo,sha,tree):
+    """Derive immutable Git payload identity, never workspace allocation/modes."""
+    require(re.fullmatch('[0-9a-f]{40}',sha or '') and re.fullmatch('[0-9a-f]{40}',tree or ''),
+        'CAPACITY_SOURCE_EXACT_GIT_SHA_TREE_REQUIRED')
+    environment={**os.environ,'GIT_OPTIONAL_LOCKS':'0','GIT_CONFIG_NOSYSTEM':'1',
+        'GIT_CONFIG_GLOBAL':'/dev/null','GIT_NO_LAZY_FETCH':'1'}
+    command=['git','--no-replace-objects','-C',str(Path(repo).absolute())]
+    actual=subprocess.run([*command,'rev-parse',sha+'^{tree}'],env=environment,
+        capture_output=True,check=True,timeout=30).stdout.strip().decode('ascii')
+    require(actual==tree,'CAPACITY_SOURCE_FROZEN_TREE_REBOUND')
+    listing=subprocess.run([*command,'ls-tree','-r','--full-tree','-z',sha],env=environment,
+        capture_output=True,check=True,timeout=30).stdout
+    require(bool(listing) and len(listing)<=16*1024**2,'CAPACITY_SOURCE_GIT_INVENTORY_REQUIRED')
+    entries=[]
+    for literal in listing.rstrip(b'\0').split(b'\0'):
+        header,path=literal.split(b'\t',1);mode,kind,blob=header.decode('ascii').split(' ')
+        name=path.decode('utf-8')
+        require(mode in ('100644','100755') and kind=='blob' and re.fullmatch('[0-9a-f]{40}',blob)
+            and name and not name.startswith('/') and all(part not in ('','.','..') for part in name.split('/')),
+            'CAPACITY_SOURCE_GIT_MEMBER_MODE_OR_IDENTITY_INVALID')
+        entries.append((name,mode,blob))
+    require(len(entries)==len({name for name,_mode,_blob in entries}),'CAPACITY_SOURCE_GIT_PATH_DUPLICATED')
+    process=subprocess.Popen([*command,'cat-file','--batch'],env=environment,
+        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+    files=[];cache={}
+    try:
+        for name,mode,blob in sorted(entries):
+            if blob not in cache:
+                process.stdin.write((blob+'\n').encode('ascii'));process.stdin.flush()
+                header=process.stdout.readline(256).strip().split(b' ')
+                require(len(header)==3 and header[0].decode('ascii')==blob and header[1]==b'blob'
+                    and header[2].isdigit(),'CAPACITY_SOURCE_GIT_BLOB_HEADER_INVALID')
+                size=int(header[2]);require(size<=128*1024**2,'CAPACITY_SOURCE_GIT_BLOB_LIMIT')
+                sha256=hashlib.sha256();sha1=hashlib.sha1(b'blob '+str(size).encode('ascii')+b'\0');remaining=size
+                while remaining:
+                    raw=process.stdout.read(min(1024**2,remaining))
+                    require(bool(raw),'CAPACITY_SOURCE_GIT_BLOB_TRUNCATED')
+                    sha256.update(raw);sha1.update(raw);remaining-=len(raw)
+                require(process.stdout.read(1)==b'\n' and sha1.hexdigest()==blob,
+                    'CAPACITY_SOURCE_GIT_BLOB_BYTES_REBOUND')
+                cache[blob]=(size,sha256.hexdigest())
+            size,body_sha=cache[blob]
+            files.append({'path':name,'mode':mode,'git_blob':blob,'bytes':size,'sha256':body_sha})
+        process.stdin.close()
+        require(process.wait(timeout=30)==0,'CAPACITY_SOURCE_GIT_READER_EXIT_RED')
+    finally:
+        if process.poll() is None:process.kill();process.wait(timeout=5)
+        if process.stdin and not process.stdin.closed:process.stdin.close()
+        process.stdout.close()
+    return {'schema':'porota.rc6.git-source-inventory.v1','source_sha':sha,'source_tree':tree,'files':files}
+
+def verify_capacity_comparison_manifest(f,sha,tree,*,repo=ROOT):
+    """Unknown graph costs block; owner/hash-only receipts cannot qualify V2."""
+    peaks=document(f.get('CAPACITY_PEAKS_JSON','null'))
+    require(type(peaks) is dict,'EXACT_COMPARABLE_CAPACITY_PEAKS_REQUIRED')
+    v2=any(type(value) is dict and value.get('schema')=='porota.rc6.comparable-capacity-envelope.v2'
+        for value in peaks.values())
+    if peaks and not v2 and 'CAPACITY_COMPARISON_MANIFEST_JSON' not in f:
+        # Legacy measured V1 remains a separate API; its real preflight still
+        # checks exact producer/runner/metric and evidence digest at launch.
+        require(all(type(value) is dict and value.get('schema')=='porota.rc6.comparable-capacity-peak.v1'
+            for value in peaks.values()),'CAPACITY_UNKNOWN_COMPARISON_SCHEMA')
+        return {'schema':'porota.rc6.capacity-source-admission.v1','scope':'MEASURED_V1_SEPARATE_NO_V2_GRAPH_CLAIM'}
+    manifest=document(f.get('CAPACITY_COMPARISON_MANIFEST_JSON','null'))
+    require(type(manifest) is dict and manifest.get('schema')==CAPACITY_COMPARISON_MANIFEST_SCHEMA
+        and manifest.get('source_sha')==sha and manifest.get('source_tree')==tree,
+        'CAPACITY_AUTHENTIC_COMPLETE_COMPARISON_MANIFEST_REQUIRED')
+    expected=f.get('SOURCE_MANIFEST_SHA256')
+    require(re.fullmatch('[0-9a-f]{64}',expected or '')
+        and manifest.get('source_manifest_sha256')==expected,'CAPACITY_SOURCE_MANIFEST_DIGEST_REQUIRED')
+    inventory=frozen_source_inventory(repo,sha,tree)
+    require(hashlib.sha256(wire(inventory)).hexdigest()==expected,'CAPACITY_EXACT_GIT_SOURCE_MANIFEST_DIGEST_MISMATCH')
+    from scripts.rc6_architectural_gates import validate_g1_files
+    cheap=validate_g1_files(document(f.get('CHEAP_FILES_JSON','null')))
+    require(manifest.get('cheap_files_sha256')==hashlib.sha256(wire(cheap)).hexdigest(),
+        'CAPACITY_REVIEWED_CHEAP_GRAPH_FINGERPRINT_MISMATCH')
+    unknown=manifest.get('unknown_components')
+    require(type(unknown) is list and all(type(name) is str and 0<len(name)<=2048 for name in unknown)
+        and len(unknown)==len(set(unknown)),'CAPACITY_UNKNOWN_GRAPH_COMPONENT_INVENTORY_REQUIRED')
+    require(manifest.get('status') in ('BLOCKED_UNKNOWN_COMPONENTS','VERIFIED'),
+        'CAPACITY_COMPARISON_MANIFEST_STATUS_REQUIRED')
+    if unknown or manifest['status']=='BLOCKED_UNKNOWN_COMPONENTS':
+        raise ValueError('CAPACITY_COMPARISON_UNKNOWN_COMPONENTS_BEFORE_BOOTSTRAP')
+    records=manifest.get('records')
+    require(type(records) is list and bool(records),'CAPACITY_HASH_ONLY_COMPARISON_EVIDENCE_BLOCKED')
+    total=0;seen=set()
+    for record in records:
+        require(type(record) is dict and re.fullmatch(
+            r'https://github\.com/mbalbo2023/Porota-trading/blob/[0-9a-f]{40}/[^?#\r\n]+',record.get('uri','')),
+            'CAPACITY_ORIGINAL_IMMUTABLE_REPOSITORY_EVIDENCE_REQUIRED')
+        require(record['uri'] not in seen and re.fullmatch('[0-9a-f]{64}',record.get('sha256','')),
+            'CAPACITY_EVIDENCE_DUPLICATED_OR_DIGEST_MISSING');seen.add(record['uri'])
+        require(('raw_utf8' in record)^('raw_base64' in record),'CAPACITY_ORIGINAL_RAW_BYTES_REQUIRED')
+        if 'raw_utf8' in record:
+            require(type(record['raw_utf8']) is str,'CAPACITY_ORIGINAL_RAW_UTF8_REQUIRED');raw=record['raw_utf8'].encode('utf-8')
+        else:
+            require(type(record['raw_base64']) is str,'CAPACITY_ORIGINAL_RAW_BASE64_REQUIRED')
+            raw=base64.b64decode(record['raw_base64'],validate=True)
+        total+=len(raw);require(0<len(raw) and total<=128*1024,'CAPACITY_COMPARISON_RAW_BOUND')
+        require(hashlib.sha256(raw).hexdigest()==record['sha256'],'CAPACITY_ORIGINAL_RAW_DIGEST_MISMATCH')
+    # Inline coherence is insufficient. No transport loader/exhaustive graph
+    # predicate is claimed until original Git container+index+member provenance
+    # and every bootstrap/producer cost are implemented and independently tested.
+    raise ValueError('CAPACITY_VERIFIED_COMPARISON_PROOF_BLOCK_UNSUPPORTED')
 
 def api(path):
     token=os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
@@ -100,6 +217,23 @@ def recovery_anchors(owner):
         result[issue]=row
     return result
 
+def successor_anchors(owner):
+    require(owner==SUCCESSOR_OWNER,'EXACT_ARCHITECTURAL_SUCCESSOR_SESSION_REQUIRED')
+    result={}
+    for issue,(identifier,created) in SUCCESSOR_ANCHORS.items():
+        url='https://github.com/'+REPO+'/issues/'+str(issue)+'#issuecomment-'+str(identifier)
+        row=comment(url,issue);f=fields(row['body'])
+        require(row['id']==identifier and row['created_at']==row['updated_at']==created
+            and hashlib.sha256(row['body'].encode()).hexdigest()==SUCCESSOR_BODY_SHA256
+            and f.get('WORKSTREAM_ID')==WORKSTREAM and f.get('SESSION_SUCCESSOR')==owner
+            and f.get('WRITE_OWNER')==owner and f.get('INTEGRATION_OWNER')==owner
+            and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
+            and RECONCILED_BLOB in row['body'] and RECONCILED_RAW_SHA256 in row['body']
+            and all(str(anchor[0]) in row['body'] for anchor in RECOVERY_ANCHORS.values()),
+            'AUTHENTIC_ARCHITECTURAL_SUCCESSOR_ANCHOR_REQUIRED')
+        result[issue]=row
+    return result
+
 def effective_stamp(row):
     created=stamp(row['created_at']);updated=stamp(row['updated_at'])
     require(created<=updated,'COMMENT_CREATED_UPDATED_CUSTODY_INVALID')
@@ -127,8 +261,8 @@ def recent(issue,anchor,now):
     require(anchor['id'] in ids,'ACTUAL_CONTROLLED_ANCHOR_MISSING_FROM_UPDATED_TIMELINE')
     return sorted(rows,key=lambda row:(effective_stamp(row),row['id']))
 
-def actual_event():
-    require(os.environ.get('GITHUB_EVENT_NAME')=='pull_request','AUTOMATIC_ADMISSION_REQUIRES_PULL_REQUEST_EVENT')
+def actual_event(gate):
+    require(os.environ.get('GITHUB_EVENT_NAME') in ('pull_request','workflow_dispatch'),'ACTUAL_PR_OR_SCOPED_DISPATCH_EVENT_REQUIRED')
     literal=os.environ['GITHUB_EVENT_PATH'];path=Path(literal)
     require(path.is_absolute() and literal==os.path.abspath(literal),'CANONICAL_ABSOLUTE_EVENT_PATH_REQUIRED')
     # Hold every directory component with NOFOLLOW. Read the file relative to
@@ -167,66 +301,77 @@ def actual_event():
         finally:os.close(fd)
     finally:
         for descriptor in reversed(held):os.close(descriptor)
-    event=document(raw);pr=event['pull_request']
+    event=document(raw)
+    if os.environ['GITHUB_EVENT_NAME']=='workflow_dispatch':
+        require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
+            and event['sender']['login']=='mbalbo2023' and event.get('inputs',{}).get('gate')==gate
+            and event.get('ref')==BRANCH,'SOLE_OWNED_SCOPED_DISPATCH_EVENT_REQUIRED')
+        return event,custody
+    pr=event['pull_request']
     require(event['repository']['id']==REPO_ID and event['repository']['full_name']==REPO
-        and event['number']==PR and pr['number']==PR and pr['state']=='open' and pr['draft'] is True
+        and event['number']==PR and pr['number']==PR and pr['state']=='open'
+        and pr['draft'] is (gate!='predeploy')
         and pr['user']['login']=='mbalbo2023' and pr['head']['repo']['id']==REPO_ID
         and pr['head']['repo']['owner']['login']=='mbalbo2023' and pr['head']['ref']==BRANCH
-        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE,
+        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE and pr['base']['sha']==BASE_SHA,
         'SOLE_OWNED_DRAFT_RECOVERY_PR_EVENT_REQUIRED')
+    require((gate=='cheap' and event['action'] in ('opened','synchronize','reopened'))
+        or (gate=='predeploy' and event['action']=='ready_for_review'),
+        'PR_PUSH_AUTHORIZES_CHEAP_ONLY_READY_FOR_REVIEW_AUTHORIZES_G7_ONLY')
     return event,custody
 
-def fresh_source(sha,tree):
+def fresh_source(sha,tree,gate=None):
     require(re.fullmatch('[0-9a-f]{40}',sha or ''),'EXACT_HEAD_SOURCE_SHA_REQUIRED')
     repo=api('');ref=api('/git/ref/heads/'+BRANCH);commit=api('/git/commits/'+sha);pr=api('/pulls/'+str(PR))
     require(repo['id']==REPO_ID and ref['object']['sha']==sha and commit['sha']==sha
-        and pr['number']==PR and pr['state']=='open' and pr['draft'] is True
+        and pr['number']==PR and pr['state']=='open' and pr['draft'] is (gate!='predeploy')
         and pr['user']['login']=='mbalbo2023' and pr['head']['sha']==sha and pr['head']['ref']==BRANCH
         and pr['head']['repo']['id']==REPO_ID and pr['head']['repo']['owner']['login']=='mbalbo2023'
-        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE,'FRESH_EXACT_SOURCE_AUTHORITY_REBOUND')
+        and pr['base']['repo']['id']==REPO_ID and pr['base']['ref']==BASE and pr['base']['sha']==BASE_SHA,
+        'FRESH_EXACT_SOURCE_AUTHORITY_REBOUND')
     actual=commit['tree']['sha'];require(re.fullmatch('[0-9a-f]{40}',actual),'ACTUAL_TREE_SHA_REQUIRED')
     if tree:require(tree==actual,'EXACT_TREE_AUTHORITY_REBOUND')
     return actual
 
-def launch_fields(row,sha,tree,session=None):
+def launch_fields(row,sha,tree,session=None,gate=None):
     require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/471')
         and row['created_at']==row['updated_at'],'IMMUTABLE_OWNER_LAUNCH_AUTHOR_REQUIRED')
     f=fields(row['body']);owner=f.get('SESSION_SUCCESSOR')
     gates=f.get('GATES_AUTHORIZED','').split(',')
-    without311=[gate for gate in GATES if gate!='full-gov311']
     require(f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('WORKSTREAM_ID')==WORKSTREAM
         and f.get('SOURCE_SHA')==sha and f.get('SOURCE_TREE')==tree
-        and owner==RECOVERY_OWNER
+        and owner==SUCCESSOR_OWNER
         and (session is None or session==owner) and f.get('WRITE_OWNER')==owner
         and f.get('INTEGRATION_OWNER')==owner
         and f.get('DEPLOY_OWNER')=='NOT_ACQUIRED' and f.get('RELEASED')=='false'
         and f.get('MODE')=='PRODUCTION_PAPER / SIMULATION' and f.get('real_orders_sent')=='0'
-        and gates in (list(GATES),without311),'EXACT_IMMUTABLE_AUTOMATIC_LAUNCH_RECEIPT_REQUIRED')
+        and len(gates)==1 and gates[0] in GATES and (gate is None or gates[0]==gate),
+        'EXACT_IMMUTABLE_SINGLE_GATE_LAUNCH_RECEIPT_REQUIRED')
     require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',f.get('CAUSE_EVIDENCE_URL','')),
         'EVIDENCED_NEW_SOURCE_REPAIR_REQUIRED_BEFORE_MATERIAL_RETRY')
     require(BRANCH in row['body'],'LAUNCH_RECEIPT_SOLE_SUCCESSOR_BRANCH_REQUIRED')
     comment(f['CAUSE_EVIDENCE_URL'],int(f['CAUSE_EVIDENCE_URL'].split('/issues/',1)[1].split('#',1)[0]))
-    if 'full-gov311' not in gates:
-        proof_url=f.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL')
-        require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',proof_url or ''),
-            'OMITTED_GOV311_REQUIRES_EXACT_CANONICAL_CUSTODY_RECEIPT_POINTER')
-        proof=comment(proof_url,int(proof_url.split('/issues/',1)[1].split('#',1)[0]));proof_fields=fields(proof['body'])
-        require(proof_fields.get('SOURCE_SHA')==sha and proof_fields.get('SOURCE_TREE')==tree,
-            'OMITTED_GOV311_CUSTODY_RECEIPT_SOURCE_REBOUND')
-        # This authentic pointer controls scope only. It is never a PASS or
-        # artifact validation: the supervisor must review the actual native
-        # collection/JUnit/FIN and immutable artifact bytes/digest it cites.
+    require(type(document(f.get('CAPACITY_PEAKS_JSON','null'))) is dict,'EXACT_COMPARABLE_CAPACITY_PEAKS_REQUIRED')
+    if gates==['cheap']:
+        cheap=document(f.get('CHEAP_FILES_JSON','null'))
+        from scripts.rc6_architectural_gates import G1_HEAVY_FILES, validate_g1_files
+        validate_g1_files(cheap)
+        require(type(cheap) is list and cheap and len(cheap)==len(set(cheap))
+            and all(type(path) is str and re.fullmatch(r'tests/test_[a-zA-Z0-9_]+\.py',path) for path in cheap)
+            and G1_HEAVY_FILES.isdisjoint(cheap),'EXACT_REVIEWED_CHEAP_ONLY_SCOPE_REQUIRED')
     else:
-        proof_url=f.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL')
-        require(re.fullmatch(r'https://github\.com/mbalbo2023/Porota-trading/issues/(?:471|473)#issuecomment-[0-9]+',proof_url or ''),
-            'SUPPLEMENTARY_GOV311_REQUIRES_EVIDENCED_MISSING_EXACT_CUSTODY')
-        comment(proof_url,int(proof_url.split('/issues/',1)[1].split('#',1)[0]))
+        manifest=document(f.get('PREREQUISITES_MANIFEST_JSON','null'))
+        require(type(manifest) is dict and manifest.get('source_sha')==sha and manifest.get('source_tree')==tree,
+            'HEAVY_GATE_REQUIRES_SAME_SHA_ORDERED_ARTIFACT_MANIFEST')
+    if gates==['predeploy']:
+        require(f.get('RC6_PREDEPLOY_G7_AUTHORIZATION')=='APPROVED','PREDEPLOY_EXPLICIT_G7_AUTHORIZATION_REQUIRED')
     return f
 
 def dedup_admission(sha,gate):
     current=int(os.environ['GITHUB_RUN_ID']);seen=[];ids=set()
+    workflow='porota-predeploy-v2.yml' if gate=='predeploy' else 'rc6-unified-candidate-tests.yml'
     for page in range(1,RUN_PAGES+1):
-        runs=api('/actions/workflows/rc6-unified-candidate-tests.yml/runs?'+urllib.parse.urlencode(
+        runs=api('/actions/workflows/'+workflow+'/runs?'+urllib.parse.urlencode(
             {'head_sha':sha,'per_page':100,'page':page}))
         batch=runs.get('workflow_runs')
         require(isinstance(batch,list) and len(batch)<=100 and isinstance(runs.get('total_count'),int)
@@ -235,7 +380,8 @@ def dedup_admission(sha,gate):
             require(run['id'] not in ids and run['head_sha']==sha,'WORKFLOW_RUN_PAGINATION_DUPLICATED_OR_REBOUND')
             ids.add(run['id'])
             if run['id']==current:continue
-            if run['event']=='pull_request' or run.get('display_title')=='RC6 material '+gate+' @ '+sha:
+            title='RC6 material '+gate+' @ '+sha
+            if gate=='predeploy' or (gate=='cheap' and run['event']=='pull_request') or run.get('display_title')==title:
                 seen.append({'id':run['id'],'event':run['event'],'status':run['status'],'conclusion':run['conclusion']})
         if len(batch)<100:break
     else:raise ValueError('WORKFLOW_RUN_PAGINATION_INCOMPLETE_FAIL_CLOSED')
@@ -251,8 +397,12 @@ def latest_writer(rows,issue,sha,tree,owner,now):
             require(row['user']['login']=='mbalbo2023' and row['issue_url'].endswith('/issues/'+str(issue)),
                 'OWNERSHIP_RECORD_AUTHOR_OR_ISSUE_REBOUND')
             for key in ('WRITE_OWNER','INTEGRATION_OWNER'):
-                require(key not in f or f[key] in (owner,'RELEASED','NOT_ACQUIRED','NONE','null'),
-                    'ANY_FOREIGN_WRITER_OR_INTEGRATION_OWNER_AFTER_CONTROLLED_ANCHOR')
+                if key in f and f[key] not in (owner,'RELEASED','NOT_ACQUIRED','NONE','null'):
+                    # Expiration is evidence of lease expiry, never release.
+                    # An active, unknown or unbounded foreign scope blocks.
+                    expires=f.get('SOURCE_LEASE_EXPIRES_UTC')
+                    require(f.get('RELEASED')=='true' or (expires is not None and stamp(expires)<=now),
+                        'FOREIGN_ACTIVE_OR_UNKNOWN_WRITER_AFTER_SUCCESSOR_ANCHOR')
             require('DEPLOY_OWNER' not in f or f['DEPLOY_OWNER'] in ('NOT_ACQUIRED','RELEASED','NONE','null'),
                 'ANY_DEPLOY_OWNER_AFTER_CONTROLLED_ANCHOR')
             records.append((row,f))
@@ -315,32 +465,42 @@ def admit(*,source_sha,source_tree=None,launch_receipt_url=None,owner_session=No
     require(os.getuid()==os.geteuid()>0 and os.environ.get('GITHUB_REPOSITORY')==REPO
         and os.environ.get('GITHUB_REPOSITORY_ID')==str(REPO_ID),'ACTUAL_NONROOT_CANONICAL_ACTIONS_REQUIRED')
     require(gate in GATES and os.environ.get('GITHUB_RUN_ATTEMPT')=='1','FIRST_SCOPED_RUN_ATTEMPT_REQUIRED_NO_BLIND_RERUN')
-    event,event_custody=actual_event();require(event['pull_request']['head']['sha']==source_sha,'EVENT_HEAD_SHA_REBOUND')
-    now=now or datetime.now(timezone.utc);tree=fresh_source(source_sha,source_tree)
-    anchors=recovery_anchors(RECOVERY_OWNER)
-    timelines={issue:recent(issue,anchors[issue],now) for issue in (471,473)}
-    if launch_receipt_url:launch=comment(launch_receipt_url,471);auth=launch_fields(launch,source_sha,tree,owner_session)
+    event,event_custody=actual_event(gate)
+    if os.environ['GITHUB_EVENT_NAME']=='pull_request':
+        require(event['pull_request']['head']['sha']==source_sha,'EVENT_HEAD_SHA_REBOUND')
+    else:require(event['inputs'].get('source_sha')==source_sha,'DISPATCH_HEAD_SHA_REBOUND')
+    now=now or datetime.now(timezone.utc);tree=fresh_source(source_sha,source_tree,gate)
+    anchors=recovery_anchors(RECOVERY_OWNER)  # unchanged user-stop/raw-ops authority
+    successor=successor_anchors(SUCCESSOR_OWNER)
+    timelines={issue:recent(issue,successor[issue],now) for issue in (471,473)}
+    if launch_receipt_url:launch=comment(launch_receipt_url,471);auth=launch_fields(launch,source_sha,tree,owner_session,gate)
     else:
         matching=[]
         for row in timelines[471]:
             f=fields(row.get('body',''))
-            if f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('SOURCE_SHA')==source_sha:
-                auth=launch_fields(row,source_sha,tree,owner_session);matching.append((row,auth))
+            if f.get('RC6_MATERIAL_AUTOMATIC_PR_AUTHORIZATION')=='APPROVED' and f.get('SOURCE_SHA')==source_sha and f.get('GATES_AUTHORIZED')==gate:
+                auth=launch_fields(row,source_sha,tree,owner_session,gate);matching.append((row,auth))
         require(len(matching)==1,'ONE_EXACT_PREPUSH_LAUNCH_AUTHORITY_REQUIRED')
         launch,auth=matching[0]
     # Event delivery follows push: authorization must already exist.
-    require(stamp(launch['created_at'])<=stamp(event['pull_request']['updated_at']),
-        'DURABLE_LAUNCH_AUTHORIZATION_MUST_PRECEDE_PR_SOURCE_UPDATE')
+    if os.environ['GITHUB_EVENT_NAME']=='pull_request':
+        require(stamp(launch['created_at'])<=stamp(event['pull_request']['updated_at']),
+            'DURABLE_LAUNCH_AUTHORIZATION_MUST_PRECEDE_PR_SOURCE_UPDATE')
     gates=auth['GATES_AUTHORIZED'].split(',')
     require(gate in gates,'GATE_NOT_AUTHORIZED_IN_IMMUTABLE_PREPUSH_SCOPE')
     owner=auth['SESSION_SUCCESSOR'];owners={str(issue):latest_writer(timelines[issue],issue,source_sha,tree,owner,now) for issue in (471,473)}
     ops=ops_admission(auth,owner,now,anchors)
+    capacity_source=verify_capacity_comparison_manifest(auth,source_sha,tree)
     dedup=dedup_admission(source_sha,gate)
     return {'schema':'rc6.material-automatic-pr-admission.v2','status':'ADMITTED_NATIVE_NOT_STARTED','source_sha':source_sha,
         'source_tree':tree,'gate':gate,'owner_session':owner,'launch_receipt_url':launch['html_url'],
         'launch_receipt_created_at':launch['created_at'],'launch_body_sha256':hashlib.sha256(launch['body'].encode()).hexdigest(),
         'fresh_ownership':owners,'ops':ops,'dedup':dedup,'event_custody':event_custody,
-        'gates_authorized':gates,'material_gates':[item for item in gates if item!='focal'],
+        'gates_authorized':gates,'material_gates':[],
+        'capacity_peaks':document(auth['CAPACITY_PEAKS_JSON']),
+        'capacity_source_comparison':capacity_source,
+        'cheap_files':document(auth['CHEAP_FILES_JSON']) if gate=='cheap' else None,
+        'prerequisites_manifest':document(auth['PREREQUISITES_MANIFEST_JSON']) if gate!='cheap' else None,
         'Gov311_scope_pointer':auth.get('CANONICAL_GOV311_CUSTODY_RECEIPT_URL') or auth.get('SUPPLEMENTARY_GOV311_JUSTIFICATION_URL'),
         'omitted_Gov311_PASS_or_artifact_claimed':False,'source_truth':'CANONICAL_GITHUB_HEAD_COMMIT_TREE_PR',
         'workflow_ref':os.environ.get('GITHUB_WORKFLOW_REF'),'workflow_sha':os.environ.get('GITHUB_WORKFLOW_SHA'),

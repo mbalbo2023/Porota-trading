@@ -26,6 +26,8 @@ from co_market_sessions_hf6 import BYMA_PAPER_SPOT_CLOSE, BYMA_PAPER_SPOT_OPEN
 from cu_history_store_v2_hf6 import source_rank, utc
 from rc6_audit_evidence.sqlite_snapshot import SnapshotError, readonly_copy
 from rc6_dynamic_universe.common import identity, stamp
+from .read_contract import query_budget_seconds as source_query_budget
+from .read_contract import require_query_budget_binding
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 IDENTITY_FIELDS = ("ticker", "instrument_type", "market", "currency", "settlement")
@@ -48,7 +50,7 @@ def _source(database, deadline):
     path = Path(database).absolute()
     if not path.exists():
         raise FileNotFoundError("SOURCE_UNAVAILABLE")
-    with readonly_copy(path, deadline=deadline, validate=False) as connection:
+    with readonly_copy(path, deadline=deadline, validate=False, consumer="preopen") as connection:
         # SQLite creates any required WAL index exclusively in private scratch.
         connection.execute("BEGIN")
         yield connection
@@ -551,7 +553,7 @@ def _chosen_daily(records, deadline):
 
 
 def build_preopen_inputs(database, history_database=None, *, as_of, session_open, cutoff,
-                         row_limit=50000, query_budget_seconds=2.0):
+                         row_limit=50000, query_budget_seconds=None):
     """Read real previous-session inputs for rank_tradeability/anomaly_events.
 
     Output never filters or mutates the catalogue. All source/publication
@@ -562,8 +564,14 @@ def build_preopen_inputs(database, history_database=None, *, as_of, session_open
     at, opening, cut = stamp(as_of), stamp(session_open), stamp(cutoff)
     if not cut < at < opening or cut.date() >= opening.date():
         raise ValueError("PREOPEN_CUT_READ_OPEN_ORDER_REQUIRED")
-    if not 1 <= row_limit <= 100000 or not 0 < query_budget_seconds <= 2:
+    if query_budget_seconds is None:
+        query_budget_seconds = source_query_budget("preopen")
+    if (type(row_limit) is not int or not 1 <= row_limit <= 100000
+            or isinstance(query_budget_seconds, bool)
+            or not isinstance(query_budget_seconds, (int, float))
+            or not isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
         raise ValueError("INVALID_PREOPEN_READ_BUDGET")
+    require_query_budget_binding("preopen", query_budget_seconds)
     cleanup_reserve = min(.1, query_budget_seconds*.1)
     sessions, calendar_status = _audited_sessions(cut, opening, at)
     quality = {"status": "NO_VERIFICADO", "calendar_status": calendar_status,

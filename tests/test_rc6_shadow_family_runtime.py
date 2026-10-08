@@ -2,6 +2,7 @@
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -76,7 +77,7 @@ def test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff(tmp_pat
     path = fixture_db(tmp_path, [record])
     snapshot(path, record)
     snapshot(path, record, received_at=AT+timedelta(seconds=1))
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN "extra bytes" BLOB')
         connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN extra_real REAL')
         connection.execute('ALTER TABLE financial_instrument_catalog ADD COLUMN extra_null TEXT')
@@ -97,6 +98,32 @@ def test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff(tmp_pat
     assert not actual["errors"] and not actual["truncated"]
     assert families.QUERY_BUDGET_SECONDS == .5
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_native_family_fixture_writer_is_closed_before_actual_read_without_gc(tmp_path, monkeypatch):
+    """Hold every producer connection strongly across the real read boundary."""
+    from rc6_shadow_runtime import families
+    original_connect = sqlite3.connect
+    original_capture = families._read
+    connections, captured = [], []
+    def tracked_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+    def assert_closed():
+        assert len(connections) >= 4  # Catalog, two snapshots, fixture DDL/write.
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                connection.execute("SELECT 1")
+    def capture(*args, **kwargs):
+        assert_closed()
+        captured.append(True)
+        return original_capture(*args, **kwargs)
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    monkeypatch.setattr(families, "_read", capture)
+    test_native_family_rows_preserve_all_sqlite_columns_types_and_cutoff(tmp_path)
+    assert captured == [True]
+    assert_closed()
 
 
 def test_empty_native_metadata_remains_private_to_each_instrument(tmp_path):

@@ -10,12 +10,13 @@ from rc6_dynamic_universe.common import stamp
 from rc6_dynamic_universe.economics import shadow_economics
 from rc6_performance.costs import paper_fee_model
 from .source_reads import source_connection
+from .read_contract import query_budget_seconds
 
 
 def enrich_pipeline(database, report, *, as_of):
     at = stamp(as_of)
-    end = time.monotonic() + .25
-    with source_connection(database, deadline=end) as (c, _):
+    end = time.monotonic() + query_budget_seconds("stages")
+    with source_connection(database, deadline=end, consumer="stages") as (c, _):
         c.execute("PRAGMA query_only=ON")
         c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
         tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}

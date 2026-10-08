@@ -266,6 +266,13 @@ def construct_private_venv(control, *, selected_fixture=None):
                     "SELECTED_FIXTURE_AUTHENTICATED_ARGUMENTS_REQUIRED")
     fixture_authority = (None if selected_fixture is None else
                          selected_pytest_fixture_authority(control, *selected_fixture))
+    # umask belongs to the process. Only this single-threaded native bootstrap
+    # may borrow it; changing it while another producer is active is refused.
+    construction_pid, construction_tid = os.getpid(), threading.get_native_id()
+    cleanup.require(threading.current_thread() is threading.main_thread()
+                    and threading.active_count() == 1
+                    and set(os.listdir("/proc/self/task")) == {str(construction_tid)},
+                    "FRESH_NATIVE_VENV_SINGLE_THREAD_CONSTRUCTION_REQUIRED")
     private = Path(control["private_root"])
     with cleanup.directory(private) as parent:
         bound_directory(parent, control, mode=0o700)
@@ -273,9 +280,39 @@ def construct_private_venv(control, *, selected_fixture=None):
         descriptor = os.open("venv", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
                              | os.O_NOATIME | os.O_CLOEXEC, dir_fd=parent)
         try:
+            # mkdir respects the producer's umask. Normalize only THIS newly
+            # created, exclusively owned inode before EnvBuilder or its first
+            # custody freeze; never chmod a reused environment or loosen the
+            # original exact 0755 directory guard.
+            fresh = os.fstat(descriptor)
+            cleanup.require(stat.S_ISDIR(fresh.st_mode) and fresh.st_uid == control["owner_uid"]
+                            and fresh.st_gid == control["root_identity"][3]
+                            and fresh.st_dev == control["root_identity"][0]
+                            and cleanup.mount_id(descriptor) == control["root_mount_id"]
+                            and cleanup.identity(fresh) == cleanup.identity(os.stat(
+                                "venv", dir_fd=parent, follow_symlinks=False))
+                            and stat.S_IMODE(fresh.st_mode) & ~0o755 == 0,
+                            "FRESH_NATIVE_VENV_MASKED_CONSTRUCTION_CUSTODY_INVALID")
+            os.fchmod(descriptor, 0o755)
             created = bound_directory(descriptor, control, mode=0o755)
             construction_identity = root_identity(created)
-            venv.EnvBuilder(symlinks=False, with_pip=fixture_authority is None).create(private / "venv")
+            # EnvBuilder creates every fresh native directory, including lib,
+            # bin and include. Its productive mode contract is 0755, independent
+            # of an inherited 0077 mask. Establish 0022 only for this original
+            # constructor, before any new member's first custody freeze. A
+            # failure restores the caller's mask too; no existing inode is
+            # normalized and the original strict 0755 guards remain unchanged.
+            previous_mask = os.umask(0o022)
+            try:
+                venv.EnvBuilder(symlinks=False, with_pip=fixture_authority is None).create(private / "venv")
+            finally:
+                observed_mask = os.umask(previous_mask)
+            cleanup.require(observed_mask == 0o022
+                            and os.getpid() == construction_pid
+                            and threading.get_native_id() == construction_tid
+                            and threading.active_count() == 1
+                            and set(os.listdir("/proc/self/task")) == {str(construction_tid)},
+                            "FRESH_NATIVE_VENV_CONSTRUCTION_PROCESS_CHANGED")
             cleanup.require(root_identity(os.stat("venv", dir_fd=parent, follow_symlinks=False))
                             == construction_identity, "FRESH_VENV_DIRECTORY_REBOUND")
             removed = seal_fresh_lib64_link(descriptor, control, construction_identity)
@@ -286,6 +323,10 @@ def construct_private_venv(control, *, selected_fixture=None):
                              clock=time.monotonic)
     return {"path": str(private / "venv"), "native_envbuilder_copies": True,
             "fresh_directory_identity": construction_identity, "native_lib64": removed,
+            "native_construction_mask": {"before": previous_mask, "during_envbuilder": 0o022,
+                "restored": previous_mask, "restored_in_finally": True,
+                "actor_pid": construction_pid, "actor_native_tid": construction_tid,
+                "scope": "THIS_EXCLUSIVE_FRESH_ENVBUILDER_CREATE_ONLY"},
             "original_strict_inventory_accepted": True, "strict_entries": len(rows),
             "with_pip": fixture_authority is None,
             "construction_role": ("CANONICAL_NATIVE_WITH_BUNDLED_PIP" if fixture_authority is None else

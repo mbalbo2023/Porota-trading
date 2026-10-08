@@ -7,6 +7,7 @@ separately; currencies are never added together.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -65,9 +66,45 @@ def _strategy(engine, row=None):
     return (row or {}).get("strategy") or engine
 
 
+class _PlannerEventHashes:
+    """Reuse exact canonical key prefixes only within this planner traversal.
+
+    Every stage/event still gets its own complete SHA256. Foreign values and
+    an exhausted cache take the original canonical digest path; this cache is
+    neither durable state nor an admission/financial authority.
+    """
+    def __init__(self):
+        self.entries = {}
+
+    def keys(self, session, ident, strategy, version, config, registry, stage,
+             channel, event_id, clock):
+        if (type(ident) is not tuple or len(ident) != 5
+                or any(type(part) is not str for part in ident)
+                or any(type(part) is not str for part in
+                       (session, strategy, version, config, registry, stage, channel, event_id))):
+            return None
+        common = (session, ident, strategy, version, config, registry, channel)
+        entry = self.entries.get(common)
+        if entry is None:
+            if len(self.entries) >= MAX_IDENTITIES:
+                return None
+            prefix = canonical([session, ident, strategy, version, config, registry])[:-1].encode() + b","
+            entity = hashlib.sha256(prefix + canonical(channel).encode() + b"]").hexdigest()
+            entry = (prefix, entity, {})
+            self.entries[common] = entry
+        prefix, entity, hours = entry
+        event = hashlib.sha256(prefix + canonical([stage, channel, event_id])[1:].encode()).hexdigest()
+        hour = clock.astimezone(ART).hour
+        group = hours.get(hour)
+        if group is None:
+            group = digest([session, strategy, version, config, registry, ident, hour, channel])
+            hours[hour] = group
+        return event, entity, group
+
+
 def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, channel,
            clock_basis, reasons=(), detail=None, session=None, strategy_version=None,
-           configuration_fingerprint=None, registry_sha256=None):
+           configuration_fingerprint=None, registry_sha256=None, _planner_hashes=None):
     if stage not in STAGES:
         raise ValueError("FUNNEL_UNKNOWN_STAGE")
     clock = stamp(event_at)
@@ -79,12 +116,16 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
     version = strategy_version or "NO_VERIFICADO"
     config = configuration_fingerprint or "NO_VERIFICADO"
     registry = registry_sha256 or "NOT_APPLICABLE"
-    key = digest([session, tuple(ident), strategy, version, config, registry, stage, channel, str(event_id)])
+    hashes = (_planner_hashes.keys(session, ident, strategy, version, config, registry,
+                                  stage, channel, event_id, clock)
+              if type(_planner_hashes) is _PlannerEventHashes else None)
+    key = (hashes[0] if hashes is not None else
+           digest([session, tuple(ident), strategy, version, config, registry, stage, channel, str(event_id)]))
     if key in checkpoint["event_keys"]:
         return False
     if len(checkpoint["event_keys"]) >= MAX_EVENTS:
         raise ValueError("FUNNEL_EVENT_CAPACITY_EXCEEDED")
-    entity = digest([session, tuple(ident), strategy, version, config, registry, channel])
+    entity = hashes[1] if hashes is not None else digest([session, tuple(ident), strategy, version, config, registry, channel])
     if entity not in checkpoint["reaches"] and len(checkpoint["reaches"]) >= MAX_IDENTITIES:
         raise ValueError("FUNNEL_IDENTITY_CAPACITY_EXCEEDED")
     checkpoint["event_keys"][key] = session
@@ -94,7 +135,8 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
         "stages": {}, "reasons": []})
     reach["stages"].setdefault(stage, clock.isoformat())
     reach["reasons"] = list(dict.fromkeys(reach["reasons"] + list(reasons)))[:64]
-    group_key = digest([session, strategy, version, config, registry, tuple(ident), clock.astimezone(ART).hour, channel])
+    group_key = (hashes[2] if hashes is not None else
+                 digest([session, strategy, version, config, registry, tuple(ident), clock.astimezone(ART).hour, channel]))
     group = checkpoint["cohorts"].setdefault(group_key, {"session": session, "strategy_id": strategy,
         "family": ident[1], "symbol": ident[0], "identity": list(ident), "settlement": ident[2], "market": ident[4],
         "strategy_version": version, "configuration_fingerprint": config, "registry_sha256": registry,
@@ -120,6 +162,9 @@ def _event(checkpoint, *, ident, strategy, stage, event_at, as_of, event_id, cha
 
 def _planner_stages(checkpoint, report, at):
     session = report.get("session") or at.astimezone(ART).date().isoformat()
+    planner_hashes = _PlannerEventHashes()
+    def event(*args, **kwargs):
+        return _event(*args, _planner_hashes=planner_hashes, **kwargs)
     observation_stats, reasons = [], Counter()
     for engine, plan in report.get("engines", {}).items():
         for row in plan.get("telemetry", []):
@@ -131,7 +176,7 @@ def _planner_stages(checkpoint, report, at):
             reasons.update(exclusion)
             for stage in ("CATALOG_READY", "STRATEGY_ELIGIBLE", "TRADEABLE"):
                 if pipeline.get(stage) is True:
-                    _event(checkpoint, ident=ident, strategy=strategy, stage=stage, event_at=at, as_of=at,
+                    event(checkpoint, ident=ident, strategy=strategy, stage=stage, event_at=at, as_of=at,
                         event_id="first-prospective-reach", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="ACTUAL_RUNTIME_STATE_OBSERVATION; frozen input cutoff preserved",
                         reasons=exclusion, detail={"preopen_digest": plan.get("preopen_digest"),
@@ -143,7 +188,7 @@ def _planner_stages(checkpoint, report, at):
                 if stamp(touched) < stamp(checkpoint["started_at"]):
                     checkpoint["gaps"]["DISCOVERY_BEFORE_FUNNEL_WATERMARK"] = checkpoint["gaps"].get("DISCOVERY_BEFORE_FUNNEL_WATERMARK", 0) + 1
                 else:
-                    _event(checkpoint, ident=ident, strategy=strategy, stage="DISCOVERY_TOUCHED", event_at=touched,
+                    event(checkpoint, ident=ident, strategy=strategy, stage="DISCOVERY_TOUCHED", event_at=touched,
                         as_of=at, event_id="first-native-touch", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="NATIVE_SOURCE_RECEIPT; selection intent is separate", reasons=exclusion,
                         detail={"source_at": state.get("source_at"), "source": state.get("source")})
@@ -151,7 +196,7 @@ def _planner_stages(checkpoint, report, at):
             if row.get("state") in {"WARM", "HOT"} and not opened_priority:
                 promotion = state.get("promoted_at") or row.get("promoted_at")
                 if promotion and stamp(promotion) >= stamp(checkpoint["started_at"]):
-                    _event(checkpoint, ident=ident, strategy=strategy, stage=row["state"], event_at=promotion,
+                    event(checkpoint, ident=ident, strategy=strategy, stage=row["state"], event_at=promotion,
                         as_of=at, event_id="first-state-reach", channel="UNIVERSE_SHADOW", session=session,
                         clock_basis="ACTUAL_PROSPECTIVE_PLANNER_TRANSITION", reasons=row.get("promotion_reasons", []),
                         detail={"warmup_complete_at": state.get("warmup_complete_at"), "opened_priority": False})
@@ -184,7 +229,7 @@ def _planner_stages(checkpoint, report, at):
         if raw in known:
             continue
         instrument = family_by_identity.get(raw, {})
-        _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or
+        event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or
             ("futures-dlr-paper-v1" if ident[1] == "FUTUROS" else "SPECIALIZED_LIFECYCLE"), stage="CATALOG_READY",
             event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY", session=session,
             clock_basis="EXPLICIT_UNCHANGED_READY_CATALOG_OBSERVED_BY_RUNTIME", reasons=instrument.get("reason_codes", []),
@@ -196,7 +241,7 @@ def _planner_stages(checkpoint, report, at):
             if tuple(raw) in known:
                 continue
             if instrument.get("catalog_ready") is True or instrument.get("readiness") == "READY_PAPER":
-                _event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
+                event(checkpoint, ident=ident, strategy=instrument.get("strategy") or instrument.get("engine") or "SPECIALIZED_LIFECYCLE",
                     stage="CATALOG_READY", event_at=at, as_of=at, event_id="first-prospective-reach", channel="FAMILY_OBSERVE_ONLY",
                     session=session, clock_basis="ACTUAL_RUNTIME_CATALOG_OBSERVATION", reasons=instrument.get("reason_codes", []))
             reasons.update(instrument.get("reason_codes", []))
@@ -503,7 +548,7 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
             raise ValueError("FUNNEL_CHECKPOINT_FROM_FUTURE")
     prior = None if invalidation else previous
     source = _read_rows(database, as_of=at, tables=TABLES, cursors=(prior or {}).get("cursors"),
-        source_key=(prior or {}).get("source_key"), row_limit=row_limit, join_positions=True)
+        source_key=(prior or {}).get("source_key"), row_limit=row_limit, join_positions=True, consumer="funnel")
     if source["bootstrap"]:
         if prior:
             invalidation = "FUNNEL_SOURCE_CHANGED_OR_CURSOR_REVERSED"

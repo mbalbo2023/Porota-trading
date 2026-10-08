@@ -4,6 +4,9 @@ from pathlib import Path
 from time import monotonic
 from .common import identity, stamp
 from rc6_shadow_runtime.source_reads import source_connection
+from rc6_shadow_runtime.read_contract import query_budget_seconds as source_query_budget
+from rc6_shadow_runtime.read_contract import require_query_budget_binding
+import math
 
 
 def _dict_rows(cursor):
@@ -13,17 +16,23 @@ def _dict_rows(cursor):
     return [dict(zip(names, row)) for row in cursor]
 
 
-def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5):
+def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=None):
     """No schema/init/writer, history ingestion, provider calls or broker creation.
 
     Current revisions require last_verified_at at/before cutoff; older values
     cannot be reconstructed from mutable rows. Partial coverage is explicit.
     """
     at = stamp(as_of)
-    if not 1 <= row_limit <= 50000 or not 0 < query_budget_seconds <= 2:
+    if query_budget_seconds is None:
+        query_budget_seconds = source_query_budget("runtime")
+    if (type(row_limit) is not int or not 1 <= row_limit <= 50000
+            or isinstance(query_budget_seconds, bool)
+            or not isinstance(query_budget_seconds, (int, float))
+            or not math.isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
         raise ValueError("INVALID_READ_BUDGET")
+    require_query_budget_binding("runtime", query_budget_seconds)
     deadline = monotonic()+query_budget_seconds
-    with source_connection(database, deadline=deadline) as (connection, _):
+    with source_connection(database, deadline=deadline, consumer="runtime") as (connection, _):
         connection.execute("PRAGMA query_only=ON")
         connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
         state = connection.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()

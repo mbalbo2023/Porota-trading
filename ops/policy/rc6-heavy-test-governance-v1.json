@@ -1,0 +1,54 @@
+{
+  "schema": "porota.rc6.heavy-test-governance.v1",
+  "version": 2,
+  "effective_date_utc": "2026-10-08",
+  "reconciled_from": "756d37b93aa26bb6395dac481bf3c2dda9d034d7",
+  "safety": {"mode": "PRODUCTION_PAPER / SIMULATION", "real_orders_sent": 0, "real_order_routes": "BLOCKED", "ppi_watch": "DO_NOT_TOUCH"},
+  "incident_learning": {
+    "registry": "docs/governance/RC6_ERROR_REGISTRY.md",
+    "required_chain": ["ERROR", "RCA", "ARCHITECTURAL_FIX", "GUARD", "CHEAP_DUAL_TESTS", "FOCAL", "EVIDENCE"],
+    "repeat_without_new_evidence_or_change": "BLOCK",
+    "unknown_state": "BLOCK"
+  },
+  "local_capacity": {
+    "expected_peak_bytes_source": "MEASURED_PRIOR_COMPARABLE_RUN_OR_AUTHENTIC_OBSERVED_HIGH_WATER_PLUS_ENUMERATED_VERIFIED_BOUNDS",
+    "observed_high_water_is_temporal_peak": false,
+    "historical_origin_may_be_relabelled": false,
+    "unknown_comparison_components_policy": "BLOCK",
+    "comparable_envelope_allocation_unit_bytes": 4096,
+    "canonical_envelope_filesystem_type": "ext4",
+    "unknown_expected_peak_policy": "BLOCK",
+    "residual_reserve_bytes": 4294967296,
+    "minimum_free_inode_ratio": 0.1,
+    "maximum_receipt_age_seconds": 60,
+    "namespace_policy": "UNIQUE_AUTHENTICATED_PER_ATTEMPT",
+    "cleanup_policy": "OWNED_GENERATED_FIXTURES_ONLY_AFTER_ACTUAL_FIN_AND_HASHED_CAPTURE",
+    "evidence_and_unowned_paths": "PRESERVE",
+    "receipt_required_before_heavy_producer": true,
+    "live_recheck_at_each_producer_start": true,
+    "same_filesystem_device_and_mount_required": true
+  },
+  "performance": {
+    "big_workload_catalog_instruments": 12000,
+    "big_workload_observations": 60000,
+    "hard_ceiling_seconds": 90,
+    "qualification_target_seconds": 75,
+    "maximum_rss_bytes": 2147483648,
+    "maximum_evidence_bytes": 134217728,
+    "maximum_retained_entries": 100000,
+    "workload_assertions_or_limits_may_be_relaxed": false,
+    "same_sha_focals_before_full_predeploy": true,
+    "full_predeploy_on_missing_red_or_pending_focal_receipt": "BLOCK",
+    "isolated_pass_above_qualification_target": "DIAGNOSTIC_ONLY"
+  },
+  "gate_order": ["G0_STATIC_ADMISSION", "G1_CHEAP_DUAL", "G2_FOCAL311", "G3_FOCAL312", "G4_BIG_MATERIAL", "G5_RETENTION_HORIZON_BROWSER", "G6_FULL_GOVERNED", "G7_PREDEPLOY_BUILD_ONCE", "G8_ARTIFACT"],
+  "runner": {
+    "canonical_label": "ubuntu-24.04",
+    "repository_visibility": "public",
+    "official_standard_baseline": {"cpu": 4, "memory_gib": 16, "storage_gib": 14},
+    "record_actual_cpu_memory_filesystem_and_load": true,
+    "larger_or_self_hosted_runner": "REQUIRES_SEPARATE_COST_SECURITY_AND_REPRESENTATIVENESS_DECISION",
+    "faster_diagnostic_runner_is_promotion_evidence_by_itself": false
+  },
+  "promotion": {"exact_sha_required": true, "immutable_artifact_required": true, "runtime_deploy_authorized_by_this_policy": false}
+}

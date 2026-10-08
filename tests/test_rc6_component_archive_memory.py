@@ -17,17 +17,28 @@ from tests.test_rc6_component_archive import bytes_at, members, policy, recipe, 
 def deepest_native_chain(tmp_path_factory):
     base = tmp_path_factory.mktemp("native-component-depth32")
     root, archive = base / "shadow", base / "archive"
+    # LEGACY_CODEC_COMPATIBILITY: these two scenarios instrument the original
+    # PAGE decoder specifically. This producer publishes real original PAGE
+    # packs/CAS/recipes/ACKs; its output never qualifies the new dispatcher.
+    class LegacyPageProducer(components.ComponentArchive):
+        def _binary_option(self, *args, **kwargs):
+            return None
+    original_archive = components.ComponentArchive
+    components.ComponentArchive = LegacyPageProducer
     last = None
-    for number in range(1, 35):
-        with EvidenceFiles(root) as files:
-            cut = publish(files, number, as_of=PRE + timedelta(seconds=30*number))
-        if number == 32:
-            # A legitimate caller need not archive every current cut. Skipping
-            # this modulo anchor reaches the helper's actual depth32 limit;
-            # all source cuts remain intact and none is fabricated or dropped.
-            continue
-        directory = root / ("gen-" + cut["pointer"]["generation_id"])
-        last = policy(root, archive).archive_generation(directory)
+    try:
+        for number in range(1, 35):
+            with EvidenceFiles(root) as files:
+                cut = publish(files, number, as_of=PRE + timedelta(seconds=30*number))
+            if number == 32:
+                # A legitimate caller need not archive every current cut. Skipping
+                # this modulo anchor reaches the helper's actual depth32 limit;
+                # all source cuts remain intact and none is fabricated or dropped.
+                continue
+            directory = root / ("gen-" + cut["pointer"]["generation_id"])
+            last = policy(root, archive).archive_generation(directory)
+    finally:
+        components.ComponentArchive = original_archive
     assert recipe(archive, last)["members"]["projection.sqlite"]["dependency_depth"] == 32
     return root, archive, cut, last
 

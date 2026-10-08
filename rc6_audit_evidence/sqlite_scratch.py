@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+import threading
 
 
 MAX_BYTES = 512 * 1024 * 1024
@@ -133,9 +134,10 @@ def _identity(info):
     return info.st_dev, info.st_ino, info.st_uid, info.st_mode, info.st_nlink
 
 
-def _private(info, *, directory=False):
+def _private(info, *, directory=False, readonly_image=False):
     expected_mode = 0o700 if directory else 0o600
-    if (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != expected_mode
+    allowed_modes = {expected_mode, 0o400} if readonly_image and not directory else {expected_mode}
+    if (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) not in allowed_modes
             or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
             or (not directory and info.st_nlink != 1)):
         raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
@@ -150,6 +152,11 @@ class _Lease:
         self.root, self.limits, self.peak = root, limits, peak
         self.root_fd = self.lock_fd = None
         self.session = None
+        self._thread, self._pid = threading.get_ident(), os.getpid()
+        self._acquired = False
+        self._parent = None
+        self._root_owner = self
+        self._active_leases = set()
 
     def acquire(self):
         if self.root.resolve() != self.root or any(parent.is_symlink() for parent in self.root.parents):
@@ -170,12 +177,73 @@ class _Lease:
             if error.errno in {errno.EACCES, errno.EAGAIN}:
                 raise SnapshotError("SCRATCH_LEASE_BUSY") from None
             raise
+        self._acquired = True
+        self._active_leases.add(self)
         occupied = self.measure()
         if occupied + self.peak > self.limits[0]:
             raise SnapshotError("SCRATCH_BYTE_BUDGET_EXHAUSTED")
         self.capacity(additional_bytes=self.peak, additional_inodes=7)
+        self.admission = {"lease": "EXCLUSIVE_OWNER", "occupied_bytes": occupied,
+            "additional_peak_bytes": self.peak, "estimated_total_peak_bytes": occupied+self.peak}
+
+    def borrow(self, owner):
+        """Bind a sibling namespace to the same held lock, never a new owner.
+
+        The caller supplies the actual live capture lease, not a receipt/cache.
+        Duplicated FDs retain the same Linux open-file-description flock until
+        the owning capture and every authenticated sibling are closed.
+        """
+        if type(owner) is not _Lease:
+            raise SnapshotError("SCRATCH_OWNER_LEASE_REQUIRED")
+        owner.verify()
+        if (self.root != owner.root or self.limits != owner.limits
+                or threading.get_ident() != owner._thread or os.getpid() != owner._pid):
+            raise SnapshotError("SCRATCH_OWNER_LEASE_REQUIRED")
+        self._parent, self._root_owner = owner, owner._root_owner
+        self.root_fd, self.lock_fd = os.dup(owner.root_fd), os.dup(owner.lock_fd)
+        self.root_identity, self.lock_identity = owner.root_identity, owner.lock_identity
+        self.filesystem = owner.filesystem
+        self._acquired = True
+        occupied = self.measure()
+        # Count actual residue and reserve every live image's unmaterialized
+        # peak (e.g. regenerated SHM), rather than approving each in isolation.
+        remaining_bytes = remaining_inodes = 0
+        for active in self._root_owner._active_leases:
+            active.verify()
+            used_bytes, used_inodes = active._session_occupation()
+            remaining_bytes += max(0, active.peak-used_bytes)
+            remaining_inodes += max(0, 7-used_inodes)
+        estimated = occupied+remaining_bytes+self.peak
+        if estimated > self.limits[0]:
+            raise SnapshotError("SCRATCH_BYTE_BUDGET_EXHAUSTED")
+        self.capacity(additional_bytes=remaining_bytes+self.peak,
+                      additional_inodes=remaining_inodes+7)
+        self._root_owner._active_leases.add(self)
+        self.admission = {"lease": "BORROWED_AUTHENTICATED_OWNER", "occupied_bytes": occupied,
+            "live_unmaterialized_peak_bytes": remaining_bytes,
+            "additional_peak_bytes": self.peak, "estimated_total_peak_bytes": estimated}
+
+    def _session_occupation(self):
+        if self.session is None:
+            return 0, 0
+        info = self.session.lstat()
+        if _identity(info) != self.session_identity:
+            raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
+        total, inodes = _occupation(info), 1
+        for member in self.session.iterdir():
+            item = member.lstat()
+            if member.name not in MEMBERS:
+                raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
+            _private(item, readonly_image=member.name in {"snapshot.sqlite", "snapshot.sqlite-wal"})
+            total += _occupation(item)
+            inodes += 1
+        return total, inodes
 
     def verify(self):
+        if (not self._acquired or threading.get_ident() != self._thread or os.getpid() != self._pid):
+            raise SnapshotError("SCRATCH_OWNER_LEASE_REQUIRED")
+        if self._parent is not None:
+            self._parent.verify()
         if (_identity(os.stat(self.root, follow_symlinks=False))[:4] != self.root_identity
                 or _identity(os.stat(LOCK, dir_fd=self.root_fd, follow_symlinks=False)) != self.lock_identity):
             raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
@@ -213,7 +281,7 @@ class _Lease:
                     raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
                 for member in files:
                     item = os.stat(member, dir_fd=descriptor, follow_symlinks=False)
-                    _private(item)
+                    _private(item, readonly_image=member in {"snapshot.sqlite", "snapshot.sqlite-wal"})
                     total += _occupation(item)
                 marker_fd = os.open(MARKER, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=descriptor)
                 with os.fdopen(marker_fd, "rb") as marker_stream:
@@ -274,7 +342,8 @@ class _Lease:
                 for entry in entries:
                     if entry.name not in MEMBERS or len(names) >= len(MEMBERS):
                         raise SnapshotError("SCRATCH_CUSTODY_UNVERIFIED")
-                    _private(entry.stat(follow_symlinks=False))
+                    _private(entry.stat(follow_symlinks=False),
+                             readonly_image=entry.name in {"snapshot.sqlite", "snapshot.sqlite-wal"})
                     names.append(entry.name)
             if MARKER not in names or not hasattr(self,'marker_identity'):
                 raise SnapshotError('SCRATCH_CUSTODY_UNVERIFIED')
@@ -291,10 +360,14 @@ class _Lease:
         os.rmdir(self.session.name, dir_fd=self.root_fd)
 
     def close(self):
+        self._acquired = False
+        self._root_owner._active_leases.discard(self)
         if self.lock_fd is not None:
             os.close(self.lock_fd)
+            self.lock_fd = None
         if self.root_fd is not None:
             os.close(self.root_fd)
+            self.root_fd = None
 
 
 def inspect_scratch(root, *, max_bytes=MAX_BYTES, reserve_bytes=RESERVE_BYTES,
@@ -331,9 +404,12 @@ def inspect_scratch(root, *, max_bytes=MAX_BYTES, reserve_bytes=RESERVE_BYTES,
 
 @contextmanager
 def private_scratch(source, *, main_bytes, wal_bytes, source_shm_bytes, scratch_root=None,
-                    max_scratch_bytes=None, reserve_bytes=None, min_free_inode_percent=None):
+                    max_scratch_bytes=None, reserve_bytes=None, min_free_inode_percent=None,
+                    owner_lease=None):
     configuration = _configuration(scratch_root, max_scratch_bytes, reserve_bytes, min_free_inode_percent)
     if configuration is None:
+        if owner_lease is not None:
+            raise SnapshotError("SCRATCH_OWNER_LEASE_REQUIRED")
         with tempfile.TemporaryDirectory(prefix=PREFIX) as scratch:
             yield Path(scratch), None
         return
@@ -347,7 +423,10 @@ def private_scratch(source, *, main_bytes, wal_bytes, source_shm_bytes, scratch_
         peak = snapshot_peak_bytes(main_bytes, wal_bytes, source_shm_bytes,
                                    allocation_unit=os.statvfs(root).f_frsize)
         lease = _Lease(root, limits, peak)
-        lease.acquire()
+        if owner_lease is None:
+            lease.acquire()
+        else:
+            lease.borrow(owner_lease)
         try:
             scratch = lease.create(source)
             yield scratch, lease

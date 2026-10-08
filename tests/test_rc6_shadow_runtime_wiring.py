@@ -1,6 +1,7 @@
 """Run the canonical worker against actual SQLite inputs and private evidence."""
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -13,23 +14,25 @@ from cf_intraday_scalping import init_schema
 from rc6_dynamic_universe.common import digest, identity
 from rc6_shadow_runtime.persistence import EvidenceFiles
 from rc6_shadow_runtime.worker import ShadowRuntime, session_context, run_worker
+from tests.rc6_fixture_sqlite import fixture_sqlite_writers, fixture_write
 
 OPEN = datetime(2026, 10, 5, 13, 30, tzinfo=timezone.utc)
 PRE = OPEN - timedelta(minutes=10)
 
 
 def make_store(tmp_path, count=25):
-    store = PaperStore(str(tmp_path / "paper.db"))
-    _support_schema(store)
-    init_schema(store)
-    assets = [dict(ticker=f"S{n}", instrument_type="ACCIONES", market="BYMA",
-        currency="ARS", settlement="A-24HS", status="AVAILABLE", capability="READY_PAPER_SPOT")
-        for n in range(count)]
-    with store.connect() as c:
-        for a in assets:
-            c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (*identity(a), "FIXTURE", "fixture", PRE.isoformat(), "test", "AVAILABLE", "READY_PAPER_SPOT", "{}"))
-    return store, assets
+    with fixture_sqlite_writers():
+        store = PaperStore(str(tmp_path / "paper.db"))
+        _support_schema(store)
+        init_schema(store)
+        assets = [dict(ticker=f"S{n}", instrument_type="ACCIONES", market="BYMA",
+            currency="ARS", settlement="A-24HS", status="AVAILABLE", capability="READY_PAPER_SPOT")
+            for n in range(count)]
+        with closing(store.connect()) as c, c:
+            for a in assets:
+                c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (*identity(a), "FIXTURE", "fixture", PRE.isoformat(), "test", "AVAILABLE", "READY_PAPER_SPOT", "{}"))
+        return store, assets
 
 
 def quote(asset, at, bid="100", ask="100.2"):
@@ -55,11 +58,9 @@ def snapshot(worker):
 def test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source_writes(tmp_path, monkeypatch):
     store, assets = make_store(tmp_path)
     worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
-    # Finish fixture writers/checkpoint before byte comparison: a WAL reader
-    # must not be mistaken for a prior writer's delayed automatic checkpoint.
-    import gc
-    gc.collect()
-    with sqlite3.connect(store.path) as c:
+    # Fixture writer connections are explicitly closed by make_store before
+    # byte comparison; no GC-triggered checkpoint can run during capture.
+    with closing(sqlite3.connect(store.path)) as c, c:
         c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     before = Path(store.path).read_bytes()
     report = worker.tick(PRE)
@@ -88,12 +89,12 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     # Capacity is a test-only contract: these inputs never claim real OPEN.
     monkeypatch.setattr(live, "safe_capacity", lambda report, **kw: capacity_stub(OPEN, **kw))
     t0 = OPEN + timedelta(minutes=1)
-    store.add_quote(quote(target, t0, ask="101"))
+    fixture_write(store.add_quote, quote(target, t0, ask="101"))
     first = worker.tick(t0)
     assert next(r for r in first["engines"]["SCALPING"]["telemetry"]
                 if r["identity"][0] == target["ticker"])["state"] == "DISCOVERY"
     t1 = t0 + timedelta(minutes=5)
-    store.add_quote(quote(target, t1))
+    fixture_write(store.add_quote, quote(target, t1))
     promoted = worker.tick(t1)
     row = next(r for r in promoted["engines"]["SCALPING"]["telemetry"] if r["identity"][0] == target["ticker"])
     assert row["state"] == "WARM" and row["promoted_at"] == t1.isoformat()
@@ -101,8 +102,8 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     assert row["warmup_progress"]["distinct_samples"] == 0
     for minute in range(3):
         t = t1 + timedelta(minutes=minute + 1)
-        store.add_quote(quote(target, t))
-        with store.connect() as c:
+        fixture_write(store.add_quote, quote(target, t))
+        with closing(store.connect()) as c, c:
             c.execute("INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (*identity(target), t.isoformat(), "100", "10", t.isoformat(), t.isoformat(), "PPI_MARKETDATA_INTRADAY"))
             c.execute("INSERT OR REPLACE INTO ppi_intraday_contract_state VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -119,7 +120,7 @@ def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp
     assert again["warmup_progress"]["distinct_samples"] == 3
     assert not again["entry_authority"] and again["factual_execution"] == "NOT_CALLED"
     assert snapshot(worker)[1] == frozen
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         assert c.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
         assert c.execute("SELECT count(*) FROM paper_decisions").fetchone()[0] == 0
         assert c.execute("SELECT count(*) FROM scalping_candidates").fetchone()[0] == 0
@@ -230,7 +231,7 @@ def test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_
     worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
     worker.tick(PRE)
     at = OPEN + timedelta(minutes=1)
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("""INSERT INTO paper_positions(paper_id,source,strategy_version,symbol,asset_class,
             settlement,status,quantity,entry_price,entry_cost,stop_price,target_price,opened_at,
             features_json,currency,market) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -241,7 +242,7 @@ def test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_
              f'{assets[0]["ticker"]}: PPI_INSTRUMENT_NOT_FOUND;shadow_identity=' +
              json.dumps(identity(assets[0]), separators=(",", ":"))))
         before = tuple(c.execute("SELECT * FROM paper_positions").fetchone())
-    store.add_quote(quote(assets[1], at))
+    fixture_write(store.add_quote, quote(assets[1], at))
     result = worker.tick(at)
     for engine in result["engines"].values():
         assert engine["selected"] == [identity(assets[0])]
@@ -250,7 +251,7 @@ def test_opened_priority_and_scoped_native_ppi_failure_survive_runtime_capacity_
         assert "PPI_INSTRUMENT_NOT_FOUND" in rows[assets[0]["ticker"]]["rejection_reason"]
         assert "PPI_INSTRUMENT_NOT_FOUND" not in rows[assets[1]["ticker"]]["rejection_reason"]
         assert rows[assets[1]["ticker"]]["last_useful_observation_at"] == at.isoformat()
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         assert tuple(c.execute("SELECT * FROM paper_positions").fetchone()) == before
         assert c.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
 
@@ -306,12 +307,7 @@ def test_atomic_replacement_quota_bounds_peak_and_preserves_prior_audit_file(tmp
 
 def test_configured_iol_cache_is_reused_and_protected_as_an_input(tmp_path, monkeypatch):
     store, _ = make_store(tmp_path, count=1)
-    # Finish fixture writers before a capture that requires a quiescent source.
-    # sqlite3's transaction context does not close its connection; a delayed
-    # collector can otherwise checkpoint the main file during the capture.
-    import gc
-    from contextlib import closing
-    gc.collect()
+    # make_store closes its committed writers before Source capture.
     with closing(sqlite3.connect(store.path)) as connection:
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     cache_dir = tmp_path / "custom-market"

@@ -1,6 +1,6 @@
 """Real SQLite contracts for the causal read-only SHADOW preopen bridge."""
 from datetime import date, datetime, timedelta, timezone
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -362,7 +362,7 @@ def test_daily_publication_before_close_and_malformed_intraday_clocks_are_reject
 def _worker_store(tmp_path):
     from tests.test_rc6_shadow_runtime_wiring import make_store
     store, _ = make_store(tmp_path, count=1)
-    with store.connect() as connection:
+    with closing(store.connect()) as connection, connection:
         connection.execute("UPDATE financial_instrument_catalog SET ticker='A'")
     return store
 

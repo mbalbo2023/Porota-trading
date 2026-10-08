@@ -22,7 +22,8 @@ from rc6_dynamic_universe.sources import source_observations, source_reason_code
 from .persistence import (EvidenceFiles, failure_reason, shadow_evidence_root,
                           shadow_archive_root, shadow_archive_maximum_bytes,
                           DEFAULT_MAXIMUM_FILES, GENERATION_SCHEMA)
-from .source_reads import original_source_path, source_connection
+from .source_reads import original_source_path, source_connection, source_tick
+from .read_contract import SourceReadContract, query_budget_seconds
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-FIX-AUDIT-08-RUNTIME-v4"
@@ -81,6 +82,8 @@ class ShadowRuntime:
                 or not math.isfinite(query_budget_seconds) or not 0 < query_budget_seconds <= 2):
             raise ValueError("INVALID_READ_BUDGET")
         self.query_budget_seconds = float(query_budget_seconds)
+        self.read_contract = SourceReadContract(runtime_query_seconds=self.query_budget_seconds)
+        self.last_source_read_receipt = None
         self.database = original_source_path(database)
         self.history_database = Path(history_database).resolve() if history_database else None
         self.root = Path(evidence_root) if evidence_root is not None else shadow_evidence_root(self.database)
@@ -125,6 +128,8 @@ class ShadowRuntime:
             archive_format=archive_format)
         self.configuration = digest({"version": VERSION, "row_limit": row_limit,
             "query_budget_seconds": self.query_budget_seconds,
+            "source_read_contract": self.read_contract.document(),
+            "source_read_contract_sha256": self.read_contract.fingerprint(),
             "provider_additional_requests": 0, "tick_seconds": 30,
             "policies": self.policies, "history": str(self.history_database),
             "sources": {k: list(map(str, v)) for k, v in self.source_paths.items()},
@@ -153,8 +158,8 @@ class ShadowRuntime:
             "operational_funnel": "rc6.prospective-operational-funnel.v1"})
 
     def _metadata(self, at, since):
-        end = time.monotonic() + .15
-        with source_connection(self.database, deadline=end) as (c, source_info):
+        end = time.monotonic() + query_budget_seconds("metadata")
+        with source_connection(self.database, deadline=end, consumer="metadata") as (c, source_info):
             c.execute("PRAGMA query_only=ON")
             c.set_progress_handler(lambda: int(time.monotonic() > end), 1000)
             tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -254,142 +259,157 @@ class ShadowRuntime:
 
     def tick(self, as_of):
         at = stamp(as_of)
+        self.last_source_read_receipt = None
         with self.files as files:
-            capacity_policy = self.capacity_controller.state(at)
-            configuration = self.configuration_fingerprint(at, capacity_policy=capacity_policy)
-            committed = files.read_writer_generation(checkpoint=True)
-            previous = committed["checkpoint"] if committed else {}
-            if previous and stamp(previous["as_of"]) > at:
-                raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
-            inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
-                                  query_budget_seconds=self.query_budget_seconds)
-            source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
-            reuse = (previous.get("source_identity") == source_id and
-                     previous.get("runtime_configuration") == configuration)
-            if not reuse:
-                previous = {}
-            # Source identity and runtime configuration are part of the durable
-            # checkpoint, independent of the planner's capacity fingerprint.
-            started = previous.get("started_at", at.isoformat())
-            context = session_context(at)
-            sources, source_errors = self._sources()
-            capacity = self._capacity(as_of=at, capacity_policy=capacity_policy)
-            freeze_name = "preopen-" + context["session"] + ".json.gz"
-            frozen = files.read(freeze_name)
-            if frozen and frozen["source_identity"] != source_id:
-                raise ValueError("SHADOW_PREOPEN_SOURCE_IDENTITY_MISMATCH")
-            if frozen is None and context["cutoff"] < at < context["opening"]:
-                from .preopen import build_preopen_inputs
-                pre = build_preopen_inputs(self.database, self.history_database, as_of=at,
-                    session_open=context["opening"], cutoff=context["cutoff"])
-                bundle = {**inputs, **pre, "as_of": at.isoformat(),
-                    "session_open": context["opening"].isoformat(),
-                    "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
-                    "capacity_report": capacity, "capacity_policy": capacity_policy,
-                    "policies": self.policies, "observations": []}
-                pre_report = run_shadow(bundle, freeze_only=True)
-                frozen = {"schema": VERSION, "source_identity": source_id,
-                    "frozen": pre_report["frozen"], "quality": pre["quality"],
-                    "intraday_history": pre.get("intraday_history", [])}
-                files.write(freeze_name, frozen, immutable=True)
-            base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
-                "session": context["session"], "phase": context["phase"],
-                "source_database_effect": "READ_ONLY", "provider_requests": 0,
-                "provider_additional_budget": {"current": 0, "book": 0, "intraday": 0},
-                "production_limits_modified": capacity_policy["production_limits_modified"],
-                "factual_execution": "NOT_CALLED",
-                "real_orders_sent": 0, "real_routes": "NOT_CALLED", "ppi_watch": "UNTOUCHED",
-                "source_errors": source_errors, "native_ppi_errors": failures,
-                "checkpoint_reused": reuse, "runtime_configuration": configuration,
-                "capacity_policy": capacity_policy,
-                "catalog_ready": inputs["catalog"],
-                "source_identity": source_id}
-            checkpoint = {**base, "started_at": started}
-            if frozen is None:
-                report = {**base, "status": ("PREOPEN_SNAPSHOT_PENDING_AFTER_SESSION_CUTOFF"
-                          if at <= context["cutoff"] else "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"),
-                          "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
-                # Even a closed preopen gate must account for actual received
-                # sources; it cannot claim an empty audit over nonempty input.
-                from rc6_dynamic_universe.sources import native_source_reports, audit_sources
-                report["source_reports"] = native_source_reports(inputs["observations"], as_of=at) + [
-                    source_observations(value, source=name, as_of=at)
-                    for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
-                report["source_audit"] = audit_sources(reports=report["source_reports"], as_of=at)
-            else:
-                # Retain only causal radar points; re-reading a historical DB
-                # row cannot create an event before this worker first existed.
-                observations = [o for o in inputs["observations"]
-                    if stamp(o["source_at"]) >= stamp(started)
-                    and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
-                observations += [o for o in failures if o.get("identity")]
-                compatible = previous if previous.get("session") == context["session"] else {}
-                source_reports = [source_observations(value, source=name, as_of=at)
-                    for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
-                external = [{**o, "endpoint": "radar"} for r in source_reports for o in r["observations"]
-                    if o.get("identity") and o.get("source_at") and o.get("received_at")
-                    and stamp(started) <= stamp(o["source_at"]) <= stamp(o["received_at"]) <= at
-                    and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
-                radar = self._radar(observations + external, compatible.get("radar", {}), at, context["opening"])
-                checkpoint["radar"] = radar
-                observations += radar["points"]
-                bundle = {**inputs, "as_of": at.isoformat(),
-                    "session_open": context["opening"].isoformat(),
-                    "preopen_cutoff": context["cutoff"].isoformat(),
-                    "frozen_at": frozen["frozen"]["SCALPING"]["payload"]["frozen_at"],
-                    "sessions": frozen["frozen"]["SCALPING"]["payload"]["sessions"],
-                    "rankings": frozen["frozen"]["SCALPING"]["payload"],
-                    "frozen": frozen["frozen"], "intraday_history": frozen["intraday_history"],
-                    "capacity_report": capacity, "capacity_policy": capacity_policy,
-                    "policies": self.policies,
-                    "observations": observations,
-                    "source_native_observations": inputs["observations"],
-                    "source_observation_reports": source_reports,
-                    "observation_not_before": started,
-                    "observation_received_after": previous.get("as_of", started),
-                    "sources": {k: v for k, v in sources.items() if k != "IOL_FAMILY_REFERENCE"}}
-                result = run_shadow(bundle, previous=compatible)
-                from .stages import enrich_pipeline
-                result = enrich_pipeline(self.database, result, as_of=at)
-                report = {**result, **base, "status": "SHADOW_OBSERVING",
-                    "preopen_quality": frozen["quality"],
-                    "preopen_immutable": True, "preopen_file": freeze_name,
-                    "capacity_open_status": "NO_VERIFICADO" if not capacity else capacity.get("status"),
-                    "observation_execution": "LOCAL_REUSE_ONLY; native PPI Intraday preserved",
-                    "active_paper_scanner_authority": "FACTUAL_SIGNAL_AND_ADMISSION_UNCHANGED; sampling_policy="
-                        + capacity_policy["status"] + "; shadow fills NOT_CALLED"}
-                checkpoint["engines"] = result["engines"]
-            from .families import family_reports
-            from .lab import evaluate_runtime_lab
-            from .entry_signals import evaluate_runtime_entry_signals
-            from .funnel import evaluate_runtime_funnel
-            report["family_routing"] = family_reports(self.database, as_of=at,
-                catalog=inputs["full_catalog"], sources=sources)
-            report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
-                self.database, as_of=at, previous=previous.get("lab"))
-            report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
-                self.database, as_of=at, previous=previous.get("entry_signals"))
-            report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
-                self.database, as_of=at, planner_report=report,
-                entry_signal_report=report["entry_signal_lab"],
-                exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
-                return_encoded_checkpoint=True)
-            # Never call a signal, economics or risk result as an execution
-            # callback. These reports cannot reach the factual broker.
-            status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
-                "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
-            status.update(configuration_fingerprint=configuration,
-                preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
-                catalog_ready_count=len(inputs["catalog"]),
-                provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
-                capacity_policy_status=capacity_policy["status"],
-                entry_signal_lab_status=report["entry_signal_lab"]["status"],
-                operational_funnel_status=report["operational_funnel"]["status"])
-            generation = files.commit_generation(report, checkpoint, status,
-                source_watermark={"source_identity": source_id, "as_of": at.isoformat(),
-                    "previous_as_of": previous.get("as_of"), "started_at": started},
-                configuration_fingerprint=configuration, _take_payloads=True)
+            # The single primary image survives all query consumers. Its final
+            # Source identity/digest check and authenticated scratch cleanup
+            # must finish before either preopen or generation publication.
+            with source_tick(self.database, contract=self.read_contract) as capture:
+                prepared = self._prepare_tick(files, at)
+            self.last_source_read_receipt = capture.receipt
+            pending_frozen = prepared.pop("pending_frozen")
+            if pending_frozen is not None:
+                name, frozen = pending_frozen
+                files.write(name, frozen, immutable=True)
+            generation = files.commit_generation(**prepared, _take_payloads=True)
             return generation["report"]
+
+    def _prepare_tick(self, files, at):
+        capacity_policy = self.capacity_controller.state(at)
+        configuration = self.configuration_fingerprint(at, capacity_policy=capacity_policy)
+        committed = files.read_writer_generation(checkpoint=True)
+        previous = committed["checkpoint"] if committed else {}
+        if previous and stamp(previous["as_of"]) > at:
+            raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
+        inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
+                              query_budget_seconds=self.query_budget_seconds)
+        source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
+        reuse = (previous.get("source_identity") == source_id and
+                 previous.get("runtime_configuration") == configuration)
+        if not reuse:
+            previous = {}
+        # Source identity and runtime configuration are part of the durable
+        # checkpoint, independent of the planner's capacity fingerprint.
+        started = previous.get("started_at", at.isoformat())
+        context = session_context(at)
+        sources, source_errors = self._sources()
+        capacity = self._capacity(as_of=at, capacity_policy=capacity_policy)
+        freeze_name = "preopen-" + context["session"] + ".json.gz"
+        frozen = files.read(freeze_name)
+        pending_frozen = None
+        if frozen and frozen["source_identity"] != source_id:
+            raise ValueError("SHADOW_PREOPEN_SOURCE_IDENTITY_MISMATCH")
+        if frozen is None and context["cutoff"] < at < context["opening"]:
+            from .preopen import build_preopen_inputs
+            pre = build_preopen_inputs(self.database, self.history_database, as_of=at,
+                session_open=context["opening"], cutoff=context["cutoff"])
+            bundle = {**inputs, **pre, "as_of": at.isoformat(),
+                "session_open": context["opening"].isoformat(),
+                "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
+                "capacity_report": capacity, "capacity_policy": capacity_policy,
+                "policies": self.policies, "observations": []}
+            pre_report = run_shadow(bundle, freeze_only=True)
+            frozen = {"schema": VERSION, "source_identity": source_id,
+                "frozen": pre_report["frozen"], "quality": pre["quality"],
+                "intraday_history": pre.get("intraday_history", [])}
+            pending_frozen = (freeze_name, frozen)
+        base = {"schema": VERSION, "mode": "SHADOW", "as_of": at.isoformat(),
+            "session": context["session"], "phase": context["phase"],
+            "source_database_effect": "READ_ONLY", "provider_requests": 0,
+            "provider_additional_budget": {"current": 0, "book": 0, "intraday": 0},
+            "production_limits_modified": capacity_policy["production_limits_modified"],
+            "factual_execution": "NOT_CALLED",
+            "real_orders_sent": 0, "real_routes": "NOT_CALLED", "ppi_watch": "UNTOUCHED",
+            "source_errors": source_errors, "native_ppi_errors": failures,
+            "checkpoint_reused": reuse, "runtime_configuration": configuration,
+            "capacity_policy": capacity_policy,
+            "catalog_ready": inputs["catalog"],
+            "source_identity": source_id}
+        checkpoint = {**base, "started_at": started}
+        if frozen is None:
+            report = {**base, "status": ("PREOPEN_SNAPSHOT_PENDING_AFTER_SESSION_CUTOFF"
+                      if at <= context["cutoff"] else "PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION"),
+                      "engines": {}, "catalog_ready_count": len(inputs["catalog"])}
+            # Even a closed preopen gate must account for actual received
+            # sources; it cannot claim an empty audit over nonempty input.
+            from rc6_dynamic_universe.sources import native_source_reports, audit_sources
+            report["source_reports"] = native_source_reports(inputs["observations"], as_of=at) + [
+                source_observations(value, source=name, as_of=at)
+                for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
+            report["source_audit"] = audit_sources(reports=report["source_reports"], as_of=at)
+        else:
+            # Retain only causal radar points; re-reading a historical DB
+            # row cannot create an event before this worker first existed.
+            observations = [o for o in inputs["observations"]
+                if stamp(o["source_at"]) >= stamp(started)
+                and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
+            observations += [o for o in failures if o.get("identity")]
+            compatible = previous if previous.get("session") == context["session"] else {}
+            source_reports = [source_observations(value, source=name, as_of=at)
+                for name, value in sources.items() if name != "IOL_FAMILY_REFERENCE"]
+            external = [{**o, "endpoint": "radar"} for r in source_reports for o in r["observations"]
+                if o.get("identity") and o.get("source_at") and o.get("received_at")
+                and stamp(started) <= stamp(o["source_at"]) <= stamp(o["received_at"]) <= at
+                and stamp(o["received_at"]) > stamp(previous.get("as_of", started))]
+            radar = self._radar(observations + external, compatible.get("radar", {}), at, context["opening"])
+            checkpoint["radar"] = radar
+            observations += radar["points"]
+            bundle = {**inputs, "as_of": at.isoformat(),
+                "session_open": context["opening"].isoformat(),
+                "preopen_cutoff": context["cutoff"].isoformat(),
+                "frozen_at": frozen["frozen"]["SCALPING"]["payload"]["frozen_at"],
+                "sessions": frozen["frozen"]["SCALPING"]["payload"]["sessions"],
+                "rankings": frozen["frozen"]["SCALPING"]["payload"],
+                "frozen": frozen["frozen"], "intraday_history": frozen["intraday_history"],
+                "capacity_report": capacity, "capacity_policy": capacity_policy,
+                "policies": self.policies,
+                "observations": observations,
+                "source_native_observations": inputs["observations"],
+                "source_observation_reports": source_reports,
+                "observation_not_before": started,
+                "observation_received_after": previous.get("as_of", started),
+                "sources": {k: v for k, v in sources.items() if k != "IOL_FAMILY_REFERENCE"}}
+            result = run_shadow(bundle, previous=compatible)
+            from .stages import enrich_pipeline
+            result = enrich_pipeline(self.database, result, as_of=at)
+            report = {**result, **base, "status": "SHADOW_OBSERVING",
+                "preopen_quality": frozen["quality"],
+                "preopen_immutable": True, "preopen_file": freeze_name,
+                "capacity_open_status": "NO_VERIFICADO" if not capacity else capacity.get("status"),
+                "observation_execution": "LOCAL_REUSE_ONLY; native PPI Intraday preserved",
+                "active_paper_scanner_authority": "FACTUAL_SIGNAL_AND_ADMISSION_UNCHANGED; sampling_policy="
+                    + capacity_policy["status"] + "; shadow fills NOT_CALLED"}
+            checkpoint["engines"] = result["engines"]
+        from .families import family_reports
+        from .lab import evaluate_runtime_lab
+        from .entry_signals import evaluate_runtime_entry_signals
+        from .funnel import evaluate_runtime_funnel
+        report["family_routing"] = family_reports(self.database, as_of=at,
+            catalog=inputs["full_catalog"], sources=sources)
+        report["economic_exit_lab"], checkpoint["lab"] = evaluate_runtime_lab(
+            self.database, as_of=at, previous=previous.get("lab"))
+        report["entry_signal_lab"], checkpoint["entry_signals"] = evaluate_runtime_entry_signals(
+            self.database, as_of=at, previous=previous.get("entry_signals"))
+        report["operational_funnel"], checkpoint["funnel"] = evaluate_runtime_funnel(
+            self.database, as_of=at, planner_report=report,
+            entry_signal_report=report["entry_signal_lab"],
+            exit_lab_report=report["economic_exit_lab"], previous=previous.get("funnel"),
+            return_encoded_checkpoint=True)
+        # Never call a signal, economics or risk result as an execution
+        # callback. These reports cannot reach the factual broker.
+        status = {k: report[k] for k in ("schema", "as_of", "phase", "status", "mode",
+            "provider_requests", "real_orders_sent", "real_routes", "source_database_effect")}
+        status.update(configuration_fingerprint=configuration,
+            preopen_digests={k: v["digest"] for k, v in (frozen or {}).get("frozen", {}).items()},
+            catalog_ready_count=len(inputs["catalog"]),
+            provider_capacity_open="NO_VERIFICADO", ppi_watch="UNTOUCHED",
+            capacity_policy_status=capacity_policy["status"],
+            entry_signal_lab_status=report["entry_signal_lab"]["status"],
+            operational_funnel_status=report["operational_funnel"]["status"])
+        return {"report": report, "checkpoint": checkpoint, "status": status,
+            "source_watermark": {"source_identity": source_id, "as_of": at.isoformat(),
+                "previous_as_of": previous.get("as_of"), "started_at": started},
+            "configuration_fingerprint": configuration, "pending_frozen": pending_frozen}
 
 
 def run_worker(database, stop, *, clock_fn=None):

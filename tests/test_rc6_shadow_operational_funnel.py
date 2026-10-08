@@ -2,6 +2,7 @@
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -14,6 +15,7 @@ from rc6_dynamic_universe.common import digest as planner_digest
 from rc6_paper_family_lifecycle import FamilyPaperExecutor
 from rc6_shadow_runtime.entry_signals import native_entry_snapshot
 from rc6_shadow_runtime import funnel
+from tests.rc6_fixture_sqlite import fixture_write
 
 START = datetime(2026, 10, 5, 13, 29, tzinfo=timezone.utc)
 IDENTITY = ["A", "ACCIONES", "BYMA", "ARS", "A-24HS"]
@@ -54,7 +56,7 @@ def snapshot(at, key="native-1", *, economics=True, risk="APPROVE", action="BUY"
 
 def record_snapshot(store, value, *, corrupt=False):
     raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("INSERT INTO decision_evidence_snapshots VALUES(?,?,?,?,?)", (value["decision_key"], value["captured_at"],
             value["schema"], "bad" if corrupt else hashlib.sha256(raw.encode()).hexdigest(), raw))
 
@@ -64,27 +66,63 @@ def position(store, at, *, paper_id="p1", currency="ARS"):
         "asset_class": "ACCIONES", "settlement": "A-24HS", "status": "OPEN", "quantity": "1", "entry_price": "100.2",
         "entry_cost": ".1", "stop_price": "99", "target_price": "110", "opened_at": at.isoformat(), "currency": currency,
         "market": "BYMA", "features_json": json.dumps({"performance_lineage": {"strategy_id": "SPOT_MOMENTUM_BASELINE"}})}
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("INSERT INTO paper_positions("+",".join(data)+") VALUES("+",".join("?" for _ in data)+")", tuple(data.values()))
 
 
 def fill(store, at, *, paper_id="p1", side="BUY_SIMULATED", quantity="1", price="100.2", costs=".1"):
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("INSERT INTO paper_fills(paper_id,source,side,filled_at,quantity,price,costs,slippage) VALUES(?,?,?,?,?,?,?,'0')",
             (paper_id, "PAPER_NATIVE_FIXTURE", side, at.isoformat(), quantity, price, costs))
 
 
 def close(store, at, *, paper_id="p1"):
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("UPDATE paper_positions SET status='CLOSED',closed_at=?,exit_price='105',exit_cost='.1',gross_pnl='4.8',net_pnl='4.6',close_reason='EOD_PAPER' WHERE paper_id=?",
             (at.isoformat(), paper_id))
 
 
 def bootstrap(tmp_path):
-    store = PaperStore(str(tmp_path/"source.db"))
-    FamilyPaperExecutor(store)
+    store = fixture_write(PaperStore, str(tmp_path/"source.db"))
+    fixture_write(FamilyPaperExecutor, store)
     _, cp = funnel.evaluate_runtime_funnel(store.path, as_of=START, planner_report=plan(START))
     return store, cp
+
+
+def test_fixture_native_writers_are_closed_before_each_real_source_capture_without_gc(tmp_path, monkeypatch):
+    """Keep strong references: collection cannot supply the close boundary."""
+    connections = []
+    original_connect = sqlite3.connect
+    original_capture = funnel.evaluate_runtime_funnel
+    captured = []
+    def tracked_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+    def assert_closed():
+        assert len(connections) >= 10  # Real PaperStore schema/bootstrap writes.
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                connection.execute("SELECT 1")
+    def capture(*args, **kwargs):
+        assert_closed()
+        captured.append(True)
+        return original_capture(*args, **kwargs)
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    monkeypatch.setattr(funnel, "evaluate_runtime_funnel", capture)
+    store, checkpoint = bootstrap(tmp_path)
+    record_snapshot(store, snapshot(START))
+    position(store, START)
+    fill(store, START)
+    fill(store, START + timedelta(minutes=1), side="SELL_SIMULATED", price="105")
+    close(store, START + timedelta(minutes=1))
+    # Failure must also keep the prior transaction's rollback and close.
+    with pytest.raises(sqlite3.IntegrityError):
+        record_snapshot(store, snapshot(START))
+    _, _ = funnel.evaluate_runtime_funnel(store.path, as_of=START + timedelta(minutes=2),
+        previous=checkpoint, planner_report=plan(START + timedelta(minutes=2)))
+    assert len(captured) == 2
+    assert_closed()
 
 
 def stages(report, channel="NATIVE_FACTUAL", currency="ARS"):
@@ -214,7 +252,7 @@ def test_partial_fills_terminal_position_update_is_not_lost_or_double_counted(tm
 
 
 def test_existing_entry_never_rebuilt_and_currencies_remain_separate(tmp_path):
-    store = PaperStore(str(tmp_path/"source.db")); FamilyPaperExecutor(store)
+    store = fixture_write(PaperStore, str(tmp_path/"source.db")); fixture_write(FamilyPaperExecutor, store)
     position(store, START-timedelta(seconds=60), paper_id="old"); fill(store, START-timedelta(seconds=60), paper_id="old")
     _, cp = funnel.evaluate_runtime_funnel(store.path, as_of=START, planner_report=plan(START))
     at = START+timedelta(minutes=2)
@@ -235,26 +273,26 @@ def dlr():
 
 def test_specialized_futures_variation_reserve_cash_net_reconciles_and_restart(tmp_path):
     store, cp = bootstrap(tmp_path)
-    executor = FamilyPaperExecutor(store)
+    executor = fixture_write(FamilyPaperExecutor, store)
     contract = dlr()
     at = START+timedelta(minutes=2)
-    executor.open_future(contract, lifecycle_id="future-1", event_id="future-open", entry_price="1500", quantity="1", entry_cost="100",
+    fixture_write(executor.open_future, contract, lifecycle_id="future-1", event_id="future-open", entry_price="1500", quantity="1", entry_cost="100",
         occurred_at=at.isoformat(), book_at=at.isoformat())
     opened, cp = funnel.evaluate_runtime_funnel(store.path, as_of=at+timedelta(seconds=1), previous=cp, planner_report=plan(at))
     assert stages(opened)["PAPER_OPENED"] == 1
     var_at = at+timedelta(minutes=30)
-    executor.mark_future(contract, lifecycle_id="future-1", event_id="variation", mark_price="1510", book_at=var_at.isoformat(),
+    fixture_write(executor.mark_future, contract, lifecycle_id="future-1", event_id="variation", mark_price="1510", book_at=var_at.isoformat(),
         occurred_at=var_at.isoformat(), settlement=True)
     _, cp = funnel.evaluate_runtime_funnel(store.path, as_of=var_at+timedelta(seconds=1), previous=cp, planner_report=plan(var_at))
     closed = at+timedelta(hours=1)
     args = dict(lifecycle_id="future-1", event_id="future-close", exit_price="1520", exit_cost="100", book_at=closed.isoformat(),
         occurred_at=closed.isoformat(), reason="EOD_PAPER")
-    executor.close_future(contract, **args)
+    fixture_write(executor.close_future, contract, **args)
     report, cp = funnel.evaluate_runtime_funnel(store.path, as_of=closed+timedelta(seconds=1), previous=cp, planner_report=plan(closed))
     money = next(r["detail"] for r in report["lineage"] if r["stage"] == "NET_PNL")
     assert money["gross"] == "20000" and money["net"] == "19800" and money["costs"] == "200"
     assert money["spot_ledger_used"] is False and money["variation_double_counted"] is False
-    executor.close_future(contract, **args)
+    fixture_write(executor.close_future, contract, **args)
     repeated, _ = funnel.evaluate_runtime_funnel(store.path, as_of=closed+timedelta(seconds=2), previous=cp, planner_report=plan(closed))
     assert stages(repeated)["NET_PNL"] == 1 and not repeated["unreconciled_futures_positions"]
     with store.connect() as c: assert c.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
@@ -263,9 +301,10 @@ def test_specialized_futures_variation_reserve_cash_net_reconciles_and_restart(t
 def test_specialized_futures_wrong_native_event_identity_cannot_reach_paper_open(tmp_path):
     store, cp = bootstrap(tmp_path)
     at = START + timedelta(minutes=2)
-    FamilyPaperExecutor(store).open_future(dlr(), lifecycle_id="future-1", event_id="future-open", entry_price="1500",
+    executor = fixture_write(FamilyPaperExecutor, store)
+    fixture_write(executor.open_future, dlr(), lifecycle_id="future-1", event_id="future-open", entry_price="1500",
         quantity="1", entry_cost="100", occurred_at=at.isoformat(), book_at=at.isoformat())
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("UPDATE paper_family_lifecycle SET currency='USD' WHERE lifecycle_id='future-1'")
     with pytest.raises(ValueError, match="FUNNEL_FUTURES_EVENT_IDENTITY_MISMATCH"):
         funnel.evaluate_runtime_funnel(store.path, as_of=at+timedelta(seconds=1), previous=cp, planner_report=plan(at))
@@ -275,9 +314,10 @@ def test_specialized_futures_wrong_native_event_identity_cannot_reach_paper_open
 def test_specialized_futures_open_event_contract_hash_is_checked(tmp_path):
     store, cp = bootstrap(tmp_path)
     at = START + timedelta(minutes=2)
-    FamilyPaperExecutor(store).open_future(dlr(), lifecycle_id="future-1", event_id="future-open", entry_price="1500",
+    executor = fixture_write(FamilyPaperExecutor, store)
+    fixture_write(executor.open_future, dlr(), lifecycle_id="future-1", event_id="future-open", entry_price="1500",
         quantity="1", entry_cost="100", occurred_at=at.isoformat(), book_at=at.isoformat())
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         detail = json.loads(c.execute("SELECT detail_json FROM paper_family_lifecycle_events WHERE event_id='future-open'").fetchone()[0])
         detail["financial_contract"]["currency"] = "USD"
         c.execute("UPDATE paper_family_lifecycle_events SET detail_json=? WHERE event_id='future-open'", (json.dumps(detail),))
@@ -286,7 +326,7 @@ def test_specialized_futures_open_event_contract_hash_is_checked(tmp_path):
 
 
 def test_catalog_and_observe_only_families_are_explicit_without_preopen(tmp_path):
-    store = PaperStore(str(tmp_path/"source.db")); FamilyPaperExecutor(store)
+    store = fixture_write(PaperStore, str(tmp_path/"source.db")); fixture_write(FamilyPaperExecutor, store)
     families = ["ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI"]
     catalog = [{"ticker": name, "instrument_type": name, "market": "BYMA", "currency": "ARS", "settlement": "A-24HS",
         "status": "AVAILABLE", "capability": "READY_PAPER_SHADOW"} for name in families]
@@ -310,7 +350,7 @@ def test_identity_adapter_and_source_clock_hash_safety(tmp_path):
     with pytest.raises(ValueError, match="HASH"):
         funnel.evaluate_runtime_funnel(store.path, as_of=at+timedelta(seconds=2), previous=cp, planner_report=plan(at))
     assert cp["cursors"]["decision_evidence_snapshots"] == 0
-    with store.connect() as c: c.execute("UPDATE observer_state SET real_orders_sent=1")
+    with closing(store.connect()) as c, c: c.execute("UPDATE observer_state SET real_orders_sent=1")
     with pytest.raises(ValueError, match="SAFETY"):
         funnel.evaluate_runtime_funnel(store.path, as_of=at+timedelta(seconds=2), previous=cp, planner_report=plan(at))
 
@@ -320,7 +360,7 @@ def test_source_readonly_lock_and_detail_retention_keep_exact_session_totals(tmp
     store, cp = bootstrap(tmp_path)
     at = START+timedelta(minutes=2)
     record_snapshot(store, snapshot(at))
-    with sqlite3.connect(store.path) as c: c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    with closing(sqlite3.connect(store.path)) as c, c: c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     before = Path(store.path).read_bytes()
     blocker = sqlite3.connect(store.path); blocker.execute("BEGIN IMMEDIATE")
     try:
@@ -377,7 +417,7 @@ def test_mutable_position_payload_is_bounded_before_materialization(tmp_path):
     store, cp = bootstrap(tmp_path)
     at = START+timedelta(minutes=2)
     position(store, at); fill(store, at)
-    with store.connect() as c:
+    with closing(store.connect()) as c, c:
         c.execute("UPDATE paper_positions SET features_json=?", ('{"oversize":"' + 'x'*140000 + '"}',))
     with pytest.raises(ValueError, match="OVERSIZE"):
         funnel.evaluate_runtime_funnel(store.path, as_of=at+timedelta(seconds=1), previous=cp, planner_report=plan(at))

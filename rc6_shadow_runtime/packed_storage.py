@@ -52,6 +52,16 @@ _BINDING_SCALAR_ENTRIES = 4096
 _BINDING_SCALAR_BYTES = 1024 * 1024
 _BINDING_SCALAR_STRING = 256
 _BINDING_SCALAR_INTEGER_BITS = 4096
+_NATIVE_FIELD_FLAG_ENTRIES = 1024
+_NATIVE_FIELD_TOKEN_ENTRIES = 1024
+_NATIVE_FIELD_TOKEN_BYTES = 512 * 1024
+_NATIVE_FIELD_TOKEN_STRING = 256
+_NATIVE_KEY_SCHEMA_FIELDS = 64
+_NATIVE_KEY_SCHEMAS = 128
+_NATIVE_KEY_SCHEMA_BYTES = 512 * 1024
+_NATIVE_PUBLICATION_SCOPE = None
+_NATIVE_ROLE_AUTHORIZATION = None
+_NATIVE_ROLE_AUTHORIZATION_CODE = None
 # This private observer carries no verification/admission authority. It is
 # installed only around the existing stress producer's real constructor call.
 # All events sit outside recursive count/shape/token loops and carry no payload.
@@ -104,6 +114,14 @@ def _record(raw, *, count=None):
     if count is not None:
         result.update(codec=ARRAY_CODEC, count=count)
     return result
+
+
+# Reuse is permitted only while the exact native compression/digest operations
+# remain installed. Instrumented or foreign callbacks retain their real calls.
+_RECORD_NATIVE_OPERATIONS = (_record, _compress, _sha, gzip.compress,
+                             base64.b64encode, zlib.compress, hashlib.sha256)
+_RECORD_NATIVE_CODES = tuple(getattr(operation, "__code__", None)
+                             for operation in _RECORD_NATIVE_OPERATIONS)
 
 
 def _compressed(record, *, limit, deadline):
@@ -177,14 +195,21 @@ def _root_volatile(name):
          "checkpoint_digest", "evidence_retention", "logical_sha256", "storage_sha256", "sha256", "payload"})
 
 
-def _small_plain(value):
+def _small_plain(value, *, _field_flags=None):
     """A bounded encoding shortcut; every other value takes the prior walk."""
     kind = type(value)
     if kind is dict:
         if len(value) > _SMALL_ITEMS:
             return False
         for key in value:
-            if type(key) is not str or len(key) > _SMALL_STRING or _root_volatile(key):
+            if type(key) is not str or len(key) > _SMALL_STRING:
+                return False
+            flag = None if _field_flags is None else _field_flags.get(key)
+            if flag is None:
+                flag = _root_volatile(key)
+                if _field_flags is not None and len(_field_flags) < _NATIVE_FIELD_FLAG_ENTRIES:
+                    _field_flags[key] = flag
+            if flag:
                 return False
         members = value.values()
     elif kind in (list, tuple):
@@ -314,6 +339,24 @@ class _CaptureBuffer:
         self.result.append(capture)
 
 
+class _NativeCaptureBuffer(_CaptureBuffer):
+    """Same token boundaries without a Python room-call for every token.
+
+    Only the authenticated exact-native role path constructs this buffer.
+    Public buffers keep their original methods, state and virtual dispatch.
+    """
+    def append(self, raw):
+        if self.template and len(self.template)+len(raw) > PACK_TARGET:
+            self.flush()
+        self.template.extend(raw)
+
+    def bind(self, literal):
+        if self.template and len(self.template)+5 > PACK_TARGET:
+            self.flush()
+        self.template.extend(b"\0"+struct.pack("!I", len(self.literals)))
+        self.literals.append(literal)
+
+
 class _CaptureBuilder:
     """Strong references and immutable byte plans within this publication only."""
     def __init__(self, value, *, cache=None):
@@ -324,14 +367,34 @@ class _CaptureBuilder:
         # cache or another cut/publication. Direct append calls keep fallback.
         self._binding_scalars, self._binding_bytes = None, 0
         self._publication_scope = None
+        self._native_field_flags = None
+        self._native_field_tokens = None
+        self._native_field_token_bytes = 0
+        self._native_key_schemas = None
+        self._native_key_schema_bytes = 0
+        self._native_operation_scope = None
+        self._native_operation_thread = None
+        self._native_scalar_encoder = None
         grant = _PUBLICATION_CONSTRUCTION.get()
         if type(grant) is _PublicationGrant:
             self._publication_scope = grant.claim(self, value, self.cache, sys._getframe(1))
         _observe_storage_phase("COUNT", "ENTER")
         self._count(value)
         _observe_storage_phase("COUNT", "RETURN")
+        native_scope = self._publication_scope
         if self._publication_scope is not None and not self._publication_scope.eligible_role(self, value):
             self._publication_scope = None
+        if (native_scope is not None
+                and _native_role_authorized is _NATIVE_SCOPE_CHECK
+                and _native_role_authorized.__code__ is _NATIVE_SCOPE_CHECK_CODE
+                and _NATIVE_SCOPE_CHECK(native_scope)
+                and (self._publication_scope is not None
+                     or native_scope.native_callback_free_role(self, value))):
+            self._native_field_flags = {}
+            self._native_field_tokens = {}
+            self._native_key_schemas = {}
+            self._native_operation_scope = native_scope
+            self._native_operation_thread = threading.get_ident()
 
     def _count(self, value):
         kind = type(value)
@@ -366,7 +429,9 @@ class _CaptureBuilder:
         # Python equates negative zero with positive zero; its JSON lexeme is
         # distinct and must remain distinct even inside a local byte cache.
         if key not in self.scalars:
-            self.scalars[key] = _canonical(value)
+            encoder = self._native_scalar_encoder
+            self.scalars[key] = (encoder(value).encode("ascii")
+                                 if encoder is not None and kind is str else _canonical(value))
         return self.scalars[key]
 
     def _binding_scalar(self, value):
@@ -375,12 +440,16 @@ class _CaptureBuilder:
         if (cache is None or kind not in (type(None), bool, int, float, str)
                 or kind is str and len(value) > _BINDING_SCALAR_STRING
                 or kind is int and value.bit_length() > _BINDING_SCALAR_INTEGER_BITS):
-            return _canonical(value)
+            encoder = self._native_scalar_encoder
+            return (encoder(value).encode("ascii")
+                    if encoder is not None and kind is str else _canonical(value))
         key = kind, value.hex() if kind is float else value
         raw = cache.get(key)
         if raw is not None:
             return raw
-        raw = _canonical(value)
+        encoder = self._native_scalar_encoder
+        raw = (encoder(value).encode("ascii")
+               if encoder is not None and kind is str else _canonical(value))
         if (len(cache) < _BINDING_SCALAR_ENTRIES
                 and self._binding_bytes+len(raw) <= _BINDING_SCALAR_BYTES):
             cache[key] = raw
@@ -416,7 +485,9 @@ class _CaptureBuilder:
                 buffer.boundary(capture); return
             if fresh and not capture.literals:
                 short_raw = capture.template
-        if container and _small_plain(value):
+        small = (_small_plain(value) if self._native_field_flags is None
+                 else _small_plain(value, _field_flags=self._native_field_flags)) if container else False
+        if small:
             raw = short_raw if short_raw is not None else _canonical(value)
             # With no bindings and the whole value fitting, every original
             # token also fits. Append once without moving any legacy cut.
@@ -429,10 +500,47 @@ class _CaptureBuilder:
             return
         if kind is dict or isinstance(value, dict):
             buffer.append(b"{")
-            for ordinal, key in enumerate(sorted(value)):
-                buffer.append((b"," if ordinal else b"")+self._scalar(key)+b":")
+            schemas = self._native_key_schemas
+            ordered = None
+            if schemas is not None and len(value) <= _NATIVE_KEY_SCHEMA_FIELDS:
+                schema = tuple(value)
+                ordered = schemas.get(schema)
+                if ordered is None:
+                    ordered = tuple(sorted(value))
+                    if len(schemas) < _NATIVE_KEY_SCHEMAS:
+                        # Strong native strings and two edge tuples have a
+                        # conservative bound without holding any payload values.
+                        size = 256+16*len(schema)+sum(4*len(key)+96 for key in schema)
+                        if (self._native_key_schema_bytes+size+_NATIVE_KEY_SCHEMAS*128
+                                <= _NATIVE_KEY_SCHEMA_BYTES):
+                            before = sys.getsizeof(schemas)
+                            schemas[schema] = ordered
+                            self._native_key_schema_bytes += size+sys.getsizeof(schemas)-before
+            if ordered is None:
+                ordered = sorted(value)
+            for ordinal, key in enumerate(ordered):
+                tokens = self._native_field_tokens
+                token = None if tokens is None else tokens.get(key)
+                if token is None:
+                    token = self._scalar(key)+b":"
+                    if (tokens is not None and len(tokens) < _NATIVE_FIELD_TOKEN_ENTRIES
+                            and len(key) <= _NATIVE_FIELD_TOKEN_STRING):
+                        size = sys.getsizeof(key)+sys.getsizeof(token)+128
+                        if (self._native_field_token_bytes+size+_NATIVE_FIELD_TOKEN_ENTRIES*128
+                                <= _NATIVE_FIELD_TOKEN_BYTES):
+                            before = sys.getsizeof(tokens)
+                            tokens[key] = token
+                            self._native_field_token_bytes += size+sys.getsizeof(tokens)-before
+                buffer.append((b"," if ordinal else b"")+token)
                 child = value[key]
-                if _root_volatile(key):
+                volatile = (None if self._native_field_flags is None
+                            else self._native_field_flags.get(key))
+                if volatile is None:
+                    volatile = _root_volatile(key)
+                    if (self._native_field_flags is not None
+                            and len(self._native_field_flags) < _NATIVE_FIELD_FLAG_ENTRIES):
+                        self._native_field_flags[key] = volatile
+                if volatile:
                     buffer.bind(self._binding_scalar(child))
                 elif type(child) in (type(None), bool, int, float, str):
                     # This is the same terminal token as the recursive path.
@@ -461,11 +569,23 @@ class _CaptureBuilder:
 
     def _capture_original(self, value, name=""):
         previous = self._binding_scalars, self._binding_bytes
+        previous_encoder = self._native_scalar_encoder
+        scope = self._native_operation_scope
+        if (scope is not None and _native_role_authorized is _NATIVE_SCOPE_CHECK
+                and _native_role_authorized.__code__ is _NATIVE_SCOPE_CHECK_CODE
+                and _NATIVE_SCOPE_CHECK(scope) and not scope.closed
+                and threading.get_ident() == self._native_operation_thread):
+            self._native_scalar_encoder = _NATIVE_STRING_ENCODER
+        else:
+            self._native_scalar_encoder = None
+            if scope is not None:
+                self._native_field_flags = self._native_field_tokens = self._native_key_schemas = None
+                self._native_operation_scope = self._publication_scope = None
         self._binding_scalars, self._binding_bytes = {}, 0
         try:
             if _root_volatile(name):
                 return (Capture(b"\0"+b"\0"*4, (self._binding_scalar(value),)),)
-            buffer = _CaptureBuffer()
+            buffer = (_CaptureBuffer() if self._native_field_flags is None else _NativeCaptureBuffer())
             self._append(value, name, buffer, root=True)
             buffer.flush()
             return tuple(buffer.result)
@@ -473,6 +593,54 @@ class _CaptureBuilder:
             # Reentrant default=str keeps the surrounding capture's private
             # context, while top-level calls leave no cache behind.
             self._binding_scalars, self._binding_bytes = previous
+            self._native_scalar_encoder = previous_encoder
+
+
+# Admission to the fast room/name path is private, exact-typed and role-local.
+# Any replacement of these operations restores the public original calls.
+_NATIVE_BUILDER_OPERATIONS = (_CaptureBuffer, _CaptureBuffer.__init__,
+    _CaptureBuffer.append, _CaptureBuffer.bind, _CaptureBuffer._room, _CaptureBuffer.flush,
+    _CaptureBuilder, _CaptureBuilder._append, _CaptureBuilder._scalar,
+    _CaptureBuilder._binding_scalar, _CaptureBuilder._named,
+    _small_plain, _root_volatile, _canonical, json.dumps, json.JSONEncoder,
+    json.JSONEncoder.__init__, json.JSONEncoder.encode, json.JSONEncoder.iterencode,
+    _NativeCaptureBuffer, _NativeCaptureBuffer.append, _NativeCaptureBuffer.bind,
+    json.encoder, json.encoder.encode_basestring_ascii, sys.getprofile, sys.gettrace)
+_NATIVE_BUILDER_CODES = tuple(getattr(operation, "__code__", None)
+                            for operation in _NATIVE_BUILDER_OPERATIONS)
+_NATIVE_BUILDER_GLOBALS = (
+    ("type", type), ("str", str), ("dict", dict), ("list", list), ("tuple", tuple),
+    ("bool", bool), ("int", int), ("float", float), ("bytes", bytes),
+    ("bytearray", bytearray), ("isinstance", isinstance), ("len", len),
+    ("sorted", sorted), ("enumerate", enumerate), ("id", id), ("any", any))
+_NATIVE_STRING_ENCODER = json.encoder.encode_basestring_ascii
+_NATIVE_JSON_MODULE = json
+_NATIVE_SYS_MODULE = sys
+_NATIVE_JSON_ENCODER_NAMESPACE = tuple(type.__getattribute__(json.JSONEncoder, "__dict__").items())
+_NATIVE_JSON_ENCODER_MRO = type.__getattribute__(json.JSONEncoder, "__mro__")
+_NATIVE_JSON_DEFAULTS = tuple((operation, operation.__defaults__,
+    tuple((operation.__kwdefaults__ or {}).items()))
+    for operation in (_canonical, json.dumps, json.JSONEncoder.__init__, json.JSONEncoder.encode,
+                      json.JSONEncoder.iterencode))
+
+
+def _native_role_authorized(scope):
+    """Call only the original private authority, never an eligibility boolean."""
+    if (_ROOT_VOLATILE_NATIVE_TYPE(scope) is not _NATIVE_PUBLICATION_SCOPE
+            or _NATIVE_ROLE_AUTHORIZATION is None):
+        return False
+    namespace = _ROOT_VOLATILE_NATIVE_TYPE.__getattribute__(_NATIVE_PUBLICATION_SCOPE, "__dict__")
+    if (namespace.get("native_fast_path") is not _NATIVE_ROLE_AUTHORIZATION
+            or _NATIVE_ROLE_AUTHORIZATION.__code__ is not _NATIVE_ROLE_AUTHORIZATION_CODE):
+        return False
+    for name in ("__getattribute__", "__getattr__", "__setattr__", "__delattr__"):
+        if name in namespace:
+            return False
+    return _NATIVE_ROLE_AUTHORIZATION(scope)
+
+
+_NATIVE_SCOPE_CHECK = _native_role_authorized
+_NATIVE_SCOPE_CHECK_CODE = _native_role_authorized.__code__
 
 
 class _PublicationGrant:
@@ -554,7 +722,8 @@ class PreparedPackedStorage:
                 raise ValueError("SHADOW_STORAGE_DURABLE_CAPACITY_REACHED")
             return value, logical_sha
         result = _encode_captures(captures, logical_sha=logical_sha, logical_bytes=logical_bytes,
-                                  durable_limit=self.durable_limit, expansion_limit=self.expansion_limit)
+                                  durable_limit=self.durable_limit, expansion_limit=self.expansion_limit,
+                                  _record_cache=getattr(self, "_publication_records", None))
         return result, logical_sha
 
 
@@ -563,7 +732,8 @@ class PreparedPackedStorage:
 _PREPARED_CONSTRUCTOR_CODE = PreparedPackedStorage.__init__.__code__
 
 
-def _encode_captures(captures, *, logical_sha, logical_bytes, durable_limit, expansion_limit):
+def _encode_captures(captures, *, logical_sha, logical_bytes, durable_limit, expansion_limit,
+                     _record_cache=None):
     templates, template_indices, literals, literal_indices = [], {}, [], {}
     instances, instance_indices, bindings, references = [], {}, [], []
     for capture in captures:
@@ -589,10 +759,11 @@ def _encode_captures(captures, *, logical_sha, logical_bytes, durable_limit, exp
         marker_count += len(positions)
     packets, directory, packet = [], [], bytearray()
     kind, ordinal, total_raw = 0, 0, 0
+    record = _record if _record_cache is None else _record_cache.record
     def flush():
         nonlocal ordinal
         if packet:
-            packets.append(_record(bytes(packet))); packet.clear(); ordinal += 1
+            packets.append(record(bytes(packet))); packet.clear(); ordinal += 1
             if len(packets) > MAX_PACKETS:
                 raise ValueError("SHADOW_STORAGE_COMPLEXITY_CAPACITY_REACHED")
     for group_kind, entries in enumerate((templates, literals)):
@@ -612,10 +783,10 @@ def _encode_captures(captures, *, logical_sha, logical_bytes, durable_limit, exp
     flush()
     result = {"schema": SCHEMA, "codec": CODEC, "packets": packets,
         "templates_count": len(templates), "literals_count": len(literals),
-        "directory": _record(b"".join(struct.pack("!III", *row) for row in directory), count=len(directory)),
-        "instances": _record(b"".join(struct.pack("!III", *row) for row in instances), count=len(instances)),
-        "bindings": _record(b"".join(struct.pack("!I", row) for row in bindings), count=len(bindings)),
-        "references": _record(b"".join(struct.pack("!I", row) for row in references), count=len(references)),
+        "directory": record(b"".join(struct.pack("!III", *row) for row in directory), count=len(directory)),
+        "instances": record(b"".join(struct.pack("!III", *row) for row in instances), count=len(instances)),
+        "bindings": record(b"".join(struct.pack("!I", row) for row in bindings), count=len(bindings)),
+        "references": record(b"".join(struct.pack("!I", row) for row in references), count=len(references)),
         "logical_bytes": logical_bytes, "logical_sha256": logical_sha}
     canonical = _canonical(result, ascii=False)
     result["storage_sha256"] = _sha(canonical)

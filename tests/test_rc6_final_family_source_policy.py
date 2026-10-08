@@ -1,5 +1,6 @@
 """#462 S/T: canonical family caller, financial priority and source boundaries."""
 from copy import deepcopy
+from contextlib import closing
 from datetime import timedelta
 import ast
 import json
@@ -138,7 +139,7 @@ def test_missing_book_clock_cannot_borrow_trade_or_capture_clock(tmp_path):
     record = instrument("GGAL", "ACCIONES")
     path = fixture_db(tmp_path, [record])
     snapshot(path, record)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE market_snapshots SET book_at=NULL")
     quote = by_ticker(family_reports(path, as_of=AT, catalog=[record]))["GGAL"]["handler_result"]["quote"]
     assert quote["observable"] and quote["source_at"] == AT.isoformat()
@@ -475,7 +476,7 @@ def test_static_catalog_availability_never_becomes_a_provider_event_clock(tmp_pa
         "quantity_step": 1, "minimum_quantity": 1, "metadata_source": "PPI",
         "fixed_income_evidence": {"quote_basis_nominal": 100},
         "fixed_income_analytics": {"yield": .05}}}
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("UPDATE financial_instrument_catalog SET metadata_json=?", (json.dumps(metadata),))
     fixed = by_ticker(family_reports(path, as_of=AT, catalog=[record]))["BOND"]["handler_result"]
     basis = fixed["terms"]["quote_basis_nominal"]
@@ -519,3 +520,33 @@ def test_legacy_strict_selection_cannot_promote_non_price_values(invalid_price):
     json.dumps(consolidated, allow_nan=False)
     if isinstance(invalid_price, float):
         assert consolidated["source_candidates"]["PPI"][0]["last"]["status"] == "NO_VERIFICADO_NON_FINITE_NUMBER"
+
+
+@pytest.mark.parametrize("fixture_case", [
+    test_missing_book_clock_cannot_borrow_trade_or_capture_clock,
+    test_static_catalog_availability_never_becomes_a_provider_event_clock,
+])
+def test_source_fixture_writers_are_closed_before_family_capture_without_gc(tmp_path, monkeypatch, fixture_case):
+    """Exercise the actual fixture mutations, holding their writers strongly."""
+    connections = []
+    original_connect = sqlite3.connect
+    original_capture = family_reports
+    captured = []
+    def tracked_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+    def assert_closed():
+        assert len(connections) >= 3  # Database, snapshot, native fixture mutation.
+        for connection in connections:
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                connection.execute("SELECT 1")
+    def capture(*args, **kwargs):
+        assert_closed()
+        captured.append(True)
+        return original_capture(*args, **kwargs)
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    monkeypatch.setitem(globals(), "family_reports", capture)
+    fixture_case(tmp_path)
+    assert captured == [True]
+    assert_closed()

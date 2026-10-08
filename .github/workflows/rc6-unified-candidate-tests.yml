@@ -1,8 +1,8 @@
 name: RC6 supplemental material evidence
-run-name: RC6 material ${{ inputs.gate || 'PR-sequence' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+run-name: RC6 material ${{ inputs.gate || 'cheap' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
 
-# Canonical Predeploy V2 alone builds/tests the promotable immutable artifact.
-# This registered carrier produces supplementary source-gate evidence only.
+# Push admits G0/G1 only. Every later stage needs exact native Actions payloads
+# from its predecessors and a fresh single-gate owner authorization.
 on:
   pull_request:
     branches: [deploy/rc6-pr69-isolated-20260915]
@@ -18,17 +18,18 @@ on:
         required: true
         type: string
       gate:
-        description: Supplementary gate; never an artifact/deploy approval
+        description: One ordered source stage; no artifact or deploy authority
         required: true
         type: choice
         options:
-          - focal
-          - full-gov311
-          - full-gov312
+          - focal311
+          - focal312
           - BIG-browser
           - Horizon
+          - full-gov311
+          - full-gov312
       launch_receipt_url:
-        description: Durable issue471 authorization including this SHA and successor branch
+        description: Immutable issue471 single-gate authorization with predecessor artifact manifest
         required: true
         type: string
       owner_session:
@@ -43,106 +44,29 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: rc6-supplementary-orchestration-${{ inputs.source_sha || github.event.pull_request.head.sha }}-${{ inputs.gate || 'PR-sequence' }}
+  # Serialize all heavy producers of a candidate, including fullGov and BIG.
+  group: rc6-supplementary-material-${{ inputs.source_sha || github.event.pull_request.head.sha }}
   cancel-in-progress: false
 
 jobs:
-  supplemental-evidence:
-    if: github.event_name == 'workflow_dispatch'
-    concurrency:
-      group: rc6-supplementary-material-${{ inputs.source_sha }}-${{ inputs.gate }}
-      cancel-in-progress: false
+  ordered-source-gate:
+    name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+    if: github.event.repository.id == 1338680554 && (github.event_name == 'workflow_dispatch' || (github.event.number == 476 && github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.head.ref == 'recovery/rc6-material-fix-forward-3091e93-20261006' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
       PYTHONDONTWRITEBYTECODE: "1"
+      RC6_SOURCE_SHA: ${{ inputs.source_sha || github.event.pull_request.head.sha }}
+      RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+      RC6_GATE: ${{ inputs.gate || 'cheap' }}
+      RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+      RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout exact reviewed source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 reviewed2026-10-05
-        with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Verify canonical governed test policy pointer
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test -f .github/workflows/porota-predeploy-v2.yml
-          test -f ops/policy/test-policy.yaml
-          grep -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
-          grep -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
-          echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
-          echo 'SUPPLEMENTARY_TEST_RESULT_CLAIM=SELECTED_GATE_ONLY'
-          echo 'DEPLOY_OWNER=NOT_ACQUIRED'
-          echo 'real_orders_sent=0'
-      - name: Prepare reviewed CPython311 tooling
-        id: py311
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
-        with:
-          python-version: "3.11.16"
-      - name: Prepare reviewed CPython312 tooling
-        id: py312
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed2026-10-05
-        with:
-          python-version: "3.12.14"
-      - name: Run declared supplementary gate with owned custody
-        id: gate
-        shell: bash
-        env:
-          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
-          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
-          RC6_GATE: ${{ inputs.gate }}
-          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
-          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
-          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
-          RC6_PYTHON312: ${{ steps.py312.outputs.python-path }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          umask 022
-          "$RC6_PYTHON311" -I -B scripts/rc6_material_carrier.py \
-            --repo-root "$GITHUB_WORKSPACE" \
-            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
-            --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
-            --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
-      - name: Preserve only owned custody controls on every terminal path
-        if: always() && steps.gate.outputs.control_root != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
-        with:
-          name: rc6-supplementary-controls-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ steps.gate.outputs.control_root }}/*.json
-      - name: Preserve supplementary RAW only after every native FIN
-        if: always() && steps.gate.outputs.safe_payload_upload == 'true' && steps.gate.outputs.payload_root != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 reviewed2026-10-05
-        with:
-          name: rc6-supplementary-raw-${{ inputs.source_sha }}-${{ inputs.gate }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ steps.gate.outputs.payload_root }}
-
-  pr-focal:
-    name: RC6 material focal @ ${{ github.event.pull_request.head.sha }}
-    if: github.event_name == 'pull_request' && github.event.repository.id == 1338680554 && github.event.number == 476 && github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.head.ref == 'recovery/rc6-material-fix-forward-3091e93-20261006' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'
-    outputs:
-      source_sha: ${{ steps.admit.outputs.source_sha }}
-      source_tree: ${{ steps.admit.outputs.source_tree }}
-      owner_session: ${{ steps.admit.outputs.owner_session }}
-      launch_receipt_url: ${{ steps.admit.outputs.launch_receipt_url }}
-      material_gates_json: ${{ steps.admit.outputs.material_gates_json }}
-    concurrency:
-      group: rc6-supplementary-material-${{ github.event.pull_request.head.sha }}-focal
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 360
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-    steps:
-      - name: Checkout exact owned PR HEAD, never synthetic merge SHA
+      - name: Checkout exact owned candidate with full Git history
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.RC6_SOURCE_SHA }}
           fetch-depth: 0
           persist-credentials: false
       - name: Prepare reviewed CPython311 tooling
@@ -155,42 +79,40 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12.14"
-      - name: Resolve exact prepush authorization and fresh writer lease
+      - name: Resolve exact scoped authorization and fresh successor lease
         id: admit
         shell: bash
         env:
-          RC6_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-          RC6_GATE: focal
           RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           umask 022
           args=(--source-sha "$RC6_SOURCE_SHA" --gate "$RC6_GATE" --control-root "$RUNNER_TEMP/rc6-pr-admission-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RC6_GATE}")
+          if [ -n "$RC6_SOURCE_TREE" ]; then args+=(--source-tree "$RC6_SOURCE_TREE"); fi
+          if [ -n "$RC6_LAUNCH_RECEIPT" ]; then args+=(--launch-receipt-url "$RC6_LAUNCH_RECEIPT"); fi
+          if [ -n "$RC6_OWNER_SESSION" ]; then args+=(--owner-session "$RC6_OWNER_SESSION"); fi
           "$RC6_PYTHON311" -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
-      - name: Verify canonical governed test policy pointer
+      - name: Verify canonical policy and cheap-only push boundary
         shell: bash
         run: |
           set -Eeuo pipefail
           test -f .github/workflows/porota-predeploy-v2.yml
           test -f ops/policy/test-policy.yaml
-          grep -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
           grep -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then test "$RC6_GATE" = cheap; fi
           echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
+          echo 'PUSH_HEAVY_OR_PREDEPLOY_AUTHORIZATION=false'
           echo 'DEPLOY_OWNER=NOT_ACQUIRED'
           echo 'real_orders_sent=0'
-      - name: Run original supplementary gate after fresh native admission
+      - name: Run one stage after payload and live capacity admission
         id: gate
         shell: bash
         env:
-          RC6_SOURCE_SHA: ${{ steps.admit.outputs.source_sha }}
           RC6_SOURCE_TREE: ${{ steps.admit.outputs.source_tree }}
-          RC6_GATE: focal
           RC6_LAUNCH_RECEIPT: ${{ steps.admit.outputs.launch_receipt_url }}
           RC6_OWNER_SESSION: ${{ steps.admit.outputs.owner_session }}
           RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
           RC6_PYTHON312: ${{ steps.py312.outputs.python-path }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           umask 022
@@ -198,131 +120,27 @@ jobs:
             --repo-root "$GITHUB_WORKSPACE" --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
             --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
             --require-pr-admission --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
-      - name: Preserve owned admission controls without payload
+      - name: Preserve bounded admission controls on every terminal path
         if: always() && steps.admit.outputs.control_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: rc6-supplementary-pr-admission-focal-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-admission-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.admit.outputs.control_root }}/*.json
-      - name: Preserve native controls without payload on UNKNOWN
+      - name: Preserve native custody controls on every terminal path
         if: always() && steps.gate.outputs.control_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: rc6-supplementary-pr-controls-focal-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-controls-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.control_root }}/*.json
-      - name: Preserve supplementary lossless RAW only after every original FIN
+      - name: Preserve original RAW after physical FIN even on logical RED
         if: always() && steps.gate.outputs.safe_payload_upload == 'true' && steps.gate.outputs.payload_root != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: rc6-supplementary-pr-raw-focal-${{ github.event.pull_request.head.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ steps.gate.outputs.payload_root }}
-
-  pr-material:
-    name: RC6 material ${{ matrix.gate }} @ ${{ needs.pr-focal.outputs.source_sha }}
-    needs: pr-focal
-    if: github.event_name == 'pull_request' && needs.pr-focal.result == 'success'
-    strategy:
-      fail-fast: false
-      matrix:
-        gate: ${{ fromJSON(needs.pr-focal.outputs.material_gates_json) }}
-    concurrency:
-      group: rc6-supplementary-material-${{ needs.pr-focal.outputs.source_sha }}-${{ matrix.gate }}
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 360
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
-    steps:
-      - name: Checkout exact owned PR HEAD, never synthetic merge SHA
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: ${{ needs.pr-focal.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Prepare reviewed CPython311 tooling
-        id: py311
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.11.16"
-      - name: Prepare reviewed CPython312 tooling
-        id: py312
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12.14"
-      - name: Resolve exact prepush authorization and fresh writer lease
-        id: admit
-        shell: bash
-        env:
-          RC6_SOURCE_SHA: ${{ needs.pr-focal.outputs.source_sha }}
-          RC6_GATE: ${{ matrix.gate }}
-          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
-          GH_TOKEN: ${{ github.token }}
-          RC6_SOURCE_TREE: ${{ needs.pr-focal.outputs.source_tree }}
-          RC6_LAUNCH_RECEIPT: ${{ needs.pr-focal.outputs.launch_receipt_url }}
-          RC6_OWNER_SESSION: ${{ needs.pr-focal.outputs.owner_session }}
-        run: |
-          set -Eeuo pipefail
-          umask 022
-          args=(--source-sha "$RC6_SOURCE_SHA" --gate "$RC6_GATE" --control-root "$RUNNER_TEMP/rc6-pr-admission-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RC6_GATE}")
-          args+=(--source-tree "$RC6_SOURCE_TREE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION")
-          "$RC6_PYTHON311" -I -B scripts/rc6_material_pr_admission.py "${args[@]}"
-      - name: Verify canonical governed test policy pointer
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          test -f .github/workflows/porota-predeploy-v2.yml
-          test -f ops/policy/test-policy.yaml
-          grep -F 'Governed automatic test discovery and execution' .github/workflows/porota-predeploy-v2.yml
-          grep -F 'automatic_discovery_required: true' ops/policy/test-policy.yaml
-          echo 'POROTA_CANONICAL_ARTIFACT_PIPELINE=PREDEPLOY_V2_ONLY'
-          echo 'DEPLOY_OWNER=NOT_ACQUIRED'
-          echo 'real_orders_sent=0'
-      - name: Run original supplementary gate after fresh native admission
-        id: gate
-        shell: bash
-        env:
-          RC6_SOURCE_SHA: ${{ steps.admit.outputs.source_sha }}
-          RC6_SOURCE_TREE: ${{ steps.admit.outputs.source_tree }}
-          RC6_GATE: ${{ matrix.gate }}
-          RC6_LAUNCH_RECEIPT: ${{ steps.admit.outputs.launch_receipt_url }}
-          RC6_OWNER_SESSION: ${{ steps.admit.outputs.owner_session }}
-          RC6_PYTHON311: ${{ steps.py311.outputs.python-path }}
-          RC6_PYTHON312: ${{ steps.py312.outputs.python-path }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          umask 022
-          "$RC6_PYTHON311" -I -B scripts/rc6_material_carrier.py \
-            --repo-root "$GITHUB_WORKSPACE" --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
-            --gate "$RC6_GATE" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" --owner-session "$RC6_OWNER_SESSION" \
-            --require-pr-admission --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312"
-      - name: Preserve owned admission controls without payload
-        if: always() && steps.admit.outputs.control_root != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: rc6-supplementary-pr-admission-${{ matrix.gate }}-${{ needs.pr-focal.outputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ steps.admit.outputs.control_root }}/*.json
-      - name: Preserve native controls without payload on UNKNOWN
-        if: always() && steps.gate.outputs.control_root != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: rc6-supplementary-pr-controls-${{ matrix.gate }}-${{ needs.pr-focal.outputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ steps.gate.outputs.control_root }}/*.json
-      - name: Preserve supplementary lossless RAW only after every original FIN
-        if: always() && steps.gate.outputs.safe_payload_upload == 'true' && steps.gate.outputs.payload_root != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: rc6-supplementary-pr-raw-${{ matrix.gate }}-${{ needs.pr-focal.outputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-raw-${{ env.RC6_SOURCE_SHA }}-${{ env.RC6_GATE }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}

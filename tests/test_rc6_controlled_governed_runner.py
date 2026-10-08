@@ -9,13 +9,30 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import zlib
 
 import pytest
 
 from scripts import rc6_controlled_governed_runner as runner
+from scripts import rc6_authenticated_fixture_lifecycle as lifecycle
 
 SOURCE = Path(runner.__file__).absolute().parents[1]
+
+
+def controlled_unit_parent():
+    """Use an explicitly configured short parent on the source filesystem."""
+    parent = Path(tempfile.mkdtemp(prefix='u',
+        dir=os.environ.get('RC6_UNIT_NAMESPACE_PARENT', '/tmp')))
+    assert parent.lstat().st_dev == SOURCE.lstat().st_dev
+    return parent
+
+
+@pytest.fixture
+def tmp_path(tmp_path_factory):
+    path = controlled_unit_parent()/'case'
+    path.mkdir(mode=0o700)
+    return path
 
 
 def native(code, *arguments, timeout=15):
@@ -27,10 +44,9 @@ def native(code, *arguments, timeout=15):
     return json.loads(completed.stdout)
 
 
-@pytest.fixture
-def literal_tree(tmp_path):
+def literal_git_tree(parent):
     """A tiny actual Git fixture, never a commit or write in the working repo."""
-    root = tmp_path/'literal-tree'
+    root = parent/'literal-tree'
     root.mkdir(mode=0o700)
     subprocess.run(['git', '-c', 'init.defaultBranch=fixture', 'init', '--quiet', str(root)],
                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -54,6 +70,30 @@ def literal_tree(tmp_path):
     subprocess.run(['git', '-C', str(root), 'read-tree', 'HEAD'], check=True,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return root, commit, tree
+
+
+@pytest.fixture
+def literal_tree(tmp_path):
+    return literal_git_tree(tmp_path)
+
+
+def controlled_phase_output(root, sha, tree, producer, *, parent=None):
+    """Mint real diagnostic custody; this fixture never attests full Gov."""
+    if parent is None:
+        parent = controlled_unit_parent()
+    assert parent.lstat().st_dev == root.lstat().st_dev
+    contract = {'scope': 'CONTROLLED_UNIT_FIXTURE_ONLY', 'producer': producer,
+                'phase_api': 'authenticated-collection-execution',
+                'promotion_qualified': False}
+    binding = {'candidate_sha': sha, 'candidate_tree': tree,
+               'producer': 'CONTROLLED_UNIT_FIXTURE_ONLY:'+producer,
+               'attempt_id': parent.name, 'owner_id': 'uid-'+str(os.geteuid())+'-pid-'+str(os.getpid()),
+               'workload_fingerprint': hashlib.sha256(runner.canonical(contract)).hexdigest(),
+               'runner_class': 'DIAGNOSTIC'}
+    namespace = lifecycle.create_namespace(parent, binding)
+    output = namespace.path/'o'
+    output.mkdir(mode=0o700)
+    return output, lifecycle.namespace_receipt(namespace)
 
 
 def test_raw_git_pin_rejects_same_names_with_changed_bytes(literal_tree):
@@ -106,15 +146,14 @@ def test_physical_alias_and_code_atime_claims_remain_distinct(literal_tree, tmp_
 
 def test_actual_hypothesis_and_eager_logging_outputs_use_fresh_external_namespace(literal_tree, tmp_path):
     root, sha, tree = literal_tree
-    output = tmp_path/'external-output'
-    output.mkdir(mode=0o700)
+    output, claim = controlled_phase_output(root, sha, tree, 'hypothesis-and-logging')
     report = native("""
 from pathlib import Path
 import json, logging.handlers, os
 from scripts import rc6_controlled_governed_runner as r
 root, output = Path(sys.argv[2]), Path(sys.argv[5])
 before = r.source_pin(root, sys.argv[3], sys.argv[4])
-namespace = r.phase_namespace(root, output, 'collection')
+namespace = r.phase_namespace(root, output, 'collection', authenticated_binding=json.loads(sys.argv[6]))
 from hypothesis.configuration import storage_directory
 from hypothesis.database import DirectoryBasedExampleDatabase
 storage = storage_directory('examples')
@@ -128,14 +167,14 @@ atime = r.compare_source(before, after)
 print(json.dumps({'namespace':namespace, 'hypothesis_database':str(storage.path),
     'code_unchanged':set(before['files']) == set(after['files']), 'atime':atime,
     'log_exists':(Path(namespace['log_dir'])/'trading_bot.log').is_file()}))
-""", root, sha, tree, output)
+""", root, sha, tree, output, json.dumps(claim))
     assert report['code_unchanged'] and report['log_exists']
     assert Path(report['hypothesis_database']).is_relative_to(output)
     assert report['namespace']['writable_source_exclusions_added'] == []
     assert not (root/'.hypothesis').exists() and not (root/'data').exists()
     with pytest.raises(ValueError, match='FRESH_EXTERNAL_PHASE_NAMESPACE_REQUIRED'):
         # No namespace reuse even if a previous phase completed successfully.
-        runner.phase_namespace(root, output, 'collection')
+        runner.phase_namespace(root, output, 'collection', authenticated_binding=claim)
 
 
 def test_kernel_creation_denial_prevents_optional_ipv6_bind_without_overriding_modules():
@@ -307,7 +346,9 @@ os._exit(0)
     assert 'CHILD_FINALIZATION_SIGNAL_DENIED_BEFORE_SYSCALL' in (tmp_path/'phase.log').read_text()
 
 
-def test_inherited_tracker_is_preserved_and_never_reaped_as_owned(tmp_path):
+def test_inherited_tracker_is_preserved_and_never_reaped_as_owned(tmp_path, literal_tree):
+    root, sha, tree = literal_tree
+    phase_output, claim = controlled_phase_output(root, sha, tree, 'inherited-tracker')
     control = tmp_path/'inherited-control.py'
     control.write_text("""
 import json, multiprocessing as mp, os, sys
@@ -322,7 +363,8 @@ def inherited(output):
     Path(output).write_text(json.dumps({'initial':initial,'result':result,'after':after}))
 
 if __name__=='__main__':
-    r.phase_namespace("""+repr(str(SOURCE))+""", Path(__file__).parent, 'execution')
+    r.phase_namespace(Path(sys.argv[4]), Path(sys.argv[2]), 'execution',
+        authenticated_binding=json.loads(sys.argv[3]))
     initial=r.child_infrastructure_snapshot()
     context=mp.get_context('spawn'); semaphore=context.Semaphore(1)
     owned=r.child_infrastructure_snapshot()['resource_tracker_pid']
@@ -334,7 +376,8 @@ if __name__=='__main__':
     print(json.dumps({'parent_tracker_stayed_live_and_usable':True,'parent_finalization':result}))
 """)
     output = tmp_path/'inherited-result.json'
-    completed = subprocess.run([sys.executable,'-I','-B',str(control),str(output)],
+    completed = subprocess.run([sys.executable,'-I','-B',str(control),str(output),
+        str(phase_output),json.dumps(claim),str(root)],
         env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1'), text=True, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, timeout=15)
     assert completed.returncode == 0, completed.stderr
@@ -348,14 +391,17 @@ if __name__=='__main__':
     assert parent['parent_tracker_stayed_live_and_usable'] and parent['parent_finalization']['status'] == 'GREEN'
 
 
-def test_owned_forkserver_protocol_finishes_before_main_pid_return(tmp_path):
+def test_owned_forkserver_protocol_finishes_before_main_pid_return(tmp_path, literal_tree):
+    root, sha, tree = literal_tree
+    phase_output, claim = controlled_phase_output(root, sha, tree, 'owned-forkserver')
     report = kernel_phase(tmp_path, """
 import json,multiprocessing as mp,sys,time
 from pathlib import Path
 sys.path.insert(0,"""+repr(str(SOURCE))+""")
 from scripts import rc6_controlled_governed_runner as r
 if __name__=='__main__':
-    r.phase_namespace(Path("""+repr(str(SOURCE))+"""), Path(__file__).parent, 'execution')
+    r.phase_namespace(Path("""+repr(str(root))+"""), Path("""+repr(str(phase_output))+"""), 'execution',
+        authenticated_binding=json.loads("""+repr(json.dumps(claim))+"""))
     initial=r.child_infrastructure_snapshot()
     process=mp.get_context('forkserver').Process(target=time.sleep,args=(.05,))
     process.start();process.join(3)
@@ -401,8 +447,7 @@ def test_native_watchdog_does_not_accept_a_phase_that_reaps_after_its_deadline(t
 @pytest.mark.parametrize('phase', ('collection', 'execution'))
 def test_real_legacy_persistence_writers_leave_literal_and_product_source_unchanged(literal_tree, tmp_path, phase):
     root, sha, tree = literal_tree
-    output = tmp_path/('legacy-output-'+phase)
-    output.mkdir(mode=0o700)
+    output, claim = controlled_phase_output(root, sha, tree, 'legacy-writers-'+phase)
     report = native("""
 from pathlib import Path
 import json, os, stat
@@ -436,7 +481,7 @@ for name in ('DB_PATH', 'HIST_DB_PATH', 'TESTING_LOG_PATH', 'DASHBOARD_SESSION_S
     os.environ.pop(name, None)
 os.environ['DASHBOARD_ACCESS_TOKEN'] = 'offline-native-persistence-fixture-'+('x'*40)
 os.chdir(root)
-namespace = r.phase_namespace(root, output, phase)
+namespace = r.phase_namespace(root, output, phase, authenticated_binding=json.loads(sys.argv[7]))
 capability = r.restrict_inet_creation()
 observations = {'inet_socket_attempts': [], 'inet_socket_constructor_requests': [],
     'subprocess_executable_counts': {}}
@@ -512,7 +557,7 @@ print(json.dumps({'namespace': namespace, 'four_real_writer_files': files,
     'product_origins': origins, 'inet_operations': observations['inet_socket_attempts'],
     'inet_constructor_requests': observations['inet_socket_constructor_requests'],
     'offline_capability_installed': capability['status'] == 'INSTALLED_AND_KERNEL_WITNESSED'}))
-""", root, sha, tree, output, phase)
+""", root, sha, tree, output, phase, json.dumps(claim))
     namespace = report['namespace']
     legacy = Path(namespace['legacy_persistence_directory'])
     assert legacy == output/(phase+'-private')/'legacy-persistence'

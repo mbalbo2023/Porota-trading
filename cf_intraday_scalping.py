@@ -7,7 +7,7 @@ Continuidad y solapamiento no demuestran la unidad ni la cadencia del proveedor.
 """
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import closing, nullcontext
 from collections import OrderedDict
 
 import hashlib
@@ -403,7 +403,7 @@ def init_schema(store):
     Intraday store uses the identical table/index before entering its loop;
     evaluation performs only its existing transactional INSERT OR IGNORE.
     """
-    with store.connect() as connection:
+    with closing(store.connect()) as connection, connection:
         register_exact_time(connection)
         connection.executescript("""
         CREATE TABLE IF NOT EXISTS decision_evidence_snapshots(
@@ -420,6 +420,8 @@ def init_schema(store):
           PRIMARY KEY(symbol,asset_class,market,currency,settlement,event_at));
         CREATE INDEX IF NOT EXISTS idx_intraday_identity_time ON ppi_intraday_points(
           symbol,asset_class,market,currency,settlement,event_at);
+        CREATE INDEX IF NOT EXISTS idx_intraday_event_julian_desc
+          ON ppi_intraday_points(julianday(event_at) DESC);
         CREATE TABLE IF NOT EXISTS ppi_intraday_contract_state(
           symbol TEXT NOT NULL, asset_class TEXT NOT NULL, market TEXT NOT NULL,
           currency TEXT NOT NULL, settlement TEXT NOT NULL, state TEXT NOT NULL,

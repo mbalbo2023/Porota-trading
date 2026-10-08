@@ -28,7 +28,8 @@ from rc6_performance.replay import ExitPolicy, ExitReplay
 from rc6_performance.shadow import fit_movement, forward_labels, usable_book
 
 SCHEMA = "rc6.runtime-shadow-lab.v2"
-QUERY_SECONDS = .25
+from .read_contract import DEFAULT_READ_CONTRACT, query_budget_seconds
+QUERY_SECONDS = DEFAULT_READ_CONTRACT.query_budget_seconds("lab")
 MAX_ACTIVE = 16
 MAX_ARCHIVED = 64
 MAX_IDENTITIES = 100
@@ -104,9 +105,9 @@ def _book(row):
 
 def _read(database, at, previous, row_limit):
     from .source_reads import original_source_path, source_connection
-    deadline = monotonic() + QUERY_SECONDS
+    deadline = monotonic() + query_budget_seconds("lab")
     path = original_source_path(database)
-    with source_connection(path, deadline=deadline) as (connection, source_info):
+    with source_connection(path, deadline=deadline, consumer="lab") as (connection, source_info):
         source_key = digest([str(path), source_info.st_dev, source_info.st_ino])
         connection.execute("PRAGMA query_only=ON")
         connection.execute("PRAGMA busy_timeout=5")
@@ -787,7 +788,7 @@ def evaluate_runtime_lab(database, *, as_of, previous=None, row_limit=200, runti
                   source_database_effect="READ_ONLY", legacy_history_backfill=False,
                   checkpoint_sha256=checkpoint["checkpoint_sha256"], configuration_fingerprint=fingerprint,
                   checkpoint_invalidation=invalidated, source_read_truncated=truncated,
-                  source_query_budget_seconds=QUERY_SECONDS, row_limit_per_table=row_limit,
+                  source_query_budget_seconds=query_budget_seconds("lab"), row_limit_per_table=row_limit,
                   economic_edge_validated=False, score_calibration_oos="NO_VERIFICADO",
                   parameter_promotion=False, factual_exit_policy_effect="NONE", provider_requests=0)
     report["cohort_scope"] = {"basis": "bounded prospective registered entries only", "maximum_active": MAX_ACTIVE,

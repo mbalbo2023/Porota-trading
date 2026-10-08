@@ -12,6 +12,8 @@ import textwrap
 import pytest
 
 from scripts import rc6_issue465_stress as stress
+from tests.test_rc6_controlled_governed_runner import (
+    controlled_phase_output, controlled_unit_parent, literal_git_tree)
 
 SOURCE = Path(stress.__file__).absolute().parents[1]
 CLI = SOURCE/'scripts/rc6_issue465_stress.py'
@@ -22,23 +24,42 @@ from pathlib import Path
 source, output = map(Path, sys.argv[1:3])
 sys.path.insert(0, str(source))
 from scripts import rc6_controlled_governed_runner as runner
-runner.phase_namespace(source, output, 'execution')
+context = json.loads(sys.argv[4])
+unit_source = Path(context['source_root'])
+claim = context['namespace_receipt']
+pin = runner.source_pin(unit_source, claim['binding']['candidate_sha'], claim['binding']['candidate_tree'])
+runner.phase_namespace(unit_source, output, 'execution', authenticated_binding=claim)
 environment = {'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1',
     'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'LC_ALL': 'C.UTF-8', 'LANG': 'C.UTF-8', 'TZ': 'UTC'}
 for name in ('TMPDIR', 'RUNNER_TEMP', 'HYPOTHESIS_STORAGE_DIRECTORY', 'LOG_DIR'):
     environment[name] = os.environ[name]
 report = runner.subprocess_phase(json.loads(sys.argv[3]), source,
     output/'phase.log', environment, limit=110)
+after = runner.source_pin(unit_source, claim['binding']['candidate_sha'], claim['binding']['candidate_tree'])
+runner.compare_source(pin, after)
 runner.publish(output/'kernel.json', runner.canonical(report))
 print(json.dumps(report))
 """
 
 
+@pytest.fixture
+def tmp_path(tmp_path_factory):
+    """Short real namespace and tiny literal Git pin, diagnostic fixture only."""
+    parent = controlled_unit_parent()
+    root, sha, tree = literal_git_tree(parent)
+    output, claim = controlled_phase_output(root, sha, tree, 'native-cli-lifecycle', parent=parent)
+    context = {'source_root': str(root), 'namespace_receipt': claim,
+               'scope': 'CONTROLLED_UNIT_FIXTURE_ONLY', 'promotion_qualified': False}
+    (output/'unit-phase-binding.json').write_text(json.dumps(context))
+    return output
+
+
 def native_phase(tmp_path, command):
     output = tmp_path/'kernel-output'
     output.mkdir(mode=0o700)
+    context = json.loads((tmp_path/'unit-phase-binding.json').read_text())
     completed = subprocess.run([sys.executable, '-I', '-B', '-c', SUPERVISOR,
-        str(SOURCE), str(output), json.dumps(command)], stdout=subprocess.PIPE,
+        str(SOURCE), str(output), json.dumps(command), json.dumps(context)], stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, timeout=150,
         env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1',
              'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1', 'LC_ALL': 'C.UTF-8', 'LANG': 'C.UTF-8', 'TZ': 'UTC'})
@@ -270,6 +291,7 @@ def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_pa
         from cg_paper_workspace import artifact_root
         from rc6_dynamic_universe import runtime
         from rc6_shadow_runtime.worker import ShadowRuntime
+        from rc6_shadow_runtime.read_contract import DEFAULT_READ_CONTRACT, current_read_contract
         from scripts import rc6_issue465_stress as stress
         from scripts import rc6_controlled_governed_runner as runner
         initial = runner.child_infrastructure_snapshot()
@@ -283,10 +305,14 @@ def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_pa
         class WeakList(list):
             pass
         original_read, original_tick = runtime.read_runtime, ShadowRuntime.tick
-        references, scalars, ticks = [], {}, []
+        references, scalars, ticks, contract_fingerprints = [], {}, [], []
         def tracked_initial_read(database, **options):
             assert not references
-            assert options == {'as_of': stress.AT, 'row_limit': 20000, 'query_budget_seconds': 2}
+            assert options == {'as_of': stress.AT, 'row_limit': 20000}
+            contract = current_read_contract()
+            assert contract.runtime_query_seconds == .5
+            assert contract.fingerprint() == DEFAULT_READ_CONTRACT.fingerprint()
+            contract_fingerprints.append(contract.fingerprint())
             actual = original_read(database, **options)
             scalars.update(observation_count=len(actual['observations']),
                 catalog_count=len(actual['catalog']),
@@ -326,7 +352,12 @@ def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_pa
         finals = [record for record in records if record.get('_probe_event') == 'FINAL']
         assert len(finals) == 1
         shadow = finals[0]
+        Path("""+repr(str(tmp_path/'lifetime-observed.json'))+""").write_text(json.dumps({
+            'scope': 'CONTROLLED_UNIT_FIXTURE_ONLY', 'shadow': shadow,
+            'scalars': scalars, 'ticks': ticks, 'contract_fingerprints': contract_fingerprints,
+            'big_qualified': False}, sort_keys=True))
         assert shadow['cycle_completion'] and shadow['committed_sequence'] == 2
+        assert contract_fingerprints == [DEFAULT_READ_CONTRACT.fingerprint()]
         assert ticks == [stress.PRE.isoformat(), stress.AT.isoformat()]
         assert scalars == {'observation_count': 100, 'catalog_count': 20,
                           'observation_read_truncated': False}
@@ -339,6 +370,7 @@ def test_actual_initial_read_payload_is_released_before_both_native_ticks(tmp_pa
             'scope': 'NATIVE20_COMPONENT_LIFETIME_ONLY_NOT_FULL_STRESS_OR_BIG',
             'initial_payload_and_both_lists_released': all(reference() is None for reference in references),
             'scalars': scalars, 'tick_cutoffs': ticks, 'shadow': shadow,
+            'read_contract_sha256': contract_fingerprints[0],
             'source_custody_before': source_before, 'source_custody_after': source_after,
             'child_infrastructure_finalization': finalization,
             'offline_ipv6_creation_capability': capability, 'operation_audit': observations,
