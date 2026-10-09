@@ -343,8 +343,11 @@ def test_development_ci_stays_manual_owner_admitted_and_distinct_from_product_ga
     import yaml
     root=Path(__file__).absolute().parents[1]
     workflow=yaml.load((root/'.github/workflows/rc6-unified-candidate-tests.yml').read_text(),Loader=yaml.BaseLoader)
-    job=workflow['jobs']['evidence-custody']
-    assert 'workflow_dispatch' in job['if'] and "inputs.gate == 'evidence-custody'" in job['if']
+    job=workflow['jobs']['development-checks']
+    assert 'workflow_dispatch' in job['if'] and "inputs.gate == 'development-checks'" in job['if']
+    assert job['permissions']['contents']=='read'
+    assert "inputs.gate != 'development-checks'" in workflow['jobs']['ordered-source-gate']['if']
+    assert not any(step.get('id')=='development_admission' for step in workflow['jobs']['evidence-custody']['steps'])
     steps=job['steps']; names=[step['name'] for step in steps]
     assert names.index('Admit bounded development checks before tooling') < names.index('Prepare bounded Python311 development tooling')
     assert next(step for step in steps if step.get('id')=='development_admission')['if']=='always()'

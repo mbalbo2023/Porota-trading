@@ -19,6 +19,49 @@ from scripts import rc6_scoped_infrastructure_lease as infrastructure
 ROOT = Path(__file__).absolute().parents[1]
 
 
+@pytest.mark.parametrize("raw,expected", [(b"", []), (b"123 456 123 \n", [123, 456])])
+def test_child_census_preserves_nonempty_ascii_pids(monkeypatch, raw, expected):
+    monkeypatch.setattr(infrastructure.os, "listdir", lambda root: ["12", "34"])
+    calls = []
+    def read(pid, member):
+        calls.append((pid, member))
+        return raw
+    monkeypatch.setattr(infrastructure, "_read_proc", read)
+    assert infrastructure.own_kernel_children() == expected
+    assert calls == [(os.getpid(), "task/12/children"), (os.getpid(), "task/34/children")]
+
+
+@pytest.mark.parametrize("raw", [b"0", b"-1", b"+1", b"1x", b"1\x00", b"\xff", "١".encode()])
+def test_child_census_invalid_bytes_fail_closed(monkeypatch, raw):
+    monkeypatch.setattr(infrastructure.os, "listdir", lambda root: ["12"])
+    monkeypatch.setattr(infrastructure, "_read_proc", lambda pid, member: raw)
+    with pytest.raises(ValueError, match="INFRA_OWN_CHILD_CENSUS_INVALID"):
+        infrastructure.own_kernel_children()
+
+
+@pytest.mark.parametrize("task", ["0", "-1", "+1", "1x", "١"])
+def test_child_census_invalid_task_never_reads_proc(monkeypatch, task):
+    monkeypatch.setattr(infrastructure.os, "listdir", lambda root: [task])
+    def forbidden(*args):
+        raise AssertionError("invalid task must never be read")
+    monkeypatch.setattr(infrastructure, "_read_proc", forbidden)
+    with pytest.raises(ValueError, match="INFRA_OWN_TASK_INVALID"):
+        infrastructure.own_kernel_children()
+
+
+@pytest.mark.parametrize("case", ["missing", "changed"])
+def test_child_census_missing_or_raced_never_becomes_empty(monkeypatch, case):
+    tasks = iter((["12"], ["12", "34"]))
+    monkeypatch.setattr(infrastructure.os, "listdir", lambda root: next(tasks))
+    def read(*args):
+        if case == "missing":
+            raise FileNotFoundError("controlled absent capability")
+        return b"123 "
+    monkeypatch.setattr(infrastructure, "_read_proc", read)
+    with pytest.raises(ValueError, match="CENSUS_UNAVAILABLE_OR_RACED|TASK_CENSUS_CHANGED"):
+        infrastructure.own_kernel_children()
+
+
 def real_binding():
     def git(value):
         return subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", value], text=True).strip()

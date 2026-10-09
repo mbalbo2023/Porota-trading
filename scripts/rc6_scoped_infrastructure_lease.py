@@ -49,14 +49,17 @@ def own_kernel_children():
     before = sorted(os.listdir(root))
     children = set()
     for task in before:
-        custody.require(task.isdecimal(), "INFRA_OWN_TASK_INVALID")
+        custody.require(re.fullmatch(r"[1-9][0-9]*", task) is not None, "INFRA_OWN_TASK_INVALID")
         try:
             raw = _read_proc(os.getpid(), "task/" + task + "/children")
         except FileNotFoundError:
             # Missing children on an extant task is an unavailable capability,
             # not an empty census. A task race is also conservatively blocked.
             raise ValueError("INFRA_OWN_KERNEL_CHILD_CENSUS_UNAVAILABLE_OR_RACED")
-        custody.require(all(piece.isdecimal() for piece in raw.split()), "INFRA_OWN_CHILD_CENSUS_INVALID")
+        # Linux exposes ASCII PID tokens as bytes. Nonempty censuses must be
+        # validated without str-only methods, decoding or Unicode numerals.
+        custody.require(all(re.fullmatch(rb"[1-9][0-9]*", piece) is not None for piece in raw.split()),
+                        "INFRA_OWN_CHILD_CENSUS_INVALID")
         children.update(int(piece) for piece in raw.split())
     custody.require(before == sorted(os.listdir(root)), "INFRA_OWN_TASK_CENSUS_CHANGED")
     return sorted(children)
