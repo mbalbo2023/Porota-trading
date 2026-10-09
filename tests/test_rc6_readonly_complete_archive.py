@@ -13,6 +13,7 @@ import subprocess
 import sys
 import textwrap
 import tarfile
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -121,6 +122,7 @@ ROOT = Path(__file__).parent
 CONFIG = json.loads((ROOT / "control-config.json").read_text())
 CASE = CONFIG["case"]
 EVENTS = []
+REPORTS = []
 PROVIDER = None
 
 @pytest.fixture(scope="session")
@@ -176,6 +178,9 @@ def pytest_runtest_makereport(item, call):
         report = outcome.get_result()
         EVENTS.append("real-report-created:" + report.when + ":" + report.outcome)
 
+def pytest_runtest_logreport(report):
+    REPORTS.append({"nodeid": report.nodeid, "when": report.when, "outcome": report.outcome})
+
 @pytest.hookimpl(hookwrapper=True, trylast=True)
 def pytest_runtest_teardown(item, nextitem):
     outcome = yield
@@ -190,7 +195,7 @@ def emit_control_only():
     provider = PROVIDER
     row = {"schema": "rc6.explicit-pytest-source-metadata-control.v1", "scope":
         "EXPLICIT_SYNTHETIC_METADATA_ONLY_NOT_PRODUCT_SOURCE_OR_KERNEL_FIN",
-        "pid": os.getpid(), "case": CASE, "events": EVENTS,
+        "pid": os.getpid(), "case": CASE, "events": EVENTS, "reports": REPORTS,
         "provider_present": provider is not None, "source_payload_postread_claimed": False}
     if provider is not None:
         row.update(state=provider.state, lock_locked=provider.lock.locked(),
@@ -230,6 +235,10 @@ def test_actual_source_metadata_control(complete_archive, later_dependency, rc6_
 _CHILD_REUSE = r"""
 def test_following_module_requires_actual_closed_previous_report(complete_archive):
     assert complete_archive[0].is_dir()
+"""
+_CHILD_INDEPENDENT = r"""
+def test_independent_module_runs_after_source_red():
+    assert True
 """
 _SUPERVISOR = r"""
 import errno
@@ -289,8 +298,10 @@ def actual_owned_progress(stage, pid, phase_entered, management_deadline, log_fd
     progress_identity = (value.st_dev, value.st_ino, value.st_uid, value.st_gid, value.st_mode)
 assert callable(actual_owned_progress)
 command = [sys.executable, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+           "-o", "junit_family=legacy", "--junitxml=" + str(suite / "native-junit.xml"),
            "--confcutdir", str(suite), "--basetemp", str(suite / "pytest-owned"),
-           str(suite / "test_01_lease.py"), str(suite / "test_02_reuse.py")]
+           str(suite / "test_01_lease.py"), str(suite / "test_02_reuse.py"),
+           str(suite / "test_03_independent.py")]
 kernel = manager["managed_native_child"](command, source_root, suite / "native-pytest.log", environment, 300,
     terminate_grace=2, progress_poll=5, progress=actual_owned_progress)
 closed = all(kernel.get(key) is True for key in ("actual_child_reaped", "kernel_pre_popen_echild_verified",
@@ -320,7 +331,8 @@ def _actual_pytest_control(archive, tmp_path, case):
     suite = tmp_path / ("actual-pytest-" + case)
     suite.mkdir(mode=0o700)
     for name, source in (("conftest.py", _CHILD_CONFTEST), ("test_01_lease.py", _CHILD_TEST),
-                         ("test_02_reuse.py", _CHILD_REUSE), ("supervisor.py", _SUPERVISOR)):
+                         ("test_02_reuse.py", _CHILD_REUSE),
+                         ("test_03_independent.py", _CHILD_INDEPENDENT), ("supervisor.py", _SUPERVISOR)):
         (suite / name).write_text(textwrap.dedent(source))
     (suite / "control-config.json").write_text(json.dumps({"case": case,
         "source_root": str(archive.root), "source_index": str(archive.index), "source_tree": archive.tree}))
@@ -348,7 +360,7 @@ def _actual_pytest_control(archive, tmp_path, case):
 @pytest.mark.parametrize("change", ("mode", "bytes", "extra_path"))
 def test_owned_source_mutation_rejects_readonly_lease_and_all_reuse(owned_tiny_archive, tmp_path, change):
     terminal, kernel, suite = _actual_pytest_control(owned_tiny_archive, tmp_path, change)
-    assert kernel["kernel"]["returncode"] != 0
+    assert kernel["kernel"]["returncode"] == 1
     assert terminal["state"] == "UNKNOWN_OR_UNCLOSED"
     assert terminal["successful_real_module_reports"] == 0
     assert terminal["actual_post_source_snapshot_count"] == 2
@@ -356,6 +368,26 @@ def test_owned_source_mutation_rejects_readonly_lease_and_all_reuse(owned_tiny_a
     rows = [json.loads(protected_bytes(path)) for path in (suite / "native-lease-controls").glob("lease-*.json")]
     assert len(rows) == 1 and rows[0]["status"] == "UNKNOWN_OR_UNCLOSED"
     assert rows[0]["fixture_root_removed"] is False
+    drift = rows[0]["source10_drift"]
+    assert drift["member"] == ("source/." if change == "extra_path" else "source/caller.py")
+    assert drift["first_changed_field"] == drift["changed_fields"][0]
+    assert drift["changed_fields"]
+    assert all(drift["before_all11"][field] != drift["after_all11"][field]
+               for field in drift["changed_fields"])
+    assert drift["source_payload_bytes_read_for_diagnostic"] == 0
+    assert drift["fields_removed_or_reset"] == []
+    xml = ET.fromstring(protected_bytes(suite / "native-junit.xml"))
+    cases = list(xml.iter("testcase"))
+    assert {case.get("name") for case in cases} == {
+        "test_actual_source_metadata_control", "test_following_module_requires_actual_closed_previous_report",
+        "test_independent_module_runs_after_source_red"}
+    assert len(cases) == 3
+    assert sum(case.find("error") is not None for case in cases) == 2
+    assert "INTERNALERROR" not in protected_bytes(suite / "native-pytest.log").decode()
+    assert any(row["nodeid"].endswith("::test_independent_module_runs_after_source_red")
+               and row["when"] == "call" and row["outcome"] == "passed" for row in terminal["reports"])
+    assert any(row["nodeid"].endswith("::test_actual_source_metadata_control")
+               and row["when"] == "teardown" and row["outcome"] == "failed" for row in terminal["reports"])
 
 
 def test_failed_module_veto_precedes_post_snapshot_and_future_reuse(owned_tiny_archive, tmp_path):

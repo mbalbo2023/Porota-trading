@@ -18,6 +18,7 @@ import stat
 from threading import Lock
 
 import pytest
+from _pytest._code import ExceptionInfo
 
 from tests.rc6_browser_ipc import protected_bytes
 from tests.test_rc6_browser_product_ipc import complete_archive as _ipc_archive
@@ -400,6 +401,12 @@ class ReadonlyArchive:
                     result["source/" + name + "/"] = _stat_member(root, name, self.uid, info.st_dev, "directory")
             for name in self.paths:
                 row = _stat_member(root, name, self.uid, info.st_dev, "file")
+                if (stat.S_IMODE(row["st_mode"]) != int(self.index_record["modes"][name][-3:], 8)
+                        and hasattr(self, "initial") and "source/" + name in self.initial):
+                    original = self.initial["source/" + name]
+                    self._record_source10_drift("source/" + name,
+                        [field for field in _FIELDS if field != "st_atime_ns" and original[field] != row[field]],
+                        original, row)
                 _require(stat.S_IMODE(row["st_mode"]) == int(self.index_record["modes"][name][-3:], 8),
                          "READONLY_SOURCE_GIT_MODE_CHANGED")
                 result["source/" + name] = row
@@ -411,6 +418,15 @@ class ReadonlyArchive:
                 os.close(parent)
             os.close(root)
 
+    def _record_source10_drift(self, name, changed, before, after):
+        self.last_source_drift = {
+            "schema": "rc6.readonly-source10-drift.v1", "member": name,
+            "member_name_sha256": hashlib.sha256(name.encode()).hexdigest(),
+            "first_changed_field": changed[0], "changed_fields": changed,
+            "before_all11": before, "after_all11": after,
+            "source_payload_bytes_read_for_diagnostic": 0,
+            "fields_removed_or_reset": [], "classification": "IRREVERSIBLE_SOURCE10_RED"}
+
     def _compare(self, before, after):
         _require(before.keys() == after.keys(), "READONLY_SOURCE_MEMBER_SET_CHANGED")
         observations = []
@@ -418,13 +434,7 @@ class ReadonlyArchive:
             changed = [field for field in _FIELDS if field != "st_atime_ns"
                        and before[name][field] != after[name][field]]
             if changed:
-                self.last_source_drift = {
-                    "schema": "rc6.readonly-source10-drift.v1",
-                    "member_name_sha256": hashlib.sha256(name.encode()).hexdigest(),
-                    "changed_fields": changed,
-                    "before_all11": before[name], "after_all11": after[name],
-                    "source_payload_bytes_read_for_diagnostic": 0,
-                    "fields_removed_or_reset": [], "classification": "IRREVERSIBLE_SOURCE10_RED"}
+                self._record_source10_drift(name, changed, before[name], after[name])
                 raise RuntimeError("READONLY_SOURCE10_CHANGED")
             if before[name]["st_atime_ns"] != after[name]["st_atime_ns"]:
                 code = name.startswith("source/") and (stat.S_ISDIR(before[name]["st_mode"])
@@ -596,8 +606,18 @@ def pytest_runtest_makereport(item, call):
     for provider in providers:
         try:
             provider.finish_from_real_report(item, report, call)
-        except BaseException as error:
-            # Preserve a real Source/owner failure as RED, never replace it with
-            # a passing report or synthesize a kernel/producer finalization.
-            outcome.force_exception(error)
+        except Exception as error:
+            # A real post-teardown Source violation is a FAILED native test
+            # report. Throwing from makereport instead aborts pytest before its
+            # remaining identities/JUnit can be emitted (INTERNALERROR/exit3).
+            # Keep this exact report's nodeid/location/timing and the actual
+            # exception traceback. No Source read, retry or state reset occurs.
+            report.outcome = "failed"
+            report.longrepr = ExceptionInfo.from_exception(error).getrepr(style="long")
+            if provider.last_source_drift is not None:
+                report.sections.append(("RC6 readonly Source10 drift",
+                    json.dumps(provider.last_source_drift, sort_keys=True)))
+            for owned in providers:
+                owned.failed_real_report()
+            outcome.force_result(report)
             return

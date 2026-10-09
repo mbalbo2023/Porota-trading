@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Exact frozen PR476 source commit (40 lowercase hex)
+        description: Exact frozen owner-authorized candidate commit (40 lowercase hex)
         required: true
         type: string
       source_tree:
@@ -30,6 +30,7 @@ on:
           - full-gov312
           - capacity-probe
           - capacity-calibration
+          - evidence-custody
       launch_receipt_url:
         description: Immutable issue471 single-gate authorization with predecessor artifact manifest
         required: true
@@ -53,7 +54,7 @@ concurrency:
 jobs:
   ordered-source-gate:
     name: RC6 ${{ inputs.gate || 'G0-G1-cheap-dual' }} @ ${{ inputs.source_sha || github.event.pull_request.head.sha }}
-    if: github.event.repository.id == 1338680554 && (github.event_name == 'workflow_dispatch' || (github.event.number == 476 && github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.head.ref == 'recovery/rc6-material-fix-forward-3091e93-20261006' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
+    if: github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && inputs.gate != 'evidence-custody' && (github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == true && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'))
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -188,3 +189,107 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: ${{ steps.gate.outputs.payload_root }}
+
+  evidence-custody:
+    name: Recover exact historical RAW into verified draft-release assets
+    if: github.event_name == 'workflow_dispatch' && inputs.gate == 'evidence-custody' && github.repository_id == '1338680554' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      issues: read
+    steps:
+      - name: Checkout the exact custody controller
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Authenticate owner and copy immutable ZIPs with complete recovery readback
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_SOURCE_SHA"
+          test "$(git rev-parse HEAD^{tree})" = "$RC6_SOURCE_TREE"
+          python3 -I -B scripts/rc6_actions_custody.py \
+            --plan ops/policy/rc6-actions-custody-20261009.json \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --output "$RUNNER_TEMP/rc6-durable-custody.json"
+      - name: Preserve the verified custody receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-durable-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-durable-custody.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Admit bounded development checks before tooling
+        id: development_admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          python3 -I -B scripts/rc6_development_checks.py \
+            --admit-only --plan ops/policy/rc6-development-checks-v1.json \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --output "$RUNNER_TEMP/rc6-development-controls"
+          python3 -I -B - <<'PY_READONLY'
+          import json,os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path.cwd()))
+          from scripts.rc6_capacity_comparison import readonly_runner_observation
+          path=Path(os.environ['RUNNER_TEMP'])/'rc6-development-controls'/'runner-readonly.json'
+          path.write_text(json.dumps(readonly_runner_observation(path.parent),sort_keys=True,indent=2)+'\n')
+          PY_READONLY
+      - name: Prepare bounded Python311 development tooling
+        id: dev311
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11.16"
+      - name: Prepare bounded Python312 development tooling
+        id: dev312
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.14"
+      - name: Install only the fourteen hashed development wheels and run exact Source checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC6_PYTHON311: ${{ steps.dev311.outputs.python-path }}
+          RC6_PYTHON312: ${{ steps.dev312.outputs.python-path }}
+          RC6_SOURCE_SHA: ${{ inputs.source_sha }}
+          RC6_SOURCE_TREE: ${{ inputs.source_tree }}
+          RC6_OWNER_SESSION: ${{ inputs.owner_session }}
+          RC6_LAUNCH_RECEIPT: ${{ inputs.launch_receipt_url }}
+        run: |
+          set -Eeuo pipefail
+          umask 022
+          "$RC6_PYTHON311" -m pip install --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/rc6-development-controls/tooling.lock.txt"
+          "$RC6_PYTHON312" -m pip install --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/rc6-development-controls/tooling.lock.txt"
+          "$RC6_PYTHON311" -I -B scripts/rc6_development_checks.py \
+            --plan ops/policy/rc6-development-checks-v1.json \
+            --source-sha "$RC6_SOURCE_SHA" --source-tree "$RC6_SOURCE_TREE" \
+            --owner-session "$RC6_OWNER_SESSION" --launch-receipt-url "$RC6_LAUNCH_RECEIPT" \
+            --python311 "$RC6_PYTHON311" --python312 "$RC6_PYTHON312" \
+            --output "$RUNNER_TEMP/rc6-development-controls"
+      - name: Preserve sealed development RAW and readonly runner observations
+        if: always() && steps.development_admission.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-development-only-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-development-controls/
+          if-no-files-found: error
+          retention-days: 90

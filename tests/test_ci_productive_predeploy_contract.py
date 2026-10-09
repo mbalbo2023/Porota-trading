@@ -17,6 +17,12 @@ from ci_frozen_candidate_contract import (
 
 PREDEPLOY = Path(".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
 POLICY = yaml.safe_load(Path("ops/policy/test-policy.yaml").read_text(encoding="utf-8"))
+G6_RUNNER = Path('scripts/rc6_controlled_governed_runner.py').read_text(encoding='utf-8')
+
+
+def governed_g7(steps):
+    return next(step for step in steps if step['name'] ==
+                'Governed automatic test discovery and execution - verify authenticated external G6')
 
 
 def test_productive_scope_is_repository_root_automatic_discovery():
@@ -27,8 +33,12 @@ def test_productive_scope_is_repository_root_automatic_discovery():
     assert scope["roots"] == ["."]
     assert scope["python_files"] == "test_*.py"
     assert "tests/test_porota_*.py" not in PREDEPLOY
-    assert 'python -m pytest --collect-only -q "${TEST_ARGS[@]}"' in PREDEPLOY
-    assert 'python -m pytest -q "${TEST_ARGS[@]}"' in PREDEPLOY
+    assert "scope['roots'] == ['.']" in G6_RUNNER
+    assert "governance['manual_test_file_allowlist_as_primary_ci'] is False" in G6_RUNNER
+    assert "argv.append('--collect-only')" in G6_RUNNER
+    assert "rc = int(pytest.main(argv, plugins=" in G6_RUNNER
+    assert 'import_verified_governed(' in PREDEPLOY
+    assert 'supervise-pytest' not in PREDEPLOY and 'python -m pytest' not in PREDEPLOY
 
 
 def test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_removal(tmp_path):
@@ -36,8 +46,14 @@ def test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_r
 
     workflow = yaml.safe_load(PREDEPLOY)
     steps = workflow['jobs']['artifact-gate']['steps']
-    governed = next(step for step in steps if step['name'] == 'Governed automatic test discovery and execution')
-    setup = governed['run'].split('python -m pip install', 1)[0]
+    governed = governed_g7(steps)
+    # Exercise the real workspace helper offline, independently of G7's
+    # Actions/capacity admission. The workflow still gates this helper first.
+    code = governed['run']
+    create = next(line for line in code.splitlines() if 'porota_predeploy_test_workspace.py create --scope ' in line)
+    assert code.index('g7_bootstrap_capacity environment-bootstrap') < code.index(create)
+    setup = code.split('g7_bootstrap_capacity() {', 1)[0] + create + '\n' + '\n'.join(
+        line for line in code.splitlines() if line.startswith('export PATH=') or '>> "$GITHUB_PATH"' in line)
     repo, runner = tmp_path / 'source', tmp_path / 'runner'
     repo.mkdir(mode=0o755)
     runner.mkdir(mode=0o755)
@@ -101,13 +117,13 @@ def test_governed_predeploy_creates_real_private_venv_and_cleanup_survives_its_r
 
 def test_predeploy_uses_bound_external_pytest_basetemp_and_reports_retention():
     steps = yaml.safe_load(PREDEPLOY)['jobs']['artifact-gate']['steps']
-    governed = next(step for step in steps if step['name'] == 'Governed automatic test discovery and execution')
+    governed = governed_g7(steps)
     assert 'porota_predeploy_test_workspace.py create --scope "$POROTA_PREDEPLOY_OWNER"' in governed['run']
-    assert 'supervise-pytest --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest -q "${TEST_ARGS[@]}"' in governed['run']
-    assert 'supervise-pytest --phase collection --scope "$POROTA_PREDEPLOY_OWNER" -- python -m pytest --collect-only -q "${TEST_ARGS[@]}"' in governed['run']
-    assert governed['run'].index('require-owned-fin --phase collection') < governed['run'].index('-- python -m pytest -q')
-    assert '--basetemp="$POROTA_PREDEPLOY_PYTEST_BASETEMP"' in governed['run']
-    assert '${RUNNER_TEMP}/porota-pytest-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${POROTA_PREDEPLOY_OWNER_UUID}/pytest' in governed['run']
+    assert 'import_verified_governed(' in governed['run']
+    assert 'supervise-pytest' not in governed['run']
+    assert "'--basetemp='+str(output/(args.phase+'-private')/'pytest')" in G6_RUNNER
+    assert "namespace = phase_namespace(root, output, args.phase," in G6_RUNNER
+    assert 'source_suite_reexecuted":False' in Path('scripts/rc6_architectural_gates.py').read_text()
     uploaded = next(step for step in steps if step['name'] == 'Upload predeploy evidence')
     assert uploaded['if'] == "always() && steps.pytest_postread.outputs.safe_postread == 'true'"
     for name in ('porota-test-workspace.json', 'porota-pytest-owned-fin.json', 'porota-pytest-retained.json',
@@ -140,6 +156,7 @@ def test_predeploy_reports_truthful_collection_and_execution_counts():
         assert token in PREDEPLOY
     assert "POROTA_FULL_SUITE=NO_VERIFICADO" not in PREDEPLOY
     assert "Full automatic test discovery: GREEN" not in PREDEPLOY
+    assert 'POROTA_TEST_COUNT_ORIGIN=AUTHENTICATED_G6_NATIVE_PAYLOAD' in PREDEPLOY
 
 
 def test_all_six_negative_fixtures_are_executed_fail_closed(tmp_path):

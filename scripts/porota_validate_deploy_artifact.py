@@ -33,6 +33,12 @@ RUNTIME_EXACT = {
 
 
 def is_runtime_relevant(path: str) -> bool:
+    try:
+        from scripts.porota_artifact_provenance import is_raw_evidence_path
+    except ModuleNotFoundError:
+        from porota_artifact_provenance import is_raw_evidence_path
+    if is_raw_evidence_path(path):
+        return False
     p = Path(path)
     if p.parts and p.parts[0] in {"tests", "docs", ".github", ".agents"}:
         return False
@@ -71,20 +77,31 @@ def root_local_modules(repo_root: Path, expected: Iterable[str]) -> dict[str, st
         if len(p.parts) == 1:
             modules[p.stem] = rel
         elif p.name == "__init__.py":
-            modules[p.parts[0]] = rel
+            modules[".".join(p.parts[:-1])] = rel
+        else:
+            modules[".".join((*p.parts[:-1], p.stem))] = rel
     return modules
 
 
-def imported_top_levels(path: Path) -> set[str]:
+def imported_modules(path: Path, relative_path: str) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                found.add(alias.name.split(".", 1)[0])
+                found.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0 and node.module:
-                found.add(node.module.split(".", 1)[0])
+                module = node.module
+            elif node.level:
+                parents = Path(relative_path).parts[:-1]
+                base = parents[:len(parents) - node.level + 1] if node.level <= len(parents) else ()
+                module = ".".join((*base, *((node.module or "").split(".") if node.module else ())))
+            else:
+                module = ""
+            if module:
+                found.add(module)
+                found.update(module + "." + alias.name for alias in node.names if alias.name != "*")
         elif isinstance(node, ast.Call):
             # Detect common literal dynamic imports.
             fn = node.func
@@ -97,8 +114,12 @@ def imported_top_levels(path: Path) -> set[str]:
             if dynamic and node.args and isinstance(node.args[0], ast.Constant):
                 value = node.args[0].value
                 if isinstance(value, str) and value:
-                    found.add(value.split(".", 1)[0])
+                    found.add(value)
     return found
+
+
+def imported_top_levels(path: Path) -> set[str]:
+    return {module.split(".", 1)[0] for module in imported_modules(path, path.name)}
 
 
 def sha256(path: Path) -> str:
@@ -152,12 +173,22 @@ def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
     for rel in sorted(p for p in safe_present if p.endswith(".py")):
         source = artifact_root / rel
         try:
-            imports = imported_top_levels(source)
+            imports = imported_modules(source, rel)
         except (SyntaxError, UnicodeDecodeError) as exc:
             parse_errors.append({"file": rel, "error": str(exc)})
             continue
         for module in sorted(imports):
-            target = local_modules.get(module)
+            target = local_modules.get(module) or local_modules.get(module.split(".", 1)[0])
+            # An explicit import into an excluded evidence role invalidates
+            # packaging even when the package's public __init__ exists.
+            try:
+                from scripts.porota_artifact_provenance import RAW_EVIDENCE_ROOTS
+            except ModuleNotFoundError:
+                from porota_artifact_provenance import RAW_EVIDENCE_ROOTS
+            if any(root.endswith("/") and (module == root.rstrip("/").replace("/", ".")
+                    or module.startswith(root.rstrip("/").replace("/", ".") + "."))
+                   for root in RAW_EVIDENCE_ROOTS):
+                target = module.replace(".", "/") + ".py"
             if target and target not in present:
                 missing_imports.append(
                     {"file": rel, "module": module, "expected_path": target}

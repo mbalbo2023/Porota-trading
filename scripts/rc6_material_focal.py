@@ -46,6 +46,102 @@ def classify_node(nodeid):
     plain=nodeid.split('[',1)[0]
     return MATERIAL_NODES.get(plain)
 
+
+class FocalObserver:
+    """Keep native collection and actual report identities as separate facts."""
+    def __init__(self, stage):
+        self.stage=stage
+        self.items=[];self.corpus=[];self.deferred=[]
+        self.started_nodeids=[];self.finished_nodeids=[];self.reports=[]
+
+    def pytest_collection_modifyitems(self,session,config,items):
+        from _pytest.junitxml import mangle_test_address
+        pending=[];chosen=[]
+        for item in items:
+            address=mangle_test_address(item.nodeid)
+            identity={'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]}
+            self.corpus.append(identity)
+            classification=classify_node(item.nodeid)
+            if self.stage=='focal' and classification:
+                self.deferred.append({**identity,**classification});pending.append(item)
+            else:chosen.append(item)
+        items[:]=chosen
+        if pending:config.hook.pytest_deselected(items=pending)
+
+    def pytest_collection_finish(self,session):
+        from _pytest.junitxml import mangle_test_address
+        for item in session.items:
+            address=mangle_test_address(item.nodeid)
+            self.items.append({'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]})
+
+    def pytest_runtest_logstart(self,nodeid,location):
+        self.started_nodeids.append(nodeid)
+
+    def pytest_runtest_logfinish(self,nodeid,location):
+        self.finished_nodeids.append(nodeid)
+
+    def pytest_runtest_logreport(self,report):
+        self.reports.append({'nodeid':report.nodeid,'when':report.when,'outcome':report.outcome,
+            'location':list(report.location)})
+
+    def execution_coverage_exact(self):
+        expected=[row['nodeid'] for row in self.items]
+        return self.started_nodeids==self.finished_nodeids==expected
+
+
+def require_original_phase_fin(g,finalization):
+    g['require'](finalization['status']=='GREEN' and finalization['finalization_thread_finished'] is True
+        and finalization['kernel_echild_before_phase_return'] is True
+        and finalization['signal_guard_installed_and_witnessed'] is True
+        and not finalization['termination_signal_attempts']
+        and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False
+        and finalization['wall_seconds']<=5 and not finalization['errors'],
+        'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED')
+
+
+def product_source_names(before):
+    return {Path(n).stem for n in before['files'] if '/' not in n and n.endswith('.py')} | {
+        n.split('/')[0] for n in before['files'] if '/' in n and n.endswith('.py')
+        and n.split('/')[0] not in ('tests','docs','.github','.agents')}
+
+
+def capture_post_fin_source(g,root,before,*,source_sha,source_tree,output,phase,finalization,observations,
+                           product_names=None):
+    """Keep original indexes on Source RED, after genuine FIN, without retry.
+
+    The complete post-pin already captures every original product blob. Reuse
+    that capture for import closure instead of rereading every imported module.
+    On drift, no further Source/import payload is consumed or relabelled GREEN.
+    """
+    require_original_phase_fin(g,finalization)
+    g['publish'](output/(phase+'.source-before.index.json'),g['canonical'](before))
+    result={'source_namespace_exact_before_after':False,'observed_CODE_atime_changes':None,
+        'post_fin_source_validation_error':None}
+    try:
+        after=g['source_pin'](root,source_sha,source_tree)
+        g['publish'](output/(phase+'.source-after.index.json'),g['canonical'](after))
+        atime=g['compare_source'](before,after)
+        expected_names=product_source_names(before)
+        if product_names is None:product_names=expected_names
+        g['require'](product_names==expected_names,'COMPLETE_PRODUCT_SOURCE_NAMES_REQUIRED')
+        for name,module in list(sys.modules.items()):
+            if name.split('.')[0] not in product_names:continue
+            origin=getattr(module,'__file__',None)
+            if origin is None:continue
+            location=g['safe_path'](origin)
+            if not location.is_relative_to(root):
+                observations['unexpected_product_imports'].append(name);continue
+            relative=location.relative_to(root).as_posix()
+            expected=before['files'].get(relative);actual=after['files'].get(relative)
+            g['require'](expected is not None and actual is not None
+                and actual['sha256']==expected['sha256'],'PRODUCT_IMPORT_SOURCE_BYTES_MISMATCH')
+            observations['actual_product_imports'].append({'module':name,'path':relative,'sha256':actual['sha256']})
+        result.update(source_namespace_exact_before_after=True,observed_CODE_atime_changes=atime)
+    except (OSError,ValueError,RuntimeError,KeyError,TypeError) as error:
+        result['post_fin_source_validation_error']={'class':type(error).__name__,'reason':str(error)}
+    g['publish'](output/(phase+'.source-validation.json'),g['canonical'](result))
+    return result
+
 def collect_preserved_heavy_inventory(output):
     """Collect complete module identities before any heavy fixture can start."""
     import pytest
@@ -134,27 +230,7 @@ def main():
         g['publish'](output/(a.phase+'.observations.json'),g['canonical'](report))
         return 0
     import pytest
-    from _pytest.junitxml import mangle_test_address
-    items=[];corpus=[];deferred=[]
-    class Observer:
-        def pytest_collection_modifyitems(self,session,config,items):
-            pending=[];chosen=[]
-            for item in items:
-                address=mangle_test_address(item.nodeid)
-                identity={'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]}
-                corpus.append(identity)
-                classification=classify_node(item.nodeid)
-                if a.stage=='focal' and classification:
-                    deferred.append({**identity,**classification});pending.append(item)
-                else:chosen.append(item)
-            # Deliberate stage scheduling; no skip/xfail and no erasure from the
-            # complete corpus. G6 must prove every deferred identity ran.
-            items[:]=chosen
-            if pending:config.hook.pytest_deselected(items=pending)
-        def pytest_collection_finish(self,session):
-            for item in session.items:
-                address=mangle_test_address(item.nodeid)
-                items.append({'nodeid':item.nodeid,'classname':'.'.join(address[:-1]),'name':address[-1]})
+    observer=FocalObserver(a.stage)
     argv=['-q','-p','no:cacheprovider','-o','pythonpath=.','-o','junit_family=legacy',
           '--basetemp='+str(output/(a.phase+'-private')/'pytest'),*selected_files]
     if a.phase=='collection':argv.append('--collect-only')
@@ -162,47 +238,41 @@ def main():
     from scripts.rc6_pytest_fixture_lifecycle import FixtureLifecyclePlugin
     fixture_lifecycle_plugin=FixtureLifecyclePlugin(authenticated_binding,
         output/(a.phase+'-fixture-lifecycle-controls'),candidate_sha=a.source_sha,candidate_tree=a.source_tree)
-    try:rc=int(pytest.main(argv,plugins=[Observer(),fixture_lifecycle_plugin]))
+    try:rc=int(pytest.main(argv,plugins=[observer,fixture_lifecycle_plugin]))
     finally:
         finalization=g['finalize_child_infrastructure'](initial)
         g['publish'](output/(a.phase+'.child-finalization.json'),g['canonical'](finalization))
     # Verbatim original finalizer predicate. No Source/log/JUnit read before this barrier.
-    req(finalization['status']=='GREEN' and finalization['finalization_thread_finished'] is True
-        and finalization['kernel_echild_before_phase_return'] is True
-        and finalization['signal_guard_installed_and_witnessed'] is True
-        and not finalization['termination_signal_attempts']
-        and finalization['forced_termination_attempted'] is False and finalization['signal_vetoed'] is False
-        and finalization['wall_seconds']<=5 and not finalization['errors'],
-        'PHASE_CHILD_INFRASTRUCTURE_NOT_GENUINELY_FINALIZED')
+    require_original_phase_fin(g,finalization)
     fixture_lifecycle_plugin.retry_after_original_phase_finalization()
     fixture_lifecycle_report=fixture_lifecycle_plugin.summary()
     g['publish'](output/(a.phase+'.fixture-lifecycle.json'),g['canonical'](fixture_lifecycle_report))
-    product_names={Path(n).stem for n in before['files'] if '/' not in n and n.endswith('.py')}
-    product_names|={n.split('/')[0] for n in before['files'] if '/' in n and n.endswith('.py')
-                    and n.split('/')[0] not in ('tests','docs','.github','.agents')}
-    for name,module in list(sys.modules.items()):
-        if name.split('.')[0] not in product_names:continue
-        origin=getattr(module,'__file__',None)
-        if origin is None:continue
-        location=g['safe_path'](origin)
-        if not location.is_relative_to(root):observations['unexpected_product_imports'].append(name);continue
-        relative=location.relative_to(root).as_posix();expected=before['files'].get(relative)
-        wire,_=g['capture'](location)
-        req(expected is not None and g['digest'](wire)==expected['sha256'],'PRODUCT_IMPORT_SOURCE_BYTES_MISMATCH')
-        observations['actual_product_imports'].append({'module':name,'path':relative,'sha256':g['digest'](wire)})
-    after=g['source_pin'](root,a.source_sha,a.source_tree);atime=g['compare_source'](before,after)
-    g['publish'](output/(a.phase+'.source-before.index.json'),g['canonical'](before))
-    g['publish'](output/(a.phase+'.source-after.index.json'),g['canonical'](after))
+    source_validation=capture_post_fin_source(g,root,before,source_sha=a.source_sha,source_tree=a.source_tree,
+        output=output,phase=a.phase,finalization=finalization,observations=observations)
+    execution_coverage_exact=None if a.phase=='collection' else observer.execution_coverage_exact()
+    phase_errors=[]
+    if fixture_lifecycle_report['original_factory_context_failures']:
+        phase_errors.append('FOCAL_ORIGINAL_FACTORY_OR_RAW_DECLARATION_CONTEXT_RED')
+    if fixture_lifecycle_report['evidence_declaration_failures']:
+        phase_errors.append('FOCAL_REQUIRED_RAW_DECLARATION_RED')
+    if fixture_lifecycle_report['required_raw_scopes_preserved']:
+        phase_errors.append('FOCAL_REQUIRED_RAW_NOT_AUTHENTICATED_AND_CAPTURED')
+    if source_validation['post_fin_source_validation_error'] is not None:
+        phase_errors.append(source_validation['post_fin_source_validation_error']['reason'])
+    if execution_coverage_exact is False:phase_errors.append('FOCAL_NATIVE_EXECUTION_COVERAGE_MISMATCH')
     report={'schema':'rc6.material-focal-owned-phase.v1','scope':'SUPPLEMENTARY_FOCAL_ONLY_NOT_WHOLE_GOV',
         'source_sha':a.source_sha,'source_tree':a.source_tree,'pid':os.getpid(),'phase':a.phase,
-        'items':items,'pytest_exit_code':rc,'literal_focal_files':list(selected_files),'closure_before_fixture':closure,
-        'execution_stage':a.stage,'complete_corpus':corpus,'deferred_material_nodes':deferred,
-        'complete_corpus_sha256':hashlib.sha256(g['canonical'](corpus)).hexdigest(),
+        'items':observer.items,'pytest_exit_code':rc,'literal_focal_files':list(selected_files),'closure_before_fixture':closure,
+        'execution_stage':a.stage,'complete_corpus':observer.corpus,'deferred_material_nodes':observer.deferred,
+        'complete_corpus_sha256':hashlib.sha256(g['canonical'](observer.corpus)).hexdigest(),
+        'actual_execution_started_nodeids':observer.started_nodeids,
+        'actual_execution_finished_nodeids':observer.finished_nodeids,'original_pytest_reports':observer.reports,
+        'native_execution_coverage_exact':execution_coverage_exact,'phase_validation_errors':phase_errors,
         'deferred_nodes_claimed_executed':False,'final_G6_union_coverage_required':True,
-        'source_namespace_exact_before_after':True,'observed_CODE_atime_changes':atime,
+        **source_validation,
         'offline_inet_creation_capability':capability,'child_infrastructure_finalization':finalization,
         'original_tmp_path_scoped_lifecycle':fixture_lifecycle_report,
         'phase_namespace':namespace,**observations,'real_orders_sent':0,'whole_Gov_claim':False}
     g['publish'](output/(a.phase+'.observations.json'),g['canonical'](report))
-    return rc
+    return rc or int(bool(phase_errors))
 if __name__=='__main__':raise SystemExit(main())

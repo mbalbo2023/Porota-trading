@@ -391,6 +391,22 @@ def api(path):
     with urllib.request.urlopen(request,timeout=30) as response:wire=response.read(1024**2+1)
     need(len(wire)<=1024**2,'GITHUB_AUTHORITY_BOUND');return document(wire)
 def authority(a):
+    from scripts import rc6_material_pr_admission as controller
+    if a.owner_session==controller.CLOSURE_OWNER:
+        need(a.require_pr_admission,'CURRENT_CANDIDATE_FULL_PR_ADMISSION_REQUIRED')
+        anchors=controller.administrative_anchors(a.owner_session)
+        launch=controller.comment(a.launch_receipt_url,471)
+        fields=controller.launch_fields(launch,a.source_sha,a.source_tree,a.owner_session,a.gate,anchors=anchors)
+        scope=controller.candidate_scope(fields,owner=a.owner_session,anchors=anchors)
+        controller.fresh_source(a.source_sha,a.source_tree,a.gate,candidate=scope)
+        return {'repo_id':REPO_ID,'repo':REPO,'canonical_origin':ORIGIN,
+            'source_truth':'FRESH_CANONICAL_GITHUB_COMMIT_TREE_REF_PR_READS',
+            'branch':scope['branch'],'sha':a.source_sha,'tree':a.source_tree,'PR':scope['pr'],
+            'PR_state':'open','PR_draft':True,'candidate_scope':scope,
+            'read_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+            'preparation_receipt_url':a.launch_receipt_url,'durable_launch_receipt_url':a.launch_receipt_url,
+            'SESSION_SUCCESSOR':a.owner_session,'workflow_path':'.github/workflows/rc6-unified-candidate-tests.yml',
+            'workflow_run_id':os.environ['GITHUB_RUN_ID'],'workflow_run_attempt':os.environ['GITHUB_RUN_ATTEMPT']}
     repo=api('');ref=api('/git/ref/heads/'+BRANCH);commit=api('/git/commits/'+a.source_sha);pr=api('/pulls/'+str(PR))
     need(repo['id']==REPO_ID and repo['full_name']==REPO and ref['object']['sha']==a.source_sha
         and commit['sha']==a.source_sha and commit['tree']['sha']==a.source_tree
@@ -711,16 +727,33 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
         phases[phase]={'kernel':kernel,'finalization':final}
     need(phases and run.manager['managed_custody_closed'](row['kernel']),
         'FULL_GOV_NATIVE_PHASE_UNKNOWN_PAYLOAD_VETO')
+    # The original supervisor's physical FIN authorizes RAW custody even on
+    # a failed pytest or a missing logical report. Seal before any such read.
+    required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.iterdir())
+        if path.is_file() and path.suffix in ('.json','.xml','.log','.py','.raw')]
+    for phase in ('collection','execution'):
+        required.extend(phase_diagnostic_controls(namespace,output,phase))
+    required.append('fullGov'+epoch+'.native.log')
+    sealed,cleanup=seal_generated(a,run,namespace,root,'fullGov'+epoch,required)
+    def native_raw(name,maximum=16*1024**2):
+        return read(captured_file(sealed,'native-gov/'+name),maximum)
     code=0 if row['returncode']==0 else 1;reason=None;counts={'cases':0,'failure':0,'error':0,'skipped':0};identity=False
+    fip_path=None
     try:
-        collection=document(read(output/'collection.observations.json'))
-        execution=document(read(output/'execution.observations.json'))
-        counts=architectural.validate_junit(collection,execution,read(output/'porota-governed-tests.xml'),require_green=False)
+        collection=document(native_raw('collection.observations.json'))
+        execution=document(native_raw('execution.observations.json'))
+        junit_raw=native_raw('porota-governed-tests.xml')
+        counts=architectural.validate_junit(collection,execution,junit_raw,require_green=False)
         identity=True
         need(all(node['source_namespace_exact_before_after'] is True
             and node['source_sha']==a.source_sha and node['source_tree']==a.source_tree
             and not node['inet_socket_attempts'] and not node['unexpected_product_imports']
-            and node['closure_before_fixture']['installed_total']==157 for node in (collection,execution)),
+            and not node.get('phase_validation_errors', ['MISSING'])
+            and not node['original_tmp_path_scoped_lifecycle'].get('original_factory_context_failures', ['MISSING'])
+            and node['original_tmp_path_scoped_lifecycle'].get('evidence_declaration_failures')==0
+            and node['original_tmp_path_scoped_lifecycle'].get('required_raw_scopes_preserved')==0
+            and node['closure_before_fixture']['installed_total']==157 for node in (collection,execution))
+            and execution.get('native_execution_coverage_exact') is True,
             'FULL_GOV_NATIVE_SOURCE_CLOSURE_OR_OFFLINE_RED')
         need(not any(counts[key] for key in ('failure','error','skipped'))
             and collection['pytest_exit_code']==execution['pytest_exit_code']==0,'FULL_GOV_LOGICAL_RED')
@@ -728,35 +761,33 @@ def run_gov(a,run,root,prepared,derived,auth_path,auth_sha):
         g0=next(prior for prior in a.verified_prerequisites['authenticated_receipts'] if prior['gate']=='G0')
         required_heavy=g0['preserved_heavy_corpora'][epoch]
         architectural.verify_preserved_heavy_coverage(required_heavy,collection,execution,
-            read(output/'porota-governed-tests.xml'))
+            junit_raw)
         for prior in a.verified_prerequisites['authenticated_receipts']:
             if prior['gate'] in ('G2','G3'):
                 need(all(node['nodeid'] in actual_nodes for node in prior.get('complete_focal_corpus',[]))
                     and prior.get('complete_focal_corpus'),
                     'FULL_GOV_MISSING_ORIGINAL_DEFERRED_MATERIAL_NODE')
-        proof=document(read(output/'porota-governed-tests.json'))
+        proof=document(native_raw('porota-governed-tests.json'))
         need(proof['status']=='GREEN' and proof['discovered']==proof['executed']==counts['cases']
             and proof['junit_sha256']==counts['junit_sha256'],'FULL_GOV_NATIVE_PROOF_REBOUND')
         verifier=runpy.run_path(str(source/'scripts/rc6_convergence_provenance.py'))
-        fip=verifier['verify'](source,a.source_sha,verifier['capture_junit'](output/'porota-governed-tests.xml'),fetch_source_refs=False)
-        save(output/'native-guard-cohorts-FIP.json',fip)
-    except (ValueError,OSError,KeyError,ET.ParseError) as error:
+        fip=verifier['verify'](source,a.source_sha,verifier['capture_junit'](
+            captured_file(sealed,'native-gov/porota-governed-tests.xml')),fetch_source_refs=False)
+        fip_path=root/('G6.'+epoch+'.native-guard-cohorts-FIP.json')
+        save(fip_path,fip)
+    except (ValueError,OSError,KeyError,TypeError,ET.ParseError) as error:
         reason=str(error).partition(':')[0];code=1
-    required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.iterdir())
-        if path.is_file() and path.suffix in ('.json','.xml','.log','.py')]
-    for phase in ('collection','execution'):
-        required.extend(phase_diagnostic_controls(namespace,output,phase))
-    required.append('fullGov'+epoch+'.native.log')
-    sealed,cleanup=seal_generated(a,run,namespace,root,'fullGov'+epoch,required)
     native_evidence={role:captured_reference(sealed,'native-gov/'+filename) for role,filename in (
         ('collection','collection.observations.json'),('execution','execution.observations.json'),
         ('junit','porota-governed-tests.xml'),('governed','porota-governed-tests.json'),
-        ('FIP','native-guard-cohorts-FIP.json'),('native_execution','governed-execution.receipt.json'),
+        ('native_execution','governed-execution.receipt.json'),
         ('records_before','installed-records-before.json'),('records_after','installed-records-after.json'),
         ('source_before','source-before.index.json'),('source_after','source-after.index.json'),
         ('collection_kernel','collection.kernel.json'),
         ('execution_kernel','execution.kernel.json'),('collection_fin','collection.child-finalization.json'),
         ('execution_fin','execution.child-finalization.json')) if captured_file(sealed,'native-gov/'+filename,required=False) is not None}
+    if fip_path is not None:
+        native_evidence['FIP']={'path':'carrier/'+fip_path.name,'sha256':digest(read(fip_path))}
     checks={'native_test_green':code==0,'node_identity':identity,'full_source':code==0,
         'closure_matrix':code==0,'native_original_FIN_closed':True,'capacity_live':live['capacity']['status']=='GREEN',
         'authenticated_cleanup':cleanup['namespace_removed'] is True,'original_deferred_union_coverage':code==0}
@@ -809,7 +840,7 @@ def focal(a,run,root,prepared,interpreters):
         g=runpy.run_path(str(source/'scripts/rc6_controlled_governed_runner.py'))
         before=g['source_pin'](source,a.source_sha,a.source_tree)
         save_raw(root/('focal'+epoch+'.parent-source-before.json'),g['canonical'](before))
-        phases={};sealed_phases={};cleanups=[];reason=None;code=0;live=[]
+        phases={};sealed_phases={};cleanups=[];reason=None;code=0;live=[];offline=True
         for phase in ('collection','execution'):
             namespace=fixture_lifecycle.create_namespace(Path.home(),capacity_binding(a,producer))
             output=namespace.path/'focal';output.mkdir(mode=0o700)
@@ -831,9 +862,6 @@ def focal(a,run,root,prepared,interpreters):
                  'FOCAL_ORIGINAL_MANAGER_KERNEL_NOT_CLOSED')
             final=document(read(output/(phase+'.child-finalization.json')))
             need(w['native_finalization_closed'](final),'FOCAL_FINALIZER_UNKNOWN_PAYLOAD_VETO')
-            phases[phase]=document(read(output/(phase+'.observations.json')))
-            need(not phases[phase]['inet_socket_attempts'] and not phases[phase]['unexpected_product_imports'],
-                 'FOCAL_NATIVE_IMPORT_OR_NETWORK_RED')
             required=[path.relative_to(namespace.path).as_posix() for path in sorted(output.iterdir()) if path.is_file()]
             required.extend(phase_diagnostic_controls(namespace,output,phase))
             if a.gate=='cheap' and phase=='execution':
@@ -842,23 +870,47 @@ def focal(a,run,root,prepared,interpreters):
             required.append('focal'+epoch+'-'+phase+'.native.log')
             sealed,cleanup=seal_generated(a,run,namespace,root,'focal'+epoch+'-'+phase,required)
             sealed_phases[phase]=sealed;cleanups.append(cleanup)
+            # Physical FIN, capture and hash-verified custody precede *every*
+            # logical predicate. Missing observations or RED imports retain RAW.
+            try:
+                phases[phase]=document(read(captured_file(sealed,'focal/'+phase+'.observations.json')))
+                need(not phases[phase]['inet_socket_attempts'] and not phases[phase]['unexpected_product_imports'],
+                     'FOCAL_NATIVE_IMPORT_OR_NETWORK_RED')
+                need(phases[phase].get('source_namespace_exact_before_after') is True
+                     and not phases[phase].get('phase_validation_errors'), 'FOCAL_NATIVE_SOURCE_VALIDATION_RED')
+            except (ValueError,OSError,KeyError,TypeError) as error:
+                offline=False;code=1
+                reason=str(error).partition(':')[0]
+                if not re.fullmatch('[A-Z][A-Z0-9_]{0,191}',reason):reason='FOCAL_ORIGINAL_OBSERVATIONS_MISSING_OR_INVALID'
+                break
             if phase=='collection' and row['returncode']!=0:
                 reason='FOCAL_COLLECTION_RED_EXECUTION_NOT_LAUNCHED';code=1;break
             code=max(code,row['returncode'])
         # The barrier above establishes physical FIN independently of logical
         # identity/pytest outcome. Preserve original RAW on logical RED.
-        after=g['source_pin'](source,a.source_sha,a.source_tree);atime=g['compare_source'](before,after)
-        save_raw(root/('focal'+epoch+'.parent-source-after.json'),g['canonical'](after))
+        atime=[];source_unchanged=False
+        try:
+            after=g['source_pin'](source,a.source_sha,a.source_tree)
+            save_raw(root/('focal'+epoch+'.parent-source-after.json'),g['canonical'](after))
+            atime=g['compare_source'](before,after)
+            source_unchanged=set(phases)=={'collection','execution'} and all(
+                phase.get('source_namespace_exact_before_after') is True for phase in phases.values())
+        except (ValueError,OSError,KeyError,TypeError) as error:
+            code=1;reason=reason or 'FOCAL_PARENT_SOURCE_VALIDATION_RED'
+            save(root/('focal'+epoch+'.parent-source-validation.json'),{'status':'RED','error_class':type(error).__name__,
+                'source_unchanged':False,'original_RAW_already_sealed':True,'real_orders_sent':0})
         counts={'cases':0,'failure':0,'error':0,'skipped':0};identity=False
         if 'execution' in phases:
-            xml=read(captured_file(sealed_phases['execution'],'focal/focal-tests.xml'),16*1024**2)
             try:
+                xml=read(captured_file(sealed_phases['execution'],'focal/focal-tests.xml'),16*1024**2)
                 need(phases['collection'].get('complete_corpus')==phases['execution'].get('complete_corpus')
                     and phases['collection'].get('deferred_material_nodes')==phases['execution'].get('deferred_material_nodes'),
                     'FOCAL_STAGE_CORPUS_OR_DEFERRED_LEDGER_MISMATCH')
+                need(phases['execution'].get('native_execution_coverage_exact') is True,
+                     'FOCAL_NATIVE_EXECUTION_COVERAGE_MISMATCH')
                 counts=architectural.validate_junit(phases['collection'],phases['execution'],xml,require_green=False)
                 identity=True
-            except (ValueError,ET.ParseError) as error:
+            except (ValueError,OSError,KeyError,TypeError,ET.ParseError) as error:
                 reason=str(error).partition(':')[0];code=1
             if any(counts[name] for name in ('failure','error','skipped')) or phases['execution']['pytest_exit_code']!=0:code=1
         native_evidence={}
@@ -894,10 +946,10 @@ def focal(a,run,root,prepared,interpreters):
         gate='G1.'+epoch if a.gate=='cheap' else ('G2' if epoch=='311' else 'G3')
         native_evidence['ownership_index']=owned_lease_evidence(a,run,root,gate,
             ['focal'+epoch+'-'+phase for phase in ('collection','execution') if phase in sealed_phases])
-        checks={'native_test_green':code==0,'node_identity':identity,'source_unchanged':True,
+        checks={'native_test_green':code==0,'node_identity':identity,'source_unchanged':source_unchanged,
             'capacity_live':all(receipt['capacity']['status']=='GREEN' for receipt in live),
             'authenticated_cleanup':all(cleanup['namespace_removed'] is True for cleanup in cleanups),
-            'original_FIN_closed':True,'offline':True}
+            'original_FIN_closed':True,'offline':offline}
         if a.gate=='cheap':checks['scoped_infrastructure_positive_probe']=probe_green
         receipt=architectural.receipt_base(gate,source_sha=a.source_sha,source_tree=a.source_tree,
             read_contract_sha256=architectural.productive_contract(a.repo_root),started_utc=started,checks=checks,
@@ -910,7 +962,7 @@ def focal(a,run,root,prepared,interpreters):
         save(root/(gate+'.receipt.json'),receipt)
         summaries.append({'epoch':epoch,'executed':counts['cases'],'counts':counts,'reason':reason,
             'junit_sha256':counts.get('junit_sha256'),'raw_root':str(sealed_phases.get('execution',sealed_phases['collection'])),
-            'original_Source10_unchanged':True,'CODE_atime_observed':atime,'whole_Gov_claim':False,
+            'original_Source10_unchanged':source_unchanged,'CODE_atime_observed':atime,'whole_Gov_claim':False,
             'scoped_cleanup':cleanups,'architectural_receipt':receipt})
         if code:return 1,{'gate':a.gate,'epochs':summaries,'scope':'CLOSED_FOCAL_LOGICAL_RED_NOT_WHOLE_GOV',
             'native_FIN_payload_safe':True}
@@ -1205,6 +1257,20 @@ def preserve_closed_lease_stop(a,run,root):
     return module['bundle'](namespace=root,output_root=root/'closed-lease-red-raw',groups=groups,files=[],
         read=read,save_raw=save_raw,save=save,source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
 
+def preserve_sealed_logical_red(a,run,root):
+    """Preserve only copies previously captured after authenticated native FIN.
+
+    This never traverses Source, an unsealed producer, or a fixture namespace.
+    A later logical validation failure cannot revoke custody of these copies.
+    Unknown physical custody remains a veto, independently of the RED reason.
+    """
+    need(not run.unknown and bool(run.sealed_groups),'SEALED_RED_PHYSICAL_CUSTODY_UNKNOWN')
+    run.manager['pre_capture_kernel_state']()
+    module=runpy.run_path(str(a.repo_root/'scripts/rc6_material_raw.py'))
+    return module['bundle'](namespace=root,output_root=root/'sealed-logical-red-raw',
+        groups=list(run.sealed_groups),files=[],read=read,save_raw=save_raw,save=save,
+        source_sha=a.source_sha,source_tree=a.source_tree,gate=a.gate)
+
 def main():
     if '--diagnostic-admission-json' in sys.argv:return diagnostic_main()
     p=argparse.ArgumentParser();p.add_argument('--repo-root',type=Path,required=True);p.add_argument('--source-sha',required=True)
@@ -1294,6 +1360,18 @@ def main():
                         stream.write('safe_payload_upload=true\npayload_root='+staged['payload_root']+'\n')
             except BaseException as preservation_error:
                 save(controls/'owned-lease-stop-preservation-blocked.json',{'status':'RED',
+                    'reason':type(preservation_error).__name__,'payload_upload_allowed':False,'real_orders_sent':0})
+        elif run.sealed_groups and not run.unknown:
+            try:
+                staged=preserve_sealed_logical_red(a,run,root)
+                save(controls/'sealed-logical-red-preservation.json',{'status':'RED',
+                    'original_native_GREEN_claimed':False,'already_sealed_after_original_FIN':True,
+                    'lossless_RAW':staged,'real_orders_sent':0})
+                if os.environ.get('GITHUB_OUTPUT'):
+                    with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+                        stream.write('safe_payload_upload=true\npayload_root='+staged['payload_root']+'\n')
+            except BaseException as preservation_error:
+                save(controls/'sealed-logical-red-preservation-blocked.json',{'status':'RED',
                     'reason':type(preservation_error).__name__,'payload_upload_allowed':False,'real_orders_sent':0})
         print(json.dumps({'gate':a.gate,'status':'RED','reason':reason,'payload_upload_allowed':False}),flush=True)
     return code

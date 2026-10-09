@@ -64,6 +64,10 @@ class FixtureScope:
     control_provider_observation: dict = None
     numbering: dict = None
     numbering_receipt: dict = None
+    duplicate_postfinalizer_notifications: int = 0
+    required_raw_sha256: dict = field(default_factory=dict)
+    declared_preparation_controls: bool = False
+    evidence_declaration_error: str = None
 
 
 def namespace_handles(namespace, measured):
@@ -139,10 +143,59 @@ class FixtureLifecyclePlugin:
                     scope.leases.append(weakref.ref(value))
                     if scope.namespace.path == value.control_root:
                         scope.control_provider = weakref.ref(value)
+            try:
+                self._register_declared_preparation_controls(value, record)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                self.start_failures.append({"classification": "REQUIRED_RAW_DECLARATION_CUSTODY_RED",
+                    "producer_nodeid_sha256": hashlib.sha256(record["producer_nodeid"].encode()).hexdigest(),
+                    "reason": str(error)})
+                for scope in record["scopes"]:
+                    scope.evidence_declaration_error = str(error)
         finally:
             custody.require(self._fixture_stack and self._fixture_stack[-1] is record,
                             "FIXTURE_REAL_SETUP_STACK_CHANGED")
             self._fixture_stack.pop()
+
+    def _register_declared_preparation_controls(self, value, record):
+        """A returned native preparation declares RAW custody, never a PASS.
+
+        Observe only the real fixture return and relative paths/hashes already
+        in its original receipts. Do not open Source, DB, RAW or controls here.
+        The original last-consumer report, real FIN, closed handles and verified
+        external capture remain mandatory before any namespace can retire.
+        """
+        if not (type(value) is dict and type(value.get("launcher_receipt")) is dict
+                and value["launcher_receipt"].get("schema") == "rc6.browser-native-preparation-transport.v1"):
+            return
+        custody.require(type(value.get("receipt")) is dict
+            and value["receipt"].get("schema") == "rc6.browser-prepared-small-native-fixture.v1",
+            "FIXTURE_DECLARED_PREPARATION_RECEIPT_SCHEMA_REQUIRED")
+        receipt, launcher, transport = value["receipt_path"], value["launcher_path"], value["transport_root"]
+        custody.require(all(isinstance(path, Path) and path.is_absolute()
+                            for path in (receipt, launcher, transport))
+            and receipt.name == "native-fixture.json" and launcher == transport / "launcher.json"
+            and transport == receipt.parent.with_name(receipt.parent.name + "-transport"),
+            "FIXTURE_DECLARED_PREPARATION_CONTROL_PATHS_REQUIRED")
+        declarations = {receipt: value["receipt_sha256"], launcher: value["launcher_sha256"],
+            receipt.parent / "progress.jsonl": value["receipt"]["progress_sha256"],
+            transport / "stdout.raw": value["launcher_receipt"]["stdout_sha256"],
+            transport / "stderr.raw": value["launcher_receipt"]["stderr_sha256"]}
+        custody.require(all(type(checksum) is str and len(checksum) == 64
+                            and set(checksum) <= set("0123456789abcdef")
+                            for checksum in declarations.values())
+            and value["receipt_sha256"] == value["launcher_receipt"]["stdout_sha256"],
+            "FIXTURE_DECLARED_PREPARATION_CONTROL_SHA256_REQUIRED")
+        scopes = [scope for scope in record["scopes"]
+                  if all(path.is_relative_to(scope.namespace.path) for path in declarations)]
+        custody.require(len(scopes) == 1, "FIXTURE_DECLARED_PREPARATION_CONTROLS_OUTSIDE_REAL_SCOPE")
+        scope = scopes[0]
+        for path, checksum in declarations.items():
+            relative = path.relative_to(scope.namespace.path).as_posix()
+            lifecycle._relative(relative)
+            scope.required_raw_sha256[relative] = checksum
+            if relative not in scope.required_raw:
+                scope.required_raw.append(relative)
+        scope.declared_preparation_controls = True
 
     def _instrument_original_factory(self, factory):
         custody.require(type(factory) is tmpdir.TempPathFactory
@@ -203,6 +256,14 @@ class FixtureLifecyclePlugin:
             return
         for scope in record["scopes"]:
             if scope.failed or scope.status == "GREEN":
+                continue
+            if scope.postfinalizer is not None:
+                # pytest may invoke FixtureDef.finish again from dependency
+                # finalizers after the original cached_result has been cleared.
+                # Retain the authenticated first observation; a duplicate is
+                # neither a new FIN witness nor evidence the earlier one failed.
+                # The complete actual teardown report still vetoes any failure.
+                scope.duplicate_postfinalizer_notifications += 1
                 continue
             try:
                 scope.postfinalizer = lifecycle.observe_real_fixture_post_finalizer(scope.namespace,
@@ -290,6 +351,8 @@ class FixtureLifecyclePlugin:
         if scope.failed or scope.witness is None or scope.status == "GREEN":
             return
         try:
+            custody.require(scope.evidence_declaration_error is None,
+                "FIXTURE_REQUIRED_RAW_DECLARATION_RED:" + str(scope.evidence_declaration_error))
             for index, reference in enumerate(scope.leases):
                 provider = reference()
                 if provider is None:
@@ -341,6 +404,10 @@ class FixtureLifecyclePlugin:
                 capture = lifecycle.capture_required_evidence(namespace, fin,
                     self.control_root / (namespace.nonce + ".capture"), scope.required_raw)
                 scope.capture = capture
+            captured_hashes = {row["relative_source"]: row["sha256"] for row in capture.files}
+            custody.require(all(captured_hashes.get(name) == expected
+                                for name, expected in scope.required_raw_sha256.items()),
+                            "FIXTURE_REQUIRED_RAW_DECLARED_SHA256_CHANGED")
             # Recheck after capture and immediately before the first unlink.
             custody.require(not namespace_handles(namespace, measured), "FIXTURE_HANDLE_OPENED_AFTER_CAPTURE")
             # Pinning happens inside the authenticated cleaner, AFTER it
@@ -423,6 +490,10 @@ class FixtureLifecyclePlugin:
         rows = [{"fixture_nodeid_sha256": scope.namespace.fixture_nodeid_sha256,
                  "namespace_nonce": scope.namespace.nonce, "status": scope.status,
                  "original_fixture_scope": scope.fixture_scope,
+                 "duplicate_postfinalizer_notifications": scope.duplicate_postfinalizer_notifications,
+                 "declared_preparation_controls": scope.declared_preparation_controls,
+                 "required_raw_members": list(scope.required_raw),
+                 "evidence_declaration_error": scope.evidence_declaration_error,
                  "blockers": scope.blockers,
                  "namespace_removed": scope.status == "GREEN"}
                 for scope in self.scopes.values()]
@@ -434,6 +505,14 @@ class FixtureLifecyclePlugin:
                 "scope_counts": {name: sum(row["original_fixture_scope"] == name for row in rows)
                                  for name in ("function", "class", "module", "package", "session")},
                 "closed_and_removed_scopes": sum(row["status"] == "GREEN" for row in rows),
+                "original_postfinalizer_duplicates_ignored": sum(scope.duplicate_postfinalizer_notifications
+                    for scope in self.scopes.values()),
+                "evidence_declaration_failures": sum(scope.evidence_declaration_error is not None
+                    for scope in self.scopes.values()),
+                "required_raw_scopes_preserved": sum(bool(scope.required_raw) and scope.status != "GREEN"
+                    for scope in self.scopes.values()),
+                "prepared_control_scopes_captured": sum(scope.declared_preparation_controls and scope.status == "GREEN"
+                    for scope in self.scopes.values()),
                 "preserved_blocked_or_failed_scopes": sum(row["status"] != "GREEN" for row in rows),
                 "reclaimed_allocated_bytes": sum(scope.receipt["allocated_bytes_before"]
                     for scope in self.scopes.values() if scope.receipt is not None),

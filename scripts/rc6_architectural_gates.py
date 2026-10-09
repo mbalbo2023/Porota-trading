@@ -69,6 +69,11 @@ G1_REQUIRED_CHEAP_FILES = frozenset({
     'tests/test_rc6_owned_gate_lease.py',
     'tests/test_rc6_owner_receipts.py',
     'tests/test_rc6_horizon_model_admission.py',
+    'tests/test_rc6_actions_custody.py', 'tests/test_rc6_candidate_authorization.py',
+    'tests/test_rc6_capacity_comparison.py', 'tests/test_rc6_archive_grouped_wire.py',
+    'tests/test_rc6_archive_physical_model.py', 'tests/test_rc6_raw_packaging_custody.py',
+    'tests/test_rc6_material_focal_evidence.py', 'tests/test_rc6_focal_raw_custody.py',
+    'tests/test_rc6_governed_evidence_validation.py',
 })
 G1_HEAVY_FILES = frozenset({
     'tests/test_issue465_stress.py',
@@ -624,10 +629,16 @@ def verify_native_evidence(row, archive):
         require(all(node.get("source_sha") == row["source_sha"] and node.get("source_tree") == row["source_tree"]
                     and node.get("source_namespace_exact_before_after") is True
                     and node.get('inet_socket_attempts')==[] and node.get('unexpected_product_imports')==[]
+                    and node.get('phase_validation_errors')==[]
+                    and node.get('original_tmp_path_scoped_lifecycle',{}).get('original_factory_context_failures')==[]
+                    and node.get('original_tmp_path_scoped_lifecycle',{}).get('evidence_declaration_failures')==0
+                    and node.get('original_tmp_path_scoped_lifecycle',{}).get('required_raw_scopes_preserved')==0
                     and node.get('closure_before_fixture',{}).get('installed_total')==157
                     and node.get('closure_before_fixture',{}).get('status')=='GREEN'
                     and finalization_closed(node.get("child_infrastructure_finalization", {}))
                     for node in (collection, execution)), "GATE_NATIVE_SOURCE_OR_FIN_EVIDENCE_REBOUND")
+        require(execution.get('native_execution_coverage_exact') is True,
+                'GATE_NATIVE_EXECUTION_COVERAGE_MISMATCH')
         if row['gate'] in ('G1.311','G1.312','G2','G3'):
             from scripts.rc6_material_focal import classify_node
             require(collection.get('complete_corpus')==execution.get('complete_corpus')

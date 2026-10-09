@@ -26,6 +26,13 @@ SOURCE_MANIFEST_NAME = "POROTA_SOURCE_PROVENANCE.json"
 BUNDLE_MANIFEST_NAME = "POROTA_DEPLOY_BUNDLE_MANIFEST.json"
 SCHEMA = "porota.source-byte-provenance.v2"
 NON_DEPLOY_ROOTS = {"tests", "docs", ".github", ".agents"}
+RAW_EVIDENCE_ROOTS = ("notes/rc6-evidence/", "rc6_audit_evidence/history_convergence/",
+                      "rc6_audit_evidence/HISTORY_CONVERGENCE.md")
+# Original bytes remain recoverable in this immutable, retained Git ancestry.
+# A path index, a checks object or a receipt-authored SHA256 never grants custody.
+RAW_CUSTODY_SOURCE_SHA = "ecad18b6010e3b7e874a00edc72644b3dcc78790"
+RAW_CUSTODY_TREE_SHA = "7054a76efc0a22e56605af435f0b4502474783ad"
+RAW_CUSTODY_REPOSITORY = "https://github.com/mbalbo2023/Porota-trading"
 MAX_SOURCE_FILES = 50_000
 MAX_METADATA_BYTES = 32 * 1024 * 1024
 MAX_ARCHIVE_UNPACKED_BYTES = 8 * 1024**3
@@ -110,16 +117,96 @@ def is_bundle_path(path: str) -> bool:
     Exclusions are repository roles (tests/docs/CI), not a partial runtime file
     list. This includes new assets/configuration/executables without edits here.
     """
-    return PurePosixPath(path).parts[0] not in NON_DEPLOY_ROOTS
+    return PurePosixPath(path).parts[0] not in NON_DEPLOY_ROOTS and not is_raw_evidence_path(path)
+
+
+def is_raw_evidence_path(path: str) -> bool:
+    """The three historical evidence roles; never the audit helper package."""
+    return any(path.startswith(root) if root.endswith("/") else path == root
+               for root in RAW_EVIDENCE_ROOTS)
 
 
 def _git(repo_root: Path, *args: str, data: bytes | None = None) -> bytes:
     try:
         return subprocess.check_output(
-            ["git", "--no-replace-objects", "-C", str(repo_root), *args], input=data, stderr=subprocess.PIPE
+            ["git", "--no-replace-objects", "-C", str(repo_root), *args], input=data, stderr=subprocess.PIPE,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1",
+                 "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_LAZY_FETCH": "1"},
         )
     except subprocess.CalledProcessError as exc:
         raise ProvenanceError("GIT_SOURCE_AUTHORITY_UNAVAILABLE") from exc
+
+
+def verify_raw_evidence_custody(repo_root: Path, head: str, rows: list[dict], dockerignore: str) -> dict | None:
+    """Read original Git payloads before separating RAW from image/bundle.
+
+    FullSource still contains every original RAW row. Verify the immutable
+    commit, relevant trees, every stored blob and SHA256 of the actual bytes.
+    No fetch, deletion, file move, external index or PASS substitution occurs.
+    """
+    selected = {row["path"]: row for row in rows if is_raw_evidence_path(row["path"])}
+    activated = any(dockerignore_exclusion(root.rstrip("/"), dockerignore) for root in RAW_EVIDENCE_ROOTS)
+    if not selected and not activated:
+        return None
+    if _git(repo_root, "rev-parse", "--show-object-format").strip() != b"sha1":
+        raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_GIT_FORMAT_REQUIRED")
+    commit = _git(repo_root, "cat-file", "commit", RAW_CUSTODY_SOURCE_SHA)
+    if (hashlib.sha1(b"commit " + str(len(commit)).encode() + b"\0" + commit).hexdigest() != RAW_CUSTODY_SOURCE_SHA
+            or commit.splitlines()[0] != b"tree " + RAW_CUSTODY_TREE_SHA.encode()):
+        raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_COMMIT_CHANGED")
+    try:
+        _git(repo_root, "merge-base", "--is-ancestor", RAW_CUSTODY_SOURCE_SHA, head)
+    except ProvenanceError as exc:
+        raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGIN_NOT_ANCESTOR") from exc
+    listing = _git(repo_root, "ls-tree", "-rz", "--full-tree", RAW_CUSTODY_SOURCE_SHA,
+                   "--", *RAW_EVIDENCE_ROOTS)
+    original = {}
+    for literal in listing.rstrip(b"\0").split(b"\0") if listing else []:
+        header, path = literal.split(b"\t", 1)
+        mode, kind, oid = header.decode("ascii").split()
+        name = safe_path(path.decode("utf-8"))
+        if kind != "blob" or mode not in {"100644", "100755"} or name in original or not is_raw_evidence_path(name):
+            raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_MEMBER_INVALID")
+        original[name] = (mode, oid)
+    if not selected or set(selected) != set(original):
+        raise ProvenanceError("RAW_EVIDENCE_CUSTODY_FULLSOURCE_PATH_SET_CHANGED")
+    # Hash the root and every ancestor tree of an original RAW path. A Git
+    # object filename alone must not certify corrupted on-disk tree bytes.
+    trees = {"": RAW_CUSTODY_TREE_SHA}
+    ancestors = {parent.as_posix() for name in original for parent in PurePosixPath(name).parents
+                 if parent.as_posix() != "."}
+    for literal in _git(repo_root, "ls-tree", "-rtz", "--full-tree", RAW_CUSTODY_SOURCE_SHA).rstrip(b"\0").split(b"\0"):
+        header, path = literal.split(b"\t", 1)
+        _mode, kind, oid = header.decode("ascii").split()
+        name = path.decode("utf-8")
+        if kind == "tree" and name in ancestors:
+            trees[name] = oid
+    if set(trees) != ancestors | {""}:
+        raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_TREE_CLOSURE_MISSING")
+    for name, oid in sorted(trees.items()):
+        raw = _git(repo_root, "cat-file", "tree", oid)
+        if hashlib.sha1(b"tree " + str(len(raw)).encode() + b"\0" + raw).hexdigest() != oid:
+            raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_TREE_CHANGED:" + name)
+    checked, cache = [], {}
+    for name, row in sorted(selected.items()):
+        mode, oid = original[name]
+        if (row["git_mode"], row["git_blob_oid"]) != (mode, oid):
+            raise ProvenanceError("RAW_EVIDENCE_CUSTODY_SOURCE_CHANGED:" + name)
+        if oid not in cache:
+            raw = _git(repo_root, "cat-file", "blob", oid)
+            if len(raw) > MAX_METADATA_BYTES:
+                raise ProvenanceError("RAW_EVIDENCE_CUSTODY_BLOB_SIZE_LIMIT")
+            if hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() != oid:
+                raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_BLOB_CHANGED:" + name)
+            cache[oid] = (len(raw), hashlib.sha256(raw).hexdigest())
+        if cache[oid] != (row["bytes"], row["sha256"]):
+            raise ProvenanceError("RAW_EVIDENCE_CUSTODY_ORIGINAL_BYTES_MISMATCH:" + name)
+        checked.append({"path": name, "git_blob_oid": oid, "bytes": row["bytes"], "sha256": row["sha256"],
+                        "recoverable_url": RAW_CUSTODY_REPOSITORY + "/blob/" + RAW_CUSTODY_SOURCE_SHA + "/" + name})
+    return {"schema": "porota.rc6.raw-git-custody.v1", "origin_sha": RAW_CUSTODY_SOURCE_SHA,
+            "origin_tree": RAW_CUSTODY_TREE_SHA, "file_count": len(checked), "files": checked,
+            "fullSource_original_preserved": True, "git_replace_objects_allowed": False,
+            "original_trees_verified": len(trees), "unique_original_blobs_verified": len(cache)}
 
 
 def _glob_expression(pattern: str) -> re.Pattern:
@@ -261,6 +348,7 @@ def create_source_manifest(
             "image_required": excluded is None,
             "image_exclusion": {"authority": ".dockerignore", "rule": excluded} if excluded else None,
         })
+    custody = verify_raw_evidence_custody(repo_root, head, rows, dockerignore)
     manifest = {
         "schema": SCHEMA, "schema_version": 2, "status": "GREEN",
         "candidate_sha": head, "candidate_tree_sha": tree,
@@ -271,6 +359,8 @@ def create_source_manifest(
         "bytecode_policy": "NO_APP_BYTECODE_ALLOWED; image sets PYTHONDONTWRITEBYTECODE=1",
         "real_orders_sent": 0, "real_routes": "NOT_CALLED",
     }
+    if custody is not None:
+        manifest["raw_evidence_custody"] = custody
     manifest["manifest_sha256"] = hashlib.sha256(canonical_bytes(manifest)).hexdigest()
     return manifest
 

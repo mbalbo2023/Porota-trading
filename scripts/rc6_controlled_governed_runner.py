@@ -877,6 +877,22 @@ def install_phase_audit(observations):
     return registration['witness_seen']
 
 
+def phase_validation_errors(source_validation, lifecycle_report, coverage_exact):
+    """Logical RED stays distinct from native FIN and the original pytest rc."""
+    errors = []
+    for field in ('original_factory_context_failures', 'evidence_declaration_failures',
+                  'required_raw_scopes_preserved'):
+        if field not in lifecycle_report or lifecycle_report[field]:
+            errors.append('GOVERNED_' + field.upper() + '_RED')
+    if source_validation.get('post_fin_source_validation_error') is not None:
+        errors.append(source_validation['post_fin_source_validation_error']['reason'])
+    if source_validation.get('source_namespace_exact_before_after') is not True:
+        errors.append('GOVERNED_SOURCE_VALIDATION_RED')
+    if coverage_exact is False:
+        errors.append('GOVERNED_NATIVE_EXECUTION_COVERAGE_MISMATCH')
+    return errors
+
+
 def phase_child(args):
     root, output = safe_path(args.repo_root), safe_path(args.output_root)
     # Source/closure/inventory must close BEFORE creating a fixture namespace.
@@ -900,13 +916,8 @@ def phase_child(args):
                     'inet_socket_constructor_requests': []}
     install_phase_audit(observations)
     import pytest
-    from _pytest.junitxml import mangle_test_address
-    items = []
-    class Observer:
-        def pytest_collection_finish(self, session):
-            for item in session.items:
-                address = mangle_test_address(item.nodeid)
-                items.append({'nodeid': item.nodeid, 'classname': '.'.join(address[:-1]), 'name': address[-1]})
+    from scripts.rc6_material_focal import FocalObserver, capture_post_fin_source, product_source_names
+    observer = FocalObserver('governed')
     argv = ['-q', '-p', 'no:cacheprovider', '-o', 'pythonpath=.', '-o', 'junit_family=legacy',
             '--basetemp='+str(output/(args.phase+'-private')/'pytest'), *test_args]
     if args.phase == 'collection':
@@ -918,7 +929,7 @@ def phase_child(args):
         output / (args.phase + '-fixture-lifecycle-controls'), candidate_sha=args.source_sha,
         candidate_tree=args.source_tree)
     try:
-        rc = int(pytest.main(argv, plugins=[Observer(), fixture_lifecycle_plugin]))
+        rc = int(pytest.main(argv, plugins=[observer, fixture_lifecycle_plugin]))
     finally:
         finalization = finalize_child_infrastructure(infrastructure_initial)
         publish(output/(args.phase+'.child-finalization.json'), canonical(finalization))
@@ -932,40 +943,31 @@ def phase_child(args):
     fixture_lifecycle_plugin.retry_after_original_phase_finalization()
     fixture_lifecycle_report = fixture_lifecycle_plugin.summary()
     publish(output / (args.phase + '.fixture-lifecycle.json'), canonical(fixture_lifecycle_report))
-    product_names = {Path(name).stem for name in pin['files'] if '/' not in name and name.endswith('.py')}
-    product_names |= {name.split('/')[0] for name in pin['files']
-                     if '/' in name and name.endswith('.py') and name.split('/')[0] not in ('tests', 'docs', '.github', '.agents')}
-    for name, module in list(sys.modules.items()):
-        if name.split('.')[0] not in product_names:
-            continue
-        origin = getattr(module, '__file__', None)
-        if origin is None:
-            continue  # Namespace containers have no executable member bytes.
-        location = safe_path(origin)
-        if not location.is_relative_to(root):
-            observations['unexpected_product_imports'].append(name); continue
-        relative = location.relative_to(root).as_posix()
-        expected = pin['files'].get(relative)
-        data, _ = capture(location)
-        require(expected is not None and digest(data) == expected['sha256'], 'PRODUCT_IMPORT_SOURCE_BYTES_MISMATCH')
-        observations['actual_product_imports'].append({'module': name, 'path': relative, 'sha256': digest(data)})
-    after = source_pin(root, args.source_sha, args.source_tree)
-    atime = compare_source(pin, after)
-    publish(output/(args.phase+'.source-before.index.json'), canonical(pin))
-    publish(output/(args.phase+'.source-after.index.json'), canonical(after))
+    product_names = product_source_names(pin)
+    source_validation = capture_post_fin_source(globals(), root, pin, source_sha=args.source_sha,
+        source_tree=args.source_tree, output=output, phase=args.phase,
+        finalization=finalization, observations=observations, product_names=product_names)
+    coverage_exact = None if args.phase == 'collection' else observer.execution_coverage_exact()
+    validation_errors = phase_validation_errors(source_validation, fixture_lifecycle_report, coverage_exact)
+    after_path = output/(args.phase+'.source-after.index.json')
     report = {'schema': 'rc6.governed-frozen-phase-observations.v1', 'phase': args.phase, 'pid': os.getpid(),
         'source_sha': args.source_sha, 'source_tree': args.source_tree, 'execution_id': launcher['execution_id'],
-        'closure_before_fixture': closure, 'items': items, 'pytest_exit_code': rc, 'exclusions': exclusions,
-        'source_namespace_exact_before_after': True, 'source_overlay_count': 0,
-        'source_before_index_sha256': digest(canonical(pin)), 'source_after_index_sha256': digest(canonical(after)),
-        'observed_code_atime_changes': atime,
+        'closure_before_fixture': closure, 'items': observer.items, 'pytest_exit_code': rc, 'exclusions': exclusions,
+        'source_overlay_count': 0, **source_validation,
+        'observed_code_atime_changes': source_validation['observed_CODE_atime_changes'],
+        'source_before_index_sha256': digest(canonical(pin)),
+        'source_after_index_sha256': digest(capture(after_path)[0]) if after_path.exists() else None,
+        'actual_execution_started_nodeids': observer.started_nodeids,
+        'actual_execution_finished_nodeids': observer.finished_nodeids,
+        'original_pytest_reports': observer.reports, 'native_execution_coverage_exact': coverage_exact,
+        'phase_validation_errors': validation_errors,
         'phase_namespace': namespace, 'offline_inet_creation_capability': capability,
         'original_tmp_path_scoped_lifecycle': fixture_lifecycle_report,
         'child_infrastructure_finalization': finalization,
         **observations, 'inet_observation_scope': 'THIS_PYTEST_PYTHON_PROCESS_DNS_INET_SOCKET_AUDIT_AND_KNOWN_CLIENT_EXECUTABLES; NOT A KERNEL_NETWORK_NAMESPACE_OR TRANSITIVE_CHILD_NETWORK_ATTESTATION',
         'import_observation_scope': 'ACTUAL_PRODUCT_MODULES_PRESENT_AT_PHASE_EXIT; NESTED_NATIVE_GUARDS_BIND_THEIR_OWN_SOURCE'}
     publish(output/(args.phase+'.observations.json'), canonical(report))
-    return rc
+    return rc or int(bool(validation_errors))
 
 
 def main(args):

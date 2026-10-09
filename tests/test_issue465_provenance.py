@@ -1087,7 +1087,8 @@ def test_predeploy_executes_strict_provenance_in_final_single_build(candidate):
     assert "if" not in export
     assert "porota-source-provenance.json" in by_name["Upload predeploy evidence"]["with"]["path"]
     audit_gate = "Issue 465 programable reauditing evidence gate"
-    assert names.index(audit_gate) > names.index("Governed automatic test discovery and execution")
+    governed = "Governed automatic test discovery and execution - verify authenticated external G6"
+    assert names.index(audit_gate) > names.index(governed)
     assert "rc6_issue465_audit_gate.py verify" in by_name[audit_gate]["run"]
     assert '--junit "${POROTA_PREDEPLOY_TMP}/porota-governed-tests.xml"' in by_name[audit_gate]["run"]
     assert "porota-issue465-audit-gate.json" in by_name["Upload predeploy evidence"]["with"]["path"]

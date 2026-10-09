@@ -150,6 +150,83 @@ def test_next_module_sees_only_previous_closed_module_removed(shared_source):
 """
 }
 
+CASES["double_real_finish"] = {
+    "conftest.py": """
+import sys,pytest
+from _pytest.fixtures import FixtureDef,SubRequest
+import case_state
+from scripts.rc6_pytest_fixture_lifecycle import FixtureLifecyclePlugin
+
+@pytest.fixture(scope='module')
+def original_shared_root(tmp_path_factory,request):
+    root=tmp_path_factory.mktemp('double-real-finish')
+    case_state.remember(root)
+    (root/'tiny.raw').write_bytes(b'original first finalization')
+    case_state.original_shared_context=(request._fixturedef,request,root)
+    case_state.actual_postfinalizer_notifications=[]
+    yield root
+
+@pytest.hookimpl(trylast=True)
+def pytest_fixture_post_finalizer(fixturedef,request):
+    if fixturedef.argname!='original_shared_root': return
+    original,original_request,root=case_state.original_shared_context
+    assert fixturedef is original and request is original_request
+    frame=sys._getframe()
+    real_finish_on_stack=False
+    while frame is not None:
+        real_finish_on_stack |= frame.f_code is FixtureDef.finish.__code__
+        frame=frame.f_back
+    case_state.actual_postfinalizer_notifications.append({
+        'original_finish_on_stack':real_finish_on_stack,
+        'cached_result_present':fixturedef.cached_result is not None})
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item,nextitem):
+    outcome=yield
+    outcome.get_result()
+    fixturedef,request,root=case_state.original_shared_context
+    assert type(fixturedef) is FixtureDef and type(request) is SubRequest
+    assert request._fixturedef is fixturedef
+    assert fixturedef.finish.__func__ is FixtureDef.finish
+    assert fixturedef.cached_result is None
+    plugins=[plugin for plugin in item.config.pluginmanager.get_plugins()
+             if type(plugin) is FixtureLifecyclePlugin]
+    assert len(plugins)==1
+    scopes=[scope for scope in plugins[0].scopes.values() if scope.namespace.path==root]
+    assert len(scopes)==1
+    scope=scopes[0]
+    first=scope.postfinalizer
+    assert first is not None and root.is_dir() and scope.witness is None
+    original_notifications=len(case_state.actual_postfinalizer_notifications)
+    assert original_notifications>=1
+    assert all(row['original_finish_on_stack'] for row in case_state.actual_postfinalizer_notifications)
+    duplicates_before=scope.duplicate_postfinalizer_notifications
+    # Invoke the unchanged real method again, after pytest's original finish
+    # cleared the cache. Pytest 9.1 returns before calling the hook; older
+    # implementations notify again. Neither path supplies a fabricated FIN.
+    fixturedef.finish(request)
+    new_notifications=len(case_state.actual_postfinalizer_notifications)-original_notifications
+    assert fixturedef.cached_result is None and scope.postfinalizer is first
+    assert not scope.failed and scope.witness is None and root.is_dir()
+    assert scope.duplicate_postfinalizer_notifications-duplicates_before==new_notifications
+    case_state.real_double_finish={
+        'original_finish_method_unchanged':fixturedef.finish.__func__ is FixtureDef.finish,
+        'cached_result_cleared_before_second_finish':True,
+        'cached_result_cleared_after_second_finish':fixturedef.cached_result is None,
+        'first_authenticated_postfinalizer_preserved':scope.postfinalizer is first,
+        'original_postfinalizer_notifications':original_notifications,
+        'second_real_finish_notifications':new_notifications,
+        'notifications_from_original_finish':all(row['original_finish_on_stack']
+            for row in case_state.actual_postfinalizer_notifications),
+        'complete_teardown_not_yet_reported':scope.witness is None,
+        'scope_preserved_until_complete_teardown':root.is_dir()}
+""",
+    "test_case.py": """
+def test_original_last_consumer(original_shared_root):
+    assert (original_shared_root/'tiny.raw').read_bytes()==b'original first finalization'
+""",
+}
+
 CASES["module_teardown_failure"] = {
     "test_case.py": """
 import pytest
@@ -267,6 +344,69 @@ def test_actual_last_source_lease_with_unjoined_child(source_lease,readonly_sour
 """
 }
 
+CASES["prepared_declared_raw"] = {
+    "test_case.py": """
+import hashlib,json,pytest
+@pytest.fixture(scope='module')
+def original_prepared_controls(tmp_path_factory):
+    from case_state import remember
+    parent=tmp_path_factory.mktemp('small-native-declared-controls')
+    remember(parent)
+    output=parent/'fixture';output.mkdir()
+    transport=parent/'fixture-transport';transport.mkdir()
+    frame=b'original tiny preparation frame\\n'
+    progress=b'{"stage":"CONTROL_ONLY"}\\n'
+    stderr=b'original tiny stderr\\n'
+    (output/'native-fixture.json').write_bytes(frame)
+    (output/'progress.jsonl').write_bytes(progress)
+    (transport/'stdout.raw').write_bytes(frame)
+    (transport/'stderr.raw').write_bytes(stderr)
+    digest=lambda wire:hashlib.sha256(wire).hexdigest()
+    launcher={'schema':'rc6.browser-native-preparation-transport.v1',
+        'stdout_sha256':digest(frame),'stderr_sha256':digest(stderr),
+        'control_only_not_product_or_kernel_qualification':True}
+    launcher_raw=json.dumps(launcher).encode()
+    (transport/'launcher.json').write_bytes(launcher_raw)
+    # This schema-shaped control declares five RAW members only; it confers
+    # no authority over native FIN, Source, databases or a qualification gate.
+    return {'receipt_path':output/'native-fixture.json','receipt_sha256':digest(frame),
+        'receipt':{'schema':'rc6.browser-prepared-small-native-fixture.v1',
+            'progress_sha256':digest(progress)},
+        'launcher_receipt':launcher,'transport_root':transport,
+        'launcher_path':transport/'launcher.json','launcher_sha256':digest(launcher_raw)}
+def test_actual_first_consumer_keeps_original_controls(original_prepared_controls):
+    assert original_prepared_controls['receipt_path'].is_file()
+def test_actual_last_consumer_keeps_original_controls(original_prepared_controls):
+    assert original_prepared_controls['launcher_path'].is_file()
+"""
+}
+CASES["prepared_declared_raw_mutated"] = {'test_case.py':
+    CASES["prepared_declared_raw"]['test_case.py'].replace(
+        "assert original_prepared_controls['launcher_path'].is_file()",
+        "original_prepared_controls['launcher_path'].write_bytes(b'changed unique original control')")}
+CASES["prepared_declared_raw_outside"] = {'test_case.py':
+    CASES["prepared_declared_raw"]['test_case.py'].replace(
+        "'launcher_path':transport/'launcher.json'",
+        "'launcher_path':parent.parent/'foreign-launcher.json'").replace(
+        "assert original_prepared_controls['launcher_path'].is_file()",
+        "assert (original_prepared_controls['transport_root']/'launcher.json').is_file()")}
+
+CASES["readonly_source_red"] = {
+    **CASES["readonly_controls"],
+    'test_alpha.py': """
+def test_source_metadata_mutation_is_reported_red(source_lease,readonly_source):
+    (source_lease[0]/'demo.py').write_bytes(b'PAPER_SOURCE=2\\n')
+""",
+    'test_beta.py': """
+def test_following_source_consumer_requires_actual_closed_source(source_lease,readonly_source):
+    raise AssertionError('Mutated Source must never be reused')
+""",
+    'test_gamma.py': """
+def test_original_independent_item_runs_after_source_red():
+    assert True
+""",
+}
+
 CHILD = r"""
 import json, os, sys
 from pathlib import Path
@@ -298,6 +438,7 @@ plugin=FixtureLifecyclePlugin(claim,controls,candidate_sha=config['binding']['ca
 rc=pytest.main([str(suite),'-q','-p','no:cacheprovider',
     '--basetemp='+str(namespace.path/'fixtures')],plugins=[] if config.get('disable_plugin') else [plugin])
 from case_state import ROOTS,OPEN,CHILDREN,THREADS
+import case_state
 before=plugin.summary()
 preserved_before=[root.is_dir() for root in ROOTS]
 for connection in OPEN: connection.close()
@@ -317,12 +458,30 @@ report={'pytest_exit_code':int(rc),'before':before,'after':after,
         'owned_child_returncodes_after_original_wait':child_returncodes,
         'control_files':len(list(controls.rglob('*'))),'scope':'CONTROLLED_UNIT_FIXTURE_ONLY',
         'promotion_or_full_governed_claimed':False}
+if hasattr(case_state,'real_double_finish'):
+    report['real_double_finish']=case_state.real_double_finish
+    scope=next(scope for scope in plugin.scopes.values()
+               if scope.namespace.path==case_state.original_shared_context[2])
+    report['real_double_finish'].update(
+        original_complete_teardown_authenticated=scope.witness is not None,
+        original_kernel_FIN_authenticated=scope.fin is not None,
+        original_evidence_capture_authenticated=scope.capture is not None,
+        original_kernel_echild_verified=scope.fin.final_state['kernel_echild_verified']
+            if scope.fin is not None else False,
+        original_scope_removed_after_FIN=scope.status=='GREEN')
 capture_manifests=[]
 for manifest_path in controls.glob('*.capture/manifest.json'):
     manifest=json.loads(manifest_path.read_text())
+    payloads={row['relative_source']:(manifest_path.parent/row['capture_file']).read_bytes()
+              for row in manifest['files']}
     capture_manifests.append({'files':[row['relative_source'] for row in manifest['files']],
-        'all_payloads_hashed':all(len(row['sha256'])==64 for row in manifest['files'])})
+        'all_payloads_hashed':all(__import__('hashlib').sha256(payloads[row['relative_source']]).hexdigest()==row['sha256']
+                                 for row in manifest['files']),
+        'explicit_original_control_payloads':{name:wire.decode() for name,wire in payloads.items()
+            if name.startswith(('fixture/','fixture-transport/'))}})
 report['capture_manifests']=capture_manifests
+report['retained_source_red_controls']=[json.loads(path.read_bytes())
+    for root in ROOTS if root.is_dir() for path in root.glob('lease-*.json')]
 os.close(foreign_fd)
 Path(config['report']).write_text(json.dumps(report))
 """
@@ -361,6 +520,24 @@ def test_real_original_tmp_path_is_removed_before_next_test_without_changing_tes
     assert report["foreign_bytes"] == "foreign-only" and report["foreign_fd_closed_by_plugin"] is False
     assert report["after"]["fixtures_or_tests_redefined"] is False
     assert report["after"]["global_cleanup_claimed"] is False
+    assert report["after"]["original_postfinalizer_duplicates_ignored"] >= 0
+    assert sum(row['duplicate_postfinalizer_notifications'] for row in report['after']['rows']) == report['after']['original_postfinalizer_duplicates_ignored']
+    duplicate = run_case(tmp_path, "double_real_finish")
+    assert duplicate["pytest_exit_code"] == 0
+    assert duplicate["after"]["closed_and_removed_scopes"] == 1
+    assert duplicate["after"]["original_factory_context_failures"] == []
+    assert duplicate["preserved_after"] == [False]
+    observed = duplicate["real_double_finish"]
+    assert all(observed[field] is True for field in (
+        "original_finish_method_unchanged", "cached_result_cleared_before_second_finish",
+        "cached_result_cleared_after_second_finish", "first_authenticated_postfinalizer_preserved",
+        "notifications_from_original_finish", "complete_teardown_not_yet_reported",
+        "scope_preserved_until_complete_teardown", "original_complete_teardown_authenticated",
+        "original_kernel_FIN_authenticated", "original_evidence_capture_authenticated",
+        "original_kernel_echild_verified", "original_scope_removed_after_FIN"))
+    assert observed["original_postfinalizer_notifications"] >= 1
+    assert duplicate["after"]["original_postfinalizer_duplicates_ignored"] == (
+        observed["original_postfinalizer_notifications"] - 1 + observed["second_real_finish_notifications"])
 
 
 def test_real_module_and_session_roots_close_after_last_consumer_and_own_writer_teardown(tmp_path):
@@ -398,6 +575,52 @@ def test_real_readonly_Source10_leases_are_closed_and_captured_before_shared_roo
     controls = [manifest for manifest in report["capture_manifests"] if "lease-0001.json" in manifest["files"]]
     assert len(controls) == 1 and "lease-0002.json" in controls[0]["files"]
     assert all(manifest["all_payloads_hashed"] for manifest in report["capture_manifests"])
+
+
+def test_actual_declared_preparation_raw_is_hash_verified_and_retained_before_scope_cleanup(tmp_path):
+    report=run_case(tmp_path,'prepared_declared_raw')
+    assert report['pytest_exit_code']==0 and report['preserved_after']==[False]
+    assert report['after']['prepared_control_scopes_captured']==1
+    assert report['after']['required_raw_scopes_preserved']==0
+    assert report['after']['evidence_declaration_failures']==0
+    required={'fixture/native-fixture.json','fixture/progress.jsonl','fixture-transport/launcher.json',
+        'fixture-transport/stdout.raw','fixture-transport/stderr.raw'}
+    assert set(report['after']['rows'][0]['required_raw_members'])==required
+    captures=[row for row in report['capture_manifests'] if required <= set(row['files'])]
+    assert len(captures)==1 and captures[0]['all_payloads_hashed'] is True
+    wire=captures[0]['explicit_original_control_payloads']
+    assert wire['fixture/native-fixture.json']==wire['fixture-transport/stdout.raw']=='original tiny preparation frame\n'
+    assert wire['fixture-transport/stderr.raw']=='original tiny stderr\n'
+    assert wire['fixture/progress.jsonl']=='{"stage":"CONTROL_ONLY"}\n'
+
+
+@pytest.mark.parametrize('case,signature',[
+    ('prepared_declared_raw_mutated','FIXTURE_REQUIRED_RAW_DECLARED_SHA256_CHANGED'),
+    ('prepared_declared_raw_outside','FIXTURE_REQUIRED_RAW_DECLARATION_RED'),
+])
+def test_changed_or_foreign_declared_controls_never_authorize_scope_cleanup(tmp_path,case,signature):
+    report=run_case(tmp_path,case)
+    assert report['pytest_exit_code']==0 and report['preserved_after']==[True]
+    assert report['after']['closed_and_removed_scopes']==0
+    assert signature in ' '.join(report['after']['rows'][0]['blockers'])
+    assert report['after']['prepared_control_scopes_captured']==0
+    if case=='prepared_declared_raw_outside':
+        assert report['after']['evidence_declaration_failures']==1
+        assert report['after']['original_factory_context_failures'][0]['classification']=='REQUIRED_RAW_DECLARATION_CUSTODY_RED'
+    else:
+        assert report['after']['required_raw_scopes_preserved']==1
+
+
+def test_source_red_preserves_original_source_controls_and_failed_scopes_after_phase_FIN(tmp_path):
+    report=run_case(tmp_path,'readonly_source_red')
+    assert report['pytest_exit_code']==1
+    assert report['preserved_before']==report['preserved_after']==[True,True]
+    assert report['after']['closed_and_removed_scopes']==0
+    assert report['after']['preserved_blocked_or_failed_scopes']==2
+    rows=report['retained_source_red_controls']
+    assert len(rows)==1 and rows[0]['status']=='UNKNOWN_OR_UNCLOSED'
+    assert rows[0]['source10_drift']['member']=='source/demo.py'
+    assert rows[0]['post_failure_source_reads']==0
 
 
 def test_original_numbered_factory_sequence_matches_baseline_and_unnumbered_collision_is_preserved(tmp_path):

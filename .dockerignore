@@ -29,6 +29,12 @@ htmlcov/
 venv/
 .venv/
 docs/
+# Historical RAW remains in fullSource and authenticated original Git ecad.
+# porota_artifact_provenance verifies recoverable bytes before a build/bundle.
+# Keep rc6_audit_evidence's six imported helpers in the artifact.
+notes/rc6-evidence/
+rc6_audit_evidence/history_convergence/
+rc6_audit_evidence/HISTORY_CONVERGENCE.md
 *.pdf
 .secrets
 data/observer

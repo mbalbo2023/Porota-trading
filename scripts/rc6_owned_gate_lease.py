@@ -145,9 +145,7 @@ def prove_lease_coverage(timelines, context, start, end):
                 for owner in owners)
             effective = admission.effective_stamp(row)
             if foreign and effective <= end:
-                expires = values.get('SOURCE_LEASE_EXPIRES_UTC')
-                require(effective < start and (values.get('RELEASED') == 'true'
-                    or (expires is not None and admission.stamp(expires) <= start)),
+                require(effective < start and values.get('RELEASED') == 'true',
                     'OWNED_LEASE_FOREIGN_RECORD_OVERLAPS_PRODUCER')
             if values.get('SOURCE_LEASE_EXPIRES_UTC') is None or values.get('WRITE_OWNER') != context['owner_session']:
                 continue

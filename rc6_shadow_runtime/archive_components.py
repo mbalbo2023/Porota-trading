@@ -20,6 +20,7 @@ import zlib
 
 from .exact_page_storage import encode_page_pack, decode_page_pack, inspect_page_pack
 from .exact_binary_storage import encode_binary_pack, decode_binary_pack, inspect_binary_pack
+from . import exact_page_storage as page_storage
 
 
 RECIPE_SCHEMA = "RC6_SHADOW_ARCHIVE_COMPONENT_RECIPE_V3"
@@ -41,10 +42,55 @@ BASE_MEMBERS = frozenset({"manifest.json", "report.json.gz", "checkpoint.json.gz
 MEMBERS = BASE_MEMBERS | {"projection.sqlite"}
 LEVEL = "ALL_ORIGINAL_MEMBER_BYTES_MANIFEST_CRC_AND_ROLE_WIRE"
 DEPENDENT_RECOVERIES = frozenset({"EXACT_PAGE_PACK", "EXACT_BINARY_PACK"})
+MAX_WIRE_REGION_GROUPS = 16
+MIN_WIRE_GROUP_PAGES = 64
+MAX_GROUPED_WIRE_COMPONENTS = 1 + 2 * MAX_WIRE_REGION_GROUPS
 
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def grouped_wire_parts(raw, recovery, *, expected_pack_sha256, expected_target_sha256):
+    """Factor existing wire into at most 33 exact concatenation components.
+
+    This is a CAS layout proposal, never a codec or a capacity certificate.
+    The PAGE header changes independently of groups of index rows and groups
+    of original compressed page payloads. Boundaries use whole format records,
+    and a power-of-two group size limits both index and payload to 16 groups.
+    Small inputs still group at least 64 pages; a page cannot create an unbounded
+    component. Dictionary IDs, compressed streams and CRC bytes are untouched.
+
+    BIN is a single gzip stream. It has no independently addressable compressed
+    instruction regions; keep its exact original wire as one component.
+    """
+    if recovery == "EXACT_BINARY_PACK":
+        inspect_binary_pack(raw, expected_pack_sha256=expected_pack_sha256,
+                            expected_target_sha256=expected_target_sha256)
+        return (raw,)
+    if recovery != "EXACT_PAGE_PACK":
+        raise ValueError("RETENTION_WIRE_FACTOR_RECOVERY_UNSUPPORTED")
+    metadata = inspect_page_pack(raw, expected_pack_sha256=expected_pack_sha256,
+                                 expected_target_sha256=expected_target_sha256)
+    count = metadata["page_count"]
+    minimum = (count + MAX_WIRE_REGION_GROUPS - 1) // MAX_WIRE_REGION_GROUPS
+    group_pages = max(MIN_WIRE_GROUP_PAGES, 1 << (minimum - 1).bit_length())
+    index_start = page_storage.HEADER.size
+    payload_start = index_start + count * page_storage.INDEX.size
+    indices, payloads, cursor = [], [], payload_start
+    for start in range(0, count, group_pages):
+        end = min(count, start + group_pages)
+        index = raw[index_start + start * page_storage.INDEX.size:
+                    index_start + end * page_storage.INDEX.size]
+        length = sum(row[3] for row in page_storage.INDEX.iter_unpack(index))
+        indices.append(index)
+        payloads.append(raw[cursor:cursor + length])
+        cursor += length
+    parts = (raw[:index_start], *indices, *payloads)
+    if (cursor != len(raw) or not 0 < len(parts) <= MAX_GROUPED_WIRE_COMPONENTS
+            or any(not part for part in parts) or b"".join(parts) != raw):
+        raise ValueError("RETENTION_WIRE_FACTOR_EXACT_BOUND_INVALID")
+    return parts
 
 
 def canonical(value):
@@ -565,6 +611,10 @@ class ComponentArchive:
             else:
                 parts, record["recovery"] = (gzip.compress(raw, mtime=0, compresslevel=1),), "STORED_GZIP_RAW"
             alternatives[name] = [(parts, record)]
+            if name == "projection.sqlite":
+                grouped = grouped_wire_parts(page, "EXACT_PAGE_PACK",
+                    expected_pack_sha256=record["pack_sha256"], expected_target_sha256=record["sha256"])
+                alternatives[name].append((grouped, record))
             if name in {"projection.sqlite", "checkpoint.json.gz"}:
                 base, depth = (previous, previous_depth) if name == "projection.sqlite" else (checkpoint, checkpoint_depth)
                 proposal = self._binary_option(raw, base, depth, force_full,
@@ -575,22 +625,7 @@ class ComponentArchive:
         # Authenticate the catalog once; all alternatives reuse this same
         # captured base. Sequential plans retain one winner, never four packs.
         # The unchanged report frame layout is not a second codec experiment.
-        verified_reuse, selected, baseline_cost = {}, None, None
-        block = os.statvfs(self.root).f_frsize
-        if type(block) is not int or block <= 0:
-            raise ValueError("RETENTION_ARCHIVE_BLOCK_SIZE_INVALID")
-        for choices in product(*(range(len(options)) for options in alternatives.values())):
-            options = {name: alternatives[name][choice] for name, choice in zip(alternatives, choices)}
-            plan = self._plan(options, catalog, manifest, manifest_sha, verified_reuse)
-            recipe_wire, packed, new_name = plan
-            sizes = (len(recipe_wire), len(packed) if packed is not None else 0)
-            cost = (sum((size + block - 1) // block * block for size in sizes), sum(sizes))
-            if baseline_cost is None:
-                baseline_cost, selected, selected_cost = cost, plan, cost
-            elif (cost[0] <= baseline_cost[0] and cost[1] <= baseline_cost[1] and cost < selected_cost):
-                selected, selected_cost = plan, cost
-            del plan, packed, recipe_wire
-        recipe_wire, packed, new_name = selected
+        recipe_wire, packed, new_name = self._select_plan(alternatives, catalog, manifest, manifest_sha)
         # Exact new bytes plus simultaneous controls, rounded physical blocks.
         additions = (len(packed) if packed is not None else 0) + len(recipe_wire)
         self.owner._archive_inventory(additional_bytes=additions+4*65536, additional_files=6)
@@ -610,6 +645,43 @@ class ComponentArchive:
             raise ValueError("RETENTION_COMPONENT_SOURCE_CHANGED")
         unchanged()
         return preview
+
+    def _select_plan(self, alternatives, catalog, manifest, manifest_sha):
+        """Keep the original first plan unless both complete new costs improve.
+
+        Costs include whole newly written CAS packs (headers and records) and
+        the actual compressed recipe/index/reference wire. Existing shared
+        packs remain physical whole objects; this grants no GC credit or
+        directory/temporary/recovery bound. The archive owner's live inventory
+        and final Horizon physical proof remain separately mandatory.
+        """
+        verified_reuse, selected, baseline_cost = {}, None, None
+        block = os.statvfs(self.root).f_frsize
+        if type(block) is not int or block <= 0:
+            raise ValueError("RETENTION_ARCHIVE_BLOCK_SIZE_INVALID")
+        for choices in product(*(range(len(options)) for options in alternatives.values())):
+            options = {name: alternatives[name][choice] for name, choice in zip(alternatives, choices)}
+            try:
+                plan = self._plan(options, catalog, manifest, manifest_sha, verified_reuse)
+            except ValueError as error:
+                # An optional layout cannot turn an admissible original into
+                # a catalog/pack overflow. Custody, hash and typed-index errors
+                # remain fatal even when encountered in an optional proposal.
+                if selected is None or str(error) not in {
+                        "RETENTION_COMPONENT_INDEX_CAPACITY_REACHED",
+                        "RETENTION_COMPONENT_PACK_CAPACITY_REACHED",
+                        "RETENTION_RECIPE_CAPACITY_REACHED"}:
+                    raise
+                continue
+            recipe_wire, packed, new_name = plan
+            sizes = (len(recipe_wire), len(packed) if packed is not None else 0)
+            cost = (sum((size + block - 1) // block * block for size in sizes), sum(sizes))
+            if baseline_cost is None:
+                baseline_cost, selected, selected_cost = cost, plan, cost
+            elif (cost[0] <= baseline_cost[0] and cost[1] <= baseline_cost[1] and cost < selected_cost):
+                selected, selected_cost = plan, cost
+            del plan, packed, recipe_wire
+        return selected
 
     def _plan(self, options, catalog, manifest, manifest_sha, verified_reuse):
         components, component_ids, members, fresh = [], {}, {}, {}

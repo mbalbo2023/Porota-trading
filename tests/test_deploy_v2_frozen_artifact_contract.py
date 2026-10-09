@@ -54,8 +54,34 @@ def test_ready_for_review_retriggers_final_predeploy():
     assert workflow.get('on', workflow.get(True))['pull_request']['types'] == ['ready_for_review']
     condition = workflow['jobs']['artifact-gate']['if']
     assert "github.event.action == 'ready_for_review'" in condition
-    assert "github.event.number == 476" in condition
+    assert "github.event.number ==" not in condition
+    assert "github.event.pull_request.head.ref ==" not in condition
+    assert "github.event.sender.login == 'mbalbo2023'" in condition
+    assert '476' not in WORKFLOW and 'recovery/rc6-material-fix-forward' not in WORKFLOW
     assert "github.event.pull_request.draft == false" in condition
+
+
+def test_candidate_pr_push_cannot_request_heavy_gates_and_no_old_carrier_is_fixed():
+    workflow=yaml.safe_load(Path('.github/workflows/rc6-unified-candidate-tests.yml').read_text())
+    trigger=workflow.get('on',workflow.get(True))
+    assert trigger['pull_request']['types']==['opened','synchronize','reopened']
+    assert 'push' not in trigger and 'pull_request_target' not in trigger
+    assert 'cheap' not in trigger['workflow_dispatch']['inputs']['gate']['options']
+    job=workflow['jobs']['ordered-source-gate']
+    assert "github.event.number == 476" not in job['if']
+    assert "recovery/rc6-material-fix-forward-3091e93-20261006" not in job['if']
+    assert job['env']['RC6_GATE']=="${{ inputs.gate || 'cheap' }}"
+    boundary=next(step['run'] for step in job['steps'] if step['name']=='Verify canonical policy and cheap-only push boundary')
+    assert 'if [ "$GITHUB_EVENT_NAME" = pull_request ]; then test "$RC6_GATE" = cheap; fi' in boundary
+
+
+def test_red_g7_admission_controls_are_retained_before_workspace_and_tooling():
+    steps=yaml.safe_load(WORKFLOW)['jobs']['artifact-gate']['steps']
+    custody=next(index for index,step in enumerate(steps) if step['name']=='Preserve bounded G7 admission controls before any tooling')
+    workspace=next(index for index,step in enumerate(steps) if step.get('id')=='private_workspace')
+    assert custody<workspace
+    assert steps[custody]['if'].startswith('always()')
+    assert steps[custody]['with']['retention-days']==14
 
 
 def test_governed_pytest_isolated_from_runner_entrypoints():

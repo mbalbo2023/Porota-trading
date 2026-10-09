@@ -19,7 +19,9 @@ concurrency:
 jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
-    if: github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.repository.id == 1338680554 && github.event.number == 476 && github.event.pull_request.draft == false && github.event.pull_request.head.ref == 'recovery/rc6-material-fix-forward-3091e93-20261006' && github.event.pull_request.head.repo.id == 1338680554
+    # ready_for_review is only a request. An immutable current-owner receipt,
+    # exact live PR/SHA/tree/base and native G0–G6 evidence grant G7 admission.
+    if: github.event_name == 'pull_request' && github.event.action == 'ready_for_review' && github.event.repository.id == 1338680554 && github.event.sender.login == 'mbalbo2023' && github.event.pull_request.user.login == 'mbalbo2023' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.id == 1338680554 && github.event.pull_request.head.repo.owner.login == 'mbalbo2023' && github.event.pull_request.base.repo.id == 1338680554 && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -56,6 +58,15 @@ jobs:
           echo 'RC6_G7_ALL_PREDECESSOR_PAYLOADS=GREEN'
           echo 'DEPLOY_OWNER=NOT_ACQUIRED'
           echo 'PUSH_ALONE_AUTHORIZES_PREDEPLOY=false'
+
+      - name: Preserve bounded G7 admission controls before any tooling
+        if: always() && steps.prerequisite_gates.outputs.control_root != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-g7-admission-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.prerequisite_gates.outputs.control_root }}/*.json
 
       - name: Initialize proven private runner workspace
         id: private_workspace
@@ -244,6 +255,12 @@ jobs:
           assert verified['source_tree']==os.environ['CANDIDATE_TREE']
           result=import_verified_governed(verified,output_root=Path(os.environ['POROTA_PREDEPLOY_TMP']),epoch='311')
           print('POROTA_FULL_GOVERNED_NATIVE_ORIGIN=G6|run='+str(result['native_run_id'])+'|artifact='+str(result['artifact_id']))
+          governed=document(Path(os.environ['POROTA_PREDEPLOY_TMP'],'porota-governed-tests.json').read_bytes())
+          for token,key in (('POROTA_TEST_DISCOVERED','discovered'),('POROTA_TEST_EXECUTED','executed'),
+              ('POROTA_TEST_SKIPPED','skipped'),('POROTA_TEST_XFAIL','xfail'),('POROTA_GOVERNED_TEST_STATUS','status')):
+              print(token+'='+str(governed[key]))
+          print('POROTA_TEST_EXCLUSIONS='+str(len(governed['exclusions'])))
+          print('POROTA_TEST_COUNT_ORIGIN=AUTHENTICATED_G6_NATIVE_PAYLOAD')
           print('POROTA_G7_SOURCE_SUITE_REEXECUTED=false')
           print('POROTA_G7_PYTEST_FIN_CLAIMED=false')
           print('POROTA_GOVERNED_TESTS=GREEN|origin=AUTHENTICATED_G6_NATIVE_PAYLOAD')

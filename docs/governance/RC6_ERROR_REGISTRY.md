@@ -1,5 +1,10 @@
 # RC6 recurring errors and architectural guards
 
+Integración sucesora de código del2026-10-09: [matriz de fixes/guards y residuales](rc6-architecture-closure-20261009/ERROR_MATRIX.md)
+y [decisión de runner preparado](rc6-architecture-closure-20261009/RUNNER_DECISION.md).
+El historial de esta tabla no se reescribe: ninguna prueba económica o custodia
+RAW concede calificación G0–G8 ni permiso de deploy.
+
 Reconciles PR #477 (`756d37b93aa26bb6395dac481bf3c2dda9d034d7`) against the
 verifiable PR #476 base. Historical unpublished `59ad88ce` is evidence of an
 attempt, never recovered code. No test, artifact, deploy or runtime PASS is

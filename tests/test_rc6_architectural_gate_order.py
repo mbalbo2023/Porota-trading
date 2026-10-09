@@ -715,14 +715,14 @@ def test_self_declared_verified_hash_only_comparison_never_authorizes_v2(tiny_fr
         admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
 
 
-def test_verified_inline_coherence_does_not_replace_original_git_transport_and_exhaustive_graph(tiny_frozen_source):
+def test_inline_coherence_without_complete_v2_envelopes_stops_before_original_transport(tiny_frozen_source):
     root,sha,tree,_inventory,manifest,fields,admission=tiny_frozen_source
     raw='Controlled unit RAW only; no temporal peak or external authenticity claim.'
     manifest.update(status='VERIFIED',unknown_components=[],records=[{'uri':
         'https://github.com/mbalbo2023/Porota-trading/blob/'+sha+'/plain.py',
         'sha256':hashlib.sha256(raw.encode()).hexdigest(),'raw_utf8':raw}])
     fields['CAPACITY_COMPARISON_MANIFEST_JSON']=json.dumps(manifest)
-    with pytest.raises(ValueError,match='VERIFIED_COMPARISON_PROOF_BLOCK_UNSUPPORTED'):
+    with pytest.raises(ValueError,match='CAPACITY_COMPLETE_V2_ENVELOPES_REQUIRED'):
         admission.verify_capacity_comparison_manifest(fields,sha,tree,repo=root)
 
 def diagnostic_unit_launch(tiny_frozen_source,monkeypatch,gate='capacity-probe'):
