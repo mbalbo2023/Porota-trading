@@ -1,0 +1,302 @@
+{
+  "coordination_receipts": [
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "1e44f471ed5c7b1d10a6dba9b29cdd8bc1bf959b8164f06a7d029ac00ff7fc01",
+      "created_at": "2026-10-08T22:04:11Z",
+      "id": 6069926329,
+      "kind": "CORE_LAST_UNRELEASED",
+      "updated_at": "2026-10-08T22:04:11Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6069926329"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "1e44f471ed5c7b1d10a6dba9b29cdd8bc1bf959b8164f06a7d029ac00ff7fc01",
+      "created_at": "2026-10-08T22:04:12Z",
+      "id": 6069926700,
+      "kind": "CORE_LAST_UNRELEASED",
+      "updated_at": "2026-10-08T22:04:12Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6069926700"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "11fedf89af54f0c5fcfb3d35801d3a8d8474418071dacf9d9a37e83265c52023",
+      "created_at": "2026-10-08T22:59:17Z",
+      "id": 6070721931,
+      "kind": "PREVIOUS_DOCUMENT_ONLY_RELEASE",
+      "updated_at": "2026-10-08T23:00:16Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6070721931"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "11fedf89af54f0c5fcfb3d35801d3a8d8474418071dacf9d9a37e83265c52023",
+      "created_at": "2026-10-08T22:59:18Z",
+      "id": 6070722133,
+      "kind": "PREVIOUS_DOCUMENT_ONLY_RELEASE",
+      "updated_at": "2026-10-08T23:00:17Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6070722133"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "180a31dbc8ae0976a330b4e06e08ab575c431e96d30df7d41d39f8017995f443",
+      "created_at": "2026-10-09T12:10:50Z",
+      "id": 6080607491,
+      "kind": "OUR_READ_ONLY_BLOCK",
+      "updated_at": "2026-10-09T12:10:50Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6080607491"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "180a31dbc8ae0976a330b4e06e08ab575c431e96d30df7d41d39f8017995f443",
+      "created_at": "2026-10-09T12:10:51Z",
+      "id": 6080607839,
+      "kind": "OUR_READ_ONLY_BLOCK",
+      "updated_at": "2026-10-09T12:10:51Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6080607839"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "66f0d3ee5bbc1191d60561dc0f1b74f35f2e800285ee735f83ab3c3b0809637e",
+      "created_at": "2026-10-09T12:11:58Z",
+      "id": 6080627178,
+      "kind": "OUR_DOCUMENT_ONLY_ACQUISITION",
+      "updated_at": "2026-10-09T12:11:58Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6080627178"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "66f0d3ee5bbc1191d60561dc0f1b74f35f2e800285ee735f83ab3c3b0809637e",
+      "created_at": "2026-10-09T12:11:59Z",
+      "id": 6080627453,
+      "kind": "OUR_DOCUMENT_ONLY_ACQUISITION",
+      "updated_at": "2026-10-09T12:11:59Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6080627453"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "adbcd19e82beac9e91fd2bed9289e94caf066bd20102053724073996a40771a8",
+      "created_at": "2026-10-09T12:28:39Z",
+      "id": 6080890174,
+      "kind": "OUR_DOCUMENT_ONLY_RENEWAL",
+      "updated_at": "2026-10-09T12:28:39Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/471#issuecomment-6080890174"
+    },
+    {
+      "author": "mbalbo2023",
+      "body_sha256": "adbcd19e82beac9e91fd2bed9289e94caf066bd20102053724073996a40771a8",
+      "created_at": "2026-10-09T12:28:40Z",
+      "id": 6080890490,
+      "kind": "OUR_DOCUMENT_ONLY_RENEWAL",
+      "updated_at": "2026-10-09T12:28:40Z",
+      "url": "https://github.com/mbalbo2023/Porota-trading/issues/473#issuecomment-6080890490"
+    }
+  ],
+  "core_transfer_or_release_received": false,
+  "current_refs": {
+    "deploy/rc6-pr69-isolated-20260915": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+    "main": "183a0be3f6c443d8fab48b1c0f52dcc80b1b88d1",
+    "review/rc6-controlled-architecture-20261009": "215169ecd0f71d3b293304c7976be2593efdc043",
+    "wip/rc6-architectural-rca-20261008-1606UTC": "ecad18b6010e3b7e874a00edc72644b3dcc78790"
+  },
+  "image_inspected": false,
+  "initial_inputs": [
+    {
+      "bytes": 2358669,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "4a011439ee68eb3676ff3bc9d92b8dd3370c12b19b53de0d9bb148d2f4b28596",
+      "source_file_name": "issues-471-comments.json"
+    },
+    {
+      "bytes": 22132,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "f365f927e3dace4300659ab4431bbe1d119217a1f65315de017c86dc89ebce10",
+      "source_file_name": "issues-471.json"
+    },
+    {
+      "bytes": 1554881,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "98fc429bcef5820a0675bf282c787c6201b455039a78612b0b3377bbc637c76d",
+      "source_file_name": "issues-473-comments.json"
+    },
+    {
+      "bytes": 6467,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "922495aa2dd84ae9cfdebbed393661d1c1ac5b6900dbb35855d805409c212712",
+      "source_file_name": "issues-473.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "issues-475-comments.json"
+    },
+    {
+      "bytes": 10380,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "f6feff540626ee044e9f39ec68346850f86e62148864e348cbdd9d433945c68b",
+      "source_file_name": "issues-476-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "issues-477-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "issues-479-comments.json"
+    },
+    {
+      "bytes": 2777,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "ec4ead8c78be4511851f2a5f9f94fdd083a116a0aafceaa4b41a70db6531b29e",
+      "source_file_name": "product-AGENTS.md"
+    },
+    {
+      "bytes": 2650,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "30860e387cdd6946e4f0c59a52d531c55efa8b2e55e783521b6280403fda641a",
+      "source_file_name": "product-docs__releases__RC6_UNIFIED_HANDOFF_2026-10-02.md"
+    },
+    {
+      "bytes": 3885,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "dd88c6f09368323c93c13ede84225a15a8ae2e3348abec7f878f1a682c7af340",
+      "source_file_name": "product-ops__policy__porota-policy.yaml"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-475-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-475-reviews.json"
+    },
+    {
+      "bytes": 20294,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "af9fd4585781af83505c2e1564c96e5b715a9ed2433a24efe12db6998f5f8c9f",
+      "source_file_name": "pulls-475.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-476-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-476-reviews.json"
+    },
+    {
+      "bytes": 21449,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "dac072db45cd9f139c556e84e3abd8c1af52e1a67e959ecd11df6a110eb7098e",
+      "source_file_name": "pulls-476.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-477-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-477-reviews.json"
+    },
+    {
+      "bytes": 18686,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "908b7c18e5dfddecc7ebba05751d74b72855a111a6d447acb998773ec2b50323",
+      "source_file_name": "pulls-477.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-479-comments.json"
+    },
+    {
+      "bytes": 5,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "a930ec39e7339fde7af6a7f1009d621c595aab52ec9324dde1e8387212ae64aa",
+      "source_file_name": "pulls-479-reviews.json"
+    },
+    {
+      "bytes": 20582,
+      "custody": "session_scratch_READ_ONLY; GitHub original resource remains authority; RAW bodies not recopied into Git",
+      "sha256": "74abe4233c5b2e525b93b2cf1801e12ad3f5b909cd6948c7182756bbe03bd30c",
+      "source_file_name": "pulls-479.json"
+    }
+  ],
+  "ledger_join": {
+    "blob_SHA256": "pr476-blob-sha256.csv",
+    "head_blobs": 2683,
+    "head_paths": 3127,
+    "join_key": "head_blob_sha1 / git_blob_sha1",
+    "path_inventory": "../rc6-systemic-review-20261008/pr476-complete-inventory.csv"
+  },
+  "mandatory_prs": [
+    {
+      "base": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "body_sha256": "c28dc61c8911b42b9eb98c43f1bc0485aa7df9882daba16d8153e140e0f82a52",
+      "draft": true,
+      "head": "3091e93c05cf89f9a0c16ca912d0af98f036ff17",
+      "head_branch": "integration/rc6-convergence-468-469-470-20261005",
+      "merged": false,
+      "number": 475,
+      "state": "open",
+      "tree": "00efec0f39f70f5a4ba1ba9c215647b92e05eeb7",
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/475"
+    },
+    {
+      "base": "da697c6e6c2274579f9e4a112fabc4327475dd35",
+      "body_sha256": "6c1877cb2717601151fd2e30366ebb6b6e2f46e9c8bd1d003152c57e9e209b19",
+      "draft": true,
+      "head": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565",
+      "head_branch": "recovery/rc6-material-fix-forward-3091e93-20261006",
+      "merged": false,
+      "number": 476,
+      "state": "open",
+      "tree": "192ea26348c8fe10db55857cdd6029edd8344708",
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/476"
+    },
+    {
+      "base": "dfc240a478cf08e0c6a9b0ba1b760307b09a9565",
+      "body_sha256": "f76dfbb20ead8110b06bc92fcffac3ec7ca296940a6b57977fec8b1f62b7609b",
+      "draft": true,
+      "head": "756d37b93aa26bb6395dac481bf3c2dda9d034d7",
+      "head_branch": "governance/rc6-error-learning-runner-20261007",
+      "merged": false,
+      "number": 477,
+      "state": "open",
+      "tree": "bfb13175cfc7a1b8325c0e1c08b44b51a03452d1",
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/477"
+    },
+    {
+      "base": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+      "body_sha256": "02727a2182b18931b3e7245169b79ac9afa701667054d15e16663a72b2245eba",
+      "draft": true,
+      "head": "215169ecd0f71d3b293304c7976be2593efdc043",
+      "head_branch": "review/rc6-systemic-rca-ecad18b6-20261008",
+      "merged": false,
+      "number": 479,
+      "state": "open",
+      "tree": "9b2ea2b7cfed724fe828eb4ec2f129b17f27d89f",
+      "url": "https://github.com/mbalbo2023/Porota-trading/pull/479"
+    }
+  ],
+  "observed_at": "2026-10-09T12:37:26.531315+00:00",
+  "qualification_claimed": false,
+  "schema": "rc6.controlled-source-provenance.v1"
+}

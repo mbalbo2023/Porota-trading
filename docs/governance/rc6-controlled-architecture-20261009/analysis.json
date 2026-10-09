@@ -1,0 +1,99 @@
+{
+  "code_sha": "ecad18b6010e3b7e874a00edc72644b3dcc78790",
+  "document_base_sha": "215169ecd0f71d3b293304c7976be2593efdc043",
+  "eligible_evidence_roots": {
+    "actual_image_inspected": false,
+    "bytes": 6658367,
+    "files": 36,
+    "keep_software_bytes": 116679,
+    "keep_software_files": 6,
+    "proposed_excluded_bytes": 6541688,
+    "proposed_excluded_files": 30
+  },
+  "financial_workload_executed": false,
+  "g0": {
+    "backing_bytes": 27917287424,
+    "canonical_floor_bytes": 15032385536,
+    "compound_bootstrap_bound_bytes": null,
+    "independent_reserve_bytes": 4294967296,
+    "minimum_before_controls_bytes": 32212254720,
+    "project_cap_bytes": 21474836480,
+    "root_startup_and_fin_proved": false,
+    "selected_architecture": "B_NATIVE_AGGREGATE_FILESYSTEM_QUOTA",
+    "status": "BLOQUEADO_PREREQUISITES"
+  },
+  "g5": {
+    "GC_credit_used_for_certification_bytes": 0,
+    "blind_per_page_partition_rejected": {
+      "actual_unique_components_claimed": false,
+      "native_catalog_cap": 524288,
+      "possible_components_bound": 1191182
+    },
+    "conditional_forecast_rejected": {
+      "all_closed_independent_comparison_bytes": 766173184,
+      "bytes": 500195328,
+      "comparison_is_original_workload_prediction": false,
+      "extra_anchor_premium_bytes": 1335296,
+      "fallback_count_bound": null,
+      "first_extra_anchor_count_exceeding_limit": 28,
+      "fixed_closed_anchors": 13
+    },
+    "fixed_simultaneous_admission_control_reserve_bytes": 819200,
+    "global_complete_physical_upper_bound_bytes": null,
+    "historical_prefix": {
+      "committed_allocated_bytes": 535801856,
+      "completion_impossible_without_change": true,
+      "cuts": 1049,
+      "gc_deleted": 0,
+      "native_failure": "RETENTION_ARCHIVE_CAPACITY_REACHED",
+      "native_result_sha256": "985e50fcfecc33d451266b6ee563e426be6a10f2c087f3496f00cbdb653c5009",
+      "peak_allocated_bytes": 535810048
+    },
+    "limit_bytes": 536870912,
+    "missing_proofs": [
+      "all1202_original_member_envelopes_and_entropy",
+      "effective_codec_choices_including_every_fallback",
+      "CAS_reuse_and_persistent_recipe_indices",
+      "directory_physical_allocation_bound",
+      "concurrent_temp_and_recovery_footprint"
+    ],
+    "schedule": {
+      "counts": {
+        "CLOSED": 431,
+        "OPEN": 770,
+        "PREOPEN": 1
+      },
+      "cutoff_at_last": "2026-10-05T13:35:00+00:00",
+      "cuts": 1202,
+      "earliest_strict_preopen_expiry": "2026-10-05T23:20:30+00:00",
+      "last": "2026-10-05T23:35:00+00:00",
+      "only_possible_expired_index": 0,
+      "operational_cuts_eligible_by_age": 0
+    },
+    "status": "BLOQUEADO_GLOBAL_BOUND",
+    "wip_mathematically_impossible_claimed": false
+  },
+  "historical_sha": "af08c82ca211e74bb4e5c00d9010af21313814a9",
+  "native_filesystem_or_custody_validated": false,
+  "ppi_watch": "UNTOUCHED",
+  "pr476_sha256_custody_index": {
+    "join_to": "../rc6-systemic-review-20261008/pr476-complete-inventory.csv",
+    "original_tree_membership_and_blob_sha1_verified": true,
+    "paths": 3127,
+    "sha256": "d055eb1ebf0f931bbd1900b64900037039b9411b7416b303fd5ed0d06ba76aad",
+    "sha256_join_index": "pr476-blob-sha256.csv",
+    "unique_head_blobs": 2683
+  },
+  "prospective_evidence_guard": {
+    "deletion_authorized": false,
+    "installed_in_CI": false,
+    "is_material_gate": false,
+    "paths_requiring_custody_instead_of_new_git_payload": [],
+    "status": "PASS"
+  },
+  "qualification_claimed": false,
+  "real_orders_sent": 0,
+  "real_routes": "NOT_CALLED",
+  "schema": "rc6.controlled-architecture-analysis.v1",
+  "scope": "STATIC_ARITHMETIC_AND_GIT_BLOBS_ONLY"
+}
